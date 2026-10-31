@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
     confirmSubmission: vi.fn(),
     buildKeyFromExam: vi.fn(),
     classFindFirst: vi.fn(),
+    classCount: vi.fn(),
+    studentFindMany: vi.fn(),
+    submissionFindMany: vi.fn(),
     taskCreate: vi.fn(),
     taskFindFirst: vi.fn(),
     submissionCreate: vi.fn(),
@@ -22,11 +25,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/prisma', () => ({
     prisma: {
-        gradingClass: { findFirst: mocks.classFindFirst },
+        gradingClass: { findFirst: mocks.classFindFirst, count: mocks.classCount },
         gradingTask: { create: mocks.taskCreate, findFirst: mocks.taskFindFirst },
-        gradingSubmission: { create: mocks.submissionCreate, findFirst: mocks.submissionFindFirst, update: mocks.submissionUpdate },
+        gradingSubmission: { create: mocks.submissionCreate, findFirst: mocks.submissionFindFirst, findMany: mocks.submissionFindMany, update: mocks.submissionUpdate },
         gradingResult: { update: mocks.resultUpdate },
-        gradingStudent: { findFirst: mocks.studentFindFirst },
+        gradingStudent: { findFirst: mocks.studentFindFirst, findMany: mocks.studentFindMany },
         $transaction: mocks.transaction,
     },
 }));
@@ -66,6 +69,13 @@ beforeEach(() => {
     mocks.getCurrentUser.mockResolvedValue({ id: 'u1', role: 'user' });
     mocks.consumeAiQuota.mockResolvedValue(null);
     mocks.transaction.mockResolvedValue([]);
+    mocks.classCount.mockResolvedValue(1);
+    mocks.submissionFindMany.mockResolvedValue([]);
+    mocks.studentFindMany.mockResolvedValue([
+        { id: 's1', name: '张三', studentNo: '01', classId: 'c1', class: { name: '七年级1班' } },
+        { id: 's2', name: '李四', studentNo: '02', classId: 'c1', class: { name: '七年级1班' } },
+        { id: 's3', name: '王五', studentNo: '01', classId: 'c2', class: { name: '七年级2班' } },
+    ]);
 });
 
 describe('POST /api/grading/tasks', () => {
@@ -94,13 +104,22 @@ describe('POST /api/grading/tasks', () => {
     });
 
     it('班级不属于当前老师时返回 404', async () => {
-        mocks.classFindFirst.mockResolvedValue(null);
+        mocks.classCount.mockResolvedValue(0);
         expect((await createTask(json({ title: 'x', classId: 'c9', keyText: '1 A' }))).status).toBe(404);
+    });
+
+    it('多个班一起收卷时检查每个班都属于当前老师并保存', async () => {
+        mocks.classCount.mockResolvedValue(1);
+        expect((await createTask(json({ title: 'x', classId: 'c1', extraClassIds: ['c2'], keyText: '1 A' }))).status).toBe(404);
+        mocks.classCount.mockResolvedValue(2);
+        mocks.taskCreate.mockResolvedValue({ id: 't1' });
+        expect((await createTask(json({ title: 'x', classId: 'c1', extraClassIds: ['c2', 'c1'], keyText: '1 A' }))).status).toBe(201);
+        expect(mocks.taskCreate.mock.calls[0][0].data.extraClassIds).toBe('["c2"]');
     });
 });
 
 describe('POST /api/grading/tasks/:id/submissions', () => {
-    const task = { id: 't1', class: { students: [{ id: 's1' }] }, _count: { questions: 3 } };
+    const task = { id: 't1', classId: 'c1', extraClassIds: '["c2"]', userId: 'u1', _count: { questions: 3 } };
 
     it('逐份扣额度、创建答卷并在后台判分', async () => {
         mocks.taskFindFirst.mockResolvedValue(task);
@@ -117,6 +136,35 @@ describe('POST /api/grading/tasks/:id/submissions', () => {
         expect((await uploadPapers(json({ papers: [{ images: ['data:text/html;base64,AAAA'] }] }), params('t1'))).status).toBe(400);
         expect((await uploadPapers(json({ papers: [{ images: [IMAGE], studentId: 'other' }] }), params('t1'))).status).toBe(400);
         expect(mocks.submissionCreate).not.toHaveBeenCalled();
+    });
+
+    it('按卷头匹配名册：可靠的自动分配，冲突、重复的标记待确认', async () => {
+        mocks.taskFindFirst.mockResolvedValue(task);
+        mocks.submissionFindMany.mockResolvedValue([{ studentId: 's2' }]);
+        mocks.submissionCreate.mockResolvedValue({ id: 'p' });
+        await uploadPapers(json({ papers: [
+            { images: [IMAGE], identity: { className: '七年级2班', studentNo: '1', name: '王五' } },
+            { images: [IMAGE], identity: { className: '七年级1班', studentNo: '02', name: '李四' } },
+            { images: [IMAGE], identity: { className: null, studentNo: '01', name: '李四' } },
+            { images: [IMAGE], identity: { className: '七年级2班', studentNo: '01', name: '王五' } },
+            { images: [IMAGE], studentId: 's1', identity: { name: '王五' } },
+        ] }), params('t1'));
+        const data = mocks.submissionCreate.mock.calls.map((call) => call[0].data);
+        expect(data[0]).toMatchObject({ studentId: 's3', matchStatus: 'auto', detectedStudentNo: '1' });
+        // 李四已经交过一份
+        expect(data[1]).toMatchObject({ studentId: null, matchStatus: 'review' });
+        expect(JSON.parse(data[1].matchReason).code).toBe('duplicate');
+        // 学号 01 有两个班，姓名又是别人
+        expect(data[2]).toMatchObject({ studentId: null, matchStatus: 'review' });
+        // 同一批里王五已经被第一份匹配
+        expect(data[3]).toMatchObject({ studentId: null, matchStatus: 'review' });
+        expect(data[4]).toMatchObject({ studentId: 's1', matchStatus: 'manual' });
+    });
+
+    it('客户端传来的学生只能是任务各班的学生', async () => {
+        mocks.taskFindFirst.mockResolvedValue(task);
+        mocks.submissionCreate.mockResolvedValue({ id: 'p' });
+        expect((await uploadPapers(json({ papers: [{ images: [IMAGE], studentId: 's3' }] }), params('t1'))).status).toBe(202);
     });
 
     it('答案为空时不能上传', async () => {
