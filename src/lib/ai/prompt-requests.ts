@@ -5,12 +5,13 @@ import {
     generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt,
     generateGeogebraPrompt, generateMasteryPrompt, generateGradingPrompt,
     generateTagSuggestPrompt, generateFigurePrompt, generateSvgAnimationPrompt,
-    generateSvgNarrationPrompt, generateLatexFixPrompt, generateGradeRecognitionPrompt,
+    generateSvgNarrationPrompt, generateLatexFixPrompt, generateGradeRecognitionPrompt, generateExamPaperReadPrompt,
     SVG_ANIMATION_REQUEST, SVG_NARRATION_REQUEST,
 } from './prompts';
 import type { PromptOptions, PromptRequest, LatexFixField } from './prompts';
 import type { AnswerGradingInput, GradeLevel, MasteryEvaluationInput, TagSuggestionInput } from './types';
 import type { LatexFixInput } from './latex-fix';
+import type { ExamPaperReadInput } from './exam-paper-read';
 
 // 只有受限的控制值可以进入系统规则；所有自由文本通过 JSON 数据消息传递。
 function safeGrade(value?: string | null): string | null {
@@ -123,4 +124,13 @@ export function generateSvgAnimationRequest(questionText: string, answerText: st
 
 export function generateSvgNarrationRequest(questionText: string, answerText: string, analysis: string, svgAnimation: string, language: 'zh' | 'en' = 'zh'): PromptRequest {
     return createPromptRequest(generateSvgNarrationPrompt(ref('questionText'), ref('answerText'), ref('analysis'), ref('svgAnimation'), language, getSvgAnimationDuration(svgAnimation)), { questionText, answerText, analysis, svgAnimation: embedNarration(svgAnimation, null) }, SVG_NARRATION_REQUEST[language]);
+}
+
+export function generateExamPaperReadRequest(input: ExamPaperReadInput): PromptRequest {
+    return createPromptRequest(
+        generateExamPaperReadPrompt(input.mode, input.language),
+        { mode: input.mode, questions: input.questions || [] },
+        input.mode === 'answer_key' ? '请识别图片中的标准答案。'
+            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。' : '请识别图片中学生的作答并按规则评分。',
+    );
 }

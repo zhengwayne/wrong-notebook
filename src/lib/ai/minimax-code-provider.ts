@@ -68,6 +68,10 @@ export class MiniMaxCodeProvider implements AIService {
         return this.run((p) => p.gradeAnswer(...args));
     }
 
+    readExamPaper(...args: Parameters<AIService['readExamPaper']>) {
+        return this.run((p) => p.readExamPaper(...args));
+    }
+
     suggestKnowledgeTags(...args: Parameters<AIService['suggestKnowledgeTags']>) {
         return this.run((p) => p.suggestKnowledgeTags(...args));
     }

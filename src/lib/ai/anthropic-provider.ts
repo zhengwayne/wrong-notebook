@@ -8,6 +8,9 @@ import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
 import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, extractJsonObject, parseDifficultyStars, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
+import { generateExamPaperReadRequest } from './prompt-requests';
+import { parseExamPaperRead } from './exam-paper-read';
+import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { trimTrailingSlashes } from '../utils';
 import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
@@ -344,6 +347,24 @@ export class AnthropicProvider implements AIService {
             return parseAnswerGrading(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during answer grading');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async readExamPaper(input: ExamPaperReadInput): Promise<ExamPaperReadResult> {
+        const prompt = generateExamPaperReadRequest(input);
+        logger.info({ provider: 'Anthropic', mode: input.mode, pages: input.images.length }, 'Exam Paper Read Request');
+
+        try {
+            const text = await this.complete(prompt.system, [
+                ...input.images.map((image) => imageBlock(image.base64, image.mimeType)),
+                { type: 'text', text: prompt.user },
+            ], 8192);
+            logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
+            return parseExamPaperRead(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);
             throw error;
         }
