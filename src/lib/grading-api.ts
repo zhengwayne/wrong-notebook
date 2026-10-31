@@ -26,3 +26,10 @@ export const resultOverrideSchema = z.object({
     verdict: z.enum(GRADING_VERDICTS).optional(),
     score: z.number().min(0).max(1000).optional(),
 }).refine((value) => value.verdict !== undefined || value.score !== undefined);
+
+/** 拍照时识别出的卷头身份 */
+export const identitySchema = z.object({
+    className: z.string().trim().max(100).nullish(),
+    studentNo: z.string().trim().max(50).nullish(),
+    name: z.string().trim().max(50).nullish(),
+});

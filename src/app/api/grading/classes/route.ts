@@ -20,12 +20,12 @@ export async function GET() {
     const classes = await prisma.gradingClass.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: 'asc' },
-        include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true } } },
+        include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true, studentNo: true } } },
     });
     return NextResponse.json(classes.map(({ id, name, students }) => ({ id, name, students })));
 }
 
-/** POST /api/grading/classes：新建班级，roster 为换行或逗号分隔的学生姓名 */
+/** POST /api/grading/classes：新建班级，roster 为换行或逗号分隔的学生姓名（带学号的名册用导入接口） */
 export async function POST(req: Request) {
     const user = await getCurrentUser();
     if (!user) return unauthorized();
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
                 name: parsed.data.name,
                 students: { create: names.map((name, order) => ({ name, order })) },
             },
-            include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true } } },
+            include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true, studentNo: true } } },
         });
         return NextResponse.json({ id: created.id, name: created.name, students: created.students }, { status: 201 });
     } catch (error) {

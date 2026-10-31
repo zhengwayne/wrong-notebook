@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { badRequest, notFound, unauthorized, validationError } from "@/lib/api-errors";
 import { applyTeacherOverride, parseJsonStringArray, totalScore } from "@/lib/grading";
-import { toKeyQuestion } from "@/lib/grading-service";
+import { taskClassIds, toKeyQuestion } from "@/lib/grading-service";
 import { resultOverrideSchema } from "@/lib/grading-api";
+import { parseCandidates, parseMatchReason } from "@/lib/grading-match-json";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ async function loadOwned(id: string, userId: string) {
     return prisma.gradingSubmission.findFirst({
         where: { id, task: { userId } },
         include: {
-            task: { select: { id: true, classId: true, title: true } },
+            task: { select: { id: true, classId: true, extraClassIds: true, userId: true, title: true } },
             student: { select: { id: true, name: true } },
             results: { include: { keyQuestion: true }, orderBy: { keyQuestion: { order: 'asc' } } },
         },
@@ -33,6 +34,12 @@ function serialize(submission: NonNullable<Awaited<ReturnType<typeof loadOwned>>
         studentId: submission.studentId,
         studentName: submission.student?.name || null,
         detectedName: submission.detectedName,
+        detectedClass: submission.detectedClass,
+        detectedStudentNo: submission.detectedStudentNo,
+        matchStatus: submission.matchStatus,
+        matchConfidence: submission.matchConfidence,
+        matchReason: parseMatchReason(submission.matchReason),
+        matchCandidates: parseCandidates(submission.matchCandidates),
         status: submission.status,
         totalScore: submission.totalScore,
         error: submission.error,
@@ -63,7 +70,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!submission) return notFound("Submission not found");
 
     if (parsed.data.studentId) {
-        const student = await prisma.gradingStudent.findFirst({ where: { id: parsed.data.studentId, classId: submission.task.classId }, select: { id: true } });
+        const student = await prisma.gradingStudent.findFirst({ where: { id: parsed.data.studentId, classId: { in: taskClassIds(submission.task) } }, select: { id: true } });
         if (!student) return badRequest("Student not in class");
     }
 
@@ -82,7 +89,12 @@ export async function PATCH(req: Request, { params }: Params) {
         prisma.gradingSubmission.update({
             where: { id },
             data: {
-                ...(parsed.data.studentId !== undefined ? { studentId: parsed.data.studentId } : {}),
+                // 老师指定学生后视为已确认的匹配；清空学生则回到待确认
+                ...(parsed.data.studentId !== undefined ? {
+                    studentId: parsed.data.studentId,
+                    matchStatus: parsed.data.studentId ? 'manual' : 'review',
+                    ...(parsed.data.studentId ? { matchReason: JSON.stringify({ code: 'manual' }) } : {}),
+                } : {}),
                 ...(updates.length ? { totalScore: totalScore([...scores.values()].map((score) => ({ score }))) } : {}),
             },
         }),

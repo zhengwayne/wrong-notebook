@@ -273,12 +273,14 @@ model GradingStudent {
   classId     String
   class       GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
   name        String
+  studentNo   String?  // 学号，班级内唯一；导入名册时按 班级+学号 更新
   order       Int      @default(0)
   submissions GradingSubmission[]
   createdAt   DateTime @default(now())
 
-  @@unique([classId, name])
+  @@unique([classId, studentNo])
   @@index([classId, order])
+  @@index([classId, name])
 }
 
 // 一次改卷任务（某班某次考试）
@@ -292,6 +294,7 @@ model GradingTask {
   subjectName String   @default("数学") // 导入错题时使用的学科名
   examPaperId String?  // 从已有试卷生成答案时记录来源
   keyImageUrl String?  // 拍照识别的答案卷（压缩后的 data URL）
+  extraClassIds String? // JSON 数组：同一次考试一起收卷的其他班级
   questions   GradingKeyQuestion[]
   submissions GradingSubmission[]
   createdAt   DateTime @default(now())
@@ -327,6 +330,12 @@ model GradingSubmission {
   studentId    String?
   student      GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
   detectedName String?  // AI 从卷面读出的姓名
+  detectedClass String? // AI 从卷面读出的班级
+  detectedStudentNo String? // AI 从卷面读出的学号
+  matchStatus  String?  // auto 自动匹配 | review 待确认 | manual 老师指定
+  matchConfidence Float? // 自动匹配置信度 0~1
+  matchReason  String?  // JSON：匹配原因代码与参数
+  matchCandidates String? // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
   images       String   // JSON 数组：压缩后的 data URL，每页一张
   status       String   @default("pending") // pending | grading | graded | failed | confirmed
   totalScore   Float?

@@ -1271,7 +1271,7 @@ export function generateTagSuggestPrompt(input: {
  * 读卷提示词：识别答案卷（answer_key）或学生答卷（student），输出 JSON。
  * 学生答卷模式下，客观题只转写作答，由程序比对；主观题给出建议分和理由，最终由老师复核。
  */
-export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student', language: 'zh' | 'en' = 'zh'): string {
+export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify', language: 'zh' | 'en' = 'zh'): string {
   const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
   if (mode === 'answer_key') {
     return `【角色与任务】
@@ -1288,11 +1288,27 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student', lang
 【输出格式】
 {"studentName": null, "questions": [{"number": "1", "type": "objective", "maxScore": 3, "answer": "B", "questionText": "...", "knowledgePoints": ["一元一次方程"]}]}`;
   }
+  if (mode === 'identify') {
+    return `【角色与任务】
+你在帮老师收卷。图片是一页学生答卷的照片，请只读卷头（通常在第一页顶部或密封线内）手写或填写的班级、学号、姓名，不读作答内容。
+
+【规则】
+- className：班级，按卷面原样写，如 "七年级3班"、"初一(2)班"、"3班"；没有写或看不清为 null。
+- studentNo：学号，只写数字和字母，如 "0712"；没有写或看不清为 null。
+- studentName：姓名；没有写或看不清为 null。看不太清时写出最可能的字。
+- 这一页如果是背面、续页或第二面，卷头没有身份信息，三项都写 null，不要猜。
+- 不要把印刷的"班级""学号""姓名"字样、学校名、考试名当成填写内容。
+- 只输出 JSON，不要其他文字。
+
+【输出格式】
+{"className": "七年级3班", "studentNo": "12", "studentName": "张三", "questions": []}`;
+  }
   return `【角色与任务】
 你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
 
 【规则】
 - studentName：卷面姓名栏写的姓名，看不清或没有写为 null。
+- className、studentNo：卷头写的班级与学号（学号只写数字和字母），没有写或看不清为 null；不要把印刷的"班级""学号"字样当成内容。
 - 对 data.questions 中的每道题输出一条，number 与输入一致。
 - answer：如实转写学生的作答。选择题只写所选字母；未作答写空字符串。不要把标准答案当成学生答案。
 - objective 题只转写，不评分（score 写 null）。
@@ -1302,5 +1318,5 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student', lang
 - 只输出 JSON，不要其他文字。
 
 【输出格式】
-{"studentName": "张三", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
+{"studentName": "张三", "className": "七年级3班", "studentNo": "12", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
 }

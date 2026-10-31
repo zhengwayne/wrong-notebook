@@ -28,6 +28,7 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
     const router = useRouter();
     const [title, setTitle] = useState("");
     const [classId, setClassId] = useState(classes[0]?.id || "");
+    const [extraClassIds, setExtraClassIds] = useState<string[]>([]);
     const [subjectName, setSubjectName] = useState("数学");
     const [source, setSource] = useState<KeySource>("quick");
     const [keyText, setKeyText] = useState("");
@@ -48,6 +49,7 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
         try {
             const body = {
                 title, classId, subjectName, defaultScore,
+                extraClassIds: extraClassIds.filter((id) => id !== classId),
                 ...(source === "quick" && keyText.trim() ? { keyText } : {}),
                 ...(source === "exam" && examPaperId ? { examPaperId } : {}),
             };
@@ -82,6 +84,21 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
                                 {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                             </NativeSelect>
                         </div>
+                        {classes.length > 1 && (
+                            <fieldset className="space-y-1.5 sm:col-span-3">
+                                <legend className="text-sm font-medium">{t.grading.extraClasses}</legend>
+                                <p className="text-xs text-muted-foreground">{t.grading.extraClassesHint}</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {classes.filter((item) => item.id !== classId).map((item) => (
+                                        <label key={item.id} className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm">
+                                            <input type="checkbox" checked={extraClassIds.includes(item.id)}
+                                                onChange={(event) => setExtraClassIds((prev) => event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} />
+                                            {item.name}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
+                        )}
                         <div className="space-y-1.5">
                             <Label htmlFor="grading-subject">{t.grading.subject}</Label>
                             <Input id="grading-subject" value={subjectName} onChange={(event) => setSubjectName(event.target.value)} />

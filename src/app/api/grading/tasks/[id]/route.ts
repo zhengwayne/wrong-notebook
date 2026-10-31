@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { notFound, unauthorized, validationError } from "@/lib/api-errors";
 import { parseJsonStringArray } from "@/lib/grading";
-import { keyQuestionData, toKeyQuestion } from "@/lib/grading-service";
+import { keyQuestionData, loadTaskRoster, taskClassIds, toKeyQuestion } from "@/lib/grading-service";
+import { parseCandidates, parseMatchReason } from "@/lib/grading-match-json";
 import { keyQuestionsSchema } from "@/lib/grading-api";
 
 type Params = { params: Promise<{ id: string }> };
@@ -23,27 +24,37 @@ export async function GET(_req: Request, { params }: Params) {
     const task = await prisma.gradingTask.findFirst({
         where: { id, userId: user.id },
         include: {
-            class: { include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true } } } },
+            class: { select: { name: true } },
             questions: { orderBy: { order: 'asc' } },
             submissions: {
                 orderBy: { createdAt: 'asc' },
                 select: {
-                    id: true, studentId: true, detectedName: true, status: true, totalScore: true, error: true,
+                    id: true, studentId: true, detectedName: true, detectedClass: true, detectedStudentNo: true,
+                    matchStatus: true, matchConfidence: true, matchReason: true, matchCandidates: true, status: true, totalScore: true, error: true,
                     importedCount: true, images: true, createdAt: true,
                 },
             },
         },
     });
     if (!task) return notFound("Grading task not found");
+    const roster = await loadTaskRoster(task);
+    const classes = await prisma.gradingClass.findMany({ where: { id: { in: taskClassIds(task) }, userId: user.id }, select: { id: true, name: true } });
     return NextResponse.json({
         id: task.id,
         title: task.title,
         subjectName: task.subjectName,
         classId: task.classId,
         className: task.class.name,
-        students: task.class.students,
+        classIds: classes.map((item) => item.id),
+        classNames: classes.map((item) => item.name),
+        students: roster,
         questions: task.questions.map(toKeyQuestion),
-        submissions: task.submissions.map(({ images, ...submission }) => ({ ...submission, pageCount: parseJsonStringArray(images).length })),
+        submissions: task.submissions.map(({ images, matchReason, matchCandidates, ...submission }) => ({
+            ...submission,
+            matchReason: parseMatchReason(matchReason),
+            matchCandidates: parseCandidates(matchCandidates),
+            pageCount: parseJsonStringArray(images).length,
+        })),
     });
 }
 

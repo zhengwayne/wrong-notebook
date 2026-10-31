@@ -11,10 +11,11 @@ import { generateUniqueShortId } from "@/lib/short-id";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
 import {
-    gradeAnswers, isWrong, matchStudentByName, parseJsonStringArray, totalScore,
+    gradeAnswers, isWrong, parseJsonStringArray, totalScore,
     MAX_GRADING_QUESTIONS,
 } from "@/lib/grading";
 import type { KeyQuestion, KeyQuestionInput } from "@/lib/grading";
+import { flagDuplicate, hasIdentity, matchStudent, type MatchResult, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
 
 const logger = createLogger('grading');
 
@@ -89,14 +90,57 @@ export async function buildKeyFromExam(examPaperId: string, userId: string): Pro
     });
 }
 
+/** 本次收卷涉及的所有班级（主班级 + 一起收卷的班级） */
+export function taskClassIds(task: { classId: string; extraClassIds: string | null }): string[] {
+    return [...new Set([task.classId, ...parseJsonStringArray(task.extraClassIds)])];
+}
+
+/** 本次收卷的花名册（只取属于该老师的班级） */
+export async function loadTaskRoster(task: { classId: string; extraClassIds: string | null; userId: string }): Promise<RosterStudent[]> {
+    const students = await prisma.gradingStudent.findMany({
+        where: { classId: { in: taskClassIds(task) }, class: { userId: task.userId } },
+        orderBy: [{ class: { createdAt: 'asc' } }, { order: 'asc' }],
+        include: { class: { select: { name: true } } },
+    });
+    return students.map((student) => ({ id: student.id, name: student.name, studentNo: student.studentNo, classId: student.classId, className: student.class.name }));
+}
+
+/** 任务中已有答卷的学生（排除指定答卷） */
+export async function takenStudentIds(taskId: string, excludeSubmissionId?: string): Promise<Set<string>> {
+    const rows = await prisma.gradingSubmission.findMany({
+        where: { taskId, studentId: { not: null }, ...(excludeSubmissionId ? { id: { not: excludeSubmissionId } } : {}) },
+        select: { studentId: true },
+    });
+    return new Set(rows.map((row) => row.studentId!).filter(Boolean));
+}
+
+/** 匹配结果写入答卷的字段 */
+export function matchData(identity: PaperIdentity, result: MatchResult) {
+    return {
+        detectedName: identity.name?.trim() || null,
+        detectedClass: identity.className?.trim() || null,
+        detectedStudentNo: identity.studentNo?.trim() || null,
+        studentId: result.status === 'matched' ? result.studentId : null,
+        matchStatus: result.status === 'matched' ? 'auto' : 'review',
+        matchConfidence: result.confidence,
+        matchReason: JSON.stringify({ code: result.reason, studentNoUnmatched: !!result.studentNoUnmatched }),
+        matchCandidates: JSON.stringify(result.candidates),
+    };
+}
+
+/** 按卷面身份匹配学生并检查是否与其他答卷重复 */
+export function resolveMatch(identity: PaperIdentity, roster: RosterStudent[], taken: Set<string>) {
+    return matchData(identity, flagDuplicate(matchStudent(identity, roster), taken));
+}
+
 /**
  * 读卷判分：AI 转写作答并给主观题建议分，客观题本地比对。
- * 未指定学生时尝试按卷面姓名匹配花名册。失败时记录错误，老师可重试。
+ * 尚未确定学生（非老师指定、非已自动匹配）时按卷头班级、学号、姓名匹配花名册。失败时记录错误，老师可重试。
  */
 export async function gradeSubmission(submissionId: string, language: 'zh' | 'en' = 'zh'): Promise<void> {
     const submission = await prisma.gradingSubmission.findUnique({
         where: { id: submissionId },
-        include: { task: { include: { questions: { orderBy: { order: 'asc' } }, class: { include: { students: true } } } } },
+        include: { task: { include: { questions: { orderBy: { order: 'asc' } } } } },
     });
     if (!submission) return;
     const questions = submission.task.questions.map(toKeyQuestion);
@@ -111,14 +155,26 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             language,
         });
         const graded = gradeAnswers(questions, read.questions);
-        const studentId = submission.studentId || matchStudentByName(read.studentName, submission.task.class.students);
+        // 已由老师指定或已自动匹配的不再改动；否则用拍照时识别的身份，缺失的字段用整卷读出的补上
+        let identityData = {};
+        if (!submission.studentId && submission.matchStatus !== 'manual') {
+            const identity: PaperIdentity = {
+                className: submission.detectedClass || read.className,
+                studentNo: submission.detectedStudentNo || read.studentNo,
+                name: submission.detectedName || read.studentName,
+            };
+            if (hasIdentity(identity) || submission.matchStatus === null) {
+                const roster = await loadTaskRoster(submission.task);
+                identityData = resolveMatch(identity, roster, await takenStudentIds(submission.taskId, submissionId));
+            }
+        }
 
         await prisma.$transaction([
             prisma.gradingResult.deleteMany({ where: { submissionId } }),
             prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId })) }),
             prisma.gradingSubmission.update({
                 where: { id: submissionId },
-                data: { status: 'graded', totalScore: totalScore(graded), detectedName: read.studentName, studentId, error: null },
+                data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData },
             }),
         ]);
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');

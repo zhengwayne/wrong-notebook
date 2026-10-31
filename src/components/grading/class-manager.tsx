@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Users } from "lucide-react";
+import { Plus, Trash2, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RosterImport } from "@/components/grading/roster-import";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { confirmDialog, toast } from "@/lib/feedback";
@@ -17,34 +16,21 @@ interface ClassManagerProps {
     onChange: (classes: GradingClassInfo[]) => void;
 }
 
-/** 班级与花名册：新建班级、粘贴学生名单、修改与删除 */
+/** 班级与名册：导入（班级、学号、姓名）、查看与移除学生、新建与删除班级 */
 export function ClassManager({ classes, onChange }: ClassManagerProps) {
     const { t } = useLanguage();
+    const r = t.grading.roster;
     const [name, setName] = useState("");
-    const [roster, setRoster] = useState("");
-    const [editing, setEditing] = useState<Record<string, string>>({});
-    const [busy, setBusy] = useState(false);
+    const [open, setOpen] = useState<string | null>(null);
+
+    const reload = () => apiClient.get<GradingClassInfo[]>("/api/grading/classes").then(onChange).catch(() => undefined);
 
     const addClass = async () => {
         if (!name.trim()) return;
-        setBusy(true);
         try {
-            const created = await apiClient.post<GradingClassInfo>("/api/grading/classes", { name, roster });
+            const created = await apiClient.post<GradingClassInfo>("/api/grading/classes", { name });
             onChange([...classes, created]);
             setName("");
-            setRoster("");
-        } catch (error) {
-            toast.error(error);
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const saveRoster = async (id: string) => {
-        try {
-            const updated = await apiClient.put<GradingClassInfo>(`/api/grading/classes/${id}`, { roster: editing[id] });
-            onChange(classes.map((item) => (item.id === id ? updated : item)));
-            setEditing(({ [id]: _removed, ...rest }) => rest);
         } catch (error) {
             toast.error(error);
         }
@@ -56,41 +42,44 @@ export function ClassManager({ classes, onChange }: ClassManagerProps) {
         onChange(classes.filter((item) => item.id !== id));
     };
 
+    const removeStudent = async (id: string) => {
+        if (!(await confirmDialog(r.confirmDeleteStudent, { destructive: true }))) return;
+        await apiClient.delete(`/api/grading/students/${id}`);
+        reload();
+    };
+
     return (
         <Card className="rounded-2xl">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-primary" />{t.grading.classes}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
                 {classes.map((item) => (
                     <div key={item.id} className="space-y-2 rounded-xl border p-3">
                         <div className="flex items-center justify-between gap-2">
-                            <button type="button" className="text-left font-medium hover:text-primary"
-                                onClick={() => setEditing((prev) => ({ ...prev, [item.id]: item.students.map((s) => s.name).join("\n") }))}>
+                            <button type="button" className="min-w-0 text-left font-medium hover:text-primary" onClick={() => setOpen(open === item.id ? null : item.id)}>
                                 {item.name}
-                                <span className="ml-2 text-xs text-muted-foreground">{t.grading.studentCount.replace("{count}", String(item.students.length))}</span>
+                                <span className="ml-2 text-xs text-muted-foreground">{t.grading.studentCount.replace("{count}", String(item.students.length))} · {open === item.id ? r.hideStudents : r.showStudents}</span>
                             </button>
-                            <Button variant="ghost" size="icon" aria-label={t.grading.deleteClass} onClick={() => removeClass(item.id)}>
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <Button variant="ghost" size="icon" aria-label={t.grading.deleteClass} onClick={() => removeClass(item.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
-                        {editing[item.id] !== undefined ? (
-                            <div className="space-y-2">
-                                <Textarea rows={5} value={editing[item.id]} aria-label={t.grading.roster}
-                                    onChange={(event) => setEditing((prev) => ({ ...prev, [item.id]: event.target.value }))} />
-                                <Button size="sm" onClick={() => saveRoster(item.id)}>{t.grading.saveRoster}</Button>
+                        {open === item.id && (
+                            <div className="max-h-72 divide-y overflow-y-auto rounded-lg border text-sm">
+                                {item.students.map((student) => (
+                                    <div key={student.id} className="flex items-center gap-2 px-2 py-1">
+                                        <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{student.studentNo || "—"}</span>
+                                        <span className="flex-1 truncate">{student.name}</span>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={r.deleteStudent} onClick={() => removeStudent(student.id)}><X className="h-3.5 w-3.5" /></Button>
+                                    </div>
+                                ))}
                             </div>
-                        ) : (
-                            <p className="line-clamp-2 text-xs text-muted-foreground">{item.students.map((s) => s.name).join("、")}</p>
                         )}
                     </div>
                 ))}
-                <div className="space-y-2 rounded-xl border border-dashed p-3">
-                    <Label htmlFor="grading-class-name">{t.grading.className}</Label>
-                    <Input id="grading-class-name" value={name} onChange={(event) => setName(event.target.value)} />
-                    <Label htmlFor="grading-class-roster">{t.grading.roster}</Label>
-                    <Textarea id="grading-class-roster" rows={4} value={roster} onChange={(event) => setRoster(event.target.value)} />
-                    <Button onClick={addClass} disabled={busy || !name.trim()}><Plus className="h-4 w-4" />{t.grading.addClass}</Button>
+                <RosterImport onImported={reload} />
+                <div className="flex gap-2">
+                    <Input aria-label={t.grading.className} placeholder={t.grading.className} value={name} onChange={(event) => setName(event.target.value)} />
+                    <Button variant="outline" onClick={addClass} disabled={!name.trim()}><Plus className="h-4 w-4" />{t.grading.addClass}</Button>
                 </div>
             </CardContent>
         </Card>

@@ -62,7 +62,7 @@ function GradingTaskView() {
                 <PageHeader
                     backHref="/grading"
                     title={task.title}
-                    description={`${task.className} · ${task.subjectName} · ${t.grading.questionCount.replace("{count}", String(task.questions.length))} · ${t.grading.submissionCount.replace("{count}", String(task.submissions.length))}/${task.students.length}`}
+                    description={`${task.classNames.join("、")} · ${task.subjectName} · ${t.grading.questionCount.replace("{count}", String(task.questions.length))} · ${t.grading.submissionCount.replace("{count}", String(task.submissions.length))}/${task.students.length}`}
                     actions={<Button variant="ghost" size="icon" aria-label={t.grading.deleteTask} onClick={removeTask}><Trash2 className="h-4 w-4" /></Button>}
                     className="print:hidden"
                 />
@@ -75,8 +75,8 @@ function GradingTaskView() {
                 {tab === "key" && <KeyEditor key={task.questions.map((q) => q.id).join()} taskId={task.id} initial={task.questions} onSaved={load} />}
                 {tab === "capture" && (task.questions.length === 0
                     ? <p className="text-sm text-muted-foreground">{t.grading.noKey}</p>
-                    : <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} onUploaded={() => { load(); setTab("papers"); }} />)}
-                {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} />}
+                    : <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />)}
+                {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} multiClass={task.classIds.length > 1} onChanged={load} />}
                 {tab === "summary" && <ClassSummary taskId={task.id} version={version} />}
             </div>
         </main>

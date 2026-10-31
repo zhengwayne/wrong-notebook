@@ -130,6 +130,7 @@ export function generateExamPaperReadRequest(input: ExamPaperReadInput): PromptR
     return createPromptRequest(
         generateExamPaperReadPrompt(input.mode, input.language),
         { mode: input.mode, questions: input.questions || [] },
-        input.mode === 'answer_key' ? '请识别图片中的标准答案。' : '请识别图片中学生的作答并按规则评分。',
+        input.mode === 'answer_key' ? '请识别图片中的标准答案。'
+            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。' : '请识别图片中学生的作答并按规则评分。',
     );
 }

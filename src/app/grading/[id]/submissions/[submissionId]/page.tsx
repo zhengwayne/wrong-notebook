@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, RotateCcw, Scissors, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { NativeSelect } from "@/components/grading/native-select";
+import { MatchPanel } from "@/components/grading/match-panel";
+import { studentLabel } from "@/lib/grading-labels";
 import { ResultRow } from "@/components/grading/result-row";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
@@ -82,6 +84,19 @@ export default function GradingReviewPage() {
         router.replace(`/grading/${id}?tab=papers`);
     };
 
+    const multiClass = task.classIds.length > 1;
+
+    // 从第 index 页起拆成新的一份，两份都重新判分
+    const split = async (index: number) => {
+        try {
+            await apiClient.post(`/api/grading/submissions/${submissionId}/split`, { fromPage: index, language });
+            toast.success(t.grading.match.splitDone);
+            load();
+        } catch (error) {
+            toast.error(error);
+        }
+    };
+
     return (
         <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-4">
@@ -90,10 +105,14 @@ export default function GradingReviewPage() {
                 <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-2">
                         {submission.images.map((image, index) => (
-                            <a key={index} href={image} target="_blank" rel="noreferrer">
-                                { }
-                                <img src={image} alt={t.grading.paperN.replace("{index}", String(index + 1))} className="w-full rounded-xl border" />
-                            </a>
+                            <div key={index} className="space-y-1">
+                                <a href={image} target="_blank" rel="noreferrer">
+                                    <img src={image} alt={t.grading.paperN.replace("{index}", String(index + 1))} className="w-full rounded-xl border" />
+                                </a>
+                                {index > 0 && !confirmed && !grading && (
+                                    <Button size="sm" variant="outline" onClick={() => split(index)}><Scissors className="h-3.5 w-3.5" />{t.grading.match.splitHere}</Button>
+                                )}
+                            </div>
                         ))}
                     </div>
                     <div className="space-y-3">
@@ -101,11 +120,13 @@ export default function GradingReviewPage() {
                             <NativeSelect aria-label={t.grading.student} className="flex-1" value={submission.studentId || ""} disabled={confirmed}
                                 onChange={(event) => patch({ studentId: event.target.value || null })}>
                                 <option value="">{t.grading.unassigned}</option>
-                                {task.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
+                                {task.students.map((student) => <option key={student.id} value={student.id}>{studentLabel(student, multiClass)}</option>)}
                             </NativeSelect>
                             {submission.totalScore !== null && <span className="text-2xl font-bold">{submission.totalScore}</span>}
                         </div>
-                        {submission.detectedName && <p className="text-xs text-muted-foreground">{t.grading.detected.replace("{name}", submission.detectedName)}</p>}
+                        <MatchPanel info={submission} studentId={submission.studentId} students={task.students} multiClass={multiClass}
+                            takenIds={new Set(task.submissions.filter((item) => item.id !== submission.id).map((item) => item.studentId).filter((sid): sid is string => !!sid))}
+                            disabled={confirmed} onAssign={(studentId) => patch({ studentId })} />
                         {grading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{t.grading.gradingInProgress}</p>}
                         {submission.status === "failed" && <p className="text-sm text-destructive">{t.grading.gradingFailed.replace("{error}", submission.error || "")}</p>}
                         {submission.results.map((result) => (

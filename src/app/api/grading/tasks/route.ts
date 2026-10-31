@@ -11,6 +11,8 @@ import type { KeyQuestionInput } from "@/lib/grading";
 const createSchema = z.object({
     title: z.string().trim().min(1).max(200),
     classId: z.string().min(1),
+    /** 同一次考试一起收卷的其他班级 */
+    extraClassIds: z.array(z.string().min(1)).max(20).default([]),
     subjectName: z.string().trim().min(1).max(50).default('数学'),
     /** 答案来源三选一：已有试卷、快速录入文本、逐题列表（拍照识别后的结果也走这里） */
     examPaperId: z.string().min(1).optional(),
@@ -53,8 +55,9 @@ export async function POST(req: Request) {
     if (!parsed.success) return validationError("Invalid grading task", parsed.error.issues);
     const body = parsed.data;
 
-    const gradingClass = await prisma.gradingClass.findFirst({ where: { id: body.classId, userId: user.id }, select: { id: true } });
-    if (!gradingClass) return notFound("Class not found");
+    const classIds = [...new Set([body.classId, ...body.extraClassIds])];
+    const owned = await prisma.gradingClass.count({ where: { id: { in: classIds }, userId: user.id } });
+    if (owned !== classIds.length) return notFound("Class not found");
 
     let questions: KeyQuestionInput[] = body.questions || [];
     if (body.examPaperId) {
@@ -74,6 +77,7 @@ export async function POST(req: Request) {
             title: body.title,
             subjectName: body.subjectName,
             examPaperId: body.examPaperId || null,
+            extraClassIds: classIds.length > 1 ? JSON.stringify(classIds.slice(1)) : null,
             questions: { create: questions.map((question, index) => keyQuestionData(question, index)) },
         },
         select: { id: true },
