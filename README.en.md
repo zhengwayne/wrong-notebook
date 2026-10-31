@@ -160,6 +160,13 @@ Practice statistics show total practice, accuracy and active months, with distri
 - **🧾 Mistake exams**: draw questions at random by notebook, knowledge point and mastery, and turn them into a printable exam of similar questions. After finishing, enter results per question; they are added to the original question's answer history.
 - **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF.
 
+### Teacher paper grading
+
+- **📸 Photo grading**: open **Grading** in the navigation. Create a class roster, then a grading task with an answer key from an existing exam, a photo of the key read by AI, or quick text entry (such as `1-5 ABCDA`, `6 x=2|x=2.0 4`, `13 subjective 10 key points`). Shoot papers one after another on a phone (tap **Next student**) or pick many photos at once, grouped by pages per student. Assign each paper to a student by hand, or let the AI read the name on the paper and match it to the roster.
+- **🤖 AI grading with teacher review**: objective questions are compared with the key exactly (choice letters ignore case and order, and several accepted answers are allowed); subjective questions get an AI-suggested score with a reason. Mark each question right or wrong with one tap or type a score, then confirm: wrong questions go into that student's notebook (named "student·subject") with their knowledge tags.
+- **📊 Class summary**: average, highest and lowest scores, error rate per question, common weak knowledge points and a score table, with CSV export and printing.
+- The answer key format borrows ideas (question ranges, multiple accepted answers, per-question scores) from [OMRChecker](https://github.com/Udayraj123/OMRChecker) (MIT); no code was copied. Grading data is not yet included in data backups.
+
 ### Management and statistics
 
 - **🔍 Filters**: filter by mastery, date range, knowledge point, grade and term, paper level and more; supports bulk actions and comparing the similarity of two questions.
