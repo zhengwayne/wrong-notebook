@@ -9,6 +9,9 @@ import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
 import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
+import { generateExamPaperReadRequest } from './prompt-requests';
+import { parseExamPaperRead } from './exam-paper-read';
+import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
 import { normalizeMistakeStatusForSave } from '../mistake-status';
@@ -587,6 +590,35 @@ export class OpenAIProvider implements AIService {
             return parseAnswerGrading(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during answer grading');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async readExamPaper(input: ExamPaperReadInput): Promise<ExamPaperReadResult> {
+        const prompt = generateExamPaperReadRequest(input);
+        logger.info({ provider: 'OpenAI', mode: input.mode, pages: input.images.length }, 'Exam Paper Read Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt.system },
+                    { role: "user", content: [
+                        ...input.images.map((image) => ({ type: "image_url" as const, image_url: { url: `data:${image.mimeType};base64,${image.base64}` } })),
+                        { type: "text" as const, text: prompt.user },
+                    ] },
+                ],
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseExamPaperRead(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);
             throw error;
         }

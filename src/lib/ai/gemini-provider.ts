@@ -8,6 +8,9 @@ import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
 import { getAppConfig } from '../config';
 import { prefetchSubjectTags } from './tag-service';
+import { generateExamPaperReadRequest } from './prompt-requests';
+import { parseExamPaperRead } from './exam-paper-read';
+import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { AI_OUTPUT_TRUNCATED } from './truncation';
 import { normalizeMistakeStatusForSave } from '../mistake-status';
@@ -470,6 +473,32 @@ export class GeminiProvider implements AIService {
             return parseAnswerGrading(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during answer grading');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async readExamPaper(input: ExamPaperReadInput): Promise<ExamPaperReadResult> {
+        const prompt = generateExamPaperReadRequest(input);
+        logger.info({ provider: 'Gemini', mode: input.mode, pages: input.images.length }, 'Exam Paper Read Request');
+
+        try {
+            const response = await this.retryOperation(() => this.ai.models.generateContent({
+                model: this.modelName,
+                config: { systemInstruction: prompt.system },
+                contents: [
+                    { text: prompt.user },
+                    ...input.images.map((image) => ({ inlineData: { data: image.base64, mimeType: image.mimeType } })),
+                ],
+            }));
+
+            const text = response.text || '';
+            logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
+
+            if (!text) throw new Error(response.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? AI_OUTPUT_TRUNCATED : "Empty response from AI");
+            return parseExamPaperRead(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);
             throw error;
         }

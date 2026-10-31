@@ -40,6 +40,8 @@ model User {
   customTags KnowledgeTag[] // User's custom tags
   examPapers ExamPaper[]
   aiUsages   AiUsage[]
+  gradingClasses GradingClass[]
+  gradingTasks   GradingTask[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -247,4 +249,113 @@ model AiUsage {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// ===== 老师收卷拍照改卷 =====
+
+// 班级（老师自己的花名册）
+model GradingClass {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  students  GradingStudent[]
+  tasks     GradingTask[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+// 花名册中的学生；错题导入老师账户下以学生命名的错题本
+model GradingStudent {
+  id          String   @id @default(cuid())
+  classId     String
+  class       GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name        String
+  order       Int      @default(0)
+  submissions GradingSubmission[]
+  createdAt   DateTime @default(now())
+
+  @@unique([classId, name])
+  @@index([classId, order])
+}
+
+// 一次改卷任务（某班某次考试）
+model GradingTask {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId     String
+  class       GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title       String
+  subjectName String   @default("数学") // 导入错题时使用的学科名
+  examPaperId String?  // 从已有试卷生成答案时记录来源
+  keyImageUrl String?  // 拍照识别的答案卷（压缩后的 data URL）
+  questions   GradingKeyQuestion[]
+  submissions GradingSubmission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([classId])
+}
+
+// 标准答案中的一道题
+model GradingKeyQuestion {
+  id              String  @id @default(cuid())
+  taskId          String
+  task            GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  order           Int
+  number          String  // 题号，如 "1"、"13(2)"
+  type            String  @default("objective") // objective 客观题 | subjective 主观题
+  maxScore        Float   @default(1)
+  answer          String  @default("")
+  acceptedAnswers String? // JSON 数组：其他可接受的答案写法
+  questionText    String?
+  knowledgePoints String? // JSON 数组
+  results         GradingResult[]
+
+  @@index([taskId, order])
+}
+
+// 一位学生的一份答卷（可多页）
+model GradingSubmission {
+  id           String   @id @default(cuid())
+  taskId       String
+  task         GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  studentId    String?
+  student      GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  detectedName String?  // AI 从卷面读出的姓名
+  images       String   // JSON 数组：压缩后的 data URL，每页一张
+  status       String   @default("pending") // pending | grading | graded | failed | confirmed
+  totalScore   Float?
+  error        String?
+  confirmedAt  DateTime?
+  importedCount Int     @default(0) // 确认后导入错题本的题目数
+  results      GradingResult[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([taskId, createdAt])
+  @@index([studentId])
+}
+
+// 一道题的判分结果
+model GradingResult {
+  id            String  @id @default(cuid())
+  submissionId  String
+  submission    GradingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  keyQuestionId String
+  keyQuestion   GradingKeyQuestion @relation(fields: [keyQuestionId], references: [id], onDelete: Cascade)
+  studentAnswer String?
+  verdict       String  // correct | partial | wrong | blank
+  score         Float   @default(0)
+  aiScore       Float?  // AI 建议分（主观题）
+  reason        String?
+  source        String  @default("auto") // auto 本地比对 | ai | teacher 老师改判
+  errorItemId   String? // 导入错题本后的错题 ID
+
+  @@unique([submissionId, keyQuestionId])
+  @@index([keyQuestionId])
 }

@@ -1266,3 +1266,41 @@ export function generateTagSuggestPrompt(input: {
     allowed_tags: input.allowedTags.map((tag) => `"${tag}"`).join('、'),
   }).trim();
 }
+
+/**
+ * 读卷提示词：识别答案卷（answer_key）或学生答卷（student），输出 JSON。
+ * 学生答卷模式下，客观题只转写作答，由程序比对；主观题给出建议分和理由，最终由老师复核。
+ */
+export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student', language: 'zh' | 'en' = 'zh'): string {
+  const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
+  if (mode === 'answer_key') {
+    return `【角色与任务】
+你是一位细心的阅卷老师。图片是一份试卷的标准答案（或带答案的试卷），可能有多页。请逐题提取题号、题型、分值、标准答案、题干和考查的知识点。
+
+【规则】
+- 题号保持卷面写法，如 "1"、"13(2)"；小题拆成单独条目。
+- type：选择、判断、填空等有唯一确定答案的题为 "objective"；解答、证明、作文等需要按步骤给分的题为 "subjective"。
+- maxScore：卷面标明的分值；未标明时客观题记 1。
+- answer：选择题只写选项字母（多选按字母顺序，如 "AC"）；主观题写参考答案或评分要点。
+- questionText：能看清时写题干，看不清写空字符串；knowledgePoints：1~3 个知识点名称。
+- 只输出 JSON，不要其他文字。
+
+【输出格式】
+{"studentName": null, "questions": [{"number": "1", "type": "objective", "maxScore": 3, "answer": "B", "questionText": "...", "knowledgePoints": ["一元一次方程"]}]}`;
+  }
+  return `【角色与任务】
+你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
+
+【规则】
+- studentName：卷面姓名栏写的姓名，看不清或没有写为 null。
+- 对 data.questions 中的每道题输出一条，number 与输入一致。
+- answer：如实转写学生的作答。选择题只写所选字母；未作答写空字符串。不要把标准答案当成学生答案。
+- objective 题只转写，不评分（score 写 null）。
+- subjective 题按参考答案与步骤给出建议得分 score（0 到 maxScore，可为 0.5 的倍数），并用一句话写明 reason（得分点与扣分原因）。
+- 卷面上老师的批改痕迹（对勾、分数）不作为评分依据。
+- ${reasonLanguage}
+- 只输出 JSON，不要其他文字。
+
+【输出格式】
+{"studentName": "张三", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
+}

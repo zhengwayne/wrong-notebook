@@ -94,6 +94,9 @@ export interface CandidateTags {
     tags: string[];
 }
 
+export type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
+import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
+
 export interface AIService {
     /** 只识别年级学期，用于直接录入或外部识别结果缺少年级的情况。 */
     recognizeGrade(questionText: string): Promise<string | null>;
@@ -115,6 +118,8 @@ export interface AIService {
     gradeAnswer(input: AnswerGradingInput): Promise<AnswerGradingResult>;
     /** 从标签库中选知识点，并评定难度星级 */
     suggestKnowledgeTags(input: TagSuggestionInput): Promise<TagSuggestionResult>;
+    /** 读卷：识别答案卷或学生多页答卷（主观题给出建议分） */
+    readExamPaper(input: ExamPaperReadInput): Promise<ExamPaperReadResult>;
 }
 
 export interface AIConfig {
