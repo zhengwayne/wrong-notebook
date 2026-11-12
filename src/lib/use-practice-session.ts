@@ -50,6 +50,7 @@ export function usePracticeSession(errorItemId: string | null) {
     // 当前题目的生成时间；读取暂存题目期间不显示生成按钮，避免闪烁
     const [generatedAt, setGeneratedAt] = useState<string | null>(null);
     const [loadingCached, setLoadingCached] = useState(true);
+    const [pendingReview, setPendingReview] = useState<{ runId: string; status: string } | null>(null);
 
     useEffect(() => {
         apiClient.get<AppConfig>("/api/settings")
@@ -105,15 +106,21 @@ export function usePracticeSession(errorItemId: string | null) {
         setShowAnswer(false);
         try {
             frontendLogger.info('[Practice]', 'Generating question', { timeout });
-            const data = await apiClient.post<ParsedQuestion & { generatedAt?: string }>("/api/practice/generate", {
+            const data = await apiClient.post<(ParsedQuestion & { generatedAt?: string; pipeline?: false }) | { pipeline: true; run: { id: string; items?: Array<{ status: string }> } }>("/api/practice/generate", {
                 errorItemId,
                 language,
                 difficulty,
             }, { timeout, recoverable: true });
-            setQuestion(data);
-            setGeneratedDifficulty(difficulty);
-            setGeneratedAt(data.generatedAt ?? null);
-            setQuestionVersion(v => v + 1);
+            if ('pipeline' in data && data.pipeline) {
+                setQuestion(null);
+                setPendingReview({ runId: data.run.id, status: data.run.items?.[0]?.status || 'pending_review' });
+            } else {
+                setPendingReview(null);
+                setQuestion(data);
+                setGeneratedDifficulty(difficulty);
+                setGeneratedAt(data.generatedAt ?? null);
+                setQuestionVersion(v => v + 1);
+            }
         } catch (err) {
             frontendLogger.error('[Practice]', 'Failed to generate practice question', { error: err });
             const msg = getApiErrorMessage(err) || "";
@@ -165,7 +172,7 @@ export function usePracticeSession(errorItemId: string | null) {
     const suggestedResult: PracticeResult | null = isCorrect === null ? null : isCorrect ? "correct" : "wrong";
 
     return {
-        question, loading, loadingCached, error, generatedAt,
+        question, loading, loadingCached, error, generatedAt, pendingReview,
         difficulty, setDifficulty, generatedDifficulty, questionVersion,
         userAnswer, setUserAnswer, notes, setNotes,
         isSubmitted, isCorrect, grading, gradeReason, gradeFailed, showAnswer, suggestedResult,

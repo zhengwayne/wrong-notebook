@@ -11,6 +11,7 @@ import { MasteryThresholdSetting } from "@/components/settings/mastery-threshold
 import { QuestionGradeSetting } from "@/components/settings/question-grade-setting";
 import { SvgAnimationPreferenceSetting } from "@/components/settings/svg-animation-preference-setting";
 import { TimeZoneSetting } from "@/components/settings/time-zone-setting";
+import { UserPreferenceSwitch } from "@/components/settings/user-preference-switch";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
 import type { AppConfig } from "@/types/api";
@@ -82,6 +83,7 @@ export function GeneralSettings({ config, setConfig, isAdmin, disabled }: Genera
             <GeogebraPreferenceSetting />
             <DuplicateThresholdSetting />
             <MasteryThresholdSetting />
+            <UserPreferenceSwitch field="variantPipelineEnabled" label={t.variants.setting} description={t.variants.settingDesc} />
         </div>
     );
 }
