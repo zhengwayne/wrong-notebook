@@ -51,6 +51,7 @@ async function importBackup(body: object) {
 
 /** 清空当前用户的学习数据（保留账户），模拟换机后导入 */
 async function clearUserData() {
+    await database.variantRun.deleteMany({ where: { userId: 'user-1' } });
     await database.examPaper.deleteMany({ where: { userId: 'user-1' } });
     await database.subject.deleteMany({ where: { userId: 'user-1' } });
     await database.knowledgeTag.deleteMany({ where: { userId: 'user-1' } });
@@ -215,21 +216,21 @@ describe('数据导出后再导入（真实 SQLite）', () => {
     it('还原本人的偏好设置，不合法的单项跳过', async () => {
         await database.user.update({
             where: { id: 'user-1' },
-            data: { confirmBeforeImport: true, questionDuplicateThreshold: 75.5, masteryThreshold: 70, enableGeogebra: true, enableSvgAnimation: false, themePreference: 'dark', gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上' },
+            data: { confirmBeforeImport: true, questionDuplicateThreshold: 75.5, masteryThreshold: 70, enableGeogebra: true, enableSvgAnimation: false, themePreference: 'dark', gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上', variantPipelineEnabled: false },
         });
         const backup = await exportBackup();
-        expect(backup.user).toMatchObject({ confirmBeforeImport: true, questionDuplicateThreshold: 75.5, masteryThreshold: 70, enableGeogebra: true, enableSvgAnimation: false, themePreference: 'dark', gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上' });
+        expect(backup.user).toMatchObject({ confirmBeforeImport: true, questionDuplicateThreshold: 75.5, masteryThreshold: 70, enableGeogebra: true, enableSvgAnimation: false, themePreference: 'dark', gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上', variantPipelineEnabled: false });
 
         await database.user.update({
             where: { id: 'user-1' },
-            data: { confirmBeforeImport: false, questionDuplicateThreshold: 90, masteryThreshold: 50, enableGeogebra: false, enableSvgAnimation: true, themePreference: 'system', gradeRecognitionMode: 'fixed', fixedGradeSemester: null },
+            data: { confirmBeforeImport: false, questionDuplicateThreshold: 90, masteryThreshold: 50, enableGeogebra: false, enableSvgAnimation: true, themePreference: 'system', gradeRecognitionMode: 'fixed', fixedGradeSemester: null, variantPipelineEnabled: true },
         });
         backup.user.questionDuplicateThreshold = 500;
         const { stats } = await importBackup(backup);
         expect(stats.preferencesRestored).toBe(true);
         expect(await database.user.findUniqueOrThrow({ where: { id: 'user-1' } })).toMatchObject({
             confirmBeforeImport: true, questionDuplicateThreshold: 90, masteryThreshold: 70, enableGeogebra: true, enableSvgAnimation: false, themePreference: 'dark',
-            gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上',
+            gradeRecognitionMode: 'ai', fixedGradeSemester: '四年级上', variantPipelineEnabled: false,
         });
     });
 
@@ -268,5 +269,34 @@ describe('数据导出后再导入（真实 SQLite）', () => {
         expect(item.lastPractice).toBeNull();
         expect(item.masteryProbability).toBeNull();
         expect(mocks.scheduleMasteryEvaluation).toHaveBeenCalledWith([item.id]);
+    });
+
+    it('导出并还原变式审核记录，清空数据时删除原记录', async () => {
+        await database.variantRun.create({
+            data: {
+                id: 'run-1', userId: 'user-1', kind: 'practice', mode: 'pipeline', status: 'completed',
+                language: 'zh', title: '方程变式', errorItemId: 'item-1',
+                items: { create: {
+                    id: 'vitem-1', index: 0, status: 'pending_review',
+                    questionText: '解方程 3x=9', answerText: '3', analysis: '两边除以 3',
+                    knowledgePoints: '["方程"]', plannedDifficulty: 'medium',
+                } },
+            },
+        });
+        const backup = await exportBackup();
+        expect(backup.variantRuns).toHaveLength(1);
+        expect(backup.variantRuns[0]).toMatchObject({ title: '方程变式', kind: 'practice' });
+        expect(backup.variantRuns[0].items[0].questionText).toBe('解方程 3x=9');
+
+        await clearUserData();
+        expect(await database.variantRun.count({ where: { userId: 'user-1' } })).toBe(0);
+
+        const { stats } = await importBackup(backup);
+        expect(stats.variantRunsCreated).toBe(1);
+        const imported = await database.variantRun.findFirstOrThrow({ where: { userId: 'user-1' }, include: { items: true } });
+        expect(imported).toMatchObject({ title: '方程变式', kind: 'practice', mode: 'pipeline' });
+        expect(imported.items[0]).toMatchObject({ questionText: '解方程 3x=9', status: 'pending_review' });
+        const remappedItem = await database.errorItem.findFirstOrThrow({ where: { userId: 'user-1' } });
+        expect(imported.errorItemId).toBe(remappedItem.id);
     });
 });
