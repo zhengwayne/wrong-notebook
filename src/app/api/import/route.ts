@@ -46,6 +46,7 @@ interface ImportData {
         enableGeogebra?: boolean;
         enableSvgAnimation?: boolean;
         themePreference?: string;
+        variantPipelineEnabled?: boolean;
     };
     subjects: Array<{
         id: string;
@@ -158,6 +159,7 @@ interface ImportData {
         }>;
     }>;
     /** 动画讲解的云端语音（服务商、模型、音色、文字与 Base64 编码的 MP3），写入语音缓存 */
+    variantRuns?: Array<Record<string, unknown> & { items?: Array<Record<string, unknown>> }>;
     ttsSpeeches?: unknown;
 }
 
@@ -171,6 +173,7 @@ const PREFERENCE_SCHEMAS = {
     enableGeogebra: z.boolean(),
     enableSvgAnimation: z.boolean(),
     themePreference: z.enum(THEME_PREFERENCES),
+    variantPipelineEnabled: z.boolean(),
 };
 
 function parsePreferences(source: ImportData['user']) {
@@ -183,6 +186,24 @@ function parsePreferences(source: ImportData['user']) {
 }
 
 /** Validate and parse a date string, returning undefined if invalid */
+
+function asOptionalString(value: unknown): string | null {
+    return typeof value === 'string' ? value : null;
+}
+
+function asOptionalNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function asOptionalBoolean(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+}
+
+function asJsonText(value: unknown): string | null {
+    if (value == null) return null;
+    return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 function safeParseDate(dateStr: string | undefined | null): Date | undefined {
     if (!dateStr) return undefined;
     const d = new Date(dateStr);
@@ -268,6 +289,7 @@ export async function POST(req: Request) {
             examPapersCreated: 0,
             preferencesRestored: false,
             practiceRecordsCreated: 0,
+            variantRunsCreated: 0,
             tagsLinked: 0,
             duplicateErrorItems: 0,
             ttsSpeechesImported: 0,
@@ -586,7 +608,62 @@ export async function POST(req: Request) {
                 if (errorItemId && result && !evaluatedIds.has(errorItemId)) masteryIds.add(errorItemId);
             }
 
-            // 8. 还原了已掌握阈值时，按新阈值同步该账户全部错题的 masteryLevel
+            // 8. 导入变式审核记录（学生、班级、试卷外键若无对应数据则留空）
+            for (const run of body.variantRuns || []) {
+                const mappedErrorItemId = typeof run.errorItemId === 'string' ? errorItemIdMap.get(run.errorItemId) : undefined;
+                const created = await tx.variantRun.create({
+                    data: {
+                        userId: user.id,
+                        kind: typeof run.kind === 'string' ? run.kind : 'practice',
+                        mode: typeof run.mode === 'string' ? run.mode : 'pipeline',
+                        status: typeof run.status === 'string' ? run.status : 'completed',
+                        language: typeof run.language === 'string' ? run.language : 'zh',
+                        targetDifficulty: asOptionalString(run.targetDifficulty),
+                        requestedCount: typeof run.requestedCount === 'number' ? run.requestedCount : 1,
+                        title: asOptionalString(run.title),
+                        errorItemId: mappedErrorItemId || null,
+                        subjectId: typeof run.subjectId === 'string' ? subjectIdMap.get(run.subjectId) ?? null : null,
+                        inputSnapshot: asJsonText(run.inputSnapshot),
+                        weaknessProfile: asJsonText(run.weaknessProfile),
+                        topicSuggestion: asJsonText(run.topicSuggestion),
+                        totalLatencyMs: asOptionalNumber(run.totalLatencyMs),
+                        promptTokens: asOptionalNumber(run.promptTokens),
+                        completionTokens: asOptionalNumber(run.completionTokens),
+                        totalTokens: asOptionalNumber(run.totalTokens),
+                        cost: asOptionalNumber(run.cost),
+                        error: asOptionalString(run.error),
+                        startedAt: safeParseDate(asOptionalString(run.startedAt)),
+                        finishedAt: safeParseDate(asOptionalString(run.finishedAt)),
+                    },
+                });
+                stats.variantRunsCreated++;
+                for (const item of run.items || []) {
+                    await tx.variantItem.create({
+                        data: {
+                            runId: created.id,
+                            index: typeof item.index === 'number' ? item.index : 0,
+                            status: typeof item.status === 'string' ? item.status : 'pending_review',
+                            plan: asJsonText(item.plan),
+                            questionText: asOptionalString(item.questionText),
+                            answerText: asOptionalString(item.answerText),
+                            analysis: asOptionalString(item.analysis),
+                            figureSvg: asOptionalString(item.figureSvg),
+                            knowledgePoints: typeof item.knowledgePoints === 'string' ? item.knowledgePoints : JSON.stringify(item.knowledgePoints || []),
+                            plannedDifficulty: asOptionalString(item.plannedDifficulty),
+                            checkedDifficulty: asOptionalString(item.checkedDifficulty),
+                            difficultyConsistent: asOptionalBoolean(item.difficultyConsistent),
+                            verification: asJsonText(item.verification),
+                            similarity: asOptionalNumber(item.similarity),
+                            similarTo: asOptionalString(item.similarTo),
+                            sourceItemId: typeof item.sourceItemId === 'string' ? errorItemIdMap.get(item.sourceItemId) ?? null : null,
+                            reviewNote: asOptionalString(item.reviewNote),
+                            reviewedAt: safeParseDate(asOptionalString(item.reviewedAt)),
+                        },
+                    });
+                }
+            }
+
+            // 9. 还原了已掌握阈值时，按新阈值同步该账户全部错题的 masteryLevel
             if (typeof preferences.masteryThreshold === 'number') {
                 await syncMasteryLevels(tx, user.id, preferences.masteryThreshold);
             }

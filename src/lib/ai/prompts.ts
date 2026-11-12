@@ -1320,3 +1320,56 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'id
 【输出格式】
 {"studentName": "张三", "className": "七年级3班", "studentNo": "12", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
 }
+
+/** 变式流水线：先规划再逐题生成（借鉴 DeepTutor 的阶段划分，提示词为独立撰写） */
+export function generateVariantPlanPrompt(language: 'zh' | 'en'): string {
+    return language === 'en'
+        ? `You plan variant practice questions for a teacher. Read the de-identified original question, knowledge points, error type and target difficulty in the input JSON.
+Return JSON only:
+{"analysis":"short plan","variants":[{"vary":"what to change","skill":"skill to train","knowledgePoints":["..."],"difficulty":"easy|medium|hard|harder","errorTypeFocus":"optional"}]}
+Plan exactly the requested number of variants. Keep the same core knowledge points. If pre-assigned slots are provided, follow their knowledge point and difficulty. Do not write the full questions yet.`
+        : `你是老师的出题规划助手。请阅读输入 JSON 中已脱敏的原题、知识点、学生错因和目标难度。
+只输出 JSON：
+{"analysis":"简要规划","variants":[{"vary":"准备改变什么","skill":"要训练的技能","knowledgePoints":["..."],"difficulty":"easy|medium|hard|harder","errorTypeFocus":"可选的错因"}]}
+必须规划所要求的变式数量，保持核心知识点不变。若提供了预分配空位，请遵循其知识点和难度。这一步不要写出完整题目。`;
+}
+
+export function generateVariantQuestionPrompt(language: 'zh' | 'en'): string {
+    return language === 'en'
+        ? `Generate one variant question from the plan in the input JSON. Keep the same core skill, change numbers, context or wording, and do not copy the original stem.
+Return JSON only:
+{"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"math expression only, never code","expected":"answer"} or null}
+computable is required for questions that can be checked by arithmetic or algebra (use * for multiplication). Leave it null for open-ended or non-math items. Use LaTeX in text when needed. Output JSON only.`
+        : `根据输入 JSON 中的规划生成一道变式题。保持核心考点，更换数据、情境或表述，不要照抄原题题干。
+只输出 JSON：
+{"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"仅数学表达式，禁止代码","expected":"答案"} 或 null}
+能用四则运算或代数验算的题必须提供 computable（乘法用 *）。开放题或非数学题填 null。需要公式时使用 LaTeX。只输出 JSON。`;
+}
+
+export function generateVariantResolvePrompt(language: 'zh' | 'en'): string {
+    return language === 'en'
+        ? `Solve the question in the input JSON independently. Do not assume any provided answer is correct.
+Return JSON only: {"answer":"...","steps":"brief steps"}`
+        : `请独立解答输入 JSON 中的题目，不要假定任何已有答案正确。
+只输出 JSON：{"answer":"...","steps":"简要步骤"}`;
+}
+
+export function generateVariantDifficultyPrompt(language: 'zh' | 'en'): string {
+    return language === 'en'
+        ? `Judge the difficulty of the question in the input JSON. Allowed values: easy, medium, hard, harder.
+Return JSON only: {"difficulty":"medium","reason":"...","consistent":true or false}
+consistent means it matches the target difficulty in the input.`
+        : `请判断输入 JSON 中题目的难度，取值只能是 easy、medium、hard、harder。
+只输出 JSON：{"difficulty":"medium","reason":"...","consistent":true 或 false}
+consistent 表示是否与输入中的目标难度一致。`;
+}
+
+export function generateTopicSuggestionPrompt(language: 'zh' | 'en'): string {
+    return language === 'en'
+        ? `You design a short remedial teaching topic from the class or student weakness brief in the input JSON.
+Return JSON only:
+{"title":"topic title","knowledgePoints":["..."],"reason":"why this topic","outline":["step 1","step 2","step 3"]}`
+        : `请根据输入 JSON 中的学生或班级薄弱点摘要，设计一节补救教学专题。
+只输出 JSON：
+{"title":"专题标题","knowledgePoints":["..."],"reason":"为什么出这个专题","outline":["环节1","环节2","环节3"]}`;
+}
