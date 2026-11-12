@@ -36,6 +36,10 @@ export class MiniMaxCodeProvider implements AIService {
         return this.run((p) => p.generateSimilarQuestion(...args));
     }
 
+    completeJson(...args: Parameters<AIService['completeJson']>) {
+        return this.run((p) => p.completeJson(...args));
+    }
+
     generateFigureSvg(...args: Parameters<AIService['generateFigureSvg']>) {
         return this.run((p) => p.generateFigureSvg(...args));
     }

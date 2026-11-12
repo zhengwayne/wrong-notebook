@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,12 @@ function PracticeContent() {
                     {t.practice.subtitle}
                 </p>
 
+                {session.pendingReview && (
+                    <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+                        {t.variants.pendingBanner}
+                        <Link href={`/variants?run=${session.pendingReview.runId}`} className="ml-2 font-medium text-primary underline">{t.variants.openQueue}</Link>
+                    </div>
+                )}
                 {session.error && (
                     <div className="relative rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-destructive" role="alert">
                         <strong className="font-bold">{t.common?.error || "Error"}: </strong>

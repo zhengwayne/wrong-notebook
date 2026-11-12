@@ -41,11 +41,16 @@ export default function ExamsPage() {
                 <PageHeader
                     title={t.exam.title}
                     description={t.exam.subtitle}
-                    actions={!showForm && (
-                        <Button onClick={() => setShowForm(true)} aria-label={t.exam.create}>
-                            <Plus className="h-4 w-4" />
-                            <span className="hidden sm:inline">{t.exam.create}</span>
-                        </Button>
+                    actions={(
+                        <div className="flex gap-2">
+                            <Button asChild variant="outline"><Link href="/variants">{t.variants.title}</Link></Button>
+                            {!showForm && (
+                                <Button onClick={() => setShowForm(true)} aria-label={t.exam.create}>
+                                    <Plus className="h-4 w-4" />
+                                    <span className="hidden sm:inline">{t.exam.create}</span>
+                                </Button>
+                            )}
+                        </div>
                     )}
                 />
 

@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
-import { getAIService } from "@/lib/ai";
 import { notFound, internalError, unauthorized } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
-import { parseLastPractice, serializeLastPractice } from "@/lib/last-practice";
-import type { LastPractice } from "@/lib/last-practice";
+import { parseLastPractice } from "@/lib/last-practice";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
+import { startItemPipeline, startLegacyRun } from "@/lib/variant/service";
+import { serializeRun } from "@/lib/variant/serialize";
 
 const logger = createLogger('api:practice:generate');
 
@@ -77,44 +77,32 @@ async function handlePost(req: Request) {
         const limited = await consumeAiQuota(session.user, 'practice');
         if (limited) return limited;
 
-        const aiService = getAIService();
-        const similarQuestion = await trackBackgroundTask(
-            { userId: session.user.id, kind: 'practice', subject: describeQuestion(errorItemWithSubject), link: `/error-items/${errorItemId}` },
-            () => aiService.generateSimilarQuestion(
-                errorItemWithSubject.questionText || "",
-                tags,
-                language,
-                difficulty || 'medium',
-                errorItemWithSubject.gradeSemester,
-                errorItemWithSubject.figureSvg
-            )
-        );
+        const owner = await prisma.user.findUnique({ where: { id: session.user.id }, select: { variantPipelineEnabled: true } });
+        const targetDifficulty = DIFFICULTIES.find(d => d === difficulty) ?? 'medium';
 
-        // Inject the subject from the database with type safety
-        const validSubjects = ["数学", "物理", "化学", "生物", "英语", "语文", "历史", "地理", "政治", "其他"] as const;
-        const subjectName = errorItemWithSubject.subject?.name || "其他";
-        similarQuestion.subject = (validSubjects as readonly string[]).includes(subjectName) ? subjectName as typeof validSubjects[number] : "其他";
-
-        // 暂存本次生成结果，下次进入练习页直接显示；写入失败不影响本次返回
-        const lastPractice: LastPractice = {
-            questionText: similarQuestion.questionText,
-            answerText: similarQuestion.answerText,
-            analysis: similarQuestion.analysis,
-            subject: similarQuestion.subject,
-            figureSvg: similarQuestion.figureSvg ?? null,
-            difficulty: DIFFICULTIES.find(d => d === difficulty) ?? 'medium',
-            generatedAt: new Date().toISOString(),
-        };
-        try {
-            await prisma.errorItem.update({
-                where: { id: errorItemId },
-                data: { lastPractice: serializeLastPractice(lastPractice) }
-            });
-        } catch (error) {
-            logger.warn({ error }, 'Failed to cache last practice question');
+        // 默认走分阶段规划-验算-审核；设置中可切回原来的一次生成，便于对比
+        if (owner?.variantPipelineEnabled !== false) {
+            const started = await startItemPipeline(session.user, errorItemId, language || 'zh', targetDifficulty, { skipQuota: true });
+            if (!started) return notFound("Item not found");
+            const run = await prisma.variantRun.findFirst({ where: { id: started.id, userId: session.user.id }, include: { items: { orderBy: { index: 'asc' } } } });
+            return NextResponse.json({ pipeline: true, run: run ? serializeRun(run) : { id: started.id } });
         }
 
-        return NextResponse.json({ ...similarQuestion, difficulty: lastPractice.difficulty, generatedAt: lastPractice.generatedAt });
+        const generated = await trackBackgroundTask(
+            { userId: session.user.id, kind: 'practice', subject: describeQuestion(errorItemWithSubject), link: `/error-items/${errorItemId}` },
+            () => startLegacyRun({
+                user: session.user,
+                errorItemId,
+                question: errorItemWithSubject.questionText || "",
+                knowledgePoints: tags,
+                language: language || 'zh',
+                difficulty: targetDifficulty,
+                gradeSemester: errorItemWithSubject.gradeSemester,
+                figureSvg: errorItemWithSubject.figureSvg,
+                subjectName: errorItemWithSubject.subject?.name || "其他",
+            })
+        );
+        return NextResponse.json({ ...generated, pipeline: false });
     } catch (error) {
         logger.error({ error }, 'Error generating practice');
         const errorMessage = error instanceof Error ? error.message : "Failed to generate practice question";

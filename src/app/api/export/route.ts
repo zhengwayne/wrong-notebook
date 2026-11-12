@@ -72,6 +72,12 @@ export async function GET(req: Request) {
         });
 
         // 与动画讲解文字一致的云端语音（MP3），导入后无需重新合成
+        const variantRuns = await prisma.variantRun.findMany({
+            where: exportAll ? {} : { userId: user.id },
+            include: { items: { orderBy: { index: 'asc' } }, stages: { orderBy: { createdAt: 'asc' } } },
+            orderBy: { startedAt: 'asc' },
+        });
+
         const ttsSpeeches = await exportSpeeches(errorItems.flatMap((item) => [
             ...(item.svgAnimation ? [{ language: 'zh' as const, svg: item.svgAnimation }] : []),
             ...(item.svgAnimationEn ? [{ language: 'en' as const, svg: item.svgAnimationEn }] : []),
@@ -95,6 +101,7 @@ export async function GET(req: Request) {
                 masteryThreshold: user.masteryThreshold,
                 enableGeogebra: user.enableGeogebra,
                 enableSvgAnimation: user.enableSvgAnimation,
+                variantPipelineEnabled: user.variantPipelineEnabled,
                 themePreference: user.themePreference,
             },
             subjects,
@@ -103,6 +110,7 @@ export async function GET(req: Request) {
             reviewSchedules,
             practiceRecords,
             examPapers,
+            variantRuns,
             ttsSpeeches,
         };
 
@@ -115,6 +123,7 @@ export async function GET(req: Request) {
             reviewSchedulesCount: reviewSchedules.length,
             practiceRecordsCount: practiceRecords.length,
             examPapersCount: examPapers.length,
+            variantRunsCount: variantRuns.length,
             ttsSpeechesCount: ttsSpeeches.length,
         }, 'Data export completed');
 

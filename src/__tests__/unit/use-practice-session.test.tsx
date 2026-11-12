@@ -175,4 +175,13 @@ describe('usePracticeSession', () => {
         expect(session.showAnswer).toBe(false);
         expect(session.questionVersion).toBe(2);
     });
+
+    it('流水线生成进入待审核，不展示未批准的题目', async () => {
+        mocks.post.mockResolvedValueOnce({ pipeline: true, run: { id: 'run-9', items: [{ status: 'pending_review' }] } });
+        await render();
+        await act(async () => session.generateQuestion());
+        expect(session.pendingReview).toEqual({ runId: 'run-9', status: 'pending_review' });
+        expect(session.question).toBeNull();
+        expect(session.loading).toBe(false);
+    });
 });

@@ -103,6 +103,8 @@ export interface AIService {
     analyzeImage(imageBase64: string, mimeType?: string, language?: 'zh' | 'en', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestionFromSchema>;
     /** originalFigureSvg：原题的 SVG 配图，新题需要配图时据此重新绘制 */
     generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language?: 'zh' | 'en', difficulty?: DifficultyLevel, gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestionFromSchema>;
+    /** 变式流水线等结构化 JSON 调用，同时返回提供商给出的用量 */
+    completeJson(request: { system: string; user: string }): Promise<StructuredCompletion>;
     /** 根据题目图片单独重绘配图 */
     generateFigureSvg(imageBase64: string, mimeType: string, questionText?: string | null): Promise<FigureResult>;
     reanswerQuestion(questionText: string, language?: 'zh' | 'en', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult>;
@@ -120,6 +122,19 @@ export interface AIService {
     suggestKnowledgeTags(input: TagSuggestionInput): Promise<TagSuggestionResult>;
     /** 读卷：识别答案卷或学生多页答卷（主观题给出建议分） */
     readExamPaper(input: ExamPaperReadInput): Promise<ExamPaperReadResult>;
+}
+
+export interface TokenUsage {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    cost?: number;
+}
+
+export interface StructuredCompletion {
+    data: unknown;
+    text: string;
+    usage?: TokenUsage;
 }
 
 export interface AIConfig {

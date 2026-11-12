@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import { parseJsonCompletion, usageFromAnthropic } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateReanswerRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
 import type { NarrationSegment } from '../svg-animation';
@@ -250,6 +251,28 @@ export class AnthropicProvider implements AIService {
             this.handleError(error);
             throw error;
         }
+    }
+
+
+    async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
+        const response = await withTruncationRetry(async (limit) => {
+            const message = await this.client.messages.create({
+                model: this.model,
+                max_tokens: limit,
+                system: request.system,
+                messages: [{ role: 'user', content: request.user }],
+            });
+            const text = message.content
+                .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+                .map((block) => block.text)
+                .join('');
+            return {
+                text,
+                usage: message.usage,
+                choices: [{ finish_reason: message.stop_reason === 'max_tokens' ? 'length' : message.stop_reason, message: { content: text } }],
+            };
+        }, 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+        return parseJsonCompletion(response.text, usageFromAnthropic(response.usage));
     }
 
     async reanswerQuestion(questionText: string, language: 'zh' | 'en' = 'zh', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult> {

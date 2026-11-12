@@ -30,6 +30,7 @@ model User {
   confirmBeforeImport Boolean @default(false) // 导入题目前是否进入人工校对页
   questionDuplicateThreshold Float @default(90) // 百分比，相似度严格大于此值时判重
   masteryThreshold Int @default(50) // 百分比，掌握概率达到此值视为已掌握
+  variantPipelineEnabled Boolean @default(true) // 举一反三走分阶段流水线；关闭后使用原来的一次生成
   enableGeogebra Boolean @default(false) // 是否显示 GeoGebra 动态演示
   enableSvgAnimation Boolean @default(true) // 是否显示 SVG 动画讲解
   themePreference String @default("system") // 界面主题：system 跟随系统、light 浅色、dark 深色
@@ -42,6 +43,7 @@ model User {
   aiUsages   AiUsage[]
   gradingClasses GradingClass[]
   gradingTasks   GradingTask[]
+  variantRuns    VariantRun[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -146,7 +148,8 @@ model ErrorItem {
   reviewSchedules ReviewSchedule[]
   practiceRecords PracticeRecord[]
   examQuestions   ExamQuestion[]
-  
+  variantRuns     VariantRun[]
+
   // 列表、统计都按用户取错题并按时间排序；SQLite 不会自动给外键建索引
   @@index([userId, createdAt])
   @@index([subjectId])
@@ -196,6 +199,7 @@ model PracticeRecord {
   @@index([errorItemId, createdAt])
   @@index([examQuestionId])
   @@index([userId, createdAt])
+  variantItems VariantItem[]
 }
 
 // 随机错题试卷
@@ -213,6 +217,7 @@ model ExamPaper {
   resultsRecordedAt DateTime?
 
   questions  ExamQuestion[]
+  variantRuns VariantRun[]
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -236,6 +241,7 @@ model ExamQuestion {
   error         String?
   practiceRecordId String? // [DEPRECATED] 旧版一对一关联，部署校验要求保留已有列，改用 PracticeRecord.examQuestionId
   practiceRecords PracticeRecord[]
+  variantItems    VariantItem[]
 
   @@index([paperId, order])
 }
@@ -261,6 +267,7 @@ model GradingClass {
   name      String
   students  GradingStudent[]
   tasks     GradingTask[]
+  variantRuns VariantRun[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -276,6 +283,7 @@ model GradingStudent {
   studentNo   String?  // 学号，班级内唯一；导入名册时按 班级+学号 更新
   order       Int      @default(0)
   submissions GradingSubmission[]
+  variantRuns VariantRun[]
   createdAt   DateTime @default(now())
 
   @@unique([classId, studentNo])
@@ -368,3 +376,98 @@ model GradingResult {
   @@unique([submissionId, keyQuestionId])
   @@index([keyQuestionId])
 }
+
+// ===== 变式题分阶段生成与审核（借鉴 DeepTutor 先规划再逐题生成的流程，独立实现） =====
+
+model VariantRun {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String   // practice | personalized_set | topic | class_topic | legacy
+  mode        String   // pipeline | legacy
+  status      String   @default("running") // running | completed | failed
+  language    String   @default("zh")
+  targetDifficulty String?
+  requestedCount Int   @default(1)
+  title       String?
+  errorItemId String?
+  errorItem   ErrorItem? @relation(fields: [errorItemId], references: [id], onDelete: SetNull)
+  studentId   String?
+  student     GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  classId     String?
+  class       GradingClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  subjectId   String?
+  examPaperId String?
+  examPaper   ExamPaper? @relation(fields: [examPaperId], references: [id], onDelete: SetNull)
+  inputSnapshot   String? // JSON：脱敏原题、知识点、错因、目标难度等
+  weaknessProfile String? // JSON：学情弱点画像
+  topicSuggestion String? // JSON：专题课题建议
+  totalLatencyMs  Int?
+  promptTokens    Int?
+  completionTokens Int?
+  totalTokens     Int?
+  cost            Float?
+  error           String?
+  startedAt       DateTime @default(now())
+  finishedAt      DateTime?
+  items           VariantItem[]
+  stages          VariantStageLog[]
+
+  @@index([userId, startedAt])
+  @@index([errorItemId])
+  @@index([studentId])
+  @@index([classId])
+}
+
+model VariantItem {
+  id          String   @id @default(cuid())
+  runId       String
+  run         VariantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  index       Int
+  status      String   @default("pending_review") // verified | pending_review | rejected | approved
+  plan        String?  // JSON：变什么、针对哪项技能、规划难度
+  questionText String?
+  answerText   String?
+  analysis     String?
+  figureSvg    String?
+  knowledgePoints String? // JSON 数组
+  plannedDifficulty String?
+  checkedDifficulty String?
+  difficultyConsistent Boolean?
+  verification String? // JSON：验算与重解证据
+  similarity   Float?
+  similarTo    String?
+  sourceItemId String? // 生成所依据的原错题
+  practiceRecordId String? @unique
+  practiceRecord   PracticeRecord? @relation(fields: [practiceRecordId], references: [id], onDelete: SetNull)
+  examQuestionId String?
+  examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
+  reviewNote   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  stages       VariantStageLog[]
+
+  @@index([runId, index])
+  @@index([status])
+}
+
+model VariantStageLog {
+  id        String   @id @default(cuid())
+  runId     String
+  run       VariantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  itemId    String?
+  item      VariantItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  stage     String   // plan | generate | verify | dedup | difficulty | resolve | review | topic | profile
+  status    String   // ok | failed | skipped | review
+  latencyMs Int?
+  promptTokens Int?
+  completionTokens Int?
+  totalTokens Int?
+  cost      Float?
+  detail    String?  // JSON
+  createdAt DateTime @default(now())
+
+  @@index([runId, createdAt])
+}
+

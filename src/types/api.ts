@@ -138,6 +138,7 @@ export interface UserProfile {
     fixedGradeSemester?: string | null;
     enableGeogebra?: boolean;
     enableSvgAnimation?: boolean;
+    variantPipelineEnabled?: boolean;
     /** 界面主题偏好：system / light / dark */
     themePreference?: string;
     questionDuplicateThreshold?: number;

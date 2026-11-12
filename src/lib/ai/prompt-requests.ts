@@ -6,6 +6,8 @@ import {
     generateGeogebraPrompt, generateMasteryPrompt, generateGradingPrompt,
     generateTagSuggestPrompt, generateFigurePrompt, generateSvgAnimationPrompt,
     generateSvgNarrationPrompt, generateLatexFixPrompt, generateGradeRecognitionPrompt, generateExamPaperReadPrompt,
+    generateVariantPlanPrompt, generateVariantQuestionPrompt, generateVariantResolvePrompt,
+    generateVariantDifficultyPrompt, generateTopicSuggestionPrompt,
     SVG_ANIMATION_REQUEST, SVG_NARRATION_REQUEST,
 } from './prompts';
 import type { PromptOptions, PromptRequest, LatexFixField } from './prompts';
@@ -133,4 +135,24 @@ export function generateExamPaperReadRequest(input: ExamPaperReadInput): PromptR
         input.mode === 'answer_key' ? '请识别图片中的标准答案。'
             : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。' : '请识别图片中学生的作答并按规则评分。',
     );
+}
+
+export function generateVariantPlanRequest(data: Record<string, unknown>, language: 'zh' | 'en'): PromptRequest {
+    return createPromptRequest(generateVariantPlanPrompt(language), data, language === 'en' ? 'Plan the variants as JSON.' : '请按规则规划变式并输出 JSON。');
+}
+
+export function generateVariantQuestionRequest(data: Record<string, unknown>, language: 'zh' | 'en'): PromptRequest {
+    return createPromptRequest(generateVariantQuestionPrompt(language), data, language === 'en' ? 'Generate one variant question as JSON.' : '请按规则生成一道变式题并输出 JSON。');
+}
+
+export function generateVariantResolveRequest(data: Record<string, unknown>, language: 'zh' | 'en'): PromptRequest {
+    return createPromptRequest(generateVariantResolvePrompt(language), data, language === 'en' ? 'Solve the question as JSON.' : '请独立解题并输出 JSON。');
+}
+
+export function generateVariantDifficultyRequest(data: Record<string, unknown>, language: 'zh' | 'en'): PromptRequest {
+    return createPromptRequest(generateVariantDifficultyPrompt(language), data, language === 'en' ? 'Judge difficulty as JSON.' : '请判断题目难度并输出 JSON。');
+}
+
+export function generateTopicSuggestionRequest(data: Record<string, unknown>, language: 'zh' | 'en'): PromptRequest {
+    return createPromptRequest(generateTopicSuggestionPrompt(language), data, language === 'en' ? 'Design the topic as JSON.' : '请设计专题课题并输出 JSON。');
 }

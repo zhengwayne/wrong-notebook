@@ -15,6 +15,14 @@ const mocks = vi.hoisted(() => ({
         findUnique: vi.fn(),
         delete: vi.fn(),
     },
+    mockPrismaUser: {
+        findUnique: vi.fn(),
+    },
+    mockPrismaVariantRun: {
+        create: vi.fn(),
+        findFirst: vi.fn(),
+    },
+    startItemPipeline: vi.fn(),
     getCurrentUser: vi.fn(),
     scheduleMasteryEvaluation: vi.fn(),
     mockAIService: {
@@ -35,6 +43,8 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         errorItem: mocks.mockPrismaErrorItem,
         practiceRecord: mocks.mockPrismaPracticeRecord,
+        user: mocks.mockPrismaUser,
+        variantRun: mocks.mockPrismaVariantRun,
     },
 }));
 
@@ -59,6 +69,11 @@ vi.mock('@/lib/mastery', async (importOriginal) => ({
     scheduleMasteryEvaluation: mocks.scheduleMasteryEvaluation,
 }));
 
+vi.mock('@/lib/variant/service', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/variant/service')>()),
+    startItemPipeline: mocks.startItemPipeline,
+}));
+
 // Import after mocks
 import { GET as GENERATE_GET, POST as GENERATE_POST } from '@/app/api/practice/generate/route';
 import { POST as RECORD_POST } from '@/app/api/practice/record/route';
@@ -70,6 +85,8 @@ describe('/api/practice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
+        mocks.mockPrismaUser.findUnique.mockResolvedValue({ variantPipelineEnabled: false });
+        mocks.mockPrismaVariantRun.create.mockResolvedValue({ id: 'legacy-run-1' });
     });
 
     describe('GET /api/practice/generate (读取暂存的举一反三题目)', () => {
@@ -158,6 +175,39 @@ describe('/api/practice', () => {
             expect(data.subject).toBe('数学');
             expect(data.difficulty).toBe('medium');
             expect(typeof data.generatedAt).toBe('string');
+            expect(data.pipeline).toBe(false);
+            expect(data.runId).toBe('legacy-run-1');
+        });
+
+        it('开启分阶段流水线时进入审核队列，不直接写入练习题', async () => {
+            mocks.mockPrismaErrorItem.findUnique.mockResolvedValue(mockErrorItem);
+            mocks.mockPrismaUser.findUnique.mockResolvedValue({ variantPipelineEnabled: true });
+            mocks.startItemPipeline.mockResolvedValue({ id: 'run-pipe-1' });
+            mocks.mockPrismaVariantRun.findFirst.mockResolvedValue({
+                id: 'run-pipe-1', kind: 'practice', mode: 'pipeline', status: 'completed',
+                items: [{ id: 'item-1', index: 0, status: 'pending_review', questionText: '解方程 3x-1=8' }],
+            });
+
+            const request = new Request('http://localhost/api/practice/generate', {
+                method: 'POST',
+                body: JSON.stringify({ errorItemId: 'error-item-1', language: 'zh', difficulty: 'medium' }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const response = await GENERATE_POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(data.pipeline).toBe(true);
+            expect(data.run.id).toBe('run-pipe-1');
+            expect(mocks.startItemPipeline).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'user-123' }),
+                'error-item-1',
+                'zh',
+                'medium',
+                { skipQuota: true },
+            );
+            expect(mocks.mockAIService.generateSimilarQuestion).not.toHaveBeenCalled();
+            expect(mocks.mockPrismaErrorItem.update).not.toHaveBeenCalled();
         });
 
         it('应该暂存最近一次生成的题目与解答', async () => {

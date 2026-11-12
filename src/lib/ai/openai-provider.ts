@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
+import type { StructuredCompletion } from "./types";
+import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
 import type { NarrationSegment } from '../svg-animation';
@@ -383,6 +385,20 @@ export class OpenAIProvider implements AIService {
             this.handleError(error);
             throw error;
         }
+    }
+
+
+    async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
+        const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+            model: this.model,
+            messages: [
+                { role: "system", content: request.system },
+                { role: "user", content: request.user },
+            ],
+            max_tokens: maxTokens,
+        }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+        const text = response.choices[0]?.message?.content || "";
+        return parseJsonCompletion(text, usageFromOpenAi(response.usage));
     }
 
     async reanswerQuestion(questionText: string, language: 'zh' | 'en' = 'zh', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult> {

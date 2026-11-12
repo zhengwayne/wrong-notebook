@@ -12,7 +12,7 @@ const logger = createLogger('ai-quota');
 export const AI_USAGE_KINDS = ['analyze', 'reanswer', 'practice', 'grade', 'figure', 'latex', 'geogebra', 'animation', 'exam', 'retag'] as const;
 export type AiUsageKind = typeof AI_USAGE_KINDS[number];
 
-interface QuotaUser {
+export interface QuotaUser {
     id: string;
     role?: string | null;
 }

@@ -1,5 +1,6 @@
 import { AzureOpenAI } from "openai";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateReanswerRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
 import type { NarrationSegment } from '../svg-animation';
@@ -299,6 +300,20 @@ export class AzureOpenAIProvider implements AIService {
             this.handleError(error);
             throw error;
         }
+    }
+
+
+    async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
+        const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            model: this.deployment,
+            messages: [
+                { role: "system", content: request.system },
+                { role: "user", content: request.user },
+            ],
+            max_tokens: maxTokens,
+        }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.deployment);
+        const text = response.choices[0]?.message?.content || "";
+        return parseJsonCompletion(text, usageFromOpenAi(response.usage));
     }
 
     async reanswerQuestion(

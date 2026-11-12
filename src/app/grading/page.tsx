@@ -36,10 +36,15 @@ export default function GradingPage() {
                 <PageHeader
                     title={t.grading.title}
                     description={t.grading.subtitle}
-                    actions={!showForm && (
-                        <Button onClick={() => setShowForm(true)} aria-label={t.grading.create}>
-                            <Plus className="h-4 w-4" /><span className="hidden sm:inline">{t.grading.create}</span>
-                        </Button>
+                    actions={(
+                        <div className="flex gap-2">
+                            <Button asChild variant="outline"><Link href="/variants">{t.variants.title}</Link></Button>
+                            {!showForm && (
+                                <Button onClick={() => setShowForm(true)} aria-label={t.grading.create}>
+                                    <Plus className="h-4 w-4" /><span className="hidden sm:inline">{t.grading.create}</span>
+                                </Button>
+                            )}
+                        </div>
                     )}
                 />
                 {showForm && classes && <TaskCreateForm classes={classes} />}
