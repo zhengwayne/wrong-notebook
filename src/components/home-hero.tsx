@@ -77,7 +77,7 @@ export function HomeHero({ notebookCount, itemCount, dueCount, targetNotebook }:
     return (
         <section
             aria-labelledby="home-hero-heading"
-            className="relative overflow-hidden rounded-2xl border border-teal-900/15 bg-gradient-to-br from-[#165e5d] via-[#1b6e6a] to-[#245968] p-5 text-white shadow-lg shadow-teal-950/12 dark:border-teal-300/15 dark:from-[#194748] dark:via-[#1d5554] dark:to-[#1d424f] md:p-7"
+            className="relative overflow-hidden rounded-2xl border border-orange-950/20 bg-gradient-to-br from-[#8f1a00] via-[#a93800] to-[#75201a] p-5 text-white shadow-lg shadow-orange-950/15 dark:border-orange-300/15 dark:from-[#6b2410] dark:via-[#8a3a18] dark:to-[#4a1c16] md:p-7"
         >
             {/* 柔和宣纸暖光与水墨晕染装饰层 */}
             <div
@@ -86,7 +86,7 @@ export function HomeHero({ notebookCount, itemCount, dueCount, targetNotebook }:
             />
             <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -bottom-16 right-20 h-44 w-44 rounded-full bg-teal-200/15 blur-2xl"
+                className="pointer-events-none absolute -bottom-16 right-20 h-44 w-44 rounded-full bg-orange-200/20 blur-2xl"
             />
 
             <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
