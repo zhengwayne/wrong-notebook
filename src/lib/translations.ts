@@ -51,6 +51,13 @@ export const translations = {
             collapse: "Collapse",
             close: "Close",
             confirmTitle: "Please confirm",
+            retry: "Retry",
+            clearSearch: "Clear search",
+            clearFilters: "Clear filters",
+            errorBoundaryTitle: "Something went wrong",
+            errorBoundaryDesc: "An unexpected error occurred in this view. Please try reloading.",
+            reloadView: "Reload view",
+            loadErrorDesc: "Could not fetch data. Check your network connection and try again.",
             cropper: {
                 title: "Crop Image",
                 hint: "💡 Drag to adjust the crop area; scroll or pinch to zoom",
@@ -113,6 +120,9 @@ export const translations = {
             grading: "Grading",
             admin: "Admin",
             menu: "Account",
+            skipToContent: "Skip to main content",
+            primaryNav: "Primary navigation",
+            mobileNav: "Bottom navigation",
         },
         theme: {
             toggle: "Theme",
@@ -245,6 +255,9 @@ export const translations = {
             selectedCount: "{count} selected",
             confirmBatchDelete: "Delete {count} items?",
             batchDeleteSuccess: "Deleted successfully",
+            emptyFiltered: "No matching mistakes",
+            emptyFilteredHint: "No questions match your current search or filter criteria.",
+            inputModeLabel: "Question entry mode",
         },
         notebooks: {
             title: "My Notebooks",
@@ -495,6 +508,8 @@ export const translations = {
             allGrades: "All grades",
             allChapters: "All chapters",
             allKnowledgePoints: "All tags",
+            activeFilters: "Active filters",
+            removeFilter: "Remove filter: {label}",
         },
         setup: {
             pageTitle: "Setup Wizard",
@@ -1008,6 +1023,8 @@ export const translations = {
             prev: "Previous page",
             next: "Next page",
             last: "Last page",
+            navLabel: "Pagination",
+            pageNumber: "Page {page}",
         },
         shortId: {
             label: "ID",
@@ -1638,6 +1655,13 @@ export const translations = {
             collapse: "收起",
             close: "关闭",
             confirmTitle: "请确认",
+            retry: "重试",
+            clearSearch: "清空搜索",
+            clearFilters: "清空筛选",
+            errorBoundaryTitle: "界面出现异常",
+            errorBoundaryDesc: "当前视图渲染遇到意外问题，请尝试重新加载。",
+            reloadView: "重新加载",
+            loadErrorDesc: "无法获取数据，请检查网络连接或稍后重试。",
             cropper: {
                 title: "裁剪图片",
                 hint: "💡 拖动选框调整裁剪区域，滚轮或双指可缩放图片",
@@ -1700,6 +1724,9 @@ export const translations = {
             grading: "改卷",
             admin: "管理",
             menu: "账户",
+            skipToContent: "跳至主要内容",
+            primaryNav: "主导航",
+            mobileNav: "底部导航",
         },
         theme: {
             toggle: "主题",
@@ -1832,6 +1859,9 @@ export const translations = {
             selectedCount: "已选 {count} 项",
             confirmBatchDelete: "确定删除 {count} 道错题？",
             batchDeleteSuccess: "删除成功",
+            emptyFiltered: "没有匹配的错题",
+            emptyFilteredHint: "当前搜索词或筛选条件下暂无结果，可尝试调整或清空筛选。",
+            inputModeLabel: "录题方式切换",
         },
         notebooks: {
             title: "我的错题本",
@@ -2082,6 +2112,8 @@ export const translations = {
             allGrades: "全部年级",
             allChapters: "全部章节",
             allKnowledgePoints: "全部知识点",
+            activeFilters: "当前筛选",
+            removeFilter: "移除筛选：{label}",
         },
         setup: {
             pageTitle: "安装向导",
@@ -2594,6 +2626,8 @@ export const translations = {
             prev: "上一页",
             next: "下一页",
             last: "末页",
+            navLabel: "分页导航",
+            pageNumber: "第 {page} 页",
         },
         shortId: {
             label: "ID",

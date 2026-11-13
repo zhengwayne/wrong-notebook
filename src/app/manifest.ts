@@ -10,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#ffffff',
-        theme_color: '#4f46e5',
+        background_color: '#faf7f2',
+        theme_color: '#176b69',
         // 手机竖屏、平板横竖屏都可使用，方向交给系统
         orientation: 'any',
         categories: ['education', 'productivity'],
