@@ -33,15 +33,15 @@ function StatTile({ href, icon: Icon, label, shortLabel, value, highlight = fals
         <Link
             href={href}
             className={cn(
-                "group rounded-xl border px-3.5 py-3 backdrop-blur-sm transition-all outline-none hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-white/90",
+                "group rounded-xl border px-3.5 py-3 transition-all outline-none hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary-foreground/80",
                 highlight
-                    ? "border-amber-300/35 bg-amber-400/18 hover:bg-amber-400/25"
-                    : "border-white/15 bg-white/12 hover:bg-white/20"
+                    ? "border-primary-foreground/35 bg-primary-foreground/20 hover:bg-primary-foreground/25"
+                    : "border-primary-foreground/20 bg-primary-foreground/10 hover:bg-primary-foreground/15"
             )}
         >
-            <div className="flex items-center gap-1.5 text-xs leading-tight text-white/85">
+            <div className="flex items-center gap-1.5 text-xs leading-tight text-primary-foreground/85">
                 <Icon
-                    className={cn("h-3.5 w-3.5 shrink-0", highlight && "text-amber-200")}
+                    className="h-3.5 w-3.5 shrink-0"
                     aria-hidden="true"
                 />
                 {shortLabel ? (
@@ -53,14 +53,14 @@ function StatTile({ href, icon: Icon, label, shortLabel, value, highlight = fals
                     <span className="min-w-0 whitespace-normal break-words">{label}</span>
                 )}
             </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-white">
+            <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-primary-foreground">
                 {value ?? "–"}
             </div>
         </Link>
     );
 }
 
-/** 首页顶部欢迎区：温润墨青手账横幅 + 错题本/错题统计 + 琥珀今日待复习提醒 */
+/** 首页顶部欢迎区：纯色主色横幅 + 错题本/错题统计 + 今日待复习提醒 */
 export function HomeHero({ notebookCount, itemCount, dueCount, targetNotebook }: HomeHeroProps) {
     const { t, language } = useLanguage();
     const { data: session } = useSession();
@@ -77,27 +77,17 @@ export function HomeHero({ notebookCount, itemCount, dueCount, targetNotebook }:
     return (
         <section
             aria-labelledby="home-hero-heading"
-            className="relative overflow-hidden rounded-2xl border border-orange-950/20 bg-gradient-to-br from-[#8f1a00] via-[#a93800] to-[#75201a] p-5 text-white shadow-lg shadow-orange-950/15 dark:border-orange-300/15 dark:from-[#6b2410] dark:via-[#8a3a18] dark:to-[#4a1c16] md:p-7"
+            className="rounded-2xl border border-primary/15 bg-primary p-5 text-primary-foreground shadow-lg shadow-primary/10 md:p-7"
         >
-            {/* 柔和宣纸暖光与水墨晕染装饰层 */}
-            <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -right-12 -top-14 h-48 w-48 rounded-full bg-amber-200/15 blur-3xl"
-            />
-            <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -bottom-16 right-20 h-44 w-44 rounded-full bg-orange-200/20 blur-2xl"
-            />
-
-            <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
                 <div className="space-y-2">
                     <h1 id="home-hero-heading" className="text-xl font-bold tracking-tight md:text-2xl">
                         {greeting}{name && `${language === "zh" ? "，" : ", "}${name}`}
                     </h1>
-                    <p className="max-w-md text-sm leading-relaxed text-white/85">{t.home.heroSubtitle}</p>
+                    <p className="max-w-md text-sm leading-relaxed text-primary-foreground/85">{t.home.heroSubtitle}</p>
                     {targetNotebook && (
-                        <p className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-medium">
-                            <Target className="h-3.5 w-3.5 shrink-0 text-amber-200" aria-hidden="true" />
+                        <p className="inline-flex items-center gap-1.5 rounded-full border border-primary-foreground/20 bg-primary-foreground/10 px-3 py-1 text-xs font-medium">
+                            <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                             <span className="truncate">{t.home.targetNotebook.replace("{name}", targetNotebook)}</span>
                         </p>
                     )}

@@ -78,7 +78,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         root.classList.toggle("dark", theme === "dark");
         root.style.colorScheme = theme;
         // Web Manifest 只能声明单一 theme_color，这里按当前主题同步浏览器/PWA 工具栏颜色
-        const color = theme === "dark" ? "#16100d" : "#a93800";
+        const color = theme === "dark" ? "#16141c" : "#6b5ca5";
         let meta = document.querySelector('meta[name="theme-color"]');
         if (!meta) {
             meta = document.createElement("meta");

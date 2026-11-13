@@ -10,9 +10,9 @@ export default function manifest(): MetadataRoute.Manifest {
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#fbf7f2',
+        background_color: '#f8f7fc',
         // Web Manifest 规范只允许单一 theme_color；安装启动画面使用浅色主色，运行时由 ThemeProvider 按浅/深色同步 meta theme-color
-        theme_color: '#a93800',
+        theme_color: '#6b5ca5',
         // 手机竖屏、平板横竖屏都可使用，方向交给系统
         orientation: 'any',
         categories: ['education', 'productivity'],
