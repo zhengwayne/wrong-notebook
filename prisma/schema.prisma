@@ -44,6 +44,8 @@ model User {
   gradingClasses GradingClass[]
   gradingTasks   GradingTask[]
   variantRuns    VariantRun[]
+  knowledgeMasteries KnowledgeMastery[]
+  learningPaths LearningPath[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -471,3 +473,69 @@ model VariantStageLog {
   @@index([runId, createdAt])
 }
 
+
+// ===== 学习路径：知识点掌握模型与分步路径（借鉴 DeepTutor Mastery Path 的阶段门与复述复习，独立实现） =====
+
+model KnowledgeMastery {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentKey     String   // "self" 或花名册学生 id
+  knowledgePoint String
+  pKnown         Float    @default(0.3) // BKT 掌握概率
+  retrievability Float    @default(1)
+  stabilityDays  Float    @default(1)
+  evidenceCount  Int      @default(0)
+  lastCorrect    Boolean?
+  lastObservedAt DateTime?
+  dueAt          DateTime?
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, studentKey, knowledgePoint])
+  @@index([userId, studentKey])
+  @@index([userId, dueAt])
+}
+
+model LearningPath {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentKey   String
+  studentName  String
+  classId      String?
+  version      Int      @default(1)
+  status       String   @default("active") // active | completed
+  evidenceHash String
+  planReason   String?
+  aiSuggestCount Int    @default(0)
+  aiSuggestedAt  DateTime?
+  plannedAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  steps        LearningPathStep[]
+
+  @@unique([userId, studentKey])
+  @@index([userId, classId])
+}
+
+model LearningPathStep {
+  id              String    @id @default(cuid())
+  pathId          String
+  path            LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  position        Int
+  type            String    // review_explanation | variant_practice | spaced_review | checkpoint
+  title           String
+  reason          String
+  knowledgePoints String    // JSON 数组
+  errorItemIds    String?   // JSON 数组
+  variantRunId    String?
+  status          String    @default("pending") // pending | in_progress | completed | skipped
+  locked          Boolean   @default(false)
+  dueAt           DateTime?
+  href            String?
+  teacherNote     String?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([pathId, position])
+}

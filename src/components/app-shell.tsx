@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { BarChart3, BookOpen, CalendarCheck, ClipboardCheck, FileText, LogOut, PlusCircle, Shield } from "lucide-react";
+import { BarChart3, BookOpen, CalendarCheck, ClipboardCheck, FileText, LogOut, PlusCircle, Route, Shield } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 /** 登录、注册与打印页不显示导航 */
 const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
 
-type NavKey = "home" | "notebooks" | "review" | "stats" | "exams" | "grading";
+type NavKey = "home" | "notebooks" | "review" | "learn" | "stats" | "exams" | "grading";
 
 interface NavItem {
     key: NavKey;
@@ -35,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
         match: (p) => p.startsWith("/notebooks") || p.startsWith("/error-items") || p.startsWith("/practice"),
     },
     { key: "review", href: "/review", icon: CalendarCheck, match: (p) => p.startsWith("/review") },
+    { key: "learn", href: "/learn", icon: Route, match: (p) => p.startsWith("/learn") },
     { key: "stats", href: "/stats", icon: BarChart3, match: (p) => p.startsWith("/stats") || p.startsWith("/tags") },
     { key: "exams", href: "/exams", icon: FileText, match: (p) => p.startsWith("/exams") },
     { key: "grading", href: "/grading", icon: ClipboardCheck, match: (p) => p.startsWith("/grading") },
