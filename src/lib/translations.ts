@@ -127,6 +127,10 @@ export const translations = {
             skipToContent: "Skip to main content",
             primaryNav: "Primary navigation",
             mobileNav: "Bottom navigation",
+            more: "More",
+            moreMenu: "More destinations",
+            learnShort: "Learn",
+            variants: "Variants",
         },
         theme: {
             toggle: "Theme",
@@ -1793,6 +1797,10 @@ export const translations = {
             skipToContent: "跳至主要内容",
             primaryNav: "主导航",
             mobileNav: "底部导航",
+            more: "更多",
+            moreMenu: "更多功能",
+            learnShort: "学习",
+            variants: "变式审核",
         },
         theme: {
             toggle: "主题",

@@ -34,6 +34,15 @@ import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import type { AppConfig } from "@/types/api";
 
+export const OPEN_SETTINGS_EVENT = "wn:open-settings";
+
+/** 让其他入口（如移动端「更多」）打开已挂载的设置对话框，避免再挂一份 */
+export function requestOpenSettings() {
+    if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(OPEN_SETTINGS_EVENT));
+    }
+}
+
 interface SettingsTabProps {
     value: string;
     icon: ReactNode;
@@ -78,6 +87,12 @@ export function SettingsDialog() {
             fetchSettings();
         }
     }, [open, fetchSettings]);
+
+    useEffect(() => {
+        const onOpen = () => setOpen(true);
+        window.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+        return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    }, []);
 
     const handleSaveSettings = async () => {
         const validationError = validateAiConfig(config, t);
