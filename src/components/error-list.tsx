@@ -79,17 +79,17 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         paperLevel: paperLevelFilter,
     }), [subjectId, debouncedSearch, masteryFilter, timeFilter, selectedTag, gradeFilter, chapterFilter, paperLevelFilter]);
 
-    const handleFilterChange = ({ gradeSemester, chapter, tag }: KnowledgeFilterChange) => {
+    const handleFilterChange = (change: KnowledgeFilterChange) => {
+        const { gradeSemester, chapter, tag } = change;
         if (gradeSemester !== undefined) setGradeFilter(gradeSemester);
         if (chapter !== undefined) setChapterFilter(chapter);
-        setSelectedTag(tag === undefined ? null : tag);
+        // 仅在调用方显式传入 tag 时才更新，避免章节筛选/清除顺带清空标签
+        if ("tag" in change) setSelectedTag(tag ?? null);
 
-        if (!gradeSemester) {
-            setGradeFilter("");
+        // 清空年级时级联清空章节与标签
+        if (gradeSemester !== undefined && !gradeSemester) {
             setChapterFilter("");
             setSelectedTag(null);
-        } else if (!chapter) {
-            setChapterFilter("");
         }
         setPage(1);
     };
@@ -123,13 +123,20 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             chips.push({ key: "grade", label: gradeFilter, onRemove: () => handleFilterChange({ gradeSemester: "" }) });
         }
         if (chapterFilter) {
-            chips.push({ key: "chapter", label: chapterFilter, onRemove: () => handleFilterChange({ gradeSemester: gradeFilter, chapter: "" }) });
+            chips.push({ key: "chapter", label: chapterFilter, onRemove: () => handleFilterChange({ chapter: "" }) });
         }
         if (selectedTag) {
             chips.push({ key: "tag", label: selectedTag, onRemove: () => setSelectedTag(null) });
         }
+        if (debouncedSearch.trim()) {
+            chips.push({
+                key: "search",
+                label: `${t.common.searchLabel}: ${debouncedSearch.trim()}`,
+                onRemove: () => setSearchInput(""),
+            });
+        }
         return chips;
-    }, [masteryFilter, timeFilter, paperLevelFilter, gradeFilter, chapterFilter, selectedTag, t]);
+    }, [masteryFilter, timeFilter, paperLevelFilter, gradeFilter, chapterFilter, selectedTag, debouncedSearch, t]);
 
     const hasActiveQuery = activeChips.length > 0 || debouncedSearch.trim().length > 0;
 

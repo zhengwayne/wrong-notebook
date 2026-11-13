@@ -37,7 +37,7 @@ export function FeedbackHost() {
     return (
         <>
             <div
-                aria-label="Notifications"
+                aria-label={t.common.notifications}
                 className="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4 print:hidden"
             >
                 {toasts.map((item) => {

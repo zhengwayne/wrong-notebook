@@ -70,7 +70,6 @@ export default function NotebookDetailPage() {
 
     const handleDelete = async () => {
         if (!notebook) return;
-        setDeleting(true);
         try {
             const latest = await apiClient.get<Notebook>(`/api/notebooks/${notebook.id}`);
             if ((latest._count?.errorItems || 0) > 0) {
@@ -78,6 +77,7 @@ export default function NotebookDetailPage() {
                 return;
             }
             if (!(await confirmDialog((t.notebooks?.deleteConfirm || "Are you sure?").replace("{name}", notebook.name), { destructive: true }))) return;
+            setDeleting(true);
             await apiClient.delete(`/api/notebooks/${notebook.id}`);
             router.replace("/notebooks");
         } catch (error) {

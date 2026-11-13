@@ -52,6 +52,8 @@ export const translations = {
             close: "Close",
             confirmTitle: "Please confirm",
             retry: "Retry",
+            notifications: "Notifications",
+            searchLabel: "Search",
             clearSearch: "Clear search",
             clearFilters: "Clear filters",
             errorBoundaryTitle: "Something went wrong",
@@ -98,6 +100,7 @@ export const translations = {
             notebookCount: "Notebooks",
             itemCount: "Mistakes",
             dueCount: "Due today",
+            dueCountShort: "Due",
             targetNotebook: "Adding to: {name}",
         },
         review: {
@@ -1656,6 +1659,8 @@ export const translations = {
             close: "关闭",
             confirmTitle: "请确认",
             retry: "重试",
+            notifications: "通知",
+            searchLabel: "搜索",
             clearSearch: "清空搜索",
             clearFilters: "清空筛选",
             errorBoundaryTitle: "界面出现异常",
@@ -1702,6 +1707,7 @@ export const translations = {
             notebookCount: "错题本",
             itemCount: "道错题",
             dueCount: "今日待复习",
+            dueCountShort: "待复习",
             targetNotebook: "录入到：{name}",
         },
         review: {

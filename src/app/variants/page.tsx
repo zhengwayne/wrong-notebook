@@ -84,7 +84,7 @@ function VariantsContent() {
     const current = (run && run.id === selected ? run : null) || runs?.find((item) => item.id === selected) || null;
 
     return (
-        <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-5">
                 <PageHeader title={v.title} description={v.subtitle} />
                 <SegmentedControl<Tab> value={tab} onChange={setTab} options={[

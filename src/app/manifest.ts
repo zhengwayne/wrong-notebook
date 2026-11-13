@@ -11,6 +11,7 @@ export default function manifest(): MetadataRoute.Manifest {
         scope: '/',
         display: 'standalone',
         background_color: '#faf7f2',
+        // Web Manifest 规范只允许单一 theme_color；安装启动画面使用浅色主色，运行时由 ThemeProvider 按浅/深色同步 meta theme-color
         theme_color: '#176b69',
         // 手机竖屏、平板横竖屏都可使用，方向交给系统
         orientation: 'any',

@@ -98,7 +98,7 @@ export default function GradingReviewPage() {
     };
 
     return (
-        <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-4">
                 <PageHeader backHref={`/grading/${id}?tab=papers`} title={t.grading.reviewTitle} description={submission.taskTitle}
                     actions={<Button variant="ghost" size="icon" aria-label={t.grading.deletePaper} onClick={remove}><Trash2 className="h-4 w-4" /></Button>} />

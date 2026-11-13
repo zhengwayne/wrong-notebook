@@ -87,6 +87,21 @@ describe("Button 异步加载与无障碍支持", () => {
         const link = container.querySelector("a")!;
         expect(link.getAttribute("href")).toBe("/notebooks");
         expect(link.getAttribute("aria-busy")).toBe("true");
+        expect(link.getAttribute("aria-disabled")).toBe("true");
+        expect(link.className).toContain("pointer-events-none");
+    });
+
+    it("loading 时隐藏原图标，只保留旋转指示", async () => {
+        await mount(
+            <Button loading>
+                <svg data-testid="original-icon" />
+                保存
+            </Button>
+        );
+        const btn = container.querySelector("button")!;
+        expect(btn.querySelector('[data-testid="original-icon"]')?.parentElement?.className).toContain("contents");
+        expect(btn.querySelector(".animate-spin")).not.toBeNull();
+        expect(btn.textContent).toContain("保存");
     });
 });
 

@@ -1,4 +1,7 @@
+"use client";
+
 import * as React from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 
 export interface SkeletonProps extends React.ComponentProps<"div"> {
@@ -42,9 +45,11 @@ const COLUMN_CLASSES: Record<1 | 2 | 3, string> = {
 export function CardSkeletonGrid({
     count = 6,
     columns = 3,
-    label = "Loading...",
+    label,
     className,
 }: CardSkeletonGridProps) {
+    const { t } = useLanguage();
+    const resolved = label ?? t.common.loading;
     return (
         <div
             role="status"
@@ -52,7 +57,7 @@ export function CardSkeletonGrid({
             aria-busy="true"
             className={cn("grid gap-4", COLUMN_CLASSES[columns], className)}
         >
-            <span className="sr-only">{label}</span>
+            <span className="sr-only">{resolved}</span>
             {Array.from({ length: count }, (_, idx) => (
                 <div
                     key={idx}

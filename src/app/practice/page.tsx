@@ -169,7 +169,7 @@ function PracticeContent() {
 
 export default function PracticePage() {
     return (
-        <main className="min-h-screen px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="min-h-screen px-4 py-6 md:px-8 md:py-8">
             <Suspense fallback={
                 <div className="flex justify-center p-8">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

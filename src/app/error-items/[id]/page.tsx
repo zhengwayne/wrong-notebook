@@ -134,7 +134,7 @@ export default function ErrorDetailPage() {
     if (!item) return <EmptyState icon={FileQuestion} title={t.detail.notFound || "Item not found"} className="m-4 md:m-8" />;
 
     return (
-        <main className="min-h-screen">
+        <main id="main-content" tabIndex={-1} className="min-h-screen">
             <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

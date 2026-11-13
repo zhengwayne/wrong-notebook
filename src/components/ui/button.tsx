@@ -62,7 +62,12 @@ function Button({
       <Slot
         data-slot="button"
         aria-busy={loading || undefined}
-        className={cn(buttonVariants({ variant, size, className }))}
+        aria-disabled={disabled || loading || undefined}
+        data-loading={loading || undefined}
+        className={cn(
+          buttonVariants({ variant, size, className }),
+          (disabled || loading) && "pointer-events-none opacity-50"
+        )}
         {...props}
       >
         {children}
@@ -83,7 +88,7 @@ function Button({
       {loading ? (
         <>
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          {!isIconOnly && (loadingText ?? children)}
+          {!isIconOnly && (loadingText ?? <span className="contents [&>svg]:hidden">{children}</span>)}
         </>
       ) : (
         children

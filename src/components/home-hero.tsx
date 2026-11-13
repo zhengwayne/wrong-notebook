@@ -23,11 +23,12 @@ interface StatTileProps {
     href: string;
     icon: LucideIcon;
     label: string;
+    shortLabel?: string;
     value: number | null;
     highlight?: boolean;
 }
 
-function StatTile({ href, icon: Icon, label, value, highlight = false }: StatTileProps) {
+function StatTile({ href, icon: Icon, label, shortLabel, value, highlight = false }: StatTileProps) {
     return (
         <Link
             href={href}
@@ -38,12 +39,19 @@ function StatTile({ href, icon: Icon, label, value, highlight = false }: StatTil
                     : "border-white/15 bg-white/12 hover:bg-white/20"
             )}
         >
-            <div className="flex items-center gap-1.5 text-xs text-white/85">
+            <div className="flex items-center gap-1.5 text-xs leading-tight text-white/85">
                 <Icon
                     className={cn("h-3.5 w-3.5 shrink-0", highlight && "text-amber-200")}
                     aria-hidden="true"
                 />
-                <span className="truncate">{label}</span>
+                {shortLabel ? (
+                    <>
+                        <span className="sm:hidden">{shortLabel}</span>
+                        <span className="hidden sm:inline">{label}</span>
+                    </>
+                ) : (
+                    <span className="min-w-0 whitespace-normal break-words">{label}</span>
+                )}
             </div>
             <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-white">
                 {value ?? "–"}
@@ -102,6 +110,7 @@ export function HomeHero({ notebookCount, itemCount, dueCount, targetNotebook }:
                         href="/review"
                         icon={CalendarCheck}
                         label={t.home.dueCount}
+                        shortLabel={t.home.dueCountShort}
                         value={dueCount}
                         highlight={typeof dueCount === "number" && dueCount > 0}
                     />

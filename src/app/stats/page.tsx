@@ -78,7 +78,7 @@ export default function StatsPage() {
     usePageTitle(t.stats.headerTitle);
 
     return (
-        <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
             <PageHeader
                 title={t.stats?.headerTitle || "Statistics Center"}
                 description={t.stats?.headerDesc || "View your learning progress, data analysis and knowledge points"}

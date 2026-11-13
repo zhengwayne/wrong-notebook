@@ -122,7 +122,7 @@ function PrintPreviewContent() {
             </div>
 
             {/* Print Content */}
-            <div className="max-w-4xl mx-auto p-8 print:p-0">
+            <main id="main-content" tabIndex={-1} className="max-w-4xl mx-auto p-8 print:p-0">
                 {selectedItems.map((item, index) => (
                     <PrintableQuestion key={item.id} item={item} index={index} options={options} reserveAnswerSpace={reserveAnswerSpace} />
                 ))}
@@ -134,7 +134,7 @@ function PrintPreviewContent() {
                             : (t.printPreview?.noItems || 'No matching error items')}
                     </div>
                 )}
-            </div>
+            </main>
         </>
     );
 }

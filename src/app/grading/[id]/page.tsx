@@ -57,7 +57,7 @@ function GradingTaskView() {
     const version = task.submissions.map((submission) => `${submission.id}:${submission.status}:${submission.totalScore}`).join("|");
 
     return (
-        <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-5">
                 <PageHeader
                     backHref="/grading"

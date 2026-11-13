@@ -5,6 +5,7 @@ import { Atom, BookOpen, BookText, ChevronRight, FlaskConical, Globe, Landmark, 
 import type { LucideIcon } from "lucide-react";
 import { NotebookScopeLabel } from "@/components/notebook-scope-label";
 import { resolveNotebookScope } from "@/lib/notebook-scope";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 import type { NotebookSubject } from "@/lib/notebook-scope";
 
@@ -42,9 +43,11 @@ export function NotebookCard({
     errorCount,
     href,
     onClick,
-    itemLabel = "items",
+    itemLabel,
     className,
 }: NotebookCardProps) {
+    const { t } = useLanguage();
+    const resolvedItemLabel = itemLabel ?? t.notebooks.cardItems;
     const scope = resolveNotebookScope({ name, stage, subjectKey });
     const { icon: Icon, className: iconClass } = scope.subject ? SUBJECT_STYLE[scope.subject] : DEFAULT_STYLE;
 
@@ -58,7 +61,7 @@ export function NotebookCard({
                 <h3 className="truncate font-semibold tracking-tight text-foreground">{name}</h3>
                 <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
                     <span className="font-semibold tabular-nums text-foreground">{errorCount}</span>
-                    <span>{itemLabel}</span>
+                    <span>{resolvedItemLabel}</span>
                     <span className="text-border" aria-hidden="true">|</span>
                     <NotebookScopeLabel notebook={{ name, stage, subjectKey }} className="truncate" />
                 </p>
