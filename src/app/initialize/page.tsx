@@ -51,7 +51,7 @@ export default function InitializePage() {
 
     return (
         <AuthShell>
-            <Card className="w-full rounded-2xl border-0 shadow-xl shadow-indigo-500/5 ring-1 ring-border">
+            <Card className="w-full rounded-2xl border-0 shadow-xl shadow-primary/10 ring-1 ring-border">
                 <CardHeader>
                     <CardTitle className="text-2xl text-center">{t.auth.initialize.title}</CardTitle>
                 </CardHeader>

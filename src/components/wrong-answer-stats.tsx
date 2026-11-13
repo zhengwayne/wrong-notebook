@@ -149,12 +149,6 @@ export function WrongAnswerStats() {
                     <CardContent className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={data.activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1} />
-                                    </linearGradient>
-                                </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                                 <XAxis
                                     dataKey="date"
@@ -174,7 +168,7 @@ export function WrongAnswerStats() {
                                 <Tooltip content={<ActivityTooltip activityLabel={t.wrongAnswerStats.activity} />} cursor={{ fill: 'transparent' }} />
                                 <Bar
                                     dataKey="count"
-                                    fill="url(#colorCount)"
+                                    fill="var(--primary)"
                                     radius={[4, 4, 0, 0]}
                                     barSize={40}
                                 />

@@ -78,7 +78,7 @@ export function DailyTrendChart({ data, t }: { data: AdminDashboardData; t: Tran
                                 <span className="text-xs font-medium">{d.count > 0 ? d.count : ""}</span>
                                 <div className="w-full relative" style={{ height: "100px" }}>
                                     <div
-                                        className="absolute bottom-0 w-full bg-gradient-to-t from-orange-500 to-orange-400 rounded-t-md transition-all duration-500 min-h-[4px]"
+                                        className="absolute bottom-0 w-full rounded-t-md bg-primary transition-all duration-500 min-h-[4px]"
                                         style={{ height: `${Math.max(height, 4)}%` }}
                                     />
                                 </div>

@@ -22,11 +22,12 @@ const geistMono = localFont({
 });
 
 export const viewport: Viewport = {
-  themeColor: '#4f46e5',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#6b5ca5' },
+    { media: '(prefers-color-scheme: dark)', color: '#16141c' },
+  ],
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 // 浏览器标题由各页面通过 usePageTitle 设置，这里的 <title> 只作首屏默认值；

@@ -11,6 +11,7 @@ import { ImageCropper } from "@/components/image-cropper";
 import { ImportResultBanner } from "@/components/import-result-banner";
 import { TextInputZone } from "@/components/text-input-zone";
 import { UploadZone } from "@/components/upload-zone";
+import { PageContainer } from "@/components/ui/page-container";
 import { PageLoading } from "@/components/ui/page-loading";
 import { ProgressFeedback } from "@/components/ui/progress-feedback";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -43,36 +44,48 @@ function HomeContent() {
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
     const [dueCount, setDueCount] = useState<number | null>(null);
-    // Input mode: "image" for photo upload, "text" for AI solve, "direct" for manual entry
     const [inputMode, setInputMode] = useState<"image" | "text" | "direct">("image");
 
     const targetNotebookId = initialNotebookId || autoSelectedNotebookId;
-    const targetNotebook = targetNotebookId ? notebooks.find(n => n.id === targetNotebookId) : undefined;
+    const targetNotebook = targetNotebookId ? notebooks.find((n) => n.id === targetNotebookId) : undefined;
 
     const flow = useQuestionImport({
-        logPrefix: '[Home]',
+        logPrefix: "[Home]",
         analyzeSubjectId: targetNotebookId,
         importSubjectId: initialNotebookId,
         textNotebook: targetNotebook && { id: targetNotebook.id, name: targetNotebook.name },
         // 按识别出的学科自动选择名称相近的错题本
         onParsed: (data) => {
-            const matched = data.subject && notebooks.find(n => n.name.includes(data.subject!) || data.subject!.includes(n.name));
+            const matched =
+                data.subject &&
+                notebooks.find((n) => n.name.includes(data.subject!) || data.subject!.includes(n.name));
             if (matched) setAutoSelectedNotebookId(matched.id);
         },
     });
 
     useEffect(() => {
-        // Fetch notebooks for auto-selection
-        apiClient.get<Notebook[]>("/api/notebooks")
-            .then(data => setNotebooks(data))
-            .catch(err => frontendLogger.error('[Home]', 'Failed to fetch notebooks', { error: err }));
-        apiClient.get<PaginatedResponse<unknown>>("/api/review/due?pageSize=1")
-            .then(data => setDueCount(data.total))
-            .catch(err => frontendLogger.error('[Home]', 'Failed to fetch due reviews', { error: err }));
+        let cancelled = false;
+        apiClient
+            .get<Notebook[]>("/api/notebooks")
+            .then((data) => {
+                if (!cancelled) setNotebooks(data);
+            })
+            .catch((err) => frontendLogger.error("[Home]", "Failed to fetch notebooks", { error: err }));
+
+        apiClient
+            .get<PaginatedResponse<unknown>>("/api/review/due?pageSize=1")
+            .then((data) => {
+                if (!cancelled) setDueCount(data.total);
+            })
+            .catch((err) => frontendLogger.error("[Home]", "Failed to fetch due reviews", { error: err }));
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     const handleDirectSave = async (data: DirectEntry): Promise<void> => {
-        flow.setAnalysisStep('saving');
+        flow.setAnalysisStep("saving");
         await flow.saveQuestion({
             ...data,
             wrongAnswerText: data.wrongAnswerText || null,
@@ -80,7 +93,7 @@ function HomeContent() {
             mistakeStatus: data.mistakeStatus || "unknown",
             originalImageUrl: "",
         });
-        flow.setAnalysisStep('idle');
+        flow.setAnalysisStep("idle");
     };
 
     const totalItems = notebooks.reduce((sum, n) => sum + (n._count?.errorItems || 0), 0);
@@ -91,75 +104,78 @@ function HomeContent() {
     ];
 
     return (
-        <main className="min-h-screen">
+        <PageContainer maxWidth={flow.step === "review" ? "6xl" : "4xl"} className="space-y-6">
             <ProgressFeedback status={flow.analysisStep} />
 
-            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>
-                {flow.step === "upload" && (
-                    <>
-                        <HomeHero
-                            notebookCount={notebooks.length}
-                            itemCount={totalItems}
-                            dueCount={dueCount}
-                            targetNotebook={initialNotebookId ? targetNotebook?.name : undefined}
+            {flow.step === "upload" && (
+                <>
+                    <HomeHero
+                        notebookCount={notebooks.length}
+                        itemCount={totalItems}
+                        dueCount={dueCount}
+                        targetNotebook={initialNotebookId ? targetNotebook?.name : undefined}
+                    />
+
+                    <div className="space-y-4">
+                        <SegmentedControl
+                            options={inputModes}
+                            value={inputMode}
+                            onChange={setInputMode}
+                            ariaLabel={t.notebook.inputModeLabel}
                         />
 
-                        <div className="space-y-4">
-                            <SegmentedControl options={inputModes} value={inputMode} onChange={setInputMode} />
+                        {flow.lastImported && (
+                            <ImportResultBanner imported={flow.lastImported} onDismiss={flow.dismissImported} />
+                        )}
 
-                            {flow.lastImported && (
-                                <ImportResultBanner imported={flow.lastImported} onDismiss={flow.dismissImported} />
-                            )}
+                        {flow.batchBlobs ? (
+                            <BatchImportPanel
+                                blobs={flow.batchBlobs}
+                                subjectId={initialNotebookId}
+                                timeout={flow.aiTimeout}
+                                onClose={flow.closeBatch}
+                            />
+                        ) : inputMode === "image" ? (
+                            <UploadZone onImageSelect={flow.selectImage} isAnalyzing={flow.isBusy} />
+                        ) : inputMode === "text" ? (
+                            <TextInputZone
+                                onSubmit={flow.submitText}
+                                isAnalyzing={flow.isBusy}
+                                defaultNotebookName={targetNotebook?.name}
+                            />
+                        ) : (
+                            <DirectTextEditor
+                                onSubmit={handleDirectSave}
+                                defaultNotebookId={targetNotebookId || undefined}
+                                defaultNotebookName={targetNotebook?.name}
+                                isSaving={flow.analysisStep === "saving"}
+                            />
+                        )}
+                    </div>
+                </>
+            )}
 
-                            {flow.batchBlobs ? (
-                                <BatchImportPanel
-                                    blobs={flow.batchBlobs}
-                                    subjectId={initialNotebookId}
-                                    timeout={flow.aiTimeout}
-                                    onClose={flow.closeBatch}
-                                />
-                            ) : inputMode === "image" ? (
-                                <UploadZone onImageSelect={flow.selectImage} isAnalyzing={flow.isBusy} />
-                            ) : inputMode === "text" ? (
-                                <TextInputZone
-                                    onSubmit={flow.submitText}
-                                    isAnalyzing={flow.isBusy}
-                                    defaultNotebookName={targetNotebook?.name}
-                                />
-                            ) : (
-                                <DirectTextEditor
-                                    onSubmit={handleDirectSave}
-                                    defaultNotebookId={targetNotebookId || undefined}
-                                    defaultNotebookName={targetNotebook?.name}
-                                    isSaving={flow.analysisStep === 'saving'}
-                                />
-                            )}
-                        </div>
-                    </>
-                )}
+            {flow.croppingImage && (
+                <ImageCropper
+                    imageSrc={flow.croppingImage}
+                    open={flow.isCropperOpen}
+                    onClose={flow.closeCropper}
+                    onCropComplete={flow.cropComplete}
+                    onMultiCropComplete={flow.startBatch}
+                />
+            )}
 
-                {flow.croppingImage && (
-                    <ImageCropper
-                        imageSrc={flow.croppingImage}
-                        open={flow.isCropperOpen}
-                        onClose={flow.closeCropper}
-                        onCropComplete={flow.cropComplete}
-                        onMultiCropComplete={flow.startBatch}
-                    />
-                )}
-
-                {flow.step === "review" && flow.parsedData && (
-                    <CorrectionEditor
-                        initialData={flow.parsedData}
-                        onSave={flow.saveReviewed}
-                        onCancel={flow.cancelReview}
-                        imagePreview={flow.currentImage}
-                        initialSubjectId={targetNotebookId || undefined}
-                        aiTimeout={flow.aiTimeout}
-                    />
-                )}
-            </div>
-        </main>
+            {flow.step === "review" && flow.parsedData && (
+                <CorrectionEditor
+                    initialData={flow.parsedData}
+                    onSave={flow.saveReviewed}
+                    onCancel={flow.cancelReview}
+                    imagePreview={flow.currentImage}
+                    initialSubjectId={targetNotebookId || undefined}
+                    aiTimeout={flow.aiTimeout}
+                />
+            )}
+        </PageContainer>
     );
 }
 

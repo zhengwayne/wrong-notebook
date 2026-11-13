@@ -16,14 +16,14 @@ import { dismissToast, subscribeFeedback } from "@/lib/feedback";
 import type { ConfirmRequest, ToastItem, ToastType } from "@/lib/feedback";
 import { cn } from "@/lib/utils";
 
-const TOAST_STYLE: Record<ToastType, { icon: typeof Info; className: string }> = {
-    success: { icon: CheckCircle2, className: "text-success" },
-    error: { icon: XCircle, className: "text-destructive" },
-    warning: { icon: AlertTriangle, className: "text-warning" },
-    info: { icon: Info, className: "text-primary" },
+const TOAST_STYLE: Record<ToastType, { icon: typeof Info; className: string; borderClass: string }> = {
+    success: { icon: CheckCircle2, className: "text-success", borderClass: "border-success/30" },
+    error: { icon: XCircle, className: "text-destructive", borderClass: "border-destructive/35" },
+    warning: { icon: AlertTriangle, className: "text-warning", borderClass: "border-warning/40" },
+    info: { icon: Info, className: "text-primary", borderClass: "border-primary/25" },
 };
 
-/** 渲染全局轻提示与确认框，挂载在根布局中 */
+/** 渲染全局轻提示与确认框，挂载在根布局中，区分紧急错误与普通提示的屏幕阅读器播报等级 */
 export function FeedbackHost() {
     const { t } = useLanguage();
     const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -37,26 +37,33 @@ export function FeedbackHost() {
     return (
         <>
             <div
+                aria-label={t.common.notifications}
                 className="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4 print:hidden"
-                role="status"
-                aria-live="polite"
             >
                 {toasts.map((item) => {
-                    const { icon: Icon, className } = TOAST_STYLE[item.type];
+                    const { icon: Icon, className, borderClass } = TOAST_STYLE[item.type];
+                    const isUrgent = item.type === "error" || item.type === "warning";
                     return (
                         <div
                             key={item.id}
-                            className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-card/95 px-4 py-3 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-top-2 duration-200"
+                            role={isUrgent ? "alert" : "status"}
+                            aria-live={isUrgent ? "assertive" : "polite"}
+                            className={cn(
+                                "surface-paper pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-card/95 px-4 py-3 text-sm backdrop-blur animate-in fade-in slide-in-from-top-2 duration-200",
+                                borderClass
+                            )}
                         >
-                            <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", className)} />
-                            <p className="min-w-0 flex-1 whitespace-pre-line break-words leading-relaxed">{item.message}</p>
+                            <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", className)} aria-hidden="true" />
+                            <p className="min-w-0 flex-1 whitespace-pre-line break-words leading-relaxed">
+                                {item.message}
+                            </p>
                             <button
                                 type="button"
-                                className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                                className="-mr-1 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => dismissToast(item.id)}
                                 aria-label={t.common.close}
                             >
-                                <X className="h-3.5 w-3.5" />
+                                <X className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                         </div>
                     );
@@ -67,7 +74,9 @@ export function FeedbackHost() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            {confirm?.destructive && <AlertTriangle className="h-5 w-5 text-destructive" />}
+                            {confirm?.destructive && (
+                                <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden="true" />
+                            )}
                             {confirm?.title || t.common.confirmTitle}
                         </DialogTitle>
                         <DialogDescription className="whitespace-pre-line pt-1 text-left leading-relaxed">

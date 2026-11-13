@@ -56,7 +56,7 @@ export default function AddErrorPage() {
     }
 
     return (
-        <main className="min-h-screen">
+        <main id="main-content" tabIndex={-1} className="min-h-screen">
             <ProgressFeedback status={flow.analysisStep} />
 
             <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>

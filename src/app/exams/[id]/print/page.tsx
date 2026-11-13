@@ -74,7 +74,7 @@ export default function ExamPrintPage() {
     };
 
     return (
-        <main className="min-h-screen bg-white">
+        <main id="main-content" tabIndex={-1} className="min-h-screen bg-white">
             <style>{EXAM_PRINT_CSS}</style>
             <div className="print:hidden sticky top-0 z-10 border-b bg-background p-3 shadow-sm">
                 <div className="max-w-4xl mx-auto flex flex-wrap items-center gap-3">
