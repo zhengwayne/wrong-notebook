@@ -8,6 +8,7 @@ import { RegenerateFigureButton } from "@/components/regenerate-figure-button";
 import { ReplaceQuestionImageButton } from "@/components/replace-question-image-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { ReadAloudButton } from "@/components/read-aloud-button";
 import { EditButton, SaveCancelButtons, SectionHeader } from "./edit-controls";
 import { QuestionMetadata } from "./question-metadata";
 import { QuestionTags } from "./question-tags";
@@ -38,7 +39,7 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
 
     return (
         <Card>
-            <CardHeader><SectionHeader title={<CardTitle>{t.detail.question}</CardTitle>} actions={!question.editing && <EditButton onClick={question.start} />} /></CardHeader>
+            <CardHeader><SectionHeader title={<CardTitle>{t.detail.question}</CardTitle>} actions={!question.editing && <div className="flex flex-wrap items-center justify-end gap-1"><ReadAloudButton text={item.questionText} /><EditButton onClick={question.start} /></div>} /></CardHeader>
             <CardContent className="space-y-4">
                 {question.editing ? (
                     <div className="space-y-3">

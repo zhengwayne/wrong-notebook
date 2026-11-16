@@ -9,11 +9,11 @@ import path from "path";
 import { getAppConfig } from "@/lib/config";
 import { createLogger } from "@/lib/logger";
 import { MAX_NARRATION_TEXT_LENGTH, decodeXmlText, getEmbeddedNarration } from "@/lib/svg-animation";
-import { TARGET_LOUDNESS_LUFS, VOICE_STYLE_INSTRUCTION, getTtsChannelConfig, isCloudTtsProvider, usesStyleInstruction } from "./constants";
+import { MAX_TTS_TEXT_LENGTH, TARGET_LOUDNESS_LUFS, VOICE_STYLE_INSTRUCTION, clampTtsRate, getTtsChannelConfig, isCloudTtsProvider, usesStyleInstruction } from "./constants";
 import type { CloudTtsProvider, TtsMode } from "./constants";
 import { normalizeLoudness } from "./loudness";
-import { encodeMp3, looksLikeMp3 } from "./mp3";
-import { resolveTtsSettings, synthesizeWithProvider } from "./providers";
+import { encodeMp3, isEncodedMp3, looksLikeMp3 } from "./mp3";
+import { resolveTtsSettings, resolveVoiceForLanguage, synthesizeWithProvider } from "./providers";
 import type { ResolvedTtsSettings } from "./providers";
 
 const logger = createLogger('tts');
@@ -33,6 +33,8 @@ export interface SpeechSource {
     voice: string;
     language: 'zh' | 'en';
     text: string;
+    rate?: number;
+    pitch?: string;
 }
 
 /** 数据备份中的一段云端语音，audio 为 Base64 编码的 MP3 */
@@ -62,11 +64,13 @@ function currentSettings(): ResolvedTtsSettings | null {
     const config = getAppConfig();
     const mode = config.tts?.mode;
     if (!isCloudTtsProvider(mode)) return null;
-    return resolveTtsSettings(mode, config.tts?.[mode], getTtsChannelConfig(config, mode));
+    const settings = resolveTtsSettings(mode, config.tts?.[mode], getTtsChannelConfig(config, mode));
+    settings.rate = clampTtsRate(config.tts?.rate);
+    return settings;
 }
 
-export function speechId({ provider, model, voice, language, text }: SpeechSource): string {
-    const key = [CACHE_VERSION, TARGET_LOUDNESS_LUFS, provider, model, voice, usesStyleInstruction(provider, model) ? VOICE_STYLE_INSTRUCTION : '', language, text];
+export function speechId({ provider, model, voice, language, text, rate, pitch }: SpeechSource): string {
+    const key = [CACHE_VERSION, TARGET_LOUDNESS_LUFS, provider, model, voice, rate ?? '', pitch ?? '', usesStyleInstruction(provider, model) ? VOICE_STYLE_INSTRUCTION : '', language, text];
     return crypto.createHash('sha256').update(JSON.stringify(key)).digest('hex');
 }
 
@@ -106,7 +110,8 @@ async function speechVersion(id: string): Promise<number | null> {
 export async function getCachedSpeech(text: string, language: 'zh' | 'en'): Promise<SpeechResult | null> {
     const settings = currentSettings();
     if (!settings) return null;
-    const id = speechId({ provider: settings.provider, model: settings.model, voice: settings.voice, language, text });
+    const voice = resolveVoiceForLanguage(settings, language);
+    const id = speechId({ provider: settings.provider, model: settings.model, voice, language, text, rate: settings.rate, pitch: settings.pitch });
     const version = await speechVersion(id);
     return version === null ? null : { id, version };
 }
@@ -122,10 +127,33 @@ export interface SpeechResult {
  * 合成一段讲解，返回语音编号和版本（用 GET /api/tts/:id?v=版本 取音频）；已有缓存时直接返回，
  * regenerate 为 true 时忽略缓存重新合成。当前为浏览器本地语音时返回 null
  */
-export async function synthesizeSpeech(text: string, language: 'zh' | 'en', { regenerate = false } = {}): Promise<SpeechResult | null> {
+export interface SynthesizeSpeechOptions {
+    regenerate?: boolean;
+    voice?: string;
+    rate?: number;
+    pitch?: string;
+}
+
+export async function synthesizeSpeech(text: string, language: 'zh' | 'en', options: SynthesizeSpeechOptions = {}): Promise<SpeechResult | null> {
+    const { regenerate = false } = options;
+    if (typeof text !== 'string' || !text.trim() || text.length > MAX_TTS_TEXT_LENGTH) return null;
     const settings = currentSettings();
     if (!settings) return null;
-    const source: SpeechSource = { provider: settings.provider, model: settings.model, voice: settings.voice, language, text };
+    const resolved: ResolvedTtsSettings = {
+        ...settings,
+        voice: resolveVoiceForLanguage(settings, language, options.voice),
+        rate: options.rate != null ? clampTtsRate(options.rate, settings.rate) : settings.rate,
+        pitch: options.pitch?.trim() || settings.pitch,
+    };
+    const source: SpeechSource = {
+        provider: resolved.provider,
+        model: resolved.model,
+        voice: resolved.voice,
+        language,
+        text,
+        rate: resolved.rate,
+        pitch: resolved.pitch,
+    };
     const id = speechId(source);
     const running = pending.get(id);
     if (running) return running;
@@ -135,9 +163,10 @@ export async function synthesizeSpeech(text: string, language: 'zh' | 'en', { re
     }
     const task = (async () => {
         const started = Date.now();
-        const audio = normalizeLoudness(await synthesizeWithProvider(text, language, settings));
-        await writeSpeech(id, source, encodeMp3(audio));
-        logger.info({ provider: settings.provider, model: settings.model, chars: text.length, regenerate, ms: Date.now() - started }, 'Speech synthesized');
+        const synthesized = await synthesizeWithProvider(text, language, resolved);
+        const audio = isEncodedMp3(synthesized) ? synthesized.data : encodeMp3(normalizeLoudness(synthesized));
+        await writeSpeech(id, source, audio);
+        logger.info({ provider: resolved.provider, model: resolved.model, voice: resolved.voice, chars: text.length, regenerate, ms: Date.now() - started }, 'Speech synthesized');
         pruneCache().catch((error) => logger.warn({ error }, 'Failed to prune TTS cache'));
         return { id, version: (await speechVersion(id)) ?? Date.now() };
     })().finally(() => pending.delete(id));

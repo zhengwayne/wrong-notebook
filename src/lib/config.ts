@@ -7,7 +7,7 @@ import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS, type VendorConfig, type VendorProv
 import { mergeTextAi } from './ai/roles';
 import type { TextAiConfig } from '@/types/api';
 import type { MiniMaxCodeConfig } from './minimax-code/constants';
-import { CLOUD_TTS_PROVIDERS, isTtsMode } from './tts/constants';
+import { CLOUD_TTS_PROVIDERS, clampTtsRate, isTtsMode } from './tts/constants';
 import type { TtsConfig } from './tts/constants';
 
 const logger = createLogger('config');
@@ -166,9 +166,11 @@ const DEFAULT_CONFIG: AppConfig = {
         model: process.env.MINIMAX_CODE_MODEL,
         autoCheckin: process.env.MINIMAX_CODE_AUTO_CHECKIN !== 'false',
     },
-    // 动画语音讲解默认用浏览器本地语音；TTS_MODE 为 minimax、qwen 等时改用云端语音合成
+    // 默认使用 Microsoft Edge 在线神经网络语音（晓晓）；TTS_MODE 可改为 browser 或付费云端渠道
     tts: {
-        mode: isTtsMode(process.env.TTS_MODE) ? process.env.TTS_MODE : 'browser',
+        mode: isTtsMode(process.env.TTS_MODE) ? process.env.TTS_MODE : 'edge',
+        rate: 1,
+        edge: { voice: 'zh-CN-XiaoxiaoNeural', englishVoice: 'en-US-AriaNeural' },
         // 火山引擎豆包语音的 Key 与火山方舟不同，单独配置
         volcengine: { apiKey: process.env.VOLCENGINE_TTS_API_KEY },
     },
@@ -197,7 +199,8 @@ function mergeVendorConfigs(base: Partial<AppConfig>, override: Partial<AppConfi
 /** 朗读方式与各云端语音的设置分别合并 */
 function mergeTtsConfig(base: TtsConfig | undefined, override: TtsConfig | undefined): TtsConfig {
     return {
-        mode: override?.mode ?? base?.mode ?? 'browser',
+        mode: isTtsMode(override?.mode) ? override.mode : (isTtsMode(base?.mode) ? base?.mode : 'edge'),
+        rate: clampTtsRate(override?.rate, clampTtsRate(base?.rate, 1)),
         ...Object.fromEntries(CLOUD_TTS_PROVIDERS.map((id) => [id, { ...base?.[id], ...override?.[id] }])),
     };
 }

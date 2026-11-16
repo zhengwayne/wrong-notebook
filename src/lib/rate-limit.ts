@@ -109,3 +109,6 @@ export const loginAccountLimiter = new RateLimiter({ limit: 5, windowMs: FIFTEEN
 export const loginIpLimiter = new RateLimiter({ limit: 20, windowMs: FIFTEEN_MINUTES });
 /** 同一 IP 每小时最多提交 10 次注册或初始化 */
 export const registerIpLimiter = new RateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
+
+/** 每用户每分钟最多合成 60 次，给动画逐段请求留出余量 */
+export const ttsUserLimiter = new RateLimiter({ limit: 60, windowMs: 60 * 1000 });

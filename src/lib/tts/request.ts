@@ -6,13 +6,17 @@ import { isAdmin } from "@/lib/auth-utils";
 import { badRequest, createErrorResponse, ErrorCode } from "@/lib/api-errors";
 import { getErrorDetail } from "@/lib/error-message";
 import { createLogger } from "@/lib/logger";
-import { MAX_NARRATION_SEGMENTS, MAX_NARRATION_TEXT_LENGTH } from "@/lib/svg-animation";
+import { MAX_NARRATION_SEGMENTS } from "@/lib/svg-animation";
+import { MAX_TTS_RATE, MAX_TTS_TEXT_LENGTH, MIN_TTS_RATE } from "./constants";
 import { TtsError } from "./providers";
 
 const logger = createLogger('api:tts');
 
-export const speechTextSchema = z.string().trim().min(1).max(MAX_NARRATION_TEXT_LENGTH);
+export const speechTextSchema = z.string().trim().min(1).max(MAX_TTS_TEXT_LENGTH);
 export const speechLanguageSchema = z.enum(['zh', 'en']).default('zh');
+export const speechVoiceSchema = z.string().trim().min(1).max(80).optional();
+export const speechRateSchema = z.number().min(MIN_TTS_RATE).max(MAX_TTS_RATE).optional();
+export const speechPitchSchema = z.string().trim().min(1).max(40).optional();
 
 /** 一个动画的全部讲解段落 */
 export const speechTextsSchema = z.array(speechTextSchema).min(1).max(MAX_NARRATION_SEGMENTS);

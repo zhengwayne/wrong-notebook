@@ -6,20 +6,52 @@ import { resolveVendorConfig } from "@/lib/ai/vendor-presets";
 import type { VendorConfig } from "@/lib/ai/vendor-presets";
 
 /** browser：浏览器本地语音（Web Speech API）；其余为服务端调用对应渠道的云端语音合成 */
-export const TTS_MODES = ['browser', 'minimax', 'qwen', 'glm', 'stepfun', 'volcengine', 'volcengine-agent', 'openai'] as const;
+export const TTS_MODES = ['edge', 'browser', 'minimax', 'qwen', 'glm', 'stepfun', 'volcengine', 'volcengine-agent', 'openai'] as const;
 export type TtsMode = typeof TTS_MODES[number];
 export type CloudTtsProvider = Exclude<TtsMode, 'browser'>;
 
 export interface CloudTtsSettings {
     model?: string;
     voice?: string;
+    /** 英文内容自动选用的音色（目前用于 Edge 在线语音） */
+    englishVoice?: string;
     /** 完整的语音合成接口地址；留空时按对应渠道的 Base URL 推算 */
     endpoint?: string;
     /** 语音单独的 API Key（火山引擎豆包语音与火山方舟的 Key 不同）；其他语音复用对应渠道的 Key */
     apiKey?: string;
 }
 
-export type TtsConfig = { mode?: TtsMode } & { [K in CloudTtsProvider]?: CloudTtsSettings };
+export type TtsConfig = { mode?: TtsMode; rate?: number } & { [K in CloudTtsProvider]?: CloudTtsSettings };
+
+/** 朗读语速范围（1 为正常语速） */
+export const MIN_TTS_RATE = 0.75;
+export const MAX_TTS_RATE = 1.5;
+export const DEFAULT_TTS_RATE = 1;
+/** 朗读题干/解析等允许的最大字数（动画单段讲解仍用 MAX_NARRATION_TEXT_LENGTH） */
+export const MAX_TTS_TEXT_LENGTH = 4000;
+export const DEFAULT_EDGE_VOICE = 'zh-CN-XiaoxiaoNeural';
+export const DEFAULT_EDGE_ENGLISH_VOICE = 'en-US-AriaNeural';
+
+export function clampTtsRate(value: unknown, fallback = DEFAULT_TTS_RATE): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+    return Math.min(MAX_TTS_RATE, Math.max(MIN_TTS_RATE, value));
+}
+
+/** 设置页精选的 Edge 中文、英文音色 */
+export const EDGE_ZH_VOICES = [
+    'zh-CN-XiaoxiaoNeural',
+    'zh-CN-XiaoyiNeural',
+    'zh-CN-YunxiNeural',
+    'zh-CN-YunjianNeural',
+    'zh-CN-YunyangNeural',
+    'zh-CN-YunxiaNeural',
+] as const;
+
+export const EDGE_EN_VOICES = [
+    'en-US-AriaNeural',
+    'en-US-JennyNeural',
+    'en-US-GuyNeural',
+] as const;
 
 export const CLOUD_TTS_PROVIDERS = TTS_MODES.filter((mode): mode is CloudTtsProvider => mode !== 'browser');
 
@@ -38,6 +70,7 @@ export const CLOUD_TTS_DEFAULTS: Record<CloudTtsProvider, Required<Pick<CloudTts
     volcengine: { model: 'seed-tts-2.0', voice: 'zh_male_yangguangqingnian_uranus_bigtts' },
     'volcengine-agent': { model: 'seed-tts-2.0', voice: 'zh_male_yangguangqingnian_uranus_bigtts' },
     openai: { model: 'gpt-4o-mini-tts', voice: 'cedar' },
+    edge: { model: 'edge-neural', voice: DEFAULT_EDGE_VOICE },
 };
 
 /**
@@ -59,6 +92,7 @@ interface TtsChannelSource {
  * 语音复用的 AI 渠道配置（API Key、Base URL）：OpenAI 取「AI 设置」中当前激活的实例，其余取同名的国产大模型渠道
  */
 export function getTtsChannelConfig(config: TtsChannelSource, provider: CloudTtsProvider): VendorConfig | undefined {
+    if (provider === 'edge') return undefined;
     if (provider === 'openai') {
         const instance = config.openai?.instances?.find((item) => item.id === config.openai?.activeInstanceId);
         return instance ? { apiKey: instance.apiKey, baseUrl: instance.baseUrl } : undefined;
@@ -116,6 +150,12 @@ export const CLOUD_TTS_DOCS: Record<CloudTtsProvider, { apiKey: string; model: s
         voice: 'https://www.volcengine.com/docs/6561/1257544',
         endpoint: 'https://docs.volcengine.com/docs/ark/agent-plan-personal-voice-model?lang=zh',
     },
+    edge: {
+        apiKey: 'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
+        model: 'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
+        voice: 'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
+        endpoint: 'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
+    },
 };
 
 /** 提供免费试用的云端语音：火山引擎新用户有免费推理额度，可参考文档自行开通（覆盖的模型以控制台「开通管理」为准） */
@@ -156,6 +196,7 @@ export function isCloudTtsProvider(value: unknown): value is CloudTtsProvider {
  * 智谱、阶跃星辰、OpenAI 的语音接口与对话接口同在 Base URL 下（/audio/speech）
  */
 export function defaultTtsEndpoint(provider: CloudTtsProvider, vendor: VendorConfig | undefined): string {
+    if (provider === 'edge') return '';
     if (provider === 'volcengine') return VOLCENGINE_TTS_ENDPOINT;
     if (provider === 'volcengine-agent') return VOLCENGINE_AGENT_TTS_ENDPOINT;
     if (provider === 'openai') return `${(vendor?.baseUrl || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, '')}/audio/speech`;

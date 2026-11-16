@@ -7,6 +7,7 @@ import { QuestionSummary } from "@/components/error-list/question-summary";
 import { MASTERY_STATUS_BORDER, MasteryStatusBadge } from "@/components/mastery-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ReadAloudButton } from "@/components/read-aloud-button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { formatDateTime } from "@/lib/date-time";
@@ -111,8 +112,9 @@ export function ErrorItemCard({
                 </div>
             </Link>
 
-            {tags.length > 0 && (
-                <div className="relative z-10 flex flex-wrap gap-1.5 border-t border-border/50 px-5 py-3">
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 px-5 py-3">
+                {tags.length > 0 && (
+                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
                     {(tagsExpanded ? tags : tags.slice(0, VISIBLE_TAGS)).map((tag) => {
                         const isTagSelected = selectedTag === tag;
                         return (
@@ -156,7 +158,9 @@ export function ErrorItemCard({
                         </button>
                     )}
                 </div>
-            )}
+                )}
+                <ReadAloudButton text={item.questionText} compact className="ml-auto" />
+            </div>
         </article>
     );
 }

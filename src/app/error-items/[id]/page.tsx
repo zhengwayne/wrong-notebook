@@ -10,6 +10,7 @@ import { ImageViewer } from "@/components/error-detail/image-viewer";
 import { MarkdownFieldCard } from "@/components/error-detail/markdown-field-card";
 import { NotesCard } from "@/components/error-detail/notes-card";
 import { QuestionCard } from "@/components/error-detail/question-card";
+import { ReadAloudButton } from "@/components/read-aloud-button";
 import { ToggleImage } from "@/components/error-detail/toggle-image";
 import { WrongAnswerCard } from "@/components/error-detail/wrong-answer-card";
 import { FixLatexButton } from "@/components/fix-latex-button";
@@ -201,6 +202,7 @@ export default function ErrorDetailPage() {
                         logLabel="analysis"
                         rows={12}
                         placeholder="Enter analysis..."
+                        headerActions={<ReadAloudButton text={item.analysis} />}
                     />
                     <MarkdownFieldCard
                         title={t.detail?.mistakeAnalysis || "Mistake Analysis"}
