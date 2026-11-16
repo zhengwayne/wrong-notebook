@@ -14,6 +14,7 @@ import { ToggleImage } from "@/components/error-detail/toggle-image";
 import { WrongAnswerCard } from "@/components/error-detail/wrong-answer-card";
 import { FixLatexButton } from "@/components/fix-latex-button";
 import { MasteryPanel } from "@/components/mastery-panel";
+import { ErrorItemLearningCard } from "@/components/error-item-learning-card";
 import { MasteryStatusBadge } from "@/components/mastery-status-badge";
 import { RegenerateAnswerButton } from "@/components/regenerate-answer-button";
 import { ShortIdBadge } from "@/components/short-id-badge";
@@ -165,6 +166,8 @@ export default function ErrorDetailPage() {
                 </div>
 
                 <QuestionCard item={item} educationStage={educationStage} saveFields={saveFields} onUpdate={updateItem} reload={reload} onEnlarge={setViewerImageUrl} />
+
+                <ErrorItemLearningCard item={item} />
 
                 <MasteryPanel errorItemId={item.id} onMasteryStatusChange={setMasteryStatus} />
 

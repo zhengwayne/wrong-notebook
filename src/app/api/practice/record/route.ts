@@ -7,6 +7,7 @@ import { unauthorized, internalError, notFound, validationError } from "@/lib/ap
 import { createLogger } from "@/lib/logger";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 
 const logger = createLogger('api:practice:record');
 
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
 
         if (errorItemId && result) {
             scheduleMasteryEvaluation([errorItemId]);
+            scheduleLearningPathReplan(userId);
         }
 
         return NextResponse.json(record);

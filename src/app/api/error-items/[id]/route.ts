@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
+import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
 
 const logger = createLogger('api:error-items:id');
 
@@ -49,7 +50,8 @@ export async function GET(
             return forbidden("Not authorized to access this item");
         }
 
-        return NextResponse.json(errorItem);
+        const learning = await getErrorItemLearningContext(user.id, errorItem);
+        return NextResponse.json({ ...errorItem, learning });
     } catch (error) {
         logger.error({ error }, 'Error fetching item');
         return internalError("Failed to fetch error item");

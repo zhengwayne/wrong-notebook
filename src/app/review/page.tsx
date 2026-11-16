@@ -106,6 +106,19 @@ export default function ReviewPage() {
                                     onTagClick={() => {}}
                                 />
                             </div>
+                            {(item.wrongAnswerText || item.mistakeAnalysis || item.tags?.length) && (
+                                <div className="rounded-xl border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                                    {item.tags && item.tags.length > 0 && (
+                                        <p><span className="font-medium text-foreground">{t.review.knowledgePoints}{t.common.colon}</span>{item.tags.map((tag) => tag.name).join(t.common.listSeparator)}</p>
+                                    )}
+                                    {item.wrongAnswerText && (
+                                        <p><span className="font-medium text-foreground">{t.review.wrongAnswer}{t.common.colon}</span>{item.wrongAnswerText}</p>
+                                    )}
+                                    {item.mistakeAnalysis && (
+                                        <p className="line-clamp-3"><span className="font-medium text-foreground">{t.review.mistakeCause}{t.common.colon}</span>{item.mistakeAnalysis}</p>
+                                    )}
+                                </div>
+                            )}
                             <div className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">
                                 <span className="truncate tabular-nums">
                                     {dueLabel(item)} ·{" "}

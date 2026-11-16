@@ -16,6 +16,8 @@ import { scheduleMasteryEvaluation } from "@/lib/mastery";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
+import { deriveErrorType } from "@/lib/error-type";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 
 const logger = createLogger('api:error-items');
 
@@ -194,6 +196,7 @@ export async function POST(req: Request) {
                         figureSvg,
                         geogebraCommands: geogebraCommands || null,
                         masteryLevel: 0,
+                        errorType: deriveErrorType(mistakeAnalysis),
                         tags: {
                             connect: tagConnections,
                         },
@@ -217,7 +220,12 @@ export async function POST(req: Request) {
             }
         });
         const duplicate = 'duplicate' in result && result.duplicate;
-        if (duplicate) scheduleMasteryEvaluation([result.id]);
+        if (result && 'id' in result && result.id) {
+            scheduleMasteryEvaluation([result.id]);
+            if (!duplicate) {
+                scheduleLearningPathReplan(user.id);
+            }
+        }
         return NextResponse.json(result, { status: duplicate ? 200 : 201 });
     } catch (error) {
         logger.error({

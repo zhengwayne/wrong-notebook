@@ -13,6 +13,7 @@ import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SearchInput } from "@/components/ui/search-input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
@@ -27,6 +28,7 @@ import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { ErrorListFilters, PaperLevelFilter as PaperLevel, TimeFilter } from "@/lib/error-list-filters";
 import type { MasteryStatus } from "@/lib/mastery-status";
 import type { ErrorItemSummary, PaginatedResponse } from "@/types/api";
+import { groupErrorItems, type ErrorListGroupMode } from "@/lib/error-list-groups";
 
 export interface ErrorListProps {
     subjectId?: string;
@@ -64,6 +66,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState(false);
+    const [groupBy, setGroupBy] = useState<ErrorListGroupMode>("date");
 
     // 递增请求序号，防止快速切换筛选或翻页时旧响应覆盖新结果
     const requestSeqRef = useRef(0);
@@ -274,6 +277,17 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                 <PaperLevelFilter value={paperLevelFilter} onChange={setPaperLevelFilter} />
             </div>
 
+            <SegmentedControl
+                options={[
+                    { value: "date" as const, label: t.notebook.groupDate },
+                    { value: "knowledge" as const, label: t.notebook.groupKnowledge },
+                    { value: "cause" as const, label: t.notebook.groupCause },
+                ]}
+                value={groupBy}
+                onChange={setGroupBy}
+                ariaLabel={t.notebook.groupBy}
+            />
+
             <ActiveFilterBar items={activeChips} onClearAll={resetAllFilters} />
 
             <AsyncBoundary
@@ -301,6 +315,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                     )
                 }
             >
+                {groupBy === "date" ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {items.map((item) => (
                         <ErrorItemCard
@@ -314,6 +329,28 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                         />
                     ))}
                 </div>
+                ) : (
+                <div className="space-y-6">
+                    {groupErrorItems(items, groupBy, { ungrouped: t.notebook.ungrouped, unknownCause: t.notebook.unknownCause }).map((group) => (
+                        <section key={group.key} className="space-y-3">
+                            <h2 className="text-sm font-semibold tracking-tight">{group.label}</h2>
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {group.items.map((item) => (
+                                    <ErrorItemCard
+                                        key={`${group.key}-${item.id}`}
+                                        item={item}
+                                        selectMode={isSelectMode}
+                                        selected={selectedIds.has(item.id)}
+                                        onToggleSelect={() => toggleSelectItem(item.id)}
+                                        selectedTag={selectedTag}
+                                        onTagClick={(tag) => setSelectedTag(selectedTag === tag ? null : tag)}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    ))}
+                </div>
+                )}
             </AsyncBoundary>
 
             <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} />

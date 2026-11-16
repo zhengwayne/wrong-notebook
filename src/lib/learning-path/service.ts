@@ -14,6 +14,9 @@ import { buildMasteryMap, evidenceHash, traceKnowledgeMastery } from "./mastery-
 import { addPrerequisiteEdge, buildPrerequisiteGraph, orderKnowledgePoints, type PrerequisiteTag } from "./prerequisites";
 import { planLearningPath, todaySteps } from "./planner";
 import { SELF_STUDENT_KEY, stepFingerprint, type EvidenceSource, type MasteryEvidence, type PreservedStep, type StepStatus, type StepType } from "./types";
+import { createLogger } from "@/lib/logger";
+
+const logger = createLogger("learning-path");
 
 function parseJsonArray(value: string | null | undefined): string[] {
     if (!value) return [];
@@ -254,6 +257,53 @@ function toPreserved(step: {
     };
 }
 
+
+export interface SourceQuestionSummary {
+    id: string;
+    shortId: string | null;
+    questionText: string;
+    wrongAnswerText: string | null;
+    mistakeAnalysis: string | null;
+    knowledgePoints: string[];
+}
+
+export function toSourceQuestion(item: {
+    id: string;
+    shortId?: string | null;
+    questionText?: string | null;
+    wrongAnswerText?: string | null;
+    mistakeAnalysis?: string | null;
+    tags?: { name: string }[] | null;
+    knowledgePoints?: string | null;
+}): SourceQuestionSummary {
+    return {
+        id: item.id,
+        shortId: item.shortId ?? null,
+        questionText: item.questionText ?? '',
+        wrongAnswerText: item.wrongAnswerText ?? null,
+        mistakeAnalysis: item.mistakeAnalysis ?? null,
+        knowledgePoints: getItemTags(item),
+    };
+}
+
+export function attachSourceQuestions<T extends { steps: Array<{ errorItemIds: string[] }>; today: Array<{ errorItemIds: string[] }> }>(
+    path: T,
+    items: Array<Parameters<typeof toSourceQuestion>[0]>,
+): T & { steps: Array<T["steps"][number] & { sourceQuestions: SourceQuestionSummary[] }>; today: Array<T["today"][number] & { sourceQuestions: SourceQuestionSummary[] }> } {
+    const byId = new Map(items.map((item) => [item.id, toSourceQuestion(item)]));
+    const decorate = <S extends { errorItemIds: string[] }>(step: S) => ({
+        ...step,
+        sourceQuestions: step.errorItemIds
+            .map((id) => byId.get(id))
+            .filter((question): question is SourceQuestionSummary => Boolean(question)),
+    });
+    return {
+        ...path,
+        steps: path.steps.map(decorate),
+        today: path.today.map(decorate),
+    };
+}
+
 export function presentPath(path: {
     id: string;
     studentKey: string;
@@ -330,6 +380,14 @@ async function persistMastery(userId: string, studentKey: string, mastery: Retur
     }
 }
 
+export function scheduleLearningPathReplan(userId: string, language: "zh" | "en" = "zh") {
+    setTimeout(() => {
+        void getOrReplanPath(userId, { language }).catch((error) => {
+            logger.debug({ error, userId }, "Failed to replan learning path in background");
+        });
+    }, 0);
+}
+
 export async function getOrReplanPath(userId: string, options: {
     studentKey?: string | null;
     subjectId?: string | null;
@@ -362,7 +420,7 @@ export async function getOrReplanPath(userId: string, options: {
 
     const shouldReplan = Boolean(options.force || !existing || existing.evidenceHash !== evidenceHashValue);
     if (!shouldReplan && existing) {
-        return { path: presentPath(existing, mastery), student, replanned: false };
+        return { path: attachSourceQuestions(presentPath(existing, mastery), items), student, replanned: false };
     }
 
     const planned = planLearningPath({
@@ -420,7 +478,17 @@ export async function getOrReplanPath(userId: string, options: {
         });
     });
 
-    return { path: presentPath(saved, mastery), student, replanned: true };
+    return { path: attachSourceQuestions(presentPath(saved, mastery), items), student, replanned: true };
+}
+
+
+async function loadSourceItemsByIds(ids: string[]) {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return [];
+    return prisma.errorItem.findMany({
+        where: { id: { in: unique } },
+        include: { tags: { select: { name: true, parentId: true } } },
+    });
 }
 
 export async function patchStep(userId: string, stepId: string, patch: {
@@ -490,8 +558,10 @@ export async function patchStep(userId: string, stepId: string, patch: {
     for (const state of mastery.values()) {
         state.score = Math.min(1, Math.max(0, state.pKnown * state.retrievability));
     }
-    return presentPath(refreshed, mastery);
+    const sourceItems = await loadSourceItemsByIds(refreshed.steps.flatMap((step) => parseJsonArray(step.errorItemIds)));
+    return attachSourceQuestions(presentPath(refreshed, mastery), sourceItems);
 }
+
 
 export async function listClassPaths(userId: string, classId: string, language: "zh" | "en") {
     const cls = await prisma.gradingClass.findFirst({

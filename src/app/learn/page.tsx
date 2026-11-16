@@ -21,6 +21,8 @@ import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
 import { cn } from "@/lib/utils";
 import type { StepType } from "@/lib/learning-path/types";
+import type { SourceQuestionSummary } from "@/lib/learning-path/service";
+import { SourceQuestionList } from "@/components/source-question-list";
 
 type Tab = "today" | "path" | "class";
 
@@ -38,6 +40,7 @@ interface PathStep {
     teacherNote?: string | null;
     variantRunId?: string | null;
     fingerprint?: string;
+    sourceQuestions?: SourceQuestionSummary[];
 }
 
 interface PathView {
@@ -303,6 +306,9 @@ function LearnPage() {
                                                         <Badge key={point} variant="outline">{point}</Badge>
                                                     ))}
                                                 </div>
+                                                {step.sourceQuestions && step.sourceQuestions.length > 0 && (
+                                                    <SourceQuestionList questions={step.sourceQuestions} />
+                                                )}
                                                 {step.teacherNote && <p className="text-sm">{t.learn.teacherNote}：{step.teacherNote}</p>}
                                                 <div className="flex flex-wrap gap-2 pt-1">
                                                     {cta && !done && (

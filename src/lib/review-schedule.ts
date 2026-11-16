@@ -1,7 +1,8 @@
 import { getDayRange, shiftCalendarDate } from "@/lib/date-time";
 
 /** 艾宾浩斯复习间隔（天）：连续做对一次进入下一档，做错回到第一档 */
-export const REVIEW_INTERVALS = [1, 2, 4, 7, 15, 30] as const;
+/** 第 0 档间隔为 0：新录入的错题当天即可复习，之后按艾宾浩斯递进 */
+export const REVIEW_INTERVALS = [0, 1, 2, 4, 7, 15, 30] as const;
 
 export interface ReviewRecord {
     result: string | null;

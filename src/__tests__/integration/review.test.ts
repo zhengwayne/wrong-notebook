@@ -18,12 +18,12 @@ import { GET } from '@/app/api/review/due/route';
 const get = (query = '') => GET(new Request(`http://localhost/api/review/due${query}`));
 
 const candidates = [
-    // 录入两天前、没有作答：昨天到期
+    // 录入两天前、没有作答：当天即到期，现在仍在队列中
     { id: 'new', createdAt: new Date('2026-10-18T02:00:00Z'), practiceRecords: [] },
-    // 今天刚做对一次：两天后到期
+    // 今天刚做对一次：按第 1 档隔 1 天后到期
     { id: 'fresh', createdAt: new Date('2026-10-01T02:00:00Z'), practiceRecords: [{ result: 'correct', createdAt: new Date('2026-10-20T01:00:00Z') }] },
     // 很早以前做错：早已到期，应排在最前
-    { id: 'old', createdAt: new Date('2026-09-01T02:00:00Z'), practiceRecords: [{ result: 'wrong', createdAt: new Date('2026-09-10T02:00:00Z') }] },
+    { id: 'old', createdAt: new Date('2026-09-01T02:00:00Z'), practiceRecords: [{ result: 'wrong', createdAt: new Date('2026-09-10T02:00:00Z') }] }, // 做错当天到期
 ];
 
 describe('GET /api/review/due', () => {
@@ -50,7 +50,7 @@ describe('GET /api/review/due', () => {
 
         expect(data.total).toBe(2);
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['old', 'new']);
-        expect(data.items[0]).toMatchObject({ reviewStage: 0, masteryStatus: 'reviewing', nextReviewAt: '2026-09-10T16:00:00.000Z' });
+        expect(data.items[0]).toMatchObject({ reviewStage: 0, masteryStatus: 'reviewing', nextReviewAt: '2026-09-09T16:00:00.000Z' });
         expect(data.items[1]).toMatchObject({ reviewStage: 0, masteryStatus: 'new' });
         expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1' } }));
     });
