@@ -67,7 +67,7 @@ describe('QuestionSummary', () => {
         const html = renderToStaticMarkup(
             <QuestionSummary text={'Look at the l<u>ea</u>ves. **数量关系混淆** $1200 \\div 50$'} clamp={2} />,
         );
-        expect(html).toMatch(/<u>ea<\/u>/);
+        expect(html).toMatch(/<u[^>]*>ea<\/u>/);
         expect(html).toContain('<strong');
         expect(html).not.toContain('**数量关系混淆**');
         expect(html).toContain('class="katex"');

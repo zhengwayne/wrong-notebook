@@ -38,7 +38,7 @@ describe('MultiQuestionConfirm 预览', () => {
             .replace(/<annotation[\s\S]*?<\/annotation>/g, '')
             .replace(/<span class="katex-mathml">[\s\S]*?<\/math><\/span>/g, '');
         expect(html).toContain('class="katex"');
-        expect(html).toMatch(/<u>y<\/u>/);
+        expect(html).toMatch(/<u[^>]*>y<\/u>/);
         expect(html).toContain('<strong');
         expect(visible).not.toContain('$O$');
         expect(visible).not.toContain('$1200');

@@ -119,9 +119,9 @@ describe('安全渲染 <u> 下划线', () => {
         const html = renderToStaticMarkup(
             <MarkdownRenderer content={'The birds fl<u>y</u> high. Look at the l<u>ea</u>ves. <u>the nice fruit</u>'} />,
         );
-        expect(html).toMatch(/<u>y<\/u>/);
-        expect(html).toMatch(/l<u>ea<\/u>ves/);
-        expect(html).toMatch(/<u>the nice fruit<\/u>/);
+        expect(html).toMatch(/<u[^>]*>y<\/u>/);
+        expect(html).toMatch(/l<u[^>]*>ea<\/u>ves/);
+        expect(html).toMatch(/<u[^>]*>the nice fruit<\/u>/);
         expect(html).not.toContain('&lt;u&gt;');
         expect(html).not.toContain('<u>y</u>'.replace('y', '') + 'y'); // sanity
     });
@@ -130,7 +130,7 @@ describe('安全渲染 <u> 下划线', () => {
         const html = renderToStaticMarkup(
             <MarkdownRenderer content={'<u onclick="alert(1)">hi</u> and <script>alert(1)</script>'} />,
         );
-        expect(html).toMatch(/<u>hi<\/u>/);
+        expect(html).toMatch(/<u[^>]*>hi<\/u>/);
         expect(html).not.toContain('onclick');
         expect(html).not.toContain('<script>');
         expect(html).toContain('script');
@@ -146,5 +146,45 @@ describe('compact 预览用 CSS 限制行数', () => {
         expect(html).toContain('class="katex"');
         expect(html).not.toContain('24\\te');
         expect(html).not.toContain('$1200');
+    });
+});
+
+
+const ANALYSIS_LIST = `1.
+理解题意并列式：
+
+- “75 的 4 倍”表示为 75 × 4；
+- “136 与 97 的和”需要先相加，因此要用小括号括起来，表示为 (136 + 97)；
+- 求两者的差，列式为：75 × 4 − (136 + 97)。
+
+2.
+**按运算顺序计算：** 先算小括号里面的加法，同时算出乘法，最后再算减法：
+
+$$\\begin{aligned}
+&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67
+\\end{aligned}$$
+
+答：差是 67。`;
+
+describe('有序列表编号与正文同行', () => {
+    it('单独成行的 1. / 2. 与下一行标题合并，嵌套条目在同一列表项内', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={ANALYSIS_LIST} />);
+        const visible = visibleMarkup(html);
+        // 不能出现空的 <li></li>，正文也不能掉到列表外成为独立段落
+        expect(visible).not.toMatch(/<li[^>]*>\s*<\/li>/);
+        expect(visible).not.toMatch(/<\/ol>\s*<p[^>]*>理解题意并列式：/);
+        expect(visible).not.toMatch(/<\/ol>\s*<p[^>]*>\s*<strong>按运算顺序计算：/);
+        expect(visible).toMatch(/<ol[^>]*>[\s\S]*<li[^>]*>[\s\S]*理解题意并列式：[\s\S]*<ul[\s\S]*75 × 4[\s\S]*<\/ul>[\s\S]*<\/li>[\s\S]*<li[^>]*>[\s\S]*按运算顺序计算：[\s\S]*katex[\s\S]*<\/li>[\s\S]*<\/ol>/);
+        expect(visible).toContain('list-outside');
+        expect(visible).not.toContain('list-inside');
+    });
+
+    it('答：差是 67。 只出现一次', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={ANALYSIS_LIST} />);
+        expect(visibleMarkup(html).split('答：差是 67。')).toHaveLength(2);
+    });
+
+    it('中文句号后的换行仍拆成两个段落', () => {
+        expect(renderToStaticMarkup(<MarkdownRenderer content={'第一步。\\n第二步'} />)).toMatch(/第一步。<\/p>\s*<p[^>]*>第二步/);
     });
 });

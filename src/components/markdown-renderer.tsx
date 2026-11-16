@@ -41,9 +41,10 @@ export function MarkdownRenderer({ content, className = '', variant = 'block', c
                     h2: ({ node, ...props }) => <h2 className={compact ? 'text-base font-bold' : 'text-xl font-bold mt-5 mb-3'} {...props} />,
                     h3: ({ node, ...props }) => <h3 className={compact ? 'text-sm font-bold' : 'text-lg font-bold mt-4 mb-2'} {...props} />,
                     p: ({ node, ...props }) => <p className={compact ? 'mb-0 leading-relaxed' : 'mb-3 leading-relaxed'} {...props} />,
-                    ul: ({ node, ...props }) => <ul className={`list-disc list-inside space-y-1 ${compact ? 'mb-0' : 'mb-3'}`} {...props} />,
-                    ol: ({ node, ...props }) => <ol className={`list-decimal list-inside space-y-1 ${compact ? 'mb-0' : 'mb-3'}`} {...props} />,
-                    li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                    ul: ({ node, ...props }) => <ul className={`list-disc list-outside pl-6 space-y-1 ${compact ? 'mb-0' : 'mb-3'}`} {...props} />,
+                    ol: ({ node, ...props }) => <ol className={`list-decimal list-outside pl-6 space-y-1 ${compact ? 'mb-0' : 'mb-3'}`} {...props} />,
+                    // list-outside：编号与首行正文对齐；避免 list-inside 在 li>p 时把编号单独顶到上一行
+                    li: ({ node, ...props }) => <li className="[&>p]:mb-1 [&>p:last-child]:mb-0 [&>ul]:mt-1 [&>ol]:mt-1" {...props} />,
                     blockquote: ({ node, ...props }) => (
                         <blockquote className={`border-l-4 border-primary pl-4 italic text-muted-foreground ${compact ? 'my-1' : 'my-4'}`} {...props} />
                     ),

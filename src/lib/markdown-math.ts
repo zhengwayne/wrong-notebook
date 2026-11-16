@@ -54,9 +54,10 @@ function normalizeText(text: string): string {
         .replace(/\\n/g, '\n')
         // 保留已有的空行
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
-        // 句末标点后的单个换行转为分段
+        // 句末标点后的单个换行转为分段；"1." 列表标记由 normalizeOrderedLists 处理
         .replace(/([。！？；])\n(?!\n)/g, '$1\n\n')
-        .replace(/([.!?;])\s*\n(?!\n)/g, '$1\n\n')
+        // 数字后的点是 "1." 列表标记，不能当成句号拆段
+        .replace(/(?<!\d)([.!?;])\s*\n(?!\n)/g, '$1\n\n')
         // 编号 (1)、①② 后的换行转为分段
         .replace(/(\d+\))\s*\n(?!\n)/g, '$1\n\n')
         .replace(/([①-⑳])\s*\n(?!\n)/g, '$1\n\n')
@@ -64,6 +65,86 @@ function normalizeText(text: string): string {
         .replace(/\n\s+([①-⑳])/g, '\n$1')
         .replace(/\n\s+(\d+\))/g, '\n$1')
         .replace(/\s*###PRESERVE_BREAK###\s*/g, '\n\n');
+}
+
+
+const LONE_ORDERED_MARKER = /^(\s*)(\d+)\.\s*$/;
+const ORDERED_ITEM_START = /^(\s*)(\d+)\.\s+\S/;
+const ANSWER_LINE = /^答[:：]/;
+
+function isLoneOrderedMarker(line: string): RegExpExecArray | null {
+    return LONE_ORDERED_MARKER.exec(line);
+}
+
+function isOrderedItemStart(line: string): RegExpExecArray | null {
+    return ORDERED_ITEM_START.exec(line);
+}
+
+function isAnswerLine(line: string): boolean {
+    return ANSWER_LINE.test(line.trim());
+}
+
+/**
+ * 把单独成行的 "1." / "2." 与下一行标题合并，并把后续条目缩进到该列表项下。
+ * 否则 CommonMark 会把无缩进的正文当成列表外的段落，编号就会孤零零占一行。
+ */
+function normalizeOrderedLists(text: string): string {
+    const lines = text.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+        const lone = isLoneOrderedMarker(lines[i]);
+        if (lone) {
+            let j = i + 1;
+            while (j < lines.length && lines[j].trim() === '') j++;
+            if (j < lines.length && !isLoneOrderedMarker(lines[j]) && !isOrderedItemStart(lines[j]) && !isAnswerLine(lines[j])) {
+                const indent = lone[1];
+                const marker = `${indent}${lone[2]}. `;
+                out.push(`${marker}${lines[j].replace(/^\s+/, '')}`);
+                i = takeListContinuations(lines, j + 1, marker.length, out);
+                continue;
+            }
+        }
+        const start = isOrderedItemStart(lines[i]);
+        if (start) {
+            out.push(lines[i]);
+            const indent = start[1];
+            i = takeListContinuations(lines, i + 1, indent.length + start[2].length + 2, out);
+            continue;
+        }
+        out.push(lines[i]);
+        i++;
+    }
+    return out.join('\n');
+}
+
+function takeListContinuations(lines: string[], start: number, contentColumn: number, out: string[]): number {
+    const itemIndent = ' '.repeat(contentColumn);
+    let i = start;
+    while (i < lines.length) {
+        const line = lines[i];
+        if (isLoneOrderedMarker(line) || isOrderedItemStart(line) || isAnswerLine(line)) break;
+        if (line.trim() === '') {
+            out.push('');
+            i++;
+            continue;
+        }
+        out.push(line.startsWith(itemIndent) ? line : `${itemIndent}${line.replace(/^\s+/, '')}`);
+        i++;
+    }
+    return i;
+}
+
+/** 还原公式占位符；若占位符所在行已缩进，把公式块的后续行对齐到同一缩进 */
+function restoreMathSegments(text: string, segments: MathSegment[]): string {
+    return text.replace(PLACEHOLDER_PATTERN, (_match, index: string, offset: number) => {
+        const source = segments[Number(index)].source;
+        if (!source.includes('\n')) return source;
+        const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+        const indent = text.slice(lineStart, offset).match(/^[ \t]*/)?.[0] ?? '';
+        if (!indent) return source;
+        return source.split('\n').map((line, lineIndex) => (lineIndex === 0 ? line : `${indent}${line}`)).join('\n');
+    });
 }
 
 /** 一个公式片段：source 为统一定界符后的源码（$…$ 或 $$…$$） */
@@ -95,5 +176,6 @@ export function prepareMarkdownMath(
     transformMasked: (text: string) => string = (text) => text,
 ): string {
     const { masked, segments } = extractMathSegments(content);
-    return normalizeText(transformMasked(masked)).replace(PLACEHOLDER_PATTERN, (_match, index: string) => segments[Number(index)].source);
+    const prepared = normalizeOrderedLists(normalizeText(transformMasked(masked)));
+    return restoreMathSegments(prepared, segments);
 }
