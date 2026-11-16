@@ -215,6 +215,7 @@ function buildBundle() {
         copy(path.join(ROOT, 'node_modules', dir), path.join(BUNDLE, 'node_modules', dir));
     }
     pruneBundle();
+    ensureExternalRuntimePackages();
     fs.copyFileSync(path.join(PACKAGING, 'runtime', 'launcher.js'), path.join(BUNDLE, 'launcher.js'));
     // MIT 许可证要求随软件分发许可证文本，npm、桌面版和飞牛OS 安装包都基于此目录
     fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(BUNDLE, 'LICENSE'));
@@ -227,6 +228,40 @@ function buildBundle() {
         description: '错题本服务端（安装包运行时）',
     });
     log(`dist/bundle 已就绪（v${version}）：${fs.readdirSync(BUNDLE).join(', ')}`);
+}
+
+
+/**
+ * serverExternalPackages（Prisma、bcryptjs、node-edge-tts、ws）不会打进 Next 的服务端 bundle，
+ * standalone 追踪也可能漏掉新增的外部包。Prisma 已在上方单独复制；这里补齐其余包及其生产依赖。
+ */
+const EXTRA_RUNTIME_PACKAGES = ['node-edge-tts', 'ws', 'bcryptjs'];
+
+function copyPackageAndDeps(name, seen = new Set()) {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const src = path.join(ROOT, 'node_modules', name);
+    if (!fs.existsSync(path.join(src, 'package.json'))) {
+        throw new Error(`缺少运行时依赖 ${name}，请先在仓库根目录执行 npm install`);
+    }
+    copy(src, path.join(BUNDLE, 'node_modules', name));
+    const manifest = readJson(path.join(src, 'package.json'));
+    for (const dep of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
+        if (fs.existsSync(path.join(ROOT, 'node_modules', dep, 'package.json'))) {
+            copyPackageAndDeps(dep, seen);
+        }
+    }
+}
+
+function ensureExternalRuntimePackages() {
+    const seen = new Set();
+    for (const name of EXTRA_RUNTIME_PACKAGES) copyPackageAndDeps(name, seen);
+    log(`已补齐外部运行时依赖：${[...seen].sort().join(', ')}`);
+}
+
+function prismaEngineNames(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((name) => /((lib)?query_engine|schema-engine)/.test(name));
 }
 
 function requireBundle() {
@@ -286,7 +321,11 @@ function buildDesktop() {
 
 /** electron-builder 的文件过滤规则较多，打包后确认服务端关键文件确实进入安装包 */
 function verifyDesktopOutput(releaseDir) {
-    const required = ['launcher.js', 'server.js', '.next/BUILD_ID', 'node_modules/.prisma/client/index.js', 'prisma/seed.db'];
+    const required = [
+        'launcher.js', 'server.js', '.next/BUILD_ID',
+        'node_modules/.prisma/client/index.js', 'prisma/seed.db',
+        'node_modules/node-edge-tts/package.json', 'node_modules/ws/package.json',
+    ];
     const roots = [];
     const walk = (dir, depth) => {
         if (depth > 6 || !fs.existsSync(dir)) return;
@@ -307,6 +346,17 @@ function verifyDesktopOutput(releaseDir) {
     }
     for (const root of roots) {
         const missing = required.filter((file) => !fs.existsSync(path.join(root, file)));
+        const queryEngines = prismaEngineNames(path.join(root, 'node_modules', '.prisma', 'client'));
+        if (!queryEngines.some((name) => /query_engine/.test(name))) {
+            missing.push('node_modules/.prisma/client 下的本平台查询引擎');
+        }
+        const schemaEngines = [
+            ...prismaEngineNames(path.join(root, 'node_modules', '@prisma', 'engines')),
+            ...prismaEngineNames(path.join(root, 'node_modules', 'prisma')),
+        ];
+        if (!schemaEngines.some((name) => /schema-engine/.test(name))) {
+            missing.push('Prisma schema 引擎（迁移用）');
+        }
         if (missing.length > 0) throw new Error(`${root} 缺少文件：${missing.join(', ')}`);
     }
     log(`安装包内容检查通过：${roots.map((r) => path.relative(ROOT, r)).join(', ')}`);
