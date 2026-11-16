@@ -107,7 +107,7 @@ function ensureLoaded() {
     if (!file) return;
     let saved: unknown;
     try {
-        saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+        saved = JSON.parse(fs.readFileSync(/* turbopackIgnore: true */ file, 'utf8'));
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn({ error }, 'Failed to read saved background tasks');
         return;
@@ -136,10 +136,10 @@ function saveNow() {
     const file = persistenceFile();
     if (!file) return;
     try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.mkdirSync(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
         // 先写临时文件再改名，避免写到一半时进程退出留下损坏的文件
         const temp = `${file}.${process.pid}.tmp`;
-        fs.writeFileSync(temp, JSON.stringify([...tasks.values()]));
+        fs.writeFileSync(/* turbopackIgnore: true */ temp, JSON.stringify([...tasks.values()]));
         fs.renameSync(temp, file);
     } catch (error) {
         logger.warn({ error }, 'Failed to save background tasks');
