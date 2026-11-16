@@ -15,6 +15,7 @@ import { getAppTimeZone } from "@/lib/config";
 import { getErrorMessage } from "@/lib/error-message";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
+import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
 
 const logger = createLogger('api:analyze');
 
@@ -125,10 +126,12 @@ async function handlePost(req: Request) {
 
         logger.info('AI analysis successful');
 
-        return NextResponse.json(gradeProfile ? {
-            ...analysisResult,
-            gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: analysisResult.gradeSemester }, getAppTimeZone()),
-        } : analysisResult);
+        const items = (analysisResult.items?.length ? analysisResult.items : [analysisResult]).map((item) => (
+            gradeProfile
+                ? { ...item, gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: item.gradeSemester }, getAppTimeZone()) }
+                : item
+        ));
+        return NextResponse.json(toAnalyzeImageResult(items));
     } catch (error) {
         const message = getErrorMessage(error);
         logger.error({

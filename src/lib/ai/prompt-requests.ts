@@ -33,7 +33,7 @@ function inputOptions(options: PromptOptions): Record<string, unknown> {
 
 function referenceOptions(options: PromptOptions): PromptOptions {
     const result = { ...options };
-    const fields = ['prefetchedMathTags', 'prefetchedPhysicsTags', 'prefetchedChemistryTags', 'prefetchedBiologyTags', 'prefetchedEnglishTags'] as const;
+    const fields = ['prefetchedMathTags', 'prefetchedPhysicsTags', 'prefetchedChemistryTags', 'prefetchedBiologyTags', 'prefetchedEnglishTags', 'prefetchedChineseTags', 'prefetchedHistoryTags', 'prefetchedGeographyTags', 'prefetchedPoliticsTags'] as const;
     for (const field of fields) {
         if (options[field]) result[field] = options[field].length ? [ref('tagOptions.' + field)] : [];
     }

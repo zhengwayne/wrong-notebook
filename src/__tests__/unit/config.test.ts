@@ -239,6 +239,41 @@ describe('config module', () => {
             expect(config.aiProvider).toBe(id);
             expect(config[id]).toMatchObject({ apiKey: 'env-key', model: 'file-model' });
         });
+
+        it('读取已有配置时去掉模型名、地址和密钥的首尾空白', async () => {
+            const fileConfig = {
+                aiProvider: 'openai',
+                openai: {
+                    instances: [{
+                        id: 'test-instance',
+                        name: 'Test',
+                        apiKey: ' sk-file-key\t',
+                        baseUrl: ' https://api.example.com/v1\t',
+                        model: 'gemini-4-hydrogen-medium\t',
+                    }],
+                    activeInstanceId: 'test-instance',
+                },
+                gemini: { apiKey: ' gm-key ', model: '  gemini-2.5-flash  ' },
+                textAi: {
+                    openai: {
+                        instances: [{ id: 'text', name: 'Text', apiKey: ' text-key\n', model: ' text-model ' }],
+                        activeInstanceId: 'text',
+                    },
+                },
+            };
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(fileConfig));
+
+            const { getAppConfig } = await import('@/lib/config');
+            const config = getAppConfig();
+
+            expect(config.openai?.instances?.[0]?.model).toBe('gemini-4-hydrogen-medium');
+            expect(config.openai?.instances?.[0]?.baseUrl).toBe('https://api.example.com/v1');
+            expect(config.openai?.instances?.[0]?.apiKey).toBe('sk-file-key');
+            expect(config.gemini?.model).toBe('gemini-2.5-flash');
+            expect(config.gemini?.apiKey).toBe('gm-key');
+            expect(config.textAi?.openai?.instances?.[0]?.model).toBe('text-model');
+            expect(config.textAi?.openai?.instances?.[0]?.apiKey).toBe('text-key');
+        });
     });
 
     describe('updateAppConfig', () => {
@@ -251,6 +286,33 @@ describe('config module', () => {
 
             expect(fs.writeFileSync).toHaveBeenCalled();
             expect(result.aiProvider).toBe('openai');
+        });
+
+        it('保存时去掉模型名、地址和密钥的首尾空白', async () => {
+            mockNoConfigFile();
+            vi.mocked(fs.writeFileSync).mockImplementation(() => { });
+
+            const { updateAppConfig } = await import('@/lib/config');
+            const result = updateAppConfig({
+                openai: {
+                    instances: [{
+                        id: 'test-instance',
+                        name: 'Test',
+                        apiKey: ' sk-save\t',
+                        baseUrl: ' https://api.example.com/v1 ',
+                        model: 'gemini-4-hydrogen-medium\t',
+                    }],
+                    activeInstanceId: 'test-instance',
+                },
+                textAi: { gemini: { apiKey: ' text-save ', model: ' text-gemini ' } },
+            });
+
+            expect(result.openai?.instances?.[0]?.model).toBe('gemini-4-hydrogen-medium');
+            expect(result.openai?.instances?.[0]?.apiKey).toBe('sk-save');
+            expect(result.openai?.instances?.[0]?.baseUrl).toBe('https://api.example.com/v1');
+            expect(result.textAi?.gemini?.model).toBe('text-gemini');
+            const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+            expect(written.openai.instances[0].model).toBe('gemini-4-hydrogen-medium');
         });
 
         it('先写临时文件再改名替换，避免读到写了一半的配置', async () => {

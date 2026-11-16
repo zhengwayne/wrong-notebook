@@ -7,6 +7,7 @@ import { BatchImportPanel } from "@/components/batch-import-panel";
 import { CorrectionEditor } from "@/components/correction-editor";
 import { ImageCropper } from "@/components/image-cropper";
 import { ImportResultBanner } from "@/components/import-result-banner";
+import { MultiQuestionConfirm } from "@/components/multi-question-confirm";
 import { TextInputZone } from "@/components/text-input-zone";
 import { UploadZone } from "@/components/upload-zone";
 import { PageHeader } from "@/components/ui/page-header";
@@ -59,7 +60,7 @@ export default function AddErrorPage() {
         <main id="main-content" tabIndex={-1} className="min-h-screen">
             <ProgressFeedback status={flow.analysisStep} />
 
-            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>
+            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" || flow.step === "confirm" ? "max-w-6xl" : "max-w-4xl"}`}>
                 <PageHeader
                     backHref={`/notebooks/${notebookId}`}
                     title={t.app.addError}
@@ -98,6 +99,15 @@ export default function AddErrorPage() {
                             />
                         )}
                     </div>
+                )}
+
+                {flow.step === "confirm" && flow.pendingItems && (
+                    <MultiQuestionConfirm
+                        items={flow.pendingItems.items}
+                        saving={flow.savingItems}
+                        onCancel={flow.cancelPending}
+                        onSave={flow.savePendingItems}
+                    />
                 )}
 
                 {flow.step === "review" && flow.parsedData && (

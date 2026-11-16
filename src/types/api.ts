@@ -1,4 +1,4 @@
-import { ParsedQuestion } from "@/lib/ai/types";
+import { ParsedQuestion, type AnalyzeImageResult } from "@/lib/ai/types";
 import type { VendorConfig, VendorProviderId } from "@/lib/ai/vendor-presets";
 import type { MiniMaxCodeConfig } from "@/lib/minimax-code/constants";
 import type { MasteryStatus } from "@/lib/mastery-status";
@@ -116,7 +116,7 @@ export interface CreateErrorItemRequest extends ParsedQuestion {
     paperLevel?: string;
 }
 
-export type AnalyzeResponse = ParsedQuestion;
+export type AnalyzeResponse = AnalyzeImageResult;
 
 export interface QuestionSimilarityResponse {
     similarity: number;

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, AnalyzeImageResult } from "./types";
 import type { StructuredCompletion } from "./types";
 import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
@@ -20,6 +20,8 @@ import { normalizeMistakeStatusForSave } from '../mistake-status';
 import { parseRecognizedGrade } from '../question-grade';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
+import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
+import { getInitialMaxTokens } from './model-output-limits';
 
 const logger = createLogger('ai:openai');
 
@@ -191,11 +193,12 @@ export class OpenAIProvider implements AIService {
         }
     }
 
-    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestion> {
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
         const tagOptions = candidateTags ? { candidateTags } : await prefetchSubjectTags(subject, grade);
+        const initialMax = getInitialMaxTokens(this.model);
 
         const systemPrompt = generateAnalyzeRequest(language, grade, subject, {
             customTemplate: config.prompts?.analyze,
@@ -235,7 +238,7 @@ export class OpenAIProvider implements AIService {
                         ],
                     },
                 ],
-                max_tokens: 8192,
+                max_tokens: initialMax,
             };
 
             logger.box('📤 API Request (发送给 AI 的原始请求)', JSON.stringify(requestParamsForLog, null, 2));
@@ -260,26 +263,28 @@ export class OpenAIProvider implements AIService {
                     },
                 ]);
 
-                const res = await fetch(`${this.baseURL}/chat/completions`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: this.model,
-                        messages,
-                        max_tokens: 8192,
-                    }),
-                });
+                response = await withTruncationRetry(async (maxTokens) => {
+                    const res = await fetch(`${this.baseURL}/chat/completions`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${this.apiKey}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            model: this.model,
+                            messages,
+                            max_tokens: maxTokens,
+                        }),
+                    });
 
-                if (!res.ok) {
-                    const errBody = await res.text();
-                    logger.error({ status: res.status, body: errBody }, 'LongCat API error');
-                    throw new Error(`${res.status} status code (${errBody})`);
-                }
+                    if (!res.ok) {
+                        const errBody = await res.text();
+                        logger.error({ status: res.status, body: errBody }, 'LongCat API error');
+                        throw new Error(`${res.status} status code (${errBody})`);
+                    }
 
-                response = await res.json() as ChatCompletion;
+                    return await res.json() as ChatCompletion;
+                }, getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
             } else {
                 response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
                     model: this.model,
@@ -303,7 +308,7 @@ export class OpenAIProvider implements AIService {
                     ],
                     // response_format: { type: "json_object" }, // Removing to improve compatibility with 3rd party providers
                     max_tokens: maxTokens,
-                }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+                }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
             }
 
             logger.box('📦 Full API Response', JSON.stringify(response, null, 2));
@@ -319,7 +324,8 @@ export class OpenAIProvider implements AIService {
             logger.box('🤖 AI Raw Response', text);
 
             if (!text) throw new Error("Empty response from AI");
-            const parsedResult = normalizeAiQuestionTags(this.parseResponse(text), tagOptions);
+            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 
@@ -364,7 +370,7 @@ export class OpenAIProvider implements AIService {
                 ],
                 // response_format: { type: "json_object" }, // Removing to improve compatibility with 3rd party providers
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || "";
 
@@ -448,7 +454,7 @@ export class OpenAIProvider implements AIService {
                     { role: "user", content: userContent }
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             logger.debug({ response: JSON.stringify(response) }, 'Full API response');
 
@@ -626,7 +632,7 @@ export class OpenAIProvider implements AIService {
                     ] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
@@ -683,7 +689,7 @@ export class OpenAIProvider implements AIService {
                     { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }, { type: "text", text: prompt.user }] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
@@ -709,7 +715,7 @@ export class OpenAIProvider implements AIService {
                     { role: "user", content: prompt.user },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'LaTeX fix AI raw response');

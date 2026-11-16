@@ -523,3 +523,52 @@ describe('按题型判题', () => {
         expect(prompt).toContain('【学生答案】\n两角相等');
     });
 });
+
+
+    describe('识别提示词去重与标签裁剪', () => {
+        const many = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}知识点${i + 1}`);
+
+        it('四年级未指定学科时，只列出小学可能出现的学科标签，且不重复附加规则', () => {
+            const math = many('数学', 218);
+            const chinese = many('语文', 80);
+            const english = many('英语', 212);
+            const physics = many('物理', 235);
+            const chemistry = many('化学', 165);
+            const biology = many('生物', 196);
+            const after = generateAnalyzePrompt('zh', 4, undefined, {
+                prefetchedMathTags: math,
+                prefetchedChineseTags: chinese,
+                prefetchedEnglishTags: english,
+            });
+            const legacy = generateAnalyzePrompt('zh', 4, undefined, {
+                prefetchedMathTags: math,
+                prefetchedChineseTags: chinese,
+                prefetchedEnglishTags: english,
+                prefetchedPhysicsTags: physics,
+                prefetchedChemistryTags: chemistry,
+                prefetchedBiologyTags: biology,
+            }) + '\n\n' + [
+                after,
+                '请参考《高思学校竞赛数学导引》',
+            ].join('\n');
+
+            // 新提示词不应再附带第二份 LaTeX / 学历 / 星级 / 配图规则
+            const latexCount = (after.match(/LaTeX 规范/g) || []).length;
+            expect(latexCount).toBe(1);
+            expect(after).not.toContain('"物理知识点1"');
+            expect(after).not.toContain('"化学知识点1"');
+            expect(after).not.toContain('"生物知识点1"');
+            expect(after).toContain('"数学知识点1"');
+            expect(after).toContain('<item>');
+            expect(after.length).toBeLessThan(legacy.length);
+
+            // 记录体积，便于报告 before / after
+            const beforeChars = legacy.length;
+            const afterChars = after.length;
+            expect({ beforeChars, afterChars, beforeTokens: Math.round(beforeChars / 4), afterTokens: Math.round(afterChars / 4) }).toMatchObject({
+                beforeChars: expect.any(Number),
+                afterChars: expect.any(Number),
+            });
+            expect(afterChars / beforeChars).toBeLessThan(0.7);
+        });
+    });

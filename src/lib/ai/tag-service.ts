@@ -189,15 +189,35 @@ export async function getNotebookCandidateTags(scope: NotebookScope): Promise<Ca
     };
 }
 
+
 /**
- * 未指定错题本时的旧逻辑：数学按学生年级取标签，其他学科取全部；未知学科时各科都取，让 AI 判断
+ * 按年级给出合理学科，避免把高中物理/化学/生物标签送给小学识别请求。
+ * primary (1-6): 数学、语文、英语；初高中再纳入理化生与政史地。
  */
+export function plausibleSubjectsForGrade(grade: GradeLevel | null | undefined): NotebookSubject[] {
+    const primary: NotebookSubject[] = ['math', 'chinese', 'english'];
+    const secondary: NotebookSubject[] = [...primary, 'physics', 'chemistry', 'biology', 'history', 'geography', 'politics'];
+    if (!grade || grade <= 6) return primary;
+    return secondary;
+}
+
+/** 未指定错题本时，按年级只取可能出现的学科标签；指定学科时只取该科。 */
 export async function prefetchSubjectTags(subject: string | null | undefined, grade: GradeLevel | null | undefined) {
+    const allowed = new Set(
+        subject
+            ? [subject]
+            : plausibleSubjectsForGrade(grade).map((key) => SUBJECT_DISPLAY_NAMES[key])
+    );
+    const include = (name: string) => allowed.has(name);
     return {
-        prefetchedMathTags: (subject === '数学' || !subject) ? await getMathTagsFromDB(grade || null) : [],
-        prefetchedPhysicsTags: (subject === '物理' || !subject) ? await getTagsFromDB('physics') : [],
-        prefetchedChemistryTags: (subject === '化学' || !subject) ? await getTagsFromDB('chemistry') : [],
-        prefetchedBiologyTags: (subject === '生物' || !subject) ? await getTagsFromDB('biology') : [],
-        prefetchedEnglishTags: (subject === '英语' || !subject) ? await getTagsFromDB('english') : [],
+        prefetchedMathTags: include('数学') ? await getMathTagsFromDB(grade || null) : [],
+        prefetchedPhysicsTags: include('物理') ? await getTagsFromDB('physics') : [],
+        prefetchedChemistryTags: include('化学') ? await getTagsFromDB('chemistry') : [],
+        prefetchedBiologyTags: include('生物') ? await getTagsFromDB('biology') : [],
+        prefetchedEnglishTags: include('英语') ? await getTagsFromDB('english') : [],
+        prefetchedChineseTags: include('语文') ? await getTagsFromDB('chinese') : [],
+        prefetchedHistoryTags: include('历史') ? await getTagsFromDB('history') : [],
+        prefetchedGeographyTags: include('地理') ? await getTagsFromDB('geography') : [],
+        prefetchedPoliticsTags: include('政治') ? await getTagsFromDB('politics') : [],
     };
 }

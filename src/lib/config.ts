@@ -3,8 +3,7 @@ import path from 'path';
 import { createLogger } from './logger';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from './date-time';
 import { parseConcurrencyLimit } from './ai-concurrency-limit';
-import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS } from './ai/vendor-presets';
-import type { VendorConfig, VendorProviderId } from './ai/vendor-presets';
+import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS, type VendorConfig, type VendorProviderId } from './ai/vendor-presets';
 import { mergeTextAi } from './ai/roles';
 import type { TextAiConfig } from '@/types/api';
 import type { MiniMaxCodeConfig } from './minimax-code/constants';
@@ -220,6 +219,65 @@ function writeConfigFile(config: unknown): void {
     fs.renameSync(tmp, CONFIG_FILE_PATH);
 }
 
+
+/** 去掉模型名、地址、密钥首尾空白（含用户误粘贴的制表符），读写配置时都执行。 */
+function trimConn<T extends { apiKey?: string; baseUrl?: string; model?: string; endpoint?: string; deployment?: string }>(value?: T): T | undefined {
+    if (!value) return value;
+    const next = { ...value };
+    if (typeof next.apiKey === 'string') next.apiKey = next.apiKey.trim();
+    if (typeof next.baseUrl === 'string') next.baseUrl = next.baseUrl.trim();
+    if (typeof next.model === 'string') next.model = next.model.trim();
+    if (typeof next.endpoint === 'string') next.endpoint = next.endpoint.trim();
+    if (typeof next.deployment === 'string') next.deployment = next.deployment.trim();
+    return next;
+}
+
+function trimOpenAI(config?: AppConfig['openai']): AppConfig['openai'] {
+    if (!config) return config;
+    return {
+        activeInstanceId: config.activeInstanceId,
+        instances: (config.instances || []).map((instance) => ({
+            ...instance,
+            apiKey: instance.apiKey?.trim() ?? instance.apiKey,
+            baseUrl: instance.baseUrl?.trim() ?? instance.baseUrl,
+            model: instance.model?.trim() ?? instance.model,
+        })),
+    };
+}
+
+function trimTextAi(textAi?: AppConfig['textAi']): AppConfig['textAi'] {
+    if (!textAi) return textAi;
+    const vendors: Record<string, VendorConfig | undefined> = {};
+    for (const id of Object.keys(VENDOR_PRESETS) as VendorProviderId[]) {
+        if (textAi[id]) vendors[id] = trimConn(textAi[id]);
+    }
+    return {
+        ...textAi,
+        ...vendors,
+        openai: trimOpenAI(textAi.openai) as AppConfig['textAi'] extends { openai?: infer O } ? O : undefined,
+        gemini: trimConn(textAi.gemini),
+        azure: trimConn(textAi.azure),
+        anthropic: trimConn(textAi.anthropic),
+    };
+}
+
+export function trimAppConfigConnections<T extends Partial<AppConfig>>(config: T): T {
+    const vendors: Record<string, VendorConfig | undefined> = {};
+    for (const id of Object.keys(VENDOR_PRESETS) as VendorProviderId[]) {
+        const block = (config as AppConfig)[id];
+        if (block) vendors[id] = trimConn(block);
+    }
+    return {
+        ...config,
+        ...vendors,
+        openai: trimOpenAI(config.openai) ?? config.openai,
+        gemini: trimConn(config.gemini) ?? config.gemini,
+        azure: trimConn(config.azure) ?? config.azure,
+        anthropic: trimConn(config.anthropic) ?? config.anthropic,
+        textAi: trimTextAi(config.textAi) ?? config.textAi,
+    };
+}
+
 export function getAppConfig(): AppConfig {
     let fileContent: string | null;
     try {
@@ -247,7 +305,7 @@ export function getAppConfig(): AppConfig {
             }
 
             // Merge with default to ensure all fields exist
-            return {
+            return trimAppConfigConnections({
                 ...DEFAULT_CONFIG,
                 ...userConfig,
                 timeZone: isValidTimeZone(userConfig.timeZone) ? userConfig.timeZone.trim() : DEFAULT_TIME_ZONE,
@@ -266,7 +324,7 @@ export function getAppConfig(): AppConfig {
                 textSameAsVision: userConfig.textSameAsVision !== false,
                 aiTextProvider: userConfig.aiTextProvider,
                 textAi: mergeTextAi(undefined, userConfig.textAi),
-            };
+            });
         } catch (error) {
             logger.error({ error }, 'Failed to read config file');
             return DEFAULT_CONFIG;
@@ -301,9 +359,10 @@ export function updateAppConfig(newConfig: Partial<AppConfig>) {
         textAi: mergeTextAi(currentConfig.textAi, newConfig.textAi),
     };
 
+    const trimmed = trimAppConfigConnections(updatedConfig);
     try {
-        writeConfigFile(updatedConfig);
-        return updatedConfig;
+        writeConfigFile(trimmed);
+        return trimmed;
     } catch (error) {
         logger.error({ error }, 'Failed to write config file');
         throw error;

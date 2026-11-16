@@ -90,3 +90,26 @@ export function parseMaxOutputTokensFromError(message: string, requested: number
 export function isMaxTokensError(message: string): boolean {
     return /max[_ ]?(completion[_ ]?|output[_ ]?)?tokens/i.test(message);
 }
+
+/** 常见推理模型：思考过程会计入输出额度，初始 max_tokens 需要更高 */
+export function isReasoningModel(model?: string | null): boolean {
+    const name = (model || '').trim().toLowerCase();
+    if (!name) return false;
+    return /reasoner|reasoning|thinking|hydrogen|\br1\b|\bo1\b|\bo3\b|\bo4\b|gemini-2\.5|gemini-[3-9]|minimax-m|gpt-[5-9]|claude-(opus|sonnet)-4|deepseek-r|glm-4\.|glm-5/.test(name);
+}
+
+/** 非推理任务的默认输出上限 */
+export const DEFAULT_OUTPUT_MAX_TOKENS = 8192;
+
+/** 推理模型首次请求使用的输出上限（仍低于多数官方上限，截断时再升到模型最大值） */
+export const REASONING_INITIAL_MAX_TOKENS = 32768;
+
+/**
+ * 选择首次请求的 max_tokens：推理模型用更高的初始值，避免思考过程把 8192 用尽后再整轮重试。
+ * 不超过已知的模型上限；未知模型不盲目顶到 64K。
+ */
+export function getInitialMaxTokens(model?: string | null, taskDefault = DEFAULT_OUTPUT_MAX_TOKENS): number {
+    const known = getKnownModelMaxOutputTokens(model);
+    const desired = isReasoningModel(model) ? Math.max(taskDefault, REASONING_INITIAL_MAX_TOKENS) : taskDefault;
+    return known ? Math.min(desired, known) : desired;
+}

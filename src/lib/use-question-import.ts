@@ -55,7 +55,7 @@ interface QuestionImportOptions {
 export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId, textNotebook, fixedSubjectId, onParsed }: QuestionImportOptions) {
     const { t, language } = useLanguage();
     const router = useRouter();
-    const [step, setStep] = useState<"upload" | "review">("upload");
+    const [step, setStep] = useState<"upload" | "review" | "confirm">("upload");
     const [analysisStep, setAnalysisStep] = useState<ProgressStatus>('idle');
     const [parsedData, setParsedData] = useState<ParsedQuestion | null>(null);
     const [currentImage, setCurrentImage] = useState<string | null>(null);
@@ -66,6 +66,8 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     const [confirmBeforeImport, setConfirmBeforeImport] = useState(false);
     const [lastImported, setLastImported] = useState<ImportedQuestion | null>(null);
     const [batchBlobs, setBatchBlobs] = useState<Blob[] | null>(null);
+    const [pendingItems, setPendingItems] = useState<{ items: ParsedQuestion[]; imageUrl: string | null } | null>(null);
+    const [savingItems, setSavingItems] = useState(false);
 
     const aiTimeout = config?.timeouts?.analyze || DEFAULT_AI_TIMEOUT;
     const safetyTimeout = aiTimeout + 10000;
@@ -106,19 +108,64 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         setBatchBlobs(blobs);
     };
 
-    /** 识别结果：未开启人工确认时直接入库，否则进入校对页 */
-    const handleParsed = async (data: ParsedQuestion, imageUrl: string | null) => {
+    const itemsFromAnalyze = (data: ParsedQuestion | AnalyzeResponse): ParsedQuestion[] => {
+        if ('items' in data && Array.isArray(data.items) && data.items.length > 0) {
+            return data.items;
+        }
+        return [data];
+    };
+
+    /** 多题始终进入确认页；单题仍遵循「导入前人工确认」偏好 */
+    const handleParsed = async (data: ParsedQuestion | AnalyzeResponse, imageUrl: string | null) => {
+        const items = itemsFromAnalyze(data);
+        if (items.length > 1) {
+            setCurrentImage(imageUrl);
+            setPendingItems({ items, imageUrl });
+            setStep("confirm");
+            return;
+        }
         if (!confirmBeforeImport) {
             setAnalysisStep('saving');
-            const imported = await saveParsedQuestion(data, { subjectId: importSubjectId, imageUrl });
+            const imported = await saveParsedQuestion(items[0], { subjectId: importSubjectId, imageUrl });
             setLastImported(imported);
             setCurrentImage(null);
             frontendLogger.info(logPrefix, 'Imported without review', { id: imported.id });
             return;
         }
         setCurrentImage(imageUrl);
-        setParsedData(data);
+        setParsedData(items[0]);
         setStep("review");
+    };
+
+    const cancelPending = () => {
+        setPendingItems(null);
+        setCurrentImage(null);
+        setStep("upload");
+    };
+
+    const savePendingItems = async (selected: ParsedQuestion[]) => {
+        if (!pendingItems || selected.length === 0) {
+            toast.error(t.importFlow.emptySelection);
+            return;
+        }
+        setSavingItems(true);
+        setAnalysisStep('saving');
+        try {
+            const imported: ImportedQuestion[] = [];
+            for (const item of selected) {
+                imported.push(await saveParsedQuestion(item, { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl }));
+            }
+            toast.success(t.importFlow.savedCount.replace("{count}", String(imported.length)));
+            setLastImported(imported[imported.length - 1]);
+            frontendLogger.info(logPrefix, 'Imported multiple questions', { count: imported.length, ids: imported.map((item) => item.id) });
+            cancelPending();
+        } catch (error) {
+            frontendLogger.error(logPrefix, 'Failed to save selected questions', { error: getApiErrorMessage(error) ?? getErrorMessage(error) });
+            toast.error(t.common?.messages?.saveFailed || 'Failed to save');
+        } finally {
+            setSavingItems(false);
+            setAnalysisStep('idle');
+        }
     };
 
     const analyzeImage = async (file: File) => {
@@ -225,12 +272,13 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     };
 
     return {
-        step, cancelReview: () => setStep("upload"),
+        step, cancelReview: () => { setStep("upload"); setPendingItems(null); },
         analysisStep, setAnalysisStep, isBusy: analysisStep !== 'idle',
         parsedData, currentImage, aiTimeout,
         croppingImage, isCropperOpen, closeCropper: () => setIsCropperOpen(false),
         lastImported, dismissImported: () => setLastImported(null),
         batchBlobs, closeBatch: () => setBatchBlobs(null),
         selectImage, cropComplete, startBatch, submitText, saveQuestion, saveReviewed,
+        pendingItems, savingItems, savePendingItems, cancelPending,
     };
 }

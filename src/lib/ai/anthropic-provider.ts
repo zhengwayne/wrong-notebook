@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import type { AnalyzeImageResult } from './types';
 import { parseJsonCompletion, usageFromAnthropic } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateReanswerRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -19,6 +20,8 @@ import { normalizeMistakeStatusForSave } from '../mistake-status';
 import { parseRecognizedGrade } from '../question-grade';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
+import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
+import { getInitialMaxTokens } from './model-output-limits';
 
 const logger = createLogger('ai:anthropic');
 
@@ -196,9 +199,10 @@ export class AnthropicProvider implements AIService {
         return response.text;
     }
 
-    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestion> {
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
         const tagOptions = candidateTags ? { candidateTags } : await prefetchSubjectTags(subject, grade);
+        const initialMax = getInitialMaxTokens(this.model);
         const systemPrompt = generateAnalyzeRequest(language, grade, subject, {
             customTemplate: config.prompts?.analyze,
             // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -220,9 +224,10 @@ export class AnthropicProvider implements AIService {
             const text = await this.complete(systemPrompt.system, [
                 imageBlock(imageBase64, mimeType),
                 { type: 'text', text: systemPrompt.user },
-            ], 8192);
+            ], initialMax);
             logger.box('🤖 AI Raw Response', text);
-            const parsedResult = normalizeAiQuestionTags(parseQuestionResponse(text), tagOptions);
+            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items);
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
             return parsedResult;
         } catch (error) {
@@ -243,7 +248,7 @@ export class AnthropicProvider implements AIService {
         logger.info({ provider: 'Anthropic', model: this.model, difficulty, language }, 'Generate Similar Question Request');
 
         try {
-            const text = await this.complete(systemPrompt.system, userPrompt, 8192);
+            const text = await this.complete(systemPrompt.system, userPrompt, getInitialMaxTokens(this.model));
             logger.box('🤖 AI Raw Response', text);
             return normalizeGeneratedQuestion(parseQuestionResponse(text));
         } catch (error) {
@@ -290,7 +295,7 @@ export class AnthropicProvider implements AIService {
             const content: UserContent = imageBase64
                 ? [imageBlock(imageBase64), { type: 'text', text: prompt.user }]
                 : prompt.user;
-            const text = await this.complete(prompt.system, content, 8192);
+            const text = await this.complete(prompt.system, content, getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'AI raw response');
 
             const wrongAnswerText = extractTag(text, "wrong_answer_text") || "";
@@ -383,7 +388,7 @@ export class AnthropicProvider implements AIService {
             const text = await this.complete(prompt.system, [
                 ...input.images.map((image) => imageBlock(image.base64, image.mimeType)),
                 { type: 'text', text: prompt.user },
-            ], 8192);
+            ], getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
             return parseExamPaperRead(text);
         } catch (error) {
@@ -416,7 +421,7 @@ export class AnthropicProvider implements AIService {
             const text = await this.complete(prompt.system, [
                 imageBlock(imageBase64, mimeType), { type: 'text', text: prompt.user },
                 { type: 'text', text: '请重新绘制图中题目的配图。' },
-            ], 8192);
+            ], getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
             return parseFigure(extractTag(text, "has_figure"), extractTag(text, "figure_svg"));
         } catch (error) {
@@ -431,7 +436,7 @@ export class AnthropicProvider implements AIService {
         logger.info({ provider: 'Anthropic', model: this.model, fields: Object.keys(input) }, 'LaTeX Fix Request');
 
         try {
-            const text = await this.complete(prompt.system, prompt.user, 8192);
+            const text = await this.complete(prompt.system, prompt.user, getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'LaTeX fix AI raw response');
             return parseLatexFix(text, input);
         } catch (error) {

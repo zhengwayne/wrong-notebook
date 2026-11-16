@@ -1,5 +1,6 @@
 import { AzureOpenAI } from "openai";
 import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import type { AnalyzeImageResult } from './types';
 import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateReanswerRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -18,6 +19,8 @@ import { normalizeMistakeStatusForSave } from '../mistake-status';
 import { parseRecognizedGrade } from '../question-grade';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
+import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
+import { getInitialMaxTokens } from './model-output-limits';
 
 const logger = createLogger('ai:azure');
 
@@ -162,7 +165,7 @@ export class AzureOpenAIProvider implements AIService {
         subject?: string | null,
         gradeSemester?: string | null,
         candidateTags?: CandidateTags
-    ): Promise<ParsedQuestion> {
+    ): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -206,7 +209,7 @@ export class AzureOpenAIProvider implements AIService {
                     },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             logger.box('📦 Full API Response', JSON.stringify(response, null, 2));
 
@@ -221,7 +224,8 @@ export class AzureOpenAIProvider implements AIService {
             logger.box('🤖 AI Raw Response', text);
 
             if (!text) throw new Error("Empty response from AI");
-            const parsedResult = normalizeAiQuestionTags(this.parseResponse(text), tagOptions);
+            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 
@@ -279,7 +283,7 @@ export class AzureOpenAIProvider implements AIService {
                     },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || "";
 
@@ -359,7 +363,7 @@ export class AzureOpenAIProvider implements AIService {
                     { role: "user", content: userContent }
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             logger.debug({ response: JSON.stringify(response) }, 'Full API response');
 
@@ -538,7 +542,7 @@ export class AzureOpenAIProvider implements AIService {
                     ] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
@@ -595,7 +599,7 @@ export class AzureOpenAIProvider implements AIService {
                     { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }, { type: "text", text: prompt.user }] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
@@ -621,7 +625,7 @@ export class AzureOpenAIProvider implements AIService {
                     { role: "user", content: prompt.user },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'LaTeX fix AI raw response');

@@ -142,7 +142,11 @@ export const QUESTION_OUTPUT_TAGS = {
 /** 输出协议独立于自定义模板，避免旧模板丢失新增标签。 */
 function generateOutputContract(kind: keyof typeof QUESTION_OUTPUT_TAGS): string {
   const tags = QUESTION_OUTPUT_TAGS[kind];
-  return `【应用必守输出协议】\n以下应用规则优先于自定义教学偏好。只输出这 ${tags.length} 个 XML 标签，每个标签恰好一次：\n${tags.map(tag => `<${tag}>内容</${tag}>`).join('\n')}\n不得改用 JSON，不得用 Markdown 代码块包裹整个回复。`;
+  const body = `只输出这 ${tags.length} 个 XML 标签，每个标签恰好一次：\n${tags.map(tag => `<${tag}>内容</${tag}>`).join('\n')}`;
+  const multi = kind === 'analyze'
+    ? `\n如果图片中有多道需要收入错题本的题目，请为每一道题各输出一组上述标签，并用 <item>...</item> 包住，按题号顺序排列。只有一道题时可以不包 item。`
+    : '';
+  return `【应用必守输出协议】\n以下应用规则优先于自定义教学偏好。${body}${multi}\n不得改用 JSON，不得用 Markdown 代码块包裹整个回复。`;
 }
 
 /** 系统规则和题目材料分别发送；JSON 中的字符串不具有指令权限。 */
@@ -184,6 +188,10 @@ export interface PromptOptions {
   prefetchedChemistryTags?: string[];
   prefetchedBiologyTags?: string[];
   prefetchedEnglishTags?: string[];
+  prefetchedChineseTags?: string[];
+  prefetchedHistoryTags?: string[];
+  prefetchedGeographyTags?: string[];
+  prefetchedPoliticsTags?: string[];
   // 错题本学段 + 学科下的全部知识点；提供时直接使用，不再按学科、年级取标签
   candidateTags?: CandidateTags;
   // 举一反三时原题的 SVG 配图，供 AI 参考重新画图
@@ -335,7 +343,7 @@ ${DIFFICULTY_STARS_RULES}
 【!!! 关键格式与内容约束 (CRITICAL RULES) !!!】
 1. **格式严格**：必须包含输出协议规定的全部 XML 标签，包括 grade_semester 年级标签，不要输出任何“开场白”或“结束语”。
 2. **纯文本**：内容作为纯文本处理，**不要转义反斜杠**。
-3. **内容完整**：如果包含子问题，请在 question_text 中完整列出。
+3. **一页多题**：图片中若有多道独立题目（含大题下的小题，如「一、1」与「二、3」），请为每一道需要收入错题本的题目各输出一组标签，并用 <item>...</item> 包住。需要收入的是：能看见学生写错的题目，以及明显空白未作答的题目。已经做对的题目不要输出。每道题的 question_text、answer_text、analysis、wrong_answer_text、mistake_analysis、knowledge_points、difficulty_stars 只写该题，不要把整页题干或解析写进同一条。wrong_answer_text 只摘录该题中可见的错误作答。
 4. **禁止图片**：严禁包含任何图片链接或 markdown 图片语法。
 5. **LaTeX 规范**：
 ${LATEX_RULES}
@@ -570,37 +578,52 @@ ${englishTagsString}
 - 必须从上述列表中选择精确匹配的标签
 - 每题最多 5 个标签`;
   } else {
-    // 未知科目：显示所有标签让 AI 判断
-    tagsSection = `**数学标签 (Math Tags):**
-${mathTagsString}
-
-**物理标签 (Physics Tags):**
-${physicsTagsString}
-
-**化学标签 (Chemistry Tags):**
-${chemistryTagsString}
-
-**生物标签 (Biology Tags):**
-${biologyTagsString}
-
-**英语标签 (English Tags):**
-${englishTagsString}`;
+    // 未知科目：只列出本次传入的学科标签（调用方已按年级筛选）
+    const named = [
+      ['数学', mathTags],
+      ['语文', options?.prefetchedChineseTags || []],
+      ['英语', englishTags],
+      ['物理', physicsTags],
+      ['化学', chemistryTags],
+      ['生物', biologyTags],
+      ['历史', options?.prefetchedHistoryTags || []],
+      ['地理', options?.prefetchedGeographyTags || []],
+      ['政治', options?.prefetchedPoliticsTags || []],
+    ] as const;
+    const parts = named
+      .filter(([, tags]) => tags.length > 0)
+      .map(([label, tags]) => `**${label}标签:**\n${tags.map(tag => `"${tag}"`).join(", ")}`);
+    tagsSection = parts.length > 0
+      ? `${parts.join("\n\n")}\n\n**重要提示**：必须从上述列表中选择精确匹配的标签，不要改写、不要自创；每题最多 5 个标签。`
+      : '（无可用标签，可按题目本身标注不超过 5 个知识点）';
   }
 
   const template = options?.customTemplate || DEFAULT_ANALYZE_TEMPLATE;
 
-  return replaceVariables(template, {
+  const rendered = replaceVariables(template, {
     language_instruction: langInstruction,
     knowledge_points_list: tagsSection,
-    grade_instruction: generateGradeInstruction(gradeSemester),
+    grade_instruction: generateGradeInstruction(gradeSemester) + '\n' + generateGradeRecognitionInstruction(gradeSemester),
     provider_hints: options?.providerHints || ''
-  }).trim() + '\n\n' + [
-    '请完整识别用户图片中的题目、独立求解，并仅根据可见作答分析错因。',
-    generateOutputContract('analyze'), langInstruction, LATEX_RULES,
-    generateGradeInstruction(gradeSemester), generateGradeRecognitionInstruction(gradeSemester),
-    tagsSection, DIFFICULTY_STARS_RULES,
-    '有配图时必须输出 figure_svg；无配图时留空。' + FIGURE_SVG_RULES,
+  }).trim();
+
+  // 默认模板已含 LaTeX、学历、标签、星级、配图规则，只再追加输出协议，避免重复。
+  // 旧自定义模板可能没有这些占位符，需要补上完整规则以保持行为。
+  const appendix = [
+    '请完整识别用户图片中的题目。多道题时按题拆开输出，已做对的题目不要收入。只根据可见作答判断对错，不要臆造错解。',
+    generateOutputContract('analyze'),
+    ...(options?.customTemplate ? [
+      langInstruction,
+      LATEX_RULES,
+      generateGradeInstruction(gradeSemester),
+      generateGradeRecognitionInstruction(gradeSemester),
+      tagsSection,
+      DIFFICULTY_STARS_RULES,
+      '有配图时必须输出 figure_svg；无配图时留空。' + FIGURE_SVG_RULES,
+    ] : []),
   ].filter(Boolean).join('\n\n');
+
+  return `${rendered}\n\n${appendix}`;
 }
 
 /**

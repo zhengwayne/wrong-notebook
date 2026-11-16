@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import type { AnalyzeImageResult } from './types';
 import { parseJsonCompletion, usageFromGemini } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -18,6 +19,9 @@ import { normalizeMistakeStatusForSave } from '../mistake-status';
 import { parseRecognizedGrade } from '../question-grade';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
+import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
+import { getInitialMaxTokens, getKnownModelMaxOutputTokens } from './model-output-limits';
+import { UNKNOWN_MODEL_RETRY_MAX_TOKENS } from './truncation';
 
 const logger = createLogger('ai:gemini');
 
@@ -173,7 +177,7 @@ export class GeminiProvider implements AIService {
         }
     }
 
-    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestion> {
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -214,9 +218,10 @@ export class GeminiProvider implements AIService {
 
             logger.box('📤 API Request (发送给 AI 的原始请求)', JSON.stringify(requestParamsForLog, null, 2));
 
-            const response = await this.retryOperation(() => this.ai.models.generateContent({
+            const initialMax = getInitialMaxTokens(this.modelName);
+            const generate = (maxOutputTokens: number) => this.retryOperation(() => this.ai.models.generateContent({
                 model: this.modelName,
-                config: { systemInstruction: prompt.system },
+                config: { systemInstruction: prompt.system, maxOutputTokens },
                 contents: [
                     {
                         text: prompt.user
@@ -229,6 +234,14 @@ export class GeminiProvider implements AIService {
                     }
                 ]
             }));
+            let response = await generate(initialMax);
+            if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+                const retryMax = getKnownModelMaxOutputTokens(this.modelName) ?? UNKNOWN_MODEL_RETRY_MAX_TOKENS;
+                if (retryMax > initialMax) {
+                    logger.warn('Output truncated by reasoning, retrying with larger max_tokens');
+                    response = await generate(retryMax);
+                }
+            }
 
             logger.box('📦 Full API Response Metadata', {
                 usageMetadata: response.usageMetadata
@@ -239,7 +252,8 @@ export class GeminiProvider implements AIService {
             logger.box('🤖 AI Raw Response', text);
 
             if (!text) throw new Error(response.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? AI_OUTPUT_TRUNCATED : "Empty response from AI");
-            const parsedResult = normalizeAiQuestionTags(this.parseResponse(text), tagOptions);
+            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 

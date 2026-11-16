@@ -9,6 +9,7 @@ import { DirectTextEditor } from "@/components/direct-text-editor";
 import { HomeHero } from "@/components/home-hero";
 import { ImageCropper } from "@/components/image-cropper";
 import { ImportResultBanner } from "@/components/import-result-banner";
+import { MultiQuestionConfirm } from "@/components/multi-question-confirm";
 import { TextInputZone } from "@/components/text-input-zone";
 import { UploadZone } from "@/components/upload-zone";
 import { PageContainer } from "@/components/ui/page-container";
@@ -104,7 +105,7 @@ function HomeContent() {
     ];
 
     return (
-        <PageContainer maxWidth={flow.step === "review" ? "6xl" : "4xl"} className="space-y-6">
+        <PageContainer maxWidth={flow.step === "review" || flow.step === "confirm" ? "6xl" : "4xl"} className="space-y-6">
             <ProgressFeedback status={flow.analysisStep} />
 
             {flow.step === "upload" && (
@@ -162,6 +163,15 @@ function HomeContent() {
                     onClose={flow.closeCropper}
                     onCropComplete={flow.cropComplete}
                     onMultiCropComplete={flow.startBatch}
+                />
+            )}
+
+            {flow.step === "confirm" && flow.pendingItems && (
+                <MultiQuestionConfirm
+                    items={flow.pendingItems.items}
+                    saving={flow.savingItems}
+                    onCancel={flow.cancelPending}
+                    onSave={flow.savePendingItems}
                 />
             )}
 
