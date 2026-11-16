@@ -105,7 +105,7 @@ export const translations = {
         },
         review: {
             title: "Today's Review",
-            desc: "Questions due today, scheduled at 1, 2, 4, 7, 15 and 30 days. A correct answer moves a question to the next interval; a wrong answer starts over.",
+            desc: "New mistakes are due the same day, then at 1, 2, 4, 7, 15 and 30 days. A correct answer moves a question to the next interval; a wrong answer starts over.",
             dueCount: "{count} due today",
             practice: "Practice",
             dueOn: "Due {date}",
@@ -1815,7 +1815,7 @@ export const translations = {
         },
         review: {
             title: "今日复习",
-            desc: "按 1、2、4、7、15、30 天的间隔安排复习。做对进入下一轮间隔，做错从头开始。",
+            desc: "新错题当天即可复习，之后按 1、2、4、7、15、30 天的间隔安排。做对进入下一轮间隔，做错从头开始。",
             dueCount: "今日待复习 {count} 道",
             practice: "举一反三",
             dueOn: "{date} 到期",
