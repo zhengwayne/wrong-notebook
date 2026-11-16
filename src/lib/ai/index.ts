@@ -6,10 +6,14 @@ import { AnthropicProvider } from "./anthropic-provider";
 import { MiniMaxCodeProvider } from "./minimax-code-provider";
 import { isVendorProvider, resolveVendorConfig, VENDOR_PRESETS } from "./vendor-presets";
 import { limitModelConcurrency } from "./concurrency";
+import { getConfigForRole, type AiModelRole } from "./roles";
 
 export * from "./types";
+export type { AiModelRole } from "./roles";
+export { getConfigForRole, isTextSameAsVision, snapshotVisionAsTextAi, applyTextRoleConfig } from "./roles";
 
-import { getAppConfig, getActiveOpenAIConfig } from "../config";
+import { getAppConfig } from "../config";
+import type { AppConfig, OpenAIInstance } from "../config";
 import { createLogger } from "../logger";
 
 const logger = createLogger('ai');
@@ -19,19 +23,24 @@ function concurrencyKey(provider: string, baseUrl: string | undefined, model: st
     return [provider, baseUrl || '', model || ''].join('|');
 }
 
-/** 当前配置的 AI 服务，所有调用受同一模型的并发上限约束 */
-export function getAIService(): AIService {
-    const { service, key } = createAIService();
+function getActiveInstance(config: AppConfig): OpenAIInstance | undefined {
+    const instances = config.openai?.instances || [];
+    const activeId = config.openai?.activeInstanceId;
+    if (!activeId || instances.length === 0) return undefined;
+    return instances.find((item) => item.id === activeId);
+}
+
+/** 按角色返回当前配置的 AI 服务；文本角色在未单独配置时复用多模态配置 */
+export function getAIService(role: AiModelRole): AIService {
+    const { service, key } = createAIService(getConfigForRole(getAppConfig(), role));
     return limitModelConcurrency(service, key);
 }
 
-function createAIService(): { service: AIService; key: string } {
-    // Always get fresh config
-    const config = getAppConfig();
+function createAIService(config: AppConfig): { service: AIService; key: string } {
     const provider = config.aiProvider;
 
     if (provider === "openai") {
-        const activeConfig = getActiveOpenAIConfig();
+        const activeConfig = getActiveInstance(config);
         logger.info({ activeInstance: activeConfig?.name }, 'Using OpenAI Provider');
         return { service: new OpenAIProvider(activeConfig), key: concurrencyKey(provider, activeConfig?.baseUrl, activeConfig?.model) };
     } else if (provider === "azure") {

@@ -264,6 +264,31 @@ describe('/api/settings', () => {
             expect(updateCall.gemini?.apiKey).toBe('AIza-test-key');
         });
 
+        it('文本角色独立凭据的掩码 API Key 同样保留原有值', async () => {
+            const current = mocks.mockGetAppConfig();
+            mocks.mockGetAppConfig.mockReturnValueOnce({
+                ...current,
+                textSameAsVision: false,
+                aiTextProvider: 'gemini',
+                textAi: { gemini: { apiKey: 'AIza-text-saved' } },
+            } as ReturnType<typeof mocks.mockGetAppConfig>);
+            const request = new Request('http://localhost/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    textSameAsVision: false,
+                    aiTextProvider: 'gemini',
+                    textAi: { gemini: { apiKey: '********', model: 'gemini-pro' } },
+                }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const response = await POST(request);
+            expect(response.status).toBe(200);
+            expect(mocks.mockUpdateAppConfig.mock.calls[0][0].textAi?.gemini).toEqual({
+                apiKey: 'AIza-text-saved',
+                model: 'gemini-pro',
+            });
+        });
+
         it('国产大模型渠道同样保留掩码 API Key 的原有值', async () => {
             const { VENDOR_PROVIDER_IDS } = await import('@/lib/ai/vendor-presets');
             const current = mocks.mockGetAppConfig();

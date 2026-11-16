@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (limited) return limited;
 
     try {
-        const read = await getAIService().readExamPaper({ mode: 'identify', images: [splitDataUrl(parsed.data.image)], language: parsed.data.language });
+        const read = await getAIService('vision').readExamPaper({ mode: 'identify', images: [splitDataUrl(parsed.data.image)], language: parsed.data.language });
         const identity = { className: read.className, studentNo: read.studentNo, name: read.studentName };
         if (!hasIdentity(identity)) return NextResponse.json({ identity, match: null, alreadySubmitted: false });
         const match = matchStudent(identity, await loadTaskRoster(task));

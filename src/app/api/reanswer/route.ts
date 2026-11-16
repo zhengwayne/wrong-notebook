@@ -59,7 +59,7 @@ async function handlePost(req: Request) {
         const limited = await consumeAiQuota(session.user, 'reanswer');
         if (limited) return limited;
 
-        const aiService = getAIService();
+        const aiService = getAIService(imageBase64 ? 'vision' : 'text');
         // 新录入的文字题遵循账户规则，已有题目的重新解题沿用其手工年级。
         const gradeProfile = forImport === true && session.user?.email
             ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;

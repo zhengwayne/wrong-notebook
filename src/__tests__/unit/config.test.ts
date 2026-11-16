@@ -329,4 +329,40 @@ describe('config module', () => {
             expect(result.allowRegistration).toBe(false);
         });
     });
+
+    describe('文本与多模态模型角色', () => {
+        it('旧版单渠道配置在读取时应把文本角色视为与多模态相同', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'gemini',
+                gemini: { apiKey: 'legacy-key', model: 'gemini-2.5-flash' },
+            }));
+            const { getAppConfig } = await import('@/lib/config');
+            const { isTextSameAsVision, getConfigForRole } = await import('@/lib/ai/roles');
+            const config = getAppConfig();
+            expect(isTextSameAsVision(config)).toBe(true);
+            expect(getConfigForRole(config, 'text').aiProvider).toBe('gemini');
+            expect(getConfigForRole(config, 'text').gemini?.apiKey).toBe('legacy-key');
+            expect(getConfigForRole(config, 'text').gemini?.model).toBe('gemini-2.5-flash');
+        });
+
+        it('关闭共用后文本角色使用独立渠道和模型', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'gemini',
+                gemini: { apiKey: 'vision-key', model: 'gemini-flash' },
+                textSameAsVision: false,
+                aiTextProvider: 'minimax',
+                textAi: { minimax: { apiKey: 'text-key', model: 'MiniMax-M3.1-Flash' } },
+            }));
+            const { getAppConfig } = await import('@/lib/config');
+            const { isTextSameAsVision, getConfigForRole } = await import('@/lib/ai/roles');
+            const config = getAppConfig();
+            expect(isTextSameAsVision(config)).toBe(false);
+            expect(getConfigForRole(config, 'vision').aiProvider).toBe('gemini');
+            expect(getConfigForRole(config, 'vision').gemini?.model).toBe('gemini-flash');
+            const text = getConfigForRole(config, 'text');
+            expect(text.aiProvider).toBe('minimax');
+            expect(text.minimax?.apiKey).toBe('text-key');
+            expect(text.minimax?.model).toBe('MiniMax-M3.1-Flash');
+        });
+    });
 });

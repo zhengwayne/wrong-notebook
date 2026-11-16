@@ -93,7 +93,7 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
         mocks.getAppConfig.mockReturnValue({ aiProvider: id, [id]: { apiKey: 'vendor-key' } });
         mocks.create.mockResolvedValue({ choices: [{ message: { content: '{"tags": ["加法"], "difficultyStars": 1}' }, finish_reason: 'stop' }] });
 
-        const service = getAIService();
+        const service = getAIService('vision');
         await service.suggestKnowledgeTags({ questionText: '1+1=?', subject: '数学', allowedTags: ['加法'] });
 
         expect(service.constructor.name).toBe('OpenAIProvider');
@@ -103,7 +103,7 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
 
     it('未填写 API Key 时报认证错误', () => {
         mocks.getAppConfig.mockReturnValue({ aiProvider: id, [id]: {} });
-        expect(() => getAIService()).toThrow('AI_AUTH_ERROR');
+        expect(() => getAIService('vision')).toThrow('AI_AUTH_ERROR');
     });
 
     it('模型列表默认请求官方地址', async () => {

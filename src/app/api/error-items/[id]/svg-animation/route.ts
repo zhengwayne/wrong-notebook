@@ -63,7 +63,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
         const svgAnimation = await trackBackgroundTask(
             { userId: user.id, kind: 'svg_animation', subject: describeQuestion(item), link: `/error-items/${id}` },
             async () => {
-                const svg = await getAIService().generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
+                const svg = await getAIService('text').generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
                 if (!svg) throw new Error("NO_VALID_ANIMATION");
                 await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: svg } });
                 return svg;

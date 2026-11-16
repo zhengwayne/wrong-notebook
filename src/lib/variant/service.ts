@@ -242,7 +242,7 @@ export async function startLegacyRun(options: {
     subjectName?: string;
 }): Promise<{ questionText: string; answerText: string; analysis: string; figureSvg: string | null; subject?: string; difficulty: DifficultyLevel; generatedAt: string; runId: string }> {
     const started = Date.now();
-    const generated = await getAIService().generateSimilarQuestion(
+    const generated = await getAIService('text').generateSimilarQuestion(
         options.question, options.knowledgePoints, options.language, options.difficulty, options.gradeSemester, options.figureSvg,
     );
     const lastPractice = {

@@ -48,7 +48,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
         const updated = await trackBackgroundTask(
             { userId: user.id, kind: 'svg_narration', subject: describeQuestion(item), link: `/error-items/${id}` },
             async () => {
-                const narration = await getAIService().generateSvgNarration(item.questionText || "", item.answerText || "", item.analysis || "", svgAnimation, language);
+                const narration = await getAIService('text').generateSvgNarration(item.questionText || "", item.answerText || "", item.analysis || "", svgAnimation, language);
                 if (!narration) throw new Error("NO_VALID_NARRATION");
                 const svg = embedNarration(svgAnimation, narration);
                 await prisma.errorItem.update({ where: { id }, data: { [field]: svg } });

@@ -36,7 +36,7 @@ async function handlePost(req: Request) {
         const limited = await consumeAiQuota(session.user, 'geogebra');
         if (limited) return limited;
 
-        const aiService = getAIService();
+        const aiService = getAIService('text');
         const result = await trackBackgroundTask(
             { userId: session.user.id, kind: 'geogebra', subject: describeQuestion({ questionText }) },
             () => aiService.analyzeForGeogebra(questionText, answerText || "", analysis || "")

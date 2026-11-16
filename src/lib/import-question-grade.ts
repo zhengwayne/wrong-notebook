@@ -29,7 +29,7 @@ export async function prepareImportGrade(user: ImportGradeUser, input: ImportGra
     if (limited) return { response: limited };
     const recognizedGradeSemester = await trackBackgroundTask(
         { userId: user.id, kind: 'analyze', subject: describeQuestion({ questionText: input.questionText }) },
-        () => getAIService().recognizeGrade(input.questionText ?? ''),
+        () => getAIService('text').recognizeGrade(input.questionText ?? ''),
     );
     return { gradeSemester: resolveQuestionGrade(user, { ...input, recognizedGradeSemester }, timeZone) };
 }

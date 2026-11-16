@@ -54,7 +54,7 @@ export function keyQuestionData(question: KeyQuestionInput, order: number) {
 
 /** 拍照识别答案卷，返回可编辑的题目清单 */
 export async function readAnswerKeyFromImages(images: string[], language: 'zh' | 'en'): Promise<KeyQuestionInput[]> {
-    const result = await getAIService().readExamPaper({
+    const result = await getAIService('vision').readExamPaper({
         mode: 'answer_key',
         images: images.map((image) => splitDataUrl(image)),
         language,
@@ -148,7 +148,7 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
 
     try {
         const images = parseJsonStringArray(submission.images);
-        const read = await getAIService().readExamPaper({
+        const read = await getAIService('vision').readExamPaper({
             mode: 'student',
             images: images.map((image) => splitDataUrl(image)),
             questions: questions.map(({ number, type, maxScore, answer, questionText }) => ({ number, type, maxScore, answer, questionText })),

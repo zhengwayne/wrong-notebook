@@ -28,12 +28,14 @@ interface AiConnectionTestProps {
     config: AppConfig;
     /** 保存中时禁用测试 */
     saving: boolean;
-    /** 与测试按钮并排显示的保存按钮 */
-    saveButton: ReactNode;
+    /** 与测试按钮并排显示的保存按钮；不传或为 null 时只显示测试 */
+    saveButton?: ReactNode;
+    /** 测试按钮文案，默认使用通用的「测试连接」 */
+    testLabel?: string;
 }
 
 /** 测试当前 AI 渠道的文本与图像识别能力，并显示结果 */
-export function AiConnectionTest({ config, saving, saveButton }: AiConnectionTestProps) {
+export function AiConnectionTest({ config, saving, saveButton, testLabel }: AiConnectionTestProps) {
     const { t, language } = useLanguage();
     const [testing, setTesting] = useState(false);
     const [result, setResult] = useState<TestResult | null>(null);
@@ -67,7 +69,7 @@ export function AiConnectionTest({ config, saving, saveButton }: AiConnectionTes
             <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={handleTest} disabled={testing || saving} className="flex-1">
                     {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    {testing ? (t.settings?.ai?.testing || "Testing...") : (t.settings?.ai?.testConnection || "Test Connection")}
+                    {testing ? (t.settings?.ai?.testing || "Testing...") : (testLabel || t.settings?.ai?.testConnection || "Test Connection")}
                 </Button>
                 {saveButton}
             </div>

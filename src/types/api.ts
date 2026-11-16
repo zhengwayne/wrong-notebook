@@ -168,8 +168,40 @@ export interface OpenAIInstance {
 // MiniMax、GLM 等国产大模型官方渠道，每个渠道一组 { apiKey, baseUrl, model }
 type VendorConfigs = { [K in VendorProviderId]?: VendorConfig };
 
+/** 文本对话模型的独立渠道凭据（与多模态顶层字段结构相同） */
+export type TextAiConfig = VendorConfigs & {
+    openai?: {
+        instances?: OpenAIInstance[];
+        activeInstanceId?: string;
+    };
+    gemini?: {
+        apiKey?: string;
+        baseUrl?: string;
+        model?: string;
+    };
+    azure?: {
+        apiKey?: string;
+        endpoint?: string;
+        deploymentName?: string;
+        apiVersion?: string;
+        model?: string;
+    };
+    anthropic?: {
+        apiKey?: string;
+        baseUrl?: string;
+        model?: string;
+    };
+    minimaxCode?: MiniMaxCodeConfig;
+};
+
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
+    textSameAsVision?: boolean;
+    /** 文本角色使用的渠道；仅在 textSameAsVision 为 false 时生效 */
+    aiTextProvider?: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本角色独立凭据 */
+    textAi?: TextAiConfig;
     allowRegistration?: boolean;
     /** 普通用户每天可发起的 AI 调用次数，0 表示不限制；管理员不受限制 */
     aiDailyLimit?: number;

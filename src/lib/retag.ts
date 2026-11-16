@@ -71,7 +71,7 @@ async function suggestTagsForItem(errorItemId: string, userId: string): Promise<
             ? calculateGrade(item.user.educationStage, item.user.enrollmentYear, new Date(), 'zh', getAppTimeZone())
             : null);
 
-    const { tags: chosen, difficultyStars } = await getAIService().suggestKnowledgeTags({
+    const { tags: chosen, difficultyStars } = await getAIService('text').suggestKnowledgeTags({
         questionText: item.questionText,
         answerText: item.answerText,
         analysis: item.analysis,

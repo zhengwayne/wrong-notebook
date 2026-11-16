@@ -70,7 +70,7 @@ async function handlePost(
         const limited = await consumeAiQuota(user, 'geogebra');
         if (limited) return limited;
 
-        const aiService = getAIService();
+        const aiService = getAIService('text');
 
         // Use frontend-provided data if available (more up-to-date), fall back to DB
         const body = await req.json().catch(() => ({}));

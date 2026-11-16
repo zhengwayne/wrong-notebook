@@ -48,7 +48,7 @@ async function handlePost(req: Request) {
         const limited = await consumeAiQuota(session.user, 'grade');
         if (limited) return limited;
 
-        const result = await getAIService().gradeAnswer({
+        const result = await getAIService('text').gradeAnswer({
             questionText: practice.questionText,
             answerText: practice.answerText,
             analysis: practice.analysis,

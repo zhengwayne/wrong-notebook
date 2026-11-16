@@ -1,3 +1,4 @@
+import { getConfigForRole, type AiModelRole } from "@/lib/ai/roles";
 import { isVendorProvider } from "@/lib/ai/vendor-presets";
 import type { AppConfig } from "@/types/api";
 
@@ -6,7 +7,8 @@ export type ConnectionTestRequest =
     | { ok: true; body: Record<string, unknown> }
     | { ok: false; error: 'API_KEY_REQUIRED' | 'AZURE_CONFIG_INCOMPLETE' | 'UNSUPPORTED_PROVIDER' };
 
-export function buildConnectionTestRequest(config: AppConfig, language: string): ConnectionTestRequest {
+export function buildConnectionTestRequest(config: AppConfig, language: string, role: AiModelRole = 'vision'): ConnectionTestRequest {
+    config = getConfigForRole(config, role);
     const provider = config.aiProvider;
 
     if (provider === 'openai') {

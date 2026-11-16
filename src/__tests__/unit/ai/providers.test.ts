@@ -145,7 +145,7 @@ describe('AI Provider 初始化', () => {
                 model: 'gpt-4o',
             });
 
-            const service = getAIService();
+            const service = getAIService('vision');
 
             expect(service).toBeDefined();
             expect(service.constructor.name).toBe('OpenAIProvider');
@@ -159,7 +159,7 @@ describe('AI Provider 初始化', () => {
                 openai: { apiKey: '', model: '' }
             } as unknown as ReturnType<typeof getAppConfig>);
 
-            const service = getAIService();
+            const service = getAIService('vision');
 
             expect(service).toBeDefined();
             expect(service.constructor.name).toBe('GeminiProvider');
@@ -173,7 +173,7 @@ describe('AI Provider 初始化', () => {
                 minimax: { apiKey: 'test-minimax-key' },
             } as unknown as ReturnType<typeof getAppConfig>);
 
-            const service = getAIService();
+            const service = getAIService('vision');
 
             expect(service).toBeDefined();
             expect(service.constructor.name).toBe('OpenAIProvider');

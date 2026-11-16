@@ -10,6 +10,7 @@ import { createLogger } from "@/lib/logger";
 import type { OpenAIInstance } from "@/types/api";
 import { isValidTimeZone } from "@/lib/date-time";
 import { VENDOR_PROVIDER_IDS } from "@/lib/ai/vendor-presets";
+import type { TextAiConfig } from "@/types/api";
 import { CLOUD_TTS_PROVIDERS, TTS_MODES } from "@/lib/tts/constants";
 
 const logger = createLogger('api:settings');
@@ -30,6 +31,45 @@ const ttsSchema = z.object({
     mode: z.enum(TTS_MODES).optional(),
     ...Object.fromEntries(CLOUD_TTS_PROVIDERS.map((id) => [id, cloudTtsSchema.optional()])),
 });
+
+
+function unmaskSecret<T extends { apiKey?: string } | undefined>(incoming: T, current: T): T {
+    if (incoming && incoming.apiKey === '********') {
+        return { ...incoming, apiKey: current?.apiKey || '' };
+    }
+    return incoming;
+}
+
+function unmaskOpenAIInstances(
+    incoming: { instances?: OpenAIInstance[]; activeInstanceId?: string } | undefined,
+    current: { instances?: OpenAIInstance[]; activeInstanceId?: string } | undefined,
+) {
+    if (!incoming?.instances) return incoming;
+    const currentInstances = current?.instances || [];
+    return {
+        ...incoming,
+        instances: incoming.instances.map((instance) => {
+            if (instance.apiKey !== '********') return instance;
+            const original = currentInstances.find((item) => item.id === instance.id);
+            return { ...instance, apiKey: original?.apiKey || '' };
+        }),
+    };
+}
+
+function unmaskTextAi(incoming: TextAiConfig | undefined, current: TextAiConfig | undefined): TextAiConfig | undefined {
+    if (!incoming) return incoming;
+    const next: TextAiConfig = {
+        ...incoming,
+        openai: unmaskOpenAIInstances(incoming.openai, current?.openai),
+        gemini: unmaskSecret(incoming.gemini, current?.gemini),
+        azure: unmaskSecret(incoming.azure, current?.azure),
+        anthropic: unmaskSecret(incoming.anthropic, current?.anthropic),
+    };
+    for (const id of VENDOR_PROVIDER_IDS) {
+        next[id] = unmaskSecret(incoming[id], current?.[id]);
+    }
+    return next;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -81,46 +121,20 @@ export async function POST(req: Request) {
         }
         const currentConfig = getAppConfig();
 
-        // Don't save masked keys if they somehow get sent back (for Gemini)
-        if (body.gemini?.apiKey === '********') {
-            // 保留原有的 API Key
-            body.gemini.apiKey = currentConfig.gemini?.apiKey;
-        }
-
-        // For OpenAI instances, preserve original keys for masked entries
-        if (body.openai?.instances) {
-            const currentInstances = currentConfig.openai?.instances || [];
-            body.openai.instances = body.openai.instances.map((instance: OpenAIInstance) => {
-                if (instance.apiKey === '********') {
-                    // 查找原有实例并保留其 API Key
-                    const originalInstance = currentInstances.find((i: OpenAIInstance) => i.id === instance.id);
-                    return {
-                        ...instance,
-                        apiKey: originalInstance?.apiKey || '',
-                    };
-                }
-                return instance;
-            });
-        }
-
-        // For Azure, preserve original key if masked
-        if (body.azure?.apiKey === '********') {
-            body.azure.apiKey = currentConfig.azure?.apiKey;
-        }
-
-        if (body.anthropic?.apiKey === '********') {
-            body.anthropic.apiKey = currentConfig.anthropic?.apiKey;
-        }
-
+        body.gemini = unmaskSecret(body.gemini, currentConfig.gemini);
+        body.openai = unmaskOpenAIInstances(body.openai, currentConfig.openai);
+        body.azure = unmaskSecret(body.azure, currentConfig.azure);
+        body.anthropic = unmaskSecret(body.anthropic, currentConfig.anthropic);
         for (const id of VENDOR_PROVIDER_IDS) {
-            if (body[id]?.apiKey === '********') {
-                body[id].apiKey = currentConfig[id]?.apiKey;
-            }
+            body[id] = unmaskSecret(body[id], currentConfig[id]);
         }
         for (const id of CLOUD_TTS_PROVIDERS) {
-            if (body.tts?.[id]?.apiKey === '********') {
-                body.tts[id].apiKey = currentConfig.tts?.[id]?.apiKey;
+            if (body.tts?.[id]) {
+                body.tts[id] = unmaskSecret(body.tts[id], currentConfig.tts?.[id]);
             }
+        }
+        if (body.textAi) {
+            body.textAi = unmaskTextAi(body.textAi, currentConfig.textAi);
         }
 
         const updatedConfig = updateAppConfig(body);

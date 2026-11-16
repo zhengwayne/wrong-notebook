@@ -5,6 +5,8 @@ import { DEFAULT_TIME_ZONE, isValidTimeZone } from './date-time';
 import { parseConcurrencyLimit } from './ai-concurrency-limit';
 import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS } from './ai/vendor-presets';
 import type { VendorConfig, VendorProviderId } from './ai/vendor-presets';
+import { mergeTextAi } from './ai/roles';
+import type { TextAiConfig } from '@/types/api';
 import type { MiniMaxCodeConfig } from './minimax-code/constants';
 import { CLOUD_TTS_PROVIDERS, isTtsMode } from './tts/constants';
 import type { TtsConfig } from './tts/constants';
@@ -28,6 +30,12 @@ type VendorConfigs = { [K in VendorProviderId]?: VendorConfig };
 
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
+    textSameAsVision?: boolean;
+    /** 文本角色使用的渠道；仅在 textSameAsVision 为 false 时生效 */
+    aiTextProvider?: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本角色独立凭据 */
+    textAi?: TextAiConfig;
     allowRegistration?: boolean;
     /** 普通用户每天可发起的 AI 调用次数，0 表示不限制；管理员不受限制 */
     aiDailyLimit?: number;
@@ -255,6 +263,9 @@ export function getAppConfig(): AppConfig {
                 prompts: { ...DEFAULT_CONFIG.prompts, ...userConfig.prompts },
                 timeouts: { ...DEFAULT_CONFIG.timeouts, ...userConfig.timeouts },
                 tts: mergeTtsConfig(DEFAULT_CONFIG.tts, userConfig.tts),
+                textSameAsVision: userConfig.textSameAsVision !== false,
+                aiTextProvider: userConfig.aiTextProvider,
+                textAi: mergeTextAi(undefined, userConfig.textAi),
             };
         } catch (error) {
             logger.error({ error }, 'Failed to read config file');
@@ -285,6 +296,9 @@ export function updateAppConfig(newConfig: Partial<AppConfig>) {
         prompts: { ...currentConfig.prompts, ...newConfig.prompts },
         timeouts: { ...currentConfig.timeouts, ...newConfig.timeouts },
         tts: mergeTtsConfig(currentConfig.tts, newConfig.tts),
+        textSameAsVision: newConfig.textSameAsVision !== undefined ? newConfig.textSameAsVision : currentConfig.textSameAsVision,
+        aiTextProvider: newConfig.aiTextProvider !== undefined ? newConfig.aiTextProvider : currentConfig.aiTextProvider,
+        textAi: mergeTextAi(currentConfig.textAi, newConfig.textAi),
     };
 
     try {

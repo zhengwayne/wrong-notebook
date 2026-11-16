@@ -16,7 +16,7 @@ function toUsage(usage?: AiUsage): TokenUsage | undefined {
 }
 
 export function createVariantAi(): VariantAi {
-    const service = getAIService();
+    const service = getAIService('text');
     return {
         async plan(input) {
             const result = await service.completeJson(generateVariantPlanRequest({
@@ -54,7 +54,7 @@ export function createVariantAi(): VariantAi {
 }
 
 export async function suggestTopic(input: { knowledgePoints: string[]; reason: string; language: 'zh' | 'en'; studentCount?: number }): Promise<{ data: TopicSuggestion; usage?: TokenUsage }> {
-    const result = await getAIService().completeJson(generateTopicSuggestionRequest({
+    const result = await getAIService('text').completeJson(generateTopicSuggestionRequest({
         knowledgePoints: input.knowledgePoints,
         reason: input.reason,
         studentCount: input.studentCount ?? 1,

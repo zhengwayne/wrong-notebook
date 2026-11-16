@@ -49,4 +49,22 @@ describe('设置页连接测试请求', () => {
         expect(buildConnectionTestRequest({ aiProvider: 'openai', openai: { instances: [] } }, 'zh')).toEqual({ ok: false, error: 'API_KEY_REQUIRED' });
         expect(buildConnectionTestRequest({ aiProvider: 'azure', azure: { apiKey: 'k' } }, 'zh')).toEqual({ ok: false, error: 'AZURE_CONFIG_INCOMPLETE' });
     });
+
+    it('文本角色独立配置时按文本渠道组装请求', () => {
+        const config: AppConfig = {
+            aiProvider: 'gemini',
+            gemini: { apiKey: 'vision-key', model: 'gemini-flash' },
+            textSameAsVision: false,
+            aiTextProvider: 'minimax',
+            textAi: { minimax: { apiKey: 'text-key', baseUrl: 'https://api.minimax.cn/v1', model: 'MiniMax-M3.1-Flash' } },
+        };
+        expect(buildConnectionTestRequest(config, 'zh', 'vision')).toEqual({
+            ok: true,
+            body: { provider: 'gemini', apiKey: 'vision-key', baseUrl: undefined, model: 'gemini-flash', language: 'zh' },
+        });
+        expect(buildConnectionTestRequest(config, 'zh', 'text')).toEqual({
+            ok: true,
+            body: { provider: 'minimax', apiKey: 'text-key', baseUrl: 'https://api.minimax.cn/v1', model: 'MiniMax-M3.1-Flash', language: 'zh' },
+        });
+    });
 });

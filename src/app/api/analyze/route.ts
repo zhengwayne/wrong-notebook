@@ -106,7 +106,7 @@ async function handlePost(req: Request) {
         const limited = await consumeAiQuota(session.user, 'analyze');
         if (limited) return limited;
 
-        const aiService = getAIService();
+        const aiService = getAIService('vision');
         const analysisResult = await trackBackgroundTask(
             { userId: session.user.id, kind: 'analyze', subject: notebookName },
             () => aiService.analyzeImage(imageBase64, mimeType, language, userGrade, subjectChinese, userGradeSemester, candidateTags)

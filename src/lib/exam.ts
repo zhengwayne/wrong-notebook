@@ -114,7 +114,7 @@ async function generateQuestion(questionId: string, difficulty: DifficultyLevel,
     }
 
     try {
-        const generated = await getAIService().generateSimilarQuestion(
+        const generated = await getAIService('text').generateSimilarQuestion(
             question.errorItem.questionText || '',
             parseTagNames(question.errorItem),
             language,
@@ -251,7 +251,7 @@ export async function regenerateExamQuestion(
         const source = question.errorItem;
         if (!source) throw new Error('SOURCE_DELETED');
 
-        const generated = await trackBackgroundTask({ ...task, kind: 'exam' }, () => getAIService().generateSimilarQuestion(
+        const generated = await trackBackgroundTask({ ...task, kind: 'exam' }, () => getAIService('text').generateSimilarQuestion(
             source.questionText || '',
             parseTagNames(source),
             language,
@@ -279,7 +279,7 @@ export async function regenerateExamQuestion(
         const scope = question.errorItem?.subject ? resolveNotebookScope(question.errorItem.subject) : null;
         const subject = scope?.subject ? SUBJECT_DISPLAY_NAMES[scope.subject] : null;
 
-        const result = await trackBackgroundTask({ ...task, kind: 'reanswer' }, () => getAIService().reanswerQuestion(
+        const result = await trackBackgroundTask({ ...task, kind: 'reanswer' }, () => getAIService('text').reanswerQuestion(
             questionText, language, subject, undefined, question.errorItem?.gradeSemester
         ));
         if (!result.answerText.trim() && !result.analysis.trim()) throw new Error('EMPTY_ANSWER');

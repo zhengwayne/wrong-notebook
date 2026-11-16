@@ -46,7 +46,7 @@ async function handlePost(
         const updated = await trackBackgroundTask(
             { userId: user.id, kind: 'figure', subject: describeQuestion(item), link: `/error-items/${id}` },
             async () => {
-                const figure = await getAIService().generateFigureSvg(match[2], match[1], item.questionText);
+                const figure = await getAIService('vision').generateFigureSvg(match[2], match[1], item.questionText);
                 return prisma.errorItem.update({
                     where: { id },
                     data: { hasFigure: figure.hasFigure, figureSvg: figure.figureSvg },

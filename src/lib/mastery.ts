@@ -111,7 +111,7 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
     let reason = '';
     let source: 'ai' | 'rule' = 'rule';
     try {
-        const result = await getAIService().evaluateMastery({
+        const result = await getAIService('text').evaluateMastery({
             questionText: item.questionText || '',
             knowledgePoints: item.tags.map((tag) => tag.name),
             mistakeStatus: item.mistakeStatus,

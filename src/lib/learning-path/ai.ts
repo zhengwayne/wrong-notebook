@@ -17,7 +17,7 @@ export async function suggestKnowledgeOrder(
     const fallback = points.map((item) => item.knowledgePoint);
     if (fallback.length <= 1) return { order: fallback, usedAi: false };
     try {
-        const result = await getAIService().completeJson(createPromptRequest(
+        const result = await getAIService('text').completeJson(createPromptRequest(
             language === "en" ? SYSTEM_EN : SYSTEM_ZH,
             { knowledgePoints: points },
             language === "en" ? "Reorder the knowledge points as JSON." : "请重排知识点并输出 JSON。",

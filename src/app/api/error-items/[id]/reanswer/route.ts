@@ -59,7 +59,7 @@ async function handlePost(
 
         const result = await trackBackgroundTask(
             { userId: user.id, kind: 'reanswer', subject: describeQuestion(item), link: `/error-items/${id}` },
-            () => getAIService().reanswerQuestion(questionText, language, subject, image, item.gradeSemester)
+            () => getAIService(image ? 'vision' : 'text').reanswerQuestion(questionText, language, subject, image, item.gradeSemester)
         );
         if (!result.answerText.trim() && !result.analysis.trim()) {
             return badRequest("EMPTY_ANSWER");
