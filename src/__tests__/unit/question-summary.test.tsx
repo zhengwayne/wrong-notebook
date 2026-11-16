@@ -50,34 +50,28 @@ describe('buildQuestionSummary', () => {
     });
 });
 
-/** 渲染摘要，返回 HTML 与去掉标签后的可见文字（不含 KaTeX 隐藏的 MathML 源码） */
-function renderSummary(text: string) {
-    const html = renderToStaticMarkup(<QuestionSummary text={text} maxLength={80} />);
-    const visible = html
-        .replace(/<span class="katex-mathml">[\s\S]*?<\/math><\/span>/g, '')
-        .replace(/<[^>]+>/g, '');
-    return { html, visible };
-}
-
 describe('QuestionSummary', () => {
-    it('用 KaTeX 渲染公式，不显示 LaTeX 源码', () => {
-        const { html, visible } = renderSummary('已知 $\\vec{a}=\\frac{1}{2}$');
+    it('用与详情页相同的渲染器显示公式，不露出 LaTeX 源码', () => {
+        const html = renderToStaticMarkup(<QuestionSummary text={'已知 $\\vec{a}=\\frac{1}{2}$'} />);
+        const visible = html
+            .replace(/<span class="katex-mathml">[\s\S]*?<\/math><\/span>/g, '')
+            .replace(/<annotation[\s\S]*?<\/annotation>/g, '')
+            .replace(/<[^>]+>/g, '');
         expect(html).toContain('class="katex"');
         expect(visible).toContain('已知');
-        expect(visible).not.toContain('\\');
+        expect(visible).not.toContain('\\vec');
+        expect(html).toContain('-webkit-line-clamp:3');
     });
 
-    it('公式无法解析时退回纯文本', () => {
-        const { html, visible } = renderSummary('错误 $\\frac{1}{2$');
-        expect(html).not.toContain('class="katex"');
-        expect(visible).toContain('错误');
-        expect(visible).not.toContain('$');
-    });
-
-    it('未闭合的 $ 或缺少定界符的 LaTeX 片段按纯文本清理，不残留反斜杠和 $', () => {
-        for (const text of ['已知 $x \\leq 3', '已知 \\frac{1}{2} \\times 4']) {
-            const { visible } = renderSummary(text);
-            expect(visible).not.toMatch(/[\\$]/);
-        }
+    it('渲染 <u> 下划线，并把 **加粗** 显示为粗体而不是星号', () => {
+        const html = renderToStaticMarkup(
+            <QuestionSummary text={'Look at the l<u>ea</u>ves. **数量关系混淆** $1200 \\div 50$'} clamp={2} />,
+        );
+        expect(html).toMatch(/<u>ea<\/u>/);
+        expect(html).toContain('<strong');
+        expect(html).not.toContain('**数量关系混淆**');
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('$1200');
+        expect(html).toContain('-webkit-line-clamp:2');
     });
 });

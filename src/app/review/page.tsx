@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarCheck, RefreshCw } from "lucide-react";
 import { ErrorItemCard } from "@/components/error-list/error-item-card";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -112,10 +113,16 @@ export default function ReviewPage() {
                                         <p><span className="font-medium text-foreground">{t.review.knowledgePoints}{t.common.colon}</span>{item.tags.map((tag) => tag.name).join(t.common.listSeparator)}</p>
                                     )}
                                     {item.wrongAnswerText && (
-                                        <p><span className="font-medium text-foreground">{t.review.wrongAnswer}{t.common.colon}</span>{item.wrongAnswerText}</p>
+                                        <div>
+                                            <span className="font-medium text-foreground">{t.review.wrongAnswer}{t.common.colon}</span>
+                                            <MarkdownRenderer content={item.wrongAnswerText} variant="compact" clamp={2} className="text-xs text-muted-foreground" />
+                                        </div>
                                     )}
                                     {item.mistakeAnalysis && (
-                                        <p className="line-clamp-3"><span className="font-medium text-foreground">{t.review.mistakeCause}{t.common.colon}</span>{item.mistakeAnalysis}</p>
+                                        <div>
+                                            <span className="font-medium text-foreground">{t.review.mistakeCause}{t.common.colon}</span>
+                                            <MarkdownRenderer content={item.mistakeAnalysis} variant="compact" clamp={3} className="text-xs text-muted-foreground" />
+                                        </div>
                                     )}
                                 </div>
                             )}

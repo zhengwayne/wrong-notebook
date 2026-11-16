@@ -4,16 +4,35 @@
  * 前后端共用，不要引入服务端模块。
  */
 
-// 公式片段：$$…$$、\[…\]、\(…\)、$…$（行内公式不跨行，"\$" 视为转义的美元符号）
+// 公式片段：$$…$$、\[…\]、\(…\)、$…$（行内公式不跨行，"\\$" 视为转义的美元符号）
 const MATH_SEGMENT = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?:\\.|[^$\\\n])+?\$/g;
 
-// AI 偶尔把命令的反斜杠转义成两个（如 \\frac），在公式内还原；只处理常见命令，避免误伤换行符 "\\"
+// AI 偶尔把命令的反斜杠转义成两个（如 \\\\frac），在公式内还原；只处理常见命令，避免误伤换行符 "\\\\"
 const DOUBLE_ESCAPED_COMMAND = /(?<!\\)\\\\(?=(?:frac|dfrac|tfrac|sqrt|times|div|cdot|pm|mp|leq?|geq?|neq?|approx|equiv|sim|cong|propto|infty|pi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|angle|triangle|perp|parallel|because|therefore|circ|degree|left|right|sum|prod|int|lim|log|ln|sin|cos|tan|text|mathrm|mathbf|overline|underline|vec|overrightarrow|hat|bar|begin|end|quad|qquad|in|notin|subset|subseteq|cup|cap|emptyset|forall|exists|to|rightarrow|Rightarrow|leftrightarrow|Leftrightarrow|ldots|cdots|dots)(?![a-zA-Z]))/g;
 
 const PLACEHOLDER = (index: number) => `@@MATH${index}@@`;
 const PLACEHOLDER_PATTERN = /@@MATH(\d+)@@/g;
 
-/** 统一公式定界符：\[…\] → $$…$$，\(…\) → $…$，并还原被二次转义的命令 */
+/**
+ * remark-math 把行首的 $$ 当成代码围栏：同一行紧跟的 \\begin{aligned} 会被当成 info string 丢掉，
+ * 同一行结尾的 \\end{aligned}$$ 也不会被识别为结束围栏。把 $$ 单独放到一行即可正确渲染。
+ */
+function isolateDisplayMathFences(source: string): string {
+    let inner = source.slice(2, -2);
+    // 只在 \\begin / \\end 与 $$ 贴在同一行时拆开，避免把段中的 $$x$$、\\[x\\] 拆坏
+    const beginGlued = /^[ \t]*\\begin\{/.test(inner);
+    const endGlued = /\\end\{[a-zA-Z*]+\}[ \t]*$/.test(inner);
+    if (!beginGlued && !endGlued) return source;
+    if (beginGlued && !inner.startsWith('\n')) {
+        inner = '\n' + inner.replace(/^[ \t]+/, '');
+    }
+    if (endGlued && !inner.endsWith('\n')) {
+        inner = inner.replace(/[ \t]+$/, '') + '\n';
+    }
+    return `$$${inner}$$`;
+}
+
+/** 统一公式定界符：\\[…\\] → $$…$$，\\(…\\) → $…$，并还原被二次转义的命令 */
 function normalizeMathSegment(segment: string): string {
     let math = segment;
     if (math.startsWith('\\[')) {
@@ -21,13 +40,17 @@ function normalizeMathSegment(segment: string): string {
     } else if (math.startsWith('\\(')) {
         math = `$${math.slice(2, -2).trim()}$`;
     }
-    return math.replace(DOUBLE_ESCAPED_COMMAND, '\\');
+    math = math.replace(DOUBLE_ESCAPED_COMMAND, '\\');
+    if (math.startsWith('$$') && math.endsWith('$$') && math.length >= 4) {
+        math = isolateDisplayMathFences(math);
+    }
+    return math;
 }
 
-/** 公式以外文字的整理：字面 "\n" 转为换行，句末换行转为分段 */
+/** 公式以外文字的整理：字面 "\\n" 转为换行，句末换行转为分段 */
 function normalizeText(text: string): string {
     return text
-        // AI 回复中字面的 \n 转为真正的换行
+        // AI 回复中字面的 \\n 转为真正的换行
         .replace(/\\n/g, '\n')
         // 保留已有的空行
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
@@ -67,7 +90,10 @@ export function extractMathSegments(content: string | null | undefined): { maske
 /**
  * 预处理要交给 react-markdown + remark-math 渲染的内容
  */
-export function prepareMarkdownMath(content: string | null | undefined): string {
+export function prepareMarkdownMath(
+    content: string | null | undefined,
+    transformMasked: (text: string) => string = (text) => text,
+): string {
     const { masked, segments } = extractMathSegments(content);
-    return normalizeText(masked).replace(PLACEHOLDER_PATTERN, (_match, index: string) => segments[Number(index)].source);
+    return normalizeText(transformMasked(masked)).replace(PLACEHOLDER_PATTERN, (_match, index: string) => segments[Number(index)].source);
 }

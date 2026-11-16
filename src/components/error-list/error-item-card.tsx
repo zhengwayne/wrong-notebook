@@ -18,9 +18,6 @@ import type { ErrorItemSummary } from "@/types/api";
 
 /** 卡片默认显示的知识点个数，其余折叠 */
 const VISIBLE_TAGS = 3;
-/** 题干摘要的最大字数 */
-const SUMMARY_LENGTH = 80;
-
 export interface ErrorItemCardProps {
     item: ErrorItemSummary;
     selectMode: boolean;
@@ -99,8 +96,8 @@ export function ErrorItemCard({
                 <div className="min-w-0 break-words">
                     <QuestionSummary
                         text={item.questionText}
-                        maxLength={SUMMARY_LENGTH}
-                        className="line-clamp-3 text-sm leading-relaxed text-foreground"
+                        clamp={3}
+                        className="text-sm leading-relaxed text-foreground"
                     />
                 </div>
 

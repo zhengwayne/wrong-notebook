@@ -154,6 +154,7 @@ function replaceSymbols(text: string, language: 'zh' | 'en'): string {
 /** 去掉 Markdown/LaTeX 标记，并把常见运算符号转成可朗读的说法 */
 export function toSpeakableText(input: string, language: 'zh' | 'en' = 'zh'): string {
     let text = input.replace(/\r\n/g, '\n');
+    text = text.replace(/<\/?u\b[^>]*>/gi, '');
     text = text.replace(/```[\s\S]*?```/g, ' ');
     text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
     text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');

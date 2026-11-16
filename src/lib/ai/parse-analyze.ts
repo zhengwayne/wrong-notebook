@@ -33,8 +33,32 @@ export function splitAnalyzeItems(text: string): string[] {
     return chunks.length > 0 ? chunks : [text];
 }
 
+
+/** 填空括号里的下划线，允许中间夹杂空白或换行 */
+const BLANK_PARENS = /[（(][ \t]*(_+(?:[ \t\n\r]+_+)*)[ \t\n\r]*[）)]/g;
+
+/**
+ * 整理识别得到的题干：把跨行的 ( ____ ) 收拢，并让大题标题单独成行、后面再跟题号。
+ * 保留 <u> 等原样标记，只调整空白与换行。
+ */
+export function normalizeQuestionText(text: string): string {
+    let out = text.replace(/\r\n/g, '\n');
+    out = out.replace(BLANK_PARENS, (full, fills: string) => {
+        const open = full.startsWith('（') ? '（' : '(';
+        const close = full.endsWith('）') ? '）' : ')';
+        const underscores = fills.replace(/\s+/g, '');
+        return `${open} ${underscores} ${close}`;
+    });
+    // 标题后的填空括号另起一行：") ( ____ )"
+    out = out.replace(/([）)])[ \t]+([（(] _)/g, '$1\n\n$2');
+    // 标题或填空括号后紧跟题号时换行：")2.The" / ") 4.He"（两个换行才能在 Markdown 中分段）
+    out = out.replace(/([）)])[ \t]*(\d+\.)/g, '$1\n\n$2');
+    return out.replace(/[ \t]+\n/g, '\n').trim();
+}
+
 export function parseOneAnalyzeItem(text: string): ParsedQuestionFromSchema {
-    const questionText = extractXmlTag(text, "question_text");
+    const questionTextRaw = extractXmlTag(text, "question_text");
+    const questionText = questionTextRaw ? normalizeQuestionText(questionTextRaw) : questionTextRaw;
     const answerText = extractXmlTag(text, "answer_text");
     const analysis = extractXmlTag(text, "analysis");
     if (!questionText || !answerText || !analysis) {

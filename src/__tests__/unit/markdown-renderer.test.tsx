@@ -72,3 +72,79 @@ describe('代码渲染', () => {
         expect(html).toMatch(/<pre class="bg-muted p-4[^"]*"><code[^>]*>block\n<\/code><\/pre>/);
     });
 });
+
+
+
+function visibleMarkup(html: string): string {
+    return html
+        .replace(/<annotation[\s\S]*?<\/annotation>/g, '')
+        .replace(/<span class="katex-mathml">[\s\S]*?<\/math><\/span>/g, '');
+}
+
+describe('独立成行的 $$ 围栏（aligned / align）', () => {
+    const aligned = '$$\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}$$';
+
+    it('$$\\\\begin{aligned} 与 \\\\end{aligned}$$ 紧贴时也能渲染，不残留源码', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={aligned} />);
+        const visible = visibleMarkup(html);
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\end{aligned}');
+        expect(visible).not.toContain('\\begin{aligned}');
+        expect(annotations(aligned)[0]).toContain('\\begin{aligned}');
+        expect(annotations(aligned)[0]).toContain('\\end{aligned}');
+    });
+
+    it('只有开头或只有结尾紧贴 $$ 时同样能渲染', () => {
+        const openingGlued = '$$\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}\n$$';
+        const closingGlued = '$$\n\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}$$';
+        for (const content of [openingGlued, closingGlued]) {
+            const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+            expect(html).toContain('class="katex"');
+            expect(html).not.toContain('katex-error');
+            expect(visibleMarkup(html)).not.toContain('\\end{aligned}$$');
+        }
+    });
+
+    it('\\\\begin{align*} 紧贴 $$ 时也能渲染', () => {
+        const content = '$$\\begin{align*}\na&=1\\\\\\\\\nb&=2\n\\end{align*}$$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(countFormulas(content)).toBe(1);
+        expect(html).not.toContain('katex-error');
+    });
+});
+
+describe('安全渲染 <u> 下划线', () => {
+    it('把 <u>y</u>、l<u>ea</u>ves 渲染成下划线，不显示原始标签', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'The birds fl<u>y</u> high. Look at the l<u>ea</u>ves. <u>the nice fruit</u>'} />,
+        );
+        expect(html).toMatch(/<u>y<\/u>/);
+        expect(html).toMatch(/l<u>ea<\/u>ves/);
+        expect(html).toMatch(/<u>the nice fruit<\/u>/);
+        expect(html).not.toContain('&lt;u&gt;');
+        expect(html).not.toContain('<u>y</u>'.replace('y', '') + 'y'); // sanity
+    });
+
+    it('丢掉 <u> 上的属性，且不把其它 HTML 当标签渲染', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'<u onclick="alert(1)">hi</u> and <script>alert(1)</script>'} />,
+        );
+        expect(html).toMatch(/<u>hi<\/u>/);
+        expect(html).not.toContain('onclick');
+        expect(html).not.toContain('<script>');
+        expect(html).toContain('script');
+    });
+});
+
+describe('compact 预览用 CSS 限制行数', () => {
+    it('clamp 以样式限制行数，完整公式仍交给渲染器', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'计算 $1200 \\div 50 = 24$ 个'} variant="compact" clamp={2} />,
+        );
+        expect(html).toContain('-webkit-line-clamp:2');
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('24\\te');
+        expect(html).not.toContain('$1200');
+    });
+});

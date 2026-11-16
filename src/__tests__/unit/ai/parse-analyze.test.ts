@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     defaultSelectedAnalyzeItems,
+    normalizeQuestionText,
     parseAnalyzeResponse,
     splitAnalyzeItems,
     toAnalyzeImageResult,
@@ -73,5 +74,44 @@ describe('parseAnalyzeResponse', () => {
 <knowledge_points>加法</knowledge_points>
 </item>`);
         expect(defaultSelectedAnalyzeItems(items)).toEqual([true, false]);
+    });
+});
+
+
+describe('normalizeQuestionText', () => {
+    it('收拢跨行的填空括号，并让大题标题单独成行、后面再跟题号', () => {
+        const raw = 'I.Sounds A 级：Read and judge (判断句中画线部分的发音是否相同，相同的写“T”，不同的写“F”) ( ____\n)2.The birds fl<u>y</u> high in the sk<u>y</u>.';
+        const normalized = normalizeQuestionText(raw);
+        expect(normalized).toContain('( ____ )');
+        expect(normalized).not.toMatch(/\( ____\n\)/);
+        expect(normalized).toMatch(/\)\n+2\.The birds/);
+        expect(normalized).toContain('<u>y</u>');
+        const heading = normalized.split('\n')[0];
+        expect(heading).toContain('I.Sounds A');
+        expect(heading).not.toContain('2.The birds');
+    });
+
+    it('改写题的大题标题与题号拆到两行，保留划线标签', () => {
+        const raw = 'IV.Rewrite the sentences (按要求改写下列句子) 4.He smells <u>the nice fruit</u> in autumn.';
+        const normalized = normalizeQuestionText(raw);
+        expect(normalized).toBe('IV.Rewrite the sentences (按要求改写下列句子)\n\n4.He smells <u>the nice fruit</u> in autumn.');
+    });
+
+    it('经 XML 解析后的题干也会做同样的整理', () => {
+        const items = parseAnalyzeResponse(`
+<item>
+<question_text>I.Sounds A 级：Read and judge (判断) ( ____
+)2.The birds l<u>ea</u>ves.</question_text>
+<answer_text>F</answer_text>
+<analysis>发音不同。</analysis>
+<wrong_answer_text>T</wrong_answer_text>
+<mistake_analysis>判断错误</mistake_analysis>
+<mistake_status>wrong_attempt</mistake_status>
+<subject>英语</subject>
+<knowledge_points>字母发音</knowledge_points>
+</item>`);
+        expect(items[0].questionText).toContain('( ____ )');
+        expect(items[0].questionText).toMatch(/\)\n+2\.The birds/);
+        expect(items[0].questionText).toContain('<u>ea</u>');
     });
 });

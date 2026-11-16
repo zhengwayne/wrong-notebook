@@ -33,4 +33,12 @@ describe('可朗读文本', () => {
         expect(detectSpeechLanguage('把 540 除以 90，再算出余数。')).toBe('zh');
         expect(detectSpeechLanguage('Listen carefully and choose the best answer for each question.')).toBe('en');
     });
+
+    it('朗读时去掉 <u> 标签，保留划线中的单词', () => {
+        const spoken = toSpeakableText('The birds fl<u>y</u> high. Look at the l<u>ea</u>ves.', 'en');
+        expect(spoken).toContain('fly');
+        expect(spoken).toContain('leaves');
+        expect(spoken).not.toContain('<u>');
+        expect(spoken).not.toContain('</u>');
+    });
 });

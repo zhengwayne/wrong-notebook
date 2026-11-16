@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { PrintableErrorItem } from "@/types/api";
 
@@ -43,12 +44,15 @@ export function PrintItemPicker({ items, selectedIds, selectedCount, onToggle, o
                             onChange={() => onToggle(item.id)}
                             className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary"
                         />
-                        <span className="line-clamp-2">
+                        <div className="min-w-0 flex-1">
                             <span className="font-semibold">
                                 {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
+                                {item.questionText ? t.common.colon : ''}
                             </span>
-                            {item.questionText ? `${t.common.colon}${item.questionText}` : ''}
-                        </span>
+                            {item.questionText && (
+                                <MarkdownRenderer content={item.questionText} variant="compact" clamp={2} className="text-xs" />
+                            )}
+                        </div>
                     </label>
                 ))}
             </div>

@@ -3,15 +3,11 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { ParsedQuestion } from "@/lib/ai/types";
 import { defaultSelectedAnalyzeItems } from "@/lib/ai/parse-analyze";
 import { Badge } from "@/components/ui/badge";
-
-function preview(text: string, length = 200) {
-    const value = text.replace(/\s+/g, " ").trim();
-    return value.length > length ? `${value.slice(0, length)}…` : value;
-}
 
 function statusLabel(status: ParsedQuestion["mistakeStatus"] | undefined, t: { importFlow: { statusWrong: string; statusUnattempted: string; statusUnknown: string } }) {
     if (status === "wrong_attempt") return t.importFlow.statusWrong;
@@ -77,18 +73,18 @@ export function MultiQuestionConfirm({
                                         <Badge key={point} variant="outline">{point}</Badge>
                                     ))}
                                 </div>
-                                <p className="text-sm leading-relaxed">{preview(item.questionText)}</p>
+                                <MarkdownRenderer content={item.questionText} variant="compact" clamp={6} className="text-sm leading-relaxed" />
                                 {item.wrongAnswerText && (
-                                    <p className="text-xs text-muted-foreground">
+                                    <div className="text-xs text-muted-foreground">
                                         <span className="font-medium text-foreground">{t.learn.wrongAnswer}{t.common.colon}</span>
-                                        {preview(item.wrongAnswerText, 80)}
-                                    </p>
+                                        <MarkdownRenderer content={item.wrongAnswerText} variant="compact" clamp={2} className="text-xs text-muted-foreground" />
+                                    </div>
                                 )}
                                 {item.mistakeAnalysis && (
-                                    <p className="text-xs text-muted-foreground">
+                                    <div className="text-xs text-muted-foreground">
                                         <span className="font-medium text-foreground">{t.learn.mistakeCause}{t.common.colon}</span>
-                                        {preview(item.mistakeAnalysis, 100)}
-                                    </p>
+                                        <MarkdownRenderer content={item.mistakeAnalysis} variant="compact" clamp={3} className="text-xs text-muted-foreground" />
+                                    </div>
                                 )}
                             </div>
                         </label>
