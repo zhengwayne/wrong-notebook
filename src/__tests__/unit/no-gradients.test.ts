@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 
 const SRC_ROOT = join(__dirname, "../..");
-const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx"]);
+const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx", ".svg"]);
 
 /** 把模式拆开，避免本测试文件自己被扫到 */
 const PATTERNS: { name: string; re: RegExp }[] = [

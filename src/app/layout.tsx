@@ -43,7 +43,10 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    icon: '/icons/icon.png',
+    icon: [
+      { url: '/icons/icon.svg', type: 'image/svg+xml' },
+      { url: '/icons/icon.png', sizes: '512x512', type: 'image/png' },
+    ],
     apple: '/icons/apple-touch-icon.png',
   },
 };

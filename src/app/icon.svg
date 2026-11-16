@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="批改勾">
+  <!-- Original mark for 智能错题本. Flat shapes only; no gradients or filters. -->
+  <rect width="32" height="32" rx="6.75" fill="#6b5ca5"/>
+  <!-- book cover lip -->
+  <path fill="#4a3d7a" d="M16 5.45
+    L5.15 4.2
+    Q3.35 4.02 3.35 6.1
+    L3.8 24.55
+    Q3.88 26.7 6.15 26.28
+    L16 24.7
+    L25.85 26.28
+    Q28.12 26.7 28.2 24.55
+    L28.65 6.1
+    Q28.65 4.02 26.85 4.2
+    Z"/>
+  <!-- left page -->
+  <path fill="#eeeaf8" d="M16 6.55
+    L6.55 5.45
+    Q5.3 5.32 5.3 6.7
+    L5.7 23.15
+    Q5.76 24.6 7.25 24.22
+    L16 22.7
+    Z"/>
+  <!-- right page -->
+  <path fill="#fdfcff" d="M16 6.55
+    L25.45 5.45
+    Q26.7 5.32 26.7 6.7
+    L26.3 23.15
+    Q26.24 24.6 24.75 24.22
+    L16 22.7
+    Z"/>
+  <!-- gutter / spine -->
+  <path fill="#4a3d7a" d="M16 6.4
+    C15.42 11.1 15.42 18.15 16 23.05
+    C16.58 18.15 16.58 11.1 16 6.4Z"/>
+  <!-- teacher's check -->
+  <path d="M17.55 16.55 L21.15 20.45 L27.15 12.05"
+        fill="none" stroke="#4a3d7a" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
