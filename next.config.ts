@@ -16,7 +16,7 @@ export const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['@prisma/client', 'bcryptjs'],
+  serverExternalPackages: ['@prisma/client', 'bcryptjs', 'node-edge-tts', 'ws'],
   // 禁止 next dev 自动向 AGENTS.md / CLAUDE.md 写入 agent-rules 段落
   agentRules: false,
   poweredByHeader: false,
