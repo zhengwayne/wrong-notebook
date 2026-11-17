@@ -27,7 +27,8 @@ vi.mock("@/lib/learning-path/ai", () => ({
 }));
 
 let directory: string;
-let database: PrismaClient;
+let database: PrismaClient<{ log: [{ emit: "event"; level: "query" }] }>;
+const capturedQueries: string[] = [];
 
 beforeAll(() => {
     directory = mkdtempSync(join(tmpdir(), "wrong-notebook-lp-test-"));
@@ -36,7 +37,13 @@ beforeAll(() => {
         env: { ...process.env, DATABASE_URL: url },
         stdio: "pipe",
     });
-    database = new PrismaClient({ datasources: { db: { url } } });
+    database = new PrismaClient({
+        datasources: { db: { url } },
+        log: [{ emit: "event", level: "query" }],
+    });
+    database.$on("query", (event) => {
+        capturedQueries.push(event.query);
+    });
     mocks.prisma = database;
 }, 120000);
 
@@ -185,4 +192,94 @@ describe("学习路径接口（真实 SQLite）", () => {
         const payload = await suggested.json();
         expect(payload.suggestion.usedAi).toBe(false);
     });
+
+    it("GET /api/learning-path 命中缓存时数据库零写入（R13），且 subjectId 过滤只作用于展示", async () => {
+        await database.subject.create({
+            data: { id: "nb-self-phys", name: "物理", stage: "junior_high", subjectKey: "physics", userId: "user-1" },
+        });
+        await database.knowledgeTag.create({
+            data: { id: "tag-force", name: "力学", subject: "physics", isSystem: true, order: 1 },
+        });
+        await database.errorItem.createMany({
+            data: [
+                {
+                    id: "item-self-math", shortId: "Sm0001", userId: "user-1", subjectId: "nb-self",
+                    questionText: "数学算式", answerText: "2", analysis: "解析",
+                    knowledgePoints: '["整数运算"]', originalImageUrl: "",
+                },
+                {
+                    id: "item-self-phys", shortId: "Sp0001", userId: "user-1", subjectId: "nb-self-phys",
+                    questionText: "物理受力", answerText: "5N", analysis: "解析",
+                    knowledgePoints: '["力学"]', originalImageUrl: "",
+                },
+            ],
+        });
+
+        // 首次构建全科路径
+        const initialRes = await GET_PATH(new Request("http://localhost/api/learning-path?language=zh"));
+        expect(initialRes.status).toBe(200);
+        const initialPath = await initialRes.json();
+        const storedRowBefore = await database.learningPath.findUniqueOrThrow({ where: { id: initialPath.id } });
+
+        // 清空记录后再次 GET 命中缓存：断言零 INSERT / UPDATE / DELETE / BEGIN / COMMIT
+        capturedQueries.length = 0;
+        const cachedRes = await GET_PATH(new Request("http://localhost/api/learning-path?language=zh"));
+        expect(cachedRes.status).toBe(200);
+        const cachedData = await cachedRes.json();
+        expect(cachedData.replanned).toBe(false);
+        const writeQueries = capturedQueries.filter((q) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(q));
+        expect(writeQueries).toEqual([]);
+
+        // 带 subjectId 过滤查询：只展示物理科目内容，但数据库中全科路径版本与 hash 原封不动
+        capturedQueries.length = 0;
+        const physRes = await GET_PATH(new Request("http://localhost/api/learning-path?subjectId=nb-self-phys&language=zh"));
+        expect(physRes.status).toBe(200);
+        const physData = await physRes.json();
+        expect(physData.mastery.map((m: { knowledgePoint: string }) => m.knowledgePoint)).toEqual(["力学"]);
+        expect(capturedQueries.filter((q) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(q))).toEqual([]);
+
+        const storedRowAfter = await database.learningPath.findUniqueOrThrow({ where: { id: initialPath.id } });
+        expect(storedRowAfter.version).toBe(storedRowBefore.version);
+        expect(storedRowAfter.evidenceHash).toBe(storedRowBefore.evidenceHash);
+    });
+
+    it("listClassPaths 在 30 名学生下批量加载证据，SQL 查询数大幅下降且缓存态零写入", async () => {
+        const cls30 = await database.gradingClass.create({
+            data: { id: "class-30", userId: "user-1", name: "初三3班" },
+        });
+        for (let i = 1; i <= 30; i++) {
+            const name = `学生${String(i).padStart(2, "0")}`;
+            const nbId = `nb-c30-${i}`;
+            await database.subject.create({
+                data: { id: nbId, name: `${name}·数学`, stage: "junior_high", subjectKey: "math", userId: "user-1" },
+            });
+            await database.gradingStudent.create({
+                data: { id: `stu-c30-${i}`, classId: cls30.id, name, studentNo: String(i), order: i },
+            });
+            await database.errorItem.create({
+                data: {
+                    id: `item-c30-${i}`, shortId: `C3${String(i).padStart(4, "0")}`, userId: "user-1", subjectId: nbId,
+                    questionText: `第${i}题`, answerText: "1", knowledgePoints: '["方程"]', originalImageUrl: "",
+                },
+            });
+        }
+
+        // 首次物化 30 人（单事务批量写入，读查询已合并）
+        capturedQueries.length = 0;
+        const firstRes = await GET_CLASS(new Request("http://localhost/api/learning-path/class?classId=class-30&language=zh"));
+        expect(firstRes.status).toBe(200);
+        const firstData = await firstRes.json();
+        expect(firstData.students).toHaveLength(30);
+        // 首次 30 名学生物化路径（含路径与步骤写入），总 SQL 仍明显低于逐学生 N+1 查询（>300 次）
+        expect(capturedQueries.length).toBeLessThan(200);
+
+        // 二次访问（命中缓存）：SQL 查询应降至常数级 <= 15 次且零写入
+        capturedQueries.length = 0;
+        const secondRes = await GET_CLASS(new Request("http://localhost/api/learning-path/class?classId=class-30&language=zh"));
+        expect(secondRes.status).toBe(200);
+        const secondData = await secondRes.json();
+        expect(secondData.students).toHaveLength(30);
+        expect(capturedQueries.length).toBeLessThanOrEqual(15);
+        expect(capturedQueries.filter((q) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(q))).toEqual([]);
+    }, 30000);
 });

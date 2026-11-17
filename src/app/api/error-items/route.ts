@@ -257,10 +257,10 @@ export async function POST(req: Request) {
         });
         const duplicate = 'duplicate' in result && result.duplicate;
         if (result && 'id' in result && result.id) {
-            scheduleMasteryEvaluation([result.id]);
-            if (!duplicate) {
-                scheduleLearningPathReplan(user.id, 'zh', scope.learnerId);
+            if (duplicate) {
+                scheduleMasteryEvaluation([result.id]);
             }
+            scheduleLearningPathReplan(user.id, 'zh', scope.learnerId);
         }
         return NextResponse.json(result, { status: duplicate ? 200 : 201 });
     } catch (error) {

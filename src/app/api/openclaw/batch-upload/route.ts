@@ -11,6 +11,7 @@ import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { generateUniqueShortId } from "@/lib/short-id";
 import { scheduleMasteryEvaluation } from "@/lib/mastery";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { parseDifficultyStars } from "@/lib/ai/schema";
 import { recordAiProvenance } from "@/lib/ai/provenance";
@@ -225,6 +226,7 @@ async function createErrorItem(
         return errorItem;
     });
     if ('duplicate' in result && result.duplicate) scheduleMasteryEvaluation([result.id]);
+    if (result?.id) scheduleLearningPathReplan(userId, 'zh', scope.learnerId);
     return result;
 }
 

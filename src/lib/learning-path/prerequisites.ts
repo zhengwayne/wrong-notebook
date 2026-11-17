@@ -1,11 +1,13 @@
 /**
- * 知识点先修关系：以 KnowledgeTag.parentId 邻接表为边，再补上同题共现的弱提示（仅用于打破平局）。
- * 环会被丢弃。排序使用 Kahn 拓扑，与常见技能图做法一致，独立实现。
+ * 知识点先修关系：仅保留 KnowledgeTag.parentId 树边与显式先修配置，
+ * 不再按名称拼音建立伪先修边。环会被丢弃，排序使用 Kahn 拓扑。
  */
 export interface PrerequisiteTag {
     name: string;
     parentName?: string | null;
 }
+
+export const EXPLICIT_PREREQUISITES: ReadonlyArray<readonly [prereq: string, dependent: string]> = [];
 
 export interface PrerequisiteGraph {
     /** prereq -> dependents */
@@ -38,10 +40,18 @@ function wouldCreateCycle(graph: PrerequisiteGraph, from: string, to: string): b
     return false;
 }
 
-export function buildPrerequisiteGraph(tags: PrerequisiteTag[]): PrerequisiteGraph {
+export function buildPrerequisiteGraph(
+    tags: PrerequisiteTag[],
+    explicitEdges: ReadonlyArray<readonly [string, string]> = EXPLICIT_PREREQUISITES,
+): PrerequisiteGraph {
     const graph: PrerequisiteGraph = { edges: new Map(), prereqs: new Map() };
     for (const tag of tags) {
         if (tag.parentName) addEdge(graph, tag.parentName, tag.name);
+    }
+    for (const [from, to] of explicitEdges) {
+        if (!wouldCreateCycle(graph, from, to)) {
+            addEdge(graph, from, to);
+        }
     }
     return graph;
 }

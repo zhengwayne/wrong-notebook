@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { BKT, LOW_EVIDENCE_CAP, buildMasteryMap, evidenceHash, masteryScore, retrievability, traceKnowledgeMastery, updateBkt } from "@/lib/learning-path/mastery-model";
+import {
+    BKT,
+    LOW_EVIDENCE_CAP,
+    MAX_DUE_INTERVAL_DAYS,
+    buildMasteryMap,
+    dueFromStability,
+    evidenceHash,
+    isKnowledgeGraduated,
+    masteryScore,
+    retrievability,
+    traceKnowledgeMastery,
+    updateBkt,
+} from "@/lib/learning-path/mastery-model";
 import { addPrerequisiteEdge, buildPrerequisiteGraph, orderKnowledgePoints, unmetPrerequisites } from "@/lib/learning-path/prerequisites";
 import { planLearningPath, todaySteps } from "@/lib/learning-path/planner";
 import { stepFingerprint, type MasteryEvidence, type PreservedStep } from "@/lib/learning-path/types";
@@ -55,6 +67,36 @@ describe("BKT 与可提取性掌握模型", () => {
         expect(evidenceHash(a)).toBe(evidenceHash(b));
         expect(evidenceHash(a)).not.toBe(evidenceHash(c));
         expect(buildMasteryMap(a, { now: day(2), timeZone: "Asia/Taipei" }).get("A")?.evidenceCount).toBe(2);
+    });
+
+    it("dueFromStability 按目标可提取性 0.85 计算 1–180 天到期日，并在 7 次后仍保留最迟 180 天巡检与毕业判定", () => {
+        const start = day(0);
+        const low = dueFromStability(start, 1, "Asia/Taipei")!;
+        const high = dueFromStability(start, 1000, "Asia/Taipei")!;
+        const msPerDay = 24 * 60 * 60 * 1000;
+        expect(Math.round((low.getTime() - start.getTime()) / msPerDay)).toBeLessThanOrEqual(2);
+        expect(Math.round((high.getTime() - start.getTime()) / msPerDay)).toBe(MAX_DUE_INTERVAL_DAYS);
+
+        // 连续答对 10 次也不返回 null，且满足新毕业判定
+        const tenCorrect: MasteryEvidence[] = Array.from({ length: 10 }, (_, i) => ({
+            knowledgePoint: "方程", correct: true, at: day(i), source: "variant_practice" as const, itemId: `q-${i}`,
+        }));
+        const state = traceKnowledgeMastery("方程", tenCorrect, { now: day(10), timeZone: "Asia/Taipei" });
+        expect(state.dueAt).not.toBeNull();
+        expect(isKnowledgeGraduated(state)).toBe(true);
+    });
+
+    it("同一毫秒内多条证据无论输入顺序如何，排序决胜后掌握状态完全确定", () => {
+        const sameMs = new Date("2026-11-10T08:00:00.123Z");
+        const evA: MasteryEvidence[] = [
+            { knowledgePoint: "函数", correct: true, at: sameMs, source: "review", itemId: "item-b" },
+            { knowledgePoint: "函数", correct: false, at: sameMs, source: "review", itemId: "item-a" },
+            { knowledgePoint: "函数", correct: true, at: sameMs, source: "review", itemId: "item-a" },
+        ];
+        const evB: MasteryEvidence[] = [evA[2], evA[0], evA[1]];
+        const sA = traceKnowledgeMastery("函数", evA, { now: day(12), timeZone: "Asia/Taipei" });
+        const sB = traceKnowledgeMastery("函数", evB, { now: day(12), timeZone: "Asia/Taipei" });
+        expect(sA).toEqual(sB);
     });
 });
 

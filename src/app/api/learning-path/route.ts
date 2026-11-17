@@ -14,7 +14,7 @@ function languageOf(req: Request, fallback: "zh" | "en" = "zh"): "zh" | "en" {
     return header.toLowerCase().startsWith("en") ? "en" : fallback;
 }
 
-/** GET /api/learning-path?studentKey=&subjectId=&language= 获取或按最新证据自动重排路径 */
+/** GET /api/learning-path?studentKey=&subjectId=&language= 获取学习路径（只读；缓存命中时不写库） */
 export async function GET(req: Request) {
     const user = await getCurrentUser();
     if (!user) return unauthorized();
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
         studentKey: url.searchParams.get("studentKey") || SELF_STUDENT_KEY,
         subjectId: url.searchParams.get("subjectId"),
         language: languageOf(req),
-        force: url.searchParams.get("replan") === "1",
+        force: false,
     });
     if (!result) return notFound("Student not found");
     return NextResponse.json({ ...result.path, replanned: result.replanned });

@@ -1468,6 +1468,9 @@ export const translations = {
             thresholdDescription: "Default: 50%. Questions with practice records count as mastered once their mastery probability reaches this value. Applies to your account only. Range: 1–100%, whole numbers.",
             thresholdInvalid: "Enter a whole number from 1 to 100.",
             thresholdLoadFailed: "Failed to load the saved threshold. Please retry.",
+            evaluateWithAi: "Evaluate with AI",
+            evaluatingWithAi: "Evaluating…",
+            aiEvaluateFailed: "AI mastery evaluation failed. Please retry.",
         },
         importFlow: {
             imported: "Imported to \"{notebook}\" (ID: {id})",
@@ -3476,6 +3479,9 @@ export const translations = {
             thresholdDescription: "默认 50%。有举一反三记录的错题，掌握概率达到此值即视为「已掌握」。仅对当前账号生效。支持 1%～100% 的整数。",
             thresholdInvalid: "请输入 1～100 之间的整数。",
             thresholdLoadFailed: "读取已保存的阈值失败，请重试。",
+            evaluateWithAi: "AI 评估",
+            evaluatingWithAi: "评估中…",
+            aiEvaluateFailed: "AI 掌握评估失败，请稍后重试。",
         },
         importFlow: {
             imported: "已导入错题本「{notebook}」，题目 ID：{id}",

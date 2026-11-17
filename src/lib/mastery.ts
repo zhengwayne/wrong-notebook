@@ -66,9 +66,13 @@ export function syncMasteryLevels(client: Prisma.TransactionClient, userId: stri
 }
 
 /**
- * 重新评估一道错题的掌握概率：优先调用 AI，失败时使用规则公式兜底
+ * 重新评估一道错题的掌握概率：默认使用确定性规则估算（不隐式消耗 AI）；
+ * 仅当用户手动触发（useAi: true）时才调用 AI 评估并在失败时回退规则公式。
  */
-export async function evaluateErrorItemMastery(errorItemId: string): Promise<void> {
+export async function evaluateErrorItemMastery(
+    errorItemId: string,
+    options: { useAi?: boolean } = {},
+): Promise<void> {
     const item = await prisma.errorItem.findUnique({
         where: { id: errorItemId },
         select: {
@@ -107,25 +111,26 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
     }
 
     const evaluatedAt = new Date();
+    const correct = history.filter((entry) => entry.result === 'correct').length;
     let probability = ruleProbability;
-    let reason = '';
+    let reason = `共练习 ${history.length} 次，做对 ${correct} 次（规则估算）`;
     let source: 'ai' | 'rule' = 'rule';
-    try {
-        const result = await getAIService('text').evaluateMastery({
-            questionText: item.questionText || '',
-            knowledgePoints: item.tags.map((tag) => tag.name),
-            mistakeStatus: item.mistakeStatus,
-            history,
-            ruleProbability,
-            evaluatedAt: evaluatedAt.toISOString(),
-        });
-        probability = result.probability;
-        reason = result.reason;
-        source = 'ai';
-    } catch (error) {
-        logger.warn({ errorItemId, error: error instanceof Error ? error.message : String(error) }, 'AI mastery evaluation failed, using rule estimate');
-        const correct = history.filter((entry) => entry.result === 'correct').length;
-        reason = `共练习 ${history.length} 次，做对 ${correct} 次（规则估算）`;
+    if (options.useAi) {
+        try {
+            const result = await getAIService('text').evaluateMastery({
+                questionText: item.questionText || '',
+                knowledgePoints: item.tags.map((tag) => tag.name),
+                mistakeStatus: item.mistakeStatus,
+                history,
+                ruleProbability,
+                evaluatedAt: evaluatedAt.toISOString(),
+            });
+            probability = result.probability;
+            reason = result.reason;
+            source = 'ai';
+        } catch (error) {
+            logger.warn({ errorItemId, error: error instanceof Error ? error.message : String(error) }, 'AI mastery evaluation failed, using rule estimate');
+        }
     }
 
     await prisma.errorItem.update({
