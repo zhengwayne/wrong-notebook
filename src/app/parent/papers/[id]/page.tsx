@@ -17,6 +17,7 @@ import { frontendLogger } from "@/lib/frontend-logger";
 import { ParentPaperOverlay } from "@/components/parent/parent-paper-overlay";
 import { ParentPaperResults } from "@/components/parent/parent-paper-results";
 import { isLowConfidence, type ParentReviewVerdict, type QuestionBBox } from "@/lib/parent-paper-review";
+import { verdictButtonClass } from "@/lib/parent-paper-verdict-style";
 import { PARENT_PAPER_STATUS, type ParentPaperQuestionView } from "@/lib/parent-papers";
 import { summarizeParentPaperReview, type ImportedNotebookCount } from "@/lib/parent-paper-summary";
 import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
@@ -301,7 +302,9 @@ export default function ParentPaperReviewPage() {
                                                 key={verdict}
                                                 type="button"
                                                 size="sm"
-                                                variant={active ? "default" : "outline"}
+                                                variant="outline"
+                                                aria-pressed={active}
+                                                className={verdictButtonClass(verdict, active)}
                                                 disabled={!canEdit || busy === question.id}
                                                 onClick={() => void patchQuestion(question.id, { overrideVerdict: verdict })}
                                             >

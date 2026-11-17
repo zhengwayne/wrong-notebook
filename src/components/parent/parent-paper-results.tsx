@@ -5,12 +5,13 @@ import { BookOpen, CalendarCheck, Route } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { ImportedNotebookCount, ParentPaperReviewSummary } from "@/lib/parent-paper-summary";
+import { NEEDS_CONFIRM_CHIP, verdictChipClass } from "@/lib/parent-paper-verdict-style";
 
 const COUNT_STYLES = {
-    correct: { shell: "border-[#8fb9ab] bg-[#edf6f2] text-[#2f6d5b]" },
-    wrong: { shell: "border-[#d7a3ab] bg-[#f8eef0] text-[#9a4450]" },
-    partial: { shell: "border-[#d4b483] bg-[#f8f1e6] text-[#8a6630]" },
-    needs: { shell: "border-[#c4b5fd] bg-[#f5f3ff] text-[#6d28d9]" },
+    correct: verdictChipClass("correct"),
+    wrong: verdictChipClass("wrong"),
+    partial: verdictChipClass("partial"),
+    needs: NEEDS_CONFIRM_CHIP,
 } as const;
 
 interface ParentPaperResultsProps {
@@ -56,7 +57,7 @@ export function ParentPaperResults({
                 {counts.map((item) => {
                     const style = COUNT_STYLES[item.key];
                     return (
-                        <div key={item.key} className={`rounded-2xl border px-3 py-2.5 ${style.shell}`}>
+                        <div key={item.key} className={`rounded-2xl border px-3 py-2.5 ${style}`}>
                             <div className="text-xs font-medium">{item.label}</div>
                             <div className="mt-1 text-xl font-semibold tabular-nums">
                                 {copy.resultCount.replace("{count}", String(item.value))}

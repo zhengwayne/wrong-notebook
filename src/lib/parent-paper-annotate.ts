@@ -3,11 +3,12 @@
  * 仅在浏览器中使用；样式与界面叠层保持一致，不用渐变。
  */
 import type { ParentReviewVerdict, QuestionBBox } from "@/lib/parent-paper-review";
+import { VERDICT_MARK, VERDICT_ON_FILL } from "@/lib/parent-paper-verdict-style";
 
 export const OVERLAY_COLORS: Record<ParentReviewVerdict, { stroke: string; fill: string; text: string; mark: string }> = {
-    correct: { stroke: "#3f8f76", fill: "rgba(63, 143, 118, 0.04)", text: "#ffffff", mark: "✓" },
-    wrong: { stroke: "#c45c6a", fill: "rgba(196, 92, 106, 0.04)", text: "#ffffff", mark: "✗" },
-    partial: { stroke: "#c4923a", fill: "rgba(196, 146, 58, 0.05)", text: "#ffffff", mark: "△" },
+    correct: { stroke: VERDICT_MARK.correct, fill: "rgba(63, 143, 118, 0.04)", text: VERDICT_ON_FILL, mark: "✓" },
+    wrong: { stroke: VERDICT_MARK.wrong, fill: "rgba(196, 92, 106, 0.04)", text: VERDICT_ON_FILL, mark: "✗" },
+    partial: { stroke: VERDICT_MARK.partial, fill: "rgba(196, 146, 58, 0.05)", text: VERDICT_ON_FILL, mark: "△" },
 };
 
 export interface AnnotateBox {
