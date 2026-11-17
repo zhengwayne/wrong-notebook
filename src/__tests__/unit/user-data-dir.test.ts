@@ -21,7 +21,7 @@ describe('resolveWrongNotebookUserData', () => {
     });
 
     it('即使当前 userData 被改成显示名，也钉回 WrongNotebook', () => {
-        const appData = path.join('/Users/wayne/Library', 'Application Support');
+        const appData = path.join('/Users/example/Library', 'Application Support');
         const drifted = path.join(appData, DISPLAY_NAME);
         const pinned = resolveWrongNotebookUserData(appData, drifted);
         expect(path.basename(pinned)).toBe('WrongNotebook');
@@ -29,7 +29,7 @@ describe('resolveWrongNotebookUserData', () => {
     });
 
     it('已经在 WrongNotebook 下时不改路径，避免折腾已有数据', () => {
-        const appData = path.join('C:', 'Users', 'wayne', 'AppData', 'Roaming');
+        const appData = path.join('C:', 'Users', 'example', 'AppData', 'Roaming');
         const current = path.join(appData, 'WrongNotebook');
         expect(resolveWrongNotebookUserData(appData, current)).toBe(current);
     });

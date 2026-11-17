@@ -61,11 +61,21 @@ dist-scripts
 # Local Database
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db.bak*
+*.db.live-migrated*
+*.db.demo
+*.db.screenshot
 
 # Logs & Output
 *.log
+*.log.bak*
+/outputs/
 test_output*.txt
 upload_test_output*.txt
 
