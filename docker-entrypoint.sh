@@ -45,11 +45,76 @@ if [ -f "$VERSION_FILE" ]; then
     PREVIOUS_VERSION=$(cat "$VERSION_FILE")
 fi
 
+# Backup existing database before running migrations (pure Node WAL checkpoint + copy, keeping latest 3)
+BACKUP_PATH=""
+if [ "$DB_ALREADY_EXISTS" = "true" ]; then
+    echo "[Entrypoint] Creating pre-migration backup..."
+    BACKUP_PATH=$(node -e '
+const fs = require("fs");
+const path = require("path");
+const dbFile = process.argv[1];
+const version = (process.argv[2] || "unknown").replace(/[^a-zA-Z0-9._-]+/g, "_");
+const backupsDir = "/app/data/backups";
+fs.mkdirSync(backupsDir, { recursive: true, mode: 0o700 });
+const walFile = dbFile + "-wal";
+const shmFile = dbFile + "-shm";
+const hasWal = () => fs.existsSync(walFile) && fs.statSync(walFile).size > 0;
+(async () => {
+  if (hasWal()) {
+    try {
+      const { PrismaClient } = require("/app/node_modules/@prisma/client");
+      const client = new PrismaClient({ datasources: { db: { url: "file:" + dbFile + "?connection_limit=1" } } });
+      try {
+        await client.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
+        await client.$queryRawUnsafe("PRAGMA wal_checkpoint(TRUNCATE);");
+      } finally {
+        await client.$disconnect();
+      }
+    } catch (err) {
+      console.error("[Entrypoint] WAL checkpoint warning:", err.message);
+    }
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const baseName = "pre-migrate-" + version + "-" + ts;
+  let target;
+  if (!hasWal()) {
+    const tmp = path.join(backupsDir, "." + baseName + "." + process.pid + ".tmp");
+    fs.copyFileSync(dbFile, tmp);
+    fs.chmodSync(tmp, 0o600);
+    target = path.join(backupsDir, baseName + ".db");
+    fs.renameSync(tmp, target);
+  } else {
+    const tmpDir = path.join(backupsDir, "." + baseName + "." + process.pid + ".tmp");
+    fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
+    for (const src of [dbFile, walFile, shmFile]) {
+      if (fs.existsSync(src)) {
+        const dest = path.join(tmpDir, path.basename(src));
+        fs.copyFileSync(src, dest);
+        fs.chmodSync(dest, 0o600);
+      }
+    }
+    fs.writeFileSync(path.join(tmpDir, "RECOVERY.txt"), "Stop container and restore all .db/.db-wal/.db-shm files back to /app/data/ before downgrading image.\n", { mode: 0o600 });
+    target = path.join(backupsDir, baseName);
+    fs.renameSync(tmpDir, target);
+  }
+  const entries = fs.readdirSync(backupsDir).filter((n) => n.startsWith("pre-migrate-") && !n.endsWith(".tmp")).sort();
+  for (const stale of entries.slice(0, Math.max(0, entries.length - 3))) {
+    fs.rmSync(path.join(backupsDir, stale), { recursive: true, force: true });
+  }
+  process.stdout.write(target);
+})().catch((e) => { console.error(e); process.exit(1); });
+' "$TARGET_DB" "$CURRENT_VERSION")
+    echo "[Entrypoint] Pre-migration backup saved at: $BACKUP_PATH"
+fi
+
 # Run migrations to ensure DB schema is available and up to date.
 echo "[Entrypoint] Running database migrations to sync schema..."
 cd /app
 if ! $PRISMA_BIN migrate deploy --schema=./prisma/schema.prisma; then
     echo "[Entrypoint] Database migration failed; refusing to start." >&2
+    if [ -n "$BACKUP_PATH" ]; then
+        echo "[Entrypoint] Restore database from pre-migration backup: $BACKUP_PATH" >&2
+    fi
     exit 1
 fi
 echo "[Entrypoint] Migrations completed successfully."

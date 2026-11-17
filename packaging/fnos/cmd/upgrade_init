@@ -1,2 +1,4 @@
 #!/bin/bash
+# 升级前置：停止运行中的服务，避免替换程序或备份数据库时仍有写入
+"$(dirname "$0")/main" stop >/dev/null 2>&1 || true
 exit 0

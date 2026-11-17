@@ -137,6 +137,33 @@ export async function applyLearnerBackfill(db: Db): Promise<LearnerBackfillResul
     };
 }
 
+const BACKFILL_MARKER = {
+    entityType: 'system',
+    entityId: 'learner-backfill-v1',
+    action: 'complete',
+} as const;
+
+/** 幂等执行学习者历史回填：已完成过一次且未撤回时直接跳过，避免冷启动重复扫表 */
+export async function ensureLearnerBackfillOnce(db: Db): Promise<LearnerBackfillResult | null> {
+    const marker = await db.learnerBackfillAudit.findFirst({
+        where: BACKFILL_MARKER,
+        select: { id: true },
+    });
+    if (marker) {
+        return null;
+    }
+
+    const result = await applyLearnerBackfill(db);
+    await db.learnerBackfillAudit.create({
+        data: {
+            batchId: result.batchId,
+            userId: 'system',
+            ...BACKFILL_MARKER,
+        },
+    });
+    return result;
+}
+
 export async function revertLearnerBackfill(db: Db, batchId?: string): Promise<{
     errorItemsRestored: number;
     practiceRecordsRestored: number;

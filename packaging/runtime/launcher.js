@@ -85,6 +85,134 @@ function sqliteDatasourceUrl(file) {
     return base.includes('?') ? `${base}&connection_limit=1` : `${base}?connection_limit=1`;
 }
 
+let backupSeq = 0;
+
+function chmodBestEffort(target, mode) {
+    if (process.platform === 'win32') return;
+    try {
+        fs.chmodSync(target, mode);
+    } catch {
+        // 某些文件系统不支持 POSIX 权限位时忽略
+    }
+}
+
+function safeTimestampForFile(date = new Date()) {
+    return `${date.toISOString().replace(/[:.]/g, '-')}-${++backupSeq}`;
+}
+
+/**
+ * 使用随包 @prisma/client 对 SQLite 执行 wal_checkpoint(TRUNCATE)，把 -wal 中的已提交事务刷回主库。
+ * 供 --checkpoint-wal 子进程入口和单测调用。
+ */
+async function checkpointWalWithPrisma(dbFile, env = process.env) {
+    if (env.PRISMA_QUERY_ENGINE_LIBRARY && !process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
+        process.env.PRISMA_QUERY_ENGINE_LIBRARY = env.PRISMA_QUERY_ENGINE_LIBRARY;
+    }
+    const clientEntry = require.resolve('@prisma/client', { paths: [APP_DIR] });
+    const { PrismaClient } = require(clientEntry);
+    const client = new PrismaClient({
+        datasources: { db: { url: sqliteDatasourceUrl(dbFile) } },
+    });
+    try {
+        await client.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
+        const rows = await client.$queryRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE);');
+        return Number(rows?.[0]?.busy ?? 1) === 0;
+    } finally {
+        await client.$disconnect();
+    }
+}
+
+/** 删除超出保留份数的旧 pre-migrate 备份 */
+function pruneOldBackups(backupsDir, prefix, keep = 3) {
+    const entries = fs.readdirSync(backupsDir)
+        .filter((name) => name.startsWith(prefix) && !name.endsWith('.tmp'))
+        .sort();
+    if (entries.length <= keep) return;
+    for (const stale of entries.slice(0, entries.length - keep)) {
+        fs.rmSync(path.join(backupsDir, stale), { recursive: true, force: true });
+    }
+}
+
+/**
+ * 迁移前自动备份已有数据库：若 -wal 非空先尝试 checkpoint 刷回主库；
+ * 清空成功则原子生成单文件 pre-migrate-*.db，否则连同 .db/-wal/-shm 三件套及恢复说明一并备份，保留最近 3 份。
+ */
+function backupBeforeMigrate({ dbFile, dataDir, version, env = process.env, checkpointRunner }) {
+    if (!fs.existsSync(dbFile) || fs.statSync(dbFile).size === 0) {
+        return null;
+    }
+    const backupsDir = path.join(dataDir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true, mode: 0o700 });
+
+    const walFile = `${dbFile}-wal`;
+    const shmFile = `${dbFile}-shm`;
+    const hasNonEmptyWal = () => fs.existsSync(walFile) && fs.statSync(walFile).size > 0;
+
+    if (hasNonEmptyWal()) {
+        try {
+            if (typeof checkpointRunner === 'function') {
+                checkpointRunner(dbFile, env);
+            } else {
+                spawnSync(process.execPath, [__filename, '--checkpoint-wal', dbFile], {
+                    cwd: APP_DIR,
+                    env,
+                    stdio: 'pipe',
+                    windowsHide: true,
+                });
+            }
+        } catch {
+            // 若 checkpoint 失败则走下方三件套完整备份分支
+        }
+    }
+
+    const safeVer = String(version || 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const baseName = `pre-migrate-${safeVer}-${safeTimestampForFile()}`;
+    let backupPath;
+
+    if (!hasNonEmptyWal()) {
+        const tmpFile = path.join(backupsDir, `.${baseName}.${process.pid}.tmp`);
+        try {
+            fs.copyFileSync(dbFile, tmpFile);
+            chmodBestEffort(tmpFile, 0o600);
+            backupPath = path.join(backupsDir, `${baseName}.db`);
+            fs.renameSync(tmpFile, backupPath);
+        } catch (error) {
+            fs.rmSync(tmpFile, { force: true });
+            throw error;
+        }
+    } else {
+        const tmpDir = path.join(backupsDir, `.${baseName}.${process.pid}.tmp`);
+        try {
+            fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
+            for (const src of [dbFile, walFile, shmFile]) {
+                if (fs.existsSync(src)) {
+                    const dest = path.join(tmpDir, path.basename(src));
+                    fs.copyFileSync(src, dest);
+                    chmodBestEffort(dest, 0o600);
+                }
+            }
+            const recoveryDoc = [
+                '由于迁移前未能清空 SQLite WAL 日志，本目录保留了主库与 WAL/SHM 完整三件套。',
+                '如需回滚：',
+                '1. 先停止错题本服务；',
+                `2. 将本目录中的 ${path.basename(dbFile)}、${path.basename(walFile)}、${path.basename(shmFile)} 一并复制覆盖回 ${path.dirname(dbFile)}（切勿只恢复 .db 主文件）；`,
+                '3. 重新启动旧版本安装包。',
+                '',
+            ].join('\n');
+            const recoveryPath = path.join(tmpDir, 'RECOVERY.txt');
+            fs.writeFileSync(recoveryPath, recoveryDoc, { mode: 0o600 });
+            backupPath = path.join(backupsDir, baseName);
+            fs.renameSync(tmpDir, backupPath);
+        } catch (error) {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+            throw error;
+        }
+    }
+
+    pruneOldBackups(backupsDir, 'pre-migrate-', 3);
+    return backupPath;
+}
+
 function runPrisma(args, env) {
     const cli = require.resolve('prisma/build/index.js', { paths: [APP_DIR] });
     const result = spawnSync(process.execPath, [cli, ...args], {
@@ -175,19 +303,57 @@ function prepare(options = {}) {
     ensurePrismaClient(env);
     useBundledQueryEngine(env);
 
-    if (!fs.existsSync(dbFile) || fs.statSync(dbFile).size === 0) {
+    const versionFile = path.join(dataDir, '.app_version');
+    const previousVersion = readTextIfExists(versionFile).trim();
+    const dbAlreadyExists = fs.existsSync(dbFile) && fs.statSync(dbFile).size > 0;
+    let backupPath = null;
+
+    if (!dbAlreadyExists) {
         const seed = path.join(APP_DIR, 'prisma', 'seed.db');
         if (fs.existsSync(seed)) {
             console.log('[wrong-notebook] 初始化数据库（首次访问需用启动日志中的初始化链接创建管理员）');
             fs.copyFileSync(seed, dbFile);
         }
+    } else {
+        backupPath = backupBeforeMigrate({
+            dbFile,
+            dataDir,
+            version,
+            env,
+            checkpointRunner: options._checkpointRunner,
+        });
+        if (backupPath) {
+            console.log(`[wrong-notebook] 已创建迁移前备份：${backupPath}`);
+        }
     }
 
+    const migrateRunner = options._runPrisma || runPrisma;
     console.log('[wrong-notebook] 正在执行数据库迁移...');
-    if (!runPrisma(['migrate', 'deploy', '--schema', path.join(APP_DIR, 'prisma', 'schema.prisma')], env)) {
-        throw new Error('数据库迁移失败，已停止启动');
+    if (!migrateRunner(['migrate', 'deploy', '--schema', path.join(APP_DIR, 'prisma', 'schema.prisma')], env)) {
+        if (backupPath) {
+            console.error(
+                `[wrong-notebook] 数据库迁移失败！请停止服务并使用迁移前备份恢复后降级回旧版本：\n` +
+                `  备份位置：${backupPath}\n` +
+                `  目标位置：${dbFile}（若备份为目录，请连同目录内的 -wal 与 -shm 一并覆盖恢复）`
+            );
+        }
+        throw new Error(`数据库迁移失败，已停止启动${backupPath ? `（备份位置：${backupPath}）` : ''}`);
     }
-    return { dataDir, dbFile, env, version };
+
+    if (previousVersion !== version) {
+        const rebuildScript = path.join(APP_DIR, 'dist-scripts', 'scripts', 'rebuild-system-tags.js');
+        if (dbAlreadyExists && env.PRESERVE_EXISTING_DATA === 'true') {
+            console.log(`[wrong-notebook] 版本已更新（${previousVersion || '首次记录'} -> ${version}），保留现有系统标签与关联。`);
+        } else if (fs.existsSync(rebuildScript)) {
+            console.log(`[wrong-notebook] 版本已更新（${previousVersion || '首次记录'} -> ${version}），正在同步系统标签...`);
+            const res = spawnSync(process.execPath, [rebuildScript], { cwd: APP_DIR, env, stdio: 'inherit', windowsHide: true });
+            if (res.status !== 0) {
+                console.warn('[wrong-notebook] 系统标签同步脚本执行失败，但不影响主服务启动');
+            }
+        }
+        fs.writeFileSync(versionFile, `${version}\n`);
+    }
+    return { dataDir, dbFile, env, version, backupPath };
 }
 
 function start(options = {}) {
@@ -203,13 +369,33 @@ function start(options = {}) {
     require(path.join(APP_DIR, 'server.js'));
 }
 
-module.exports = { prepare, start, parseArgs, defaultDataDir, sqliteUrl, sqliteDatasourceUrl, ensureSecret };
+module.exports = {
+    prepare,
+    start,
+    parseArgs,
+    defaultDataDir,
+    sqliteUrl,
+    sqliteDatasourceUrl,
+    ensureSecret,
+    checkpointWalWithPrisma,
+    backupBeforeMigrate,
+};
 
 if (require.main === module) {
-    try {
-        start(parseArgs(process.argv.slice(2)));
-    } catch (error) {
-        console.error(`[wrong-notebook] 启动失败：${error.message}`);
-        process.exit(1);
+    const cpIdx = process.argv.indexOf('--checkpoint-wal');
+    if (cpIdx !== -1 && process.argv[cpIdx + 1]) {
+        checkpointWalWithPrisma(process.argv[cpIdx + 1], process.env)
+            .then((ok) => process.exit(ok ? 0 : 1))
+            .catch((error) => {
+                console.error(`[wrong-notebook] WAL checkpoint 失败：${error.message}`);
+                process.exit(1);
+            });
+    } else {
+        try {
+            start(parseArgs(process.argv.slice(2)));
+        } catch (error) {
+            console.error(`[wrong-notebook] 启动失败：${error.message}`);
+            process.exit(1);
+        }
     }
 }

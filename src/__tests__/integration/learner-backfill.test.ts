@@ -18,7 +18,7 @@ vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 import { confirmSubmission } from '@/lib/grading-service';
-import { applyLearnerBackfill, revertLearnerBackfill } from '@/lib/learner-backfill';
+import { applyLearnerBackfill, ensureLearnerBackfillOnce, revertLearnerBackfill } from '@/lib/learner-backfill';
 import { ChildLearnerLimitError, MAX_CHILD_LEARNERS, createChildLearner, studentKeyOf, LEARNER_KIND } from '@/lib/learners';
 import { resolveStudent } from '@/lib/learning-path/service';
 import { SELF_STUDENT_KEY } from '@/lib/learning-path/types';
@@ -241,6 +241,22 @@ describe('学习者迁移与回填', () => {
         expect(second.errorItemsLinked).toBe(3);
         const third = await applyLearnerBackfill(db);
         expect(third.errorItemsLinked).toBe(0);
+
+        // 验证幂等完成标记：ensureLearnerBackfillOnce 首次写入标记、二次启动直接跳过，revert 后可重新执行
+        const revertedSecond = await revertLearnerBackfill(db);
+        expect(revertedSecond.errorItemsRestored).toBe(3);
+
+        const onceFirst = await ensureLearnerBackfillOnce(db);
+        expect(onceFirst).not.toBeNull();
+        expect(onceFirst!.errorItemsLinked).toBe(3);
+
+        const onceSecond = await ensureLearnerBackfillOnce(db);
+        expect(onceSecond).toBeNull();
+
+        await revertLearnerBackfill(db);
+        const onceAfterRevert = await ensureLearnerBackfillOnce(db);
+        expect(onceAfterRevert).not.toBeNull();
+        expect(onceAfterRevert!.errorItemsLinked).toBe(3);
 
         await db.$disconnect();
     }, 120000);

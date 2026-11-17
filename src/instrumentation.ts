@@ -13,13 +13,13 @@ export async function register() {
             const { announceSetupLink } = await import('./lib/initialization');
             await announceSetupLink();
 
-            // 把历史「学生名·学科」错题挂到学习者；幂等，失败不阻止启动
+            // 把历史「学生名·学科」错题挂到学习者；仅首次执行并写入幂等完成标记
             try {
                 const { prisma } = await import('./lib/prisma');
-                const { applyLearnerBackfill } = await import('./lib/learner-backfill');
+                const { ensureLearnerBackfillOnce } = await import('./lib/learner-backfill');
                 const { createLogger } = await import('./lib/logger');
-                const result = await applyLearnerBackfill(prisma);
-                if (result.learnersCreated || result.errorItemsLinked || result.practiceRecordsLinked) {
+                const result = await ensureLearnerBackfillOnce(prisma);
+                if (result && (result.learnersCreated || result.errorItemsLinked || result.practiceRecordsLinked)) {
                     createLogger('learners').info({ result }, 'applied learner backfill');
                 }
 

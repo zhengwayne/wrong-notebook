@@ -194,7 +194,9 @@ function buildBundle() {
     copy(standalone, BUNDLE);
     // standalone 可能带入本机的 .env、配置文件和数据库，全部移除，避免把密钥打进安装包
     for (const entry of fs.readdirSync(BUNDLE)) {
-        if (entry.startsWith('.env') || /\.(db|db-journal|sqlite)$/.test(entry)) rm(path.join(BUNDLE, entry));
+        if (entry.startsWith('.env') || /\.(db|db-journal|db-wal|db-shm|sqlite|sqlite-journal|sqlite-wal|sqlite-shm)$/.test(entry)) {
+            rm(path.join(BUNDLE, entry));
+        }
     }
     for (const dir of ['config', 'data', 'prisma', 'certs', 'dist-scripts']) rm(path.join(BUNDLE, dir));
     // 外部包别名链接由 launcher.js 在运行时解析（见 installExternalAliasResolver）
@@ -216,6 +218,7 @@ function buildBundle() {
     }
     pruneBundle();
     ensureExternalRuntimePackages();
+    copy(path.join(WORK, 'dist-scripts'), path.join(BUNDLE, 'dist-scripts'));
     fs.copyFileSync(path.join(PACKAGING, 'runtime', 'launcher.js'), path.join(BUNDLE, 'launcher.js'));
     // MIT 许可证要求随软件分发许可证文本，npm、桌面版和飞牛OS 安装包都基于此目录
     fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(BUNDLE, 'LICENSE'));
