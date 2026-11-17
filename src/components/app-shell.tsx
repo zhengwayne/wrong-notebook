@@ -186,7 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
             </header>
 
-            <div className="pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+            <div className="pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
 
