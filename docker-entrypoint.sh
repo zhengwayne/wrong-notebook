@@ -1,6 +1,17 @@
 #!/bin/sh
 set -e
 
+# Debian 镜像用 gosu，Alpine 镜像用 su-exec
+if command -v gosu >/dev/null 2>&1; then
+    drop_privs() { gosu nextjs:nodejs "$@"; }
+elif command -v su-exec >/dev/null 2>&1; then
+    drop_privs() { su-exec nextjs:nodejs "$@"; }
+else
+    echo "[Entrypoint] gosu/su-exec not found" >&2
+    exit 1
+fi
+
+
 # Define paths
 SOURCE_DB="/app/prisma/dev.db"
 TARGET_DB="/app/data/dev.db"
@@ -117,9 +128,9 @@ if [ "$HTTPS_ENABLED" = "true" ]; then
     # 启动 HTTPS 代理
     if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
         echo "[Entrypoint] 启动 HTTPS 代理 (端口 443)..."
-        su-exec nextjs:nodejs node /app/https-server.js &
+        drop_privs node /app/https-server.js &
     fi
 fi
 
 # Execute the main container command as nextjs user
-exec su-exec nextjs:nodejs "$@"
+exec drop_privs "$@"
