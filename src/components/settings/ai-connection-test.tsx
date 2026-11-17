@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ProviderErrorDetail } from "@/components/settings/provider-error-detail";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { buildConnectionTestRequest } from "@/lib/ai/connection-test";
+import type { AiModelRole } from "@/lib/ai/roles";
 import { apiClient } from "@/lib/api-client";
 import { getErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
@@ -26,6 +27,8 @@ interface TestResult {
 
 interface AiConnectionTestProps {
     config: AppConfig;
+    /** 当前设置所属的模型角色（用于服务端还原掩码密钥） */
+    role?: AiModelRole;
     /** 保存中时禁用测试 */
     saving: boolean;
     /** 与测试按钮并排显示的保存按钮；不传或为 null 时只显示测试 */
@@ -35,14 +38,14 @@ interface AiConnectionTestProps {
 }
 
 /** 测试当前 AI 渠道的文本与图像识别能力，并显示结果 */
-export function AiConnectionTest({ config, saving, saveButton, testLabel }: AiConnectionTestProps) {
+export function AiConnectionTest({ config, role = 'vision', saving, saveButton, testLabel }: AiConnectionTestProps) {
     const { t, language } = useLanguage();
     const [testing, setTesting] = useState(false);
     const [result, setResult] = useState<TestResult | null>(null);
     const errorText = (code: string) => (t.settings?.ai?.errors as Record<string, string>)?.[code] || code.replace('UNKNOWN:', '');
 
     const handleTest = async () => {
-        const request = buildConnectionTestRequest(config, language);
+        const request = buildConnectionTestRequest(config, language, role);
         if (!request.ok) {
             if (request.error === 'UNSUPPORTED_PROVIDER') return;
             const textError = request.error === 'AZURE_CONFIG_INCOMPLETE'

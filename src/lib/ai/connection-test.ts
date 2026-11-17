@@ -14,7 +14,18 @@ export function buildConnectionTestRequest(config: AppConfig, language: string, 
     if (provider === 'openai') {
         const instance = config.openai?.instances?.find((item) => item.id === config.openai?.activeInstanceId);
         if (!instance?.apiKey) return { ok: false, error: 'API_KEY_REQUIRED' };
-        return { ok: true, body: { provider, apiKey: instance.apiKey, baseUrl: instance.baseUrl, model: instance.model, language } };
+        return {
+            ok: true,
+            body: {
+                provider,
+                apiKey: instance.apiKey,
+                baseUrl: instance.baseUrl,
+                model: instance.model,
+                role,
+                instanceId: instance.id,
+                language,
+            },
+        };
     }
 
     if (provider === 'azure') {
@@ -22,20 +33,39 @@ export function buildConnectionTestRequest(config: AppConfig, language: string, 
         if (!azure?.apiKey || !azure.endpoint || !azure.deploymentName) return { ok: false, error: 'AZURE_CONFIG_INCOMPLETE' };
         return {
             ok: true,
-            body: { provider, apiKey: azure.apiKey, endpoint: azure.endpoint, deploymentName: azure.deploymentName, apiVersion: azure.apiVersion, model: azure.model, language },
+            body: {
+                provider,
+                apiKey: azure.apiKey,
+                endpoint: azure.endpoint,
+                deploymentName: azure.deploymentName,
+                apiVersion: azure.apiVersion,
+                model: azure.model,
+                role,
+                language,
+            },
         };
     }
 
     // MiniMax Code 使用服务端保存的登录凭据，只需要模型
     if (provider === 'minimax-code') {
-        return { ok: true, body: { provider, model: config.minimaxCode?.model, language } };
+        return { ok: true, body: { provider, model: config.minimaxCode?.model, role, language } };
     }
 
     // Gemini、Anthropic 与国产大模型渠道的配置结构相同：apiKey、baseUrl、model
     if (provider === 'gemini' || provider === 'anthropic' || isVendorProvider(provider)) {
         const settings = config[provider];
         if (!settings?.apiKey) return { ok: false, error: 'API_KEY_REQUIRED' };
-        return { ok: true, body: { provider, apiKey: settings.apiKey, baseUrl: settings.baseUrl, model: settings.model, language } };
+        return {
+            ok: true,
+            body: {
+                provider,
+                apiKey: settings.apiKey,
+                baseUrl: settings.baseUrl,
+                model: settings.model,
+                role,
+                language,
+            },
+        };
     }
 
     return { ok: false, error: 'UNSUPPORTED_PROVIDER' };

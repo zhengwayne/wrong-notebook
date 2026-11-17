@@ -7,17 +7,19 @@ import { ModelSelector } from "@/components/ui/model-selector";
 import { FieldLabel } from "@/components/settings/field-label";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { getProviderDocs } from "@/lib/ai/provider-docs";
+import type { AiModelRole } from "@/lib/ai/roles";
 import type { AppConfig } from "@/types/api";
 
 type AnthropicConfig = NonNullable<AppConfig["anthropic"]>;
 
 interface AnthropicSettingsProps {
     value?: AnthropicConfig;
+    role?: AiModelRole;
     onChange: (value: AnthropicConfig) => void;
 }
 
 /** Anthropic 及兼容接口的配置表单 */
-export function AnthropicSettings({ value, onChange }: AnthropicSettingsProps) {
+export function AnthropicSettings({ value, role, onChange }: AnthropicSettingsProps) {
     const { t } = useLanguage();
     const docs = getProviderDocs("anthropic");
     const update = (key: keyof AnthropicConfig, next: string) => onChange({ ...value, [key]: next });
@@ -46,6 +48,7 @@ export function AnthropicSettings({ value, onChange }: AnthropicSettingsProps) {
                 apiKey={value?.apiKey}
                 baseUrl={value?.baseUrl}
                 currentModel={value?.model}
+                role={role}
                 onModelChange={(model) => update("model", model)}
                 docsHref={docs?.models}
             />

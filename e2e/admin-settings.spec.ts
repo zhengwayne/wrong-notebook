@@ -80,10 +80,10 @@ test('Admin can configure OpenAI settings with multi-instance support', async ({
     // Switch to AI Tab (支持中英文)
     await page.getByRole('tab', { name: /AI Provider|AI 提供商/ }).click();
 
-    // Verify values match
+    // Verify values match (服务端响应与页面回显应对 API Key 脱敏)
     // First combobox should be AI Provider, second should be instance selector
     await expect(page.locator('button[role="combobox"]').first()).toHaveText('OpenAI / Compatible');
-    await expect(page.locator('input[placeholder="sk-..."]')).toHaveValue(apiKey);
+    await expect(page.locator('input[placeholder="sk-..."]')).toHaveValue('********');
     await expect(page.locator('input[placeholder="https://api.openai.com/v1"]')).toHaveValue(baseURL);
     await expect(page.locator('input[placeholder="gpt-6.1-sol"]')).toHaveValue(modelName);
 });

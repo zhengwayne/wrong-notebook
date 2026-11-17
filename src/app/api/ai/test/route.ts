@@ -7,8 +7,12 @@ import { MiniMaxCodeProvider } from '@/lib/ai/minimax-code-provider';
 import { DEFAULT_MINIMAX_CODE_MODEL } from '@/lib/minimax-code/constants';
 import { isVendorProvider, resolveVendorConfig } from '@/lib/ai/vendor-presets';
 import type { VendorProviderId } from '@/lib/ai/vendor-presets';
+import type { AiModelRole } from '@/lib/ai/roles';
+import { getAppConfig } from '@/lib/config';
 import { createLogger } from '@/lib/logger';
 import { getErrorDetail } from '@/lib/error-message';
+import { OutboundUrlError, resolveAndAssertSafeOutboundUrl } from '@/lib/outbound-url';
+import { resolveTestApiKey, SECRET_MASK } from '@/lib/settings-secrets';
 import { defineApiRoute } from '@/lib/server/api-route';
 
 const logger = createLogger('api:ai:test');
@@ -80,6 +84,8 @@ export interface AITestRequest {
     apiKey?: string;
     baseUrl?: string;
     model?: string;
+    role?: AiModelRole;
+    instanceId?: string;
     // Azure 特有
     endpoint?: string;
     deploymentName?: string;
@@ -104,10 +110,26 @@ export const POST = defineApiRoute<NextRequest>({ auth: 'admin' }, async (reques
     try {
 
         const body: AITestRequest = await request.json();
-        const { provider, apiKey, baseUrl, model, endpoint, deploymentName, apiVersion, language = 'zh' } = body;
+        const { provider, apiKey: rawApiKey, baseUrl, model, role, instanceId, endpoint, deploymentName, apiVersion, language = 'zh' } = body;
+
+        const apiKey = rawApiKey === SECRET_MASK
+            ? resolveTestApiKey({ provider, apiKey: rawApiKey, role, instanceId }, getAppConfig())
+            : rawApiKey;
 
         if (!provider || (!apiKey && provider !== 'minimax-code')) {
             return NextResponse.json({ error: 'Missing provider or apiKey' }, { status: 400 });
+        }
+
+        const rawTargetUrl = provider === 'azure' ? endpoint : baseUrl;
+        if (typeof rawTargetUrl === 'string' && rawTargetUrl.trim()) {
+            try {
+                await resolveAndAssertSafeOutboundUrl(rawTargetUrl.trim());
+            } catch (err) {
+                if (err instanceof OutboundUrlError) {
+                    return NextResponse.json({ error: err.message }, { status: 400 });
+                }
+                throw err;
+            }
         }
 
         logger.info({ provider, model, baseUrl: baseUrl || endpoint }, 'AI 连接测试开始');

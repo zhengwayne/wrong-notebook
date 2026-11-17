@@ -8,15 +8,17 @@ import { FieldLabel } from "@/components/settings/field-label";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { VENDOR_PRESETS } from "@/lib/ai/vendor-presets";
 import type { VendorConfig, VendorProviderId } from "@/lib/ai/vendor-presets";
+import type { AiModelRole } from "@/lib/ai/roles";
 
 interface VendorSettingsProps {
     provider: VendorProviderId;
     value?: VendorConfig;
+    role?: AiModelRole;
     onChange: (value: VendorConfig) => void;
 }
 
 /** MiniMax、GLM 等国产大模型官方渠道的配置表单，地址和模型留空时使用官方默认值 */
-export function VendorSettings({ provider, value, onChange }: VendorSettingsProps) {
+export function VendorSettings({ provider, value, role, onChange }: VendorSettingsProps) {
     const { t } = useLanguage();
     const preset = VENDOR_PRESETS[provider];
     const update = (key: keyof VendorConfig, next: string) => onChange({ ...value, [key]: next });
@@ -63,6 +65,7 @@ export function VendorSettings({ provider, value, onChange }: VendorSettingsProp
                 apiKey={value?.apiKey}
                 baseUrl={value?.baseUrl}
                 currentModel={value?.model || preset.model}
+                role={role}
                 onModelChange={(model) => update("model", model)}
                 docsHref={preset.docs.models}
             />

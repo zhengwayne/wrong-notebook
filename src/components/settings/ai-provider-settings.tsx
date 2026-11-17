@@ -15,7 +15,7 @@ import { OpenAIInstanceSettings } from "@/components/settings/openai-instance-se
 import { ProviderDocLinks } from "@/components/settings/provider-doc-links";
 import { VendorSettings } from "@/components/settings/vendor-settings";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { applyTextRoleConfig, getConfigForRole, isTextSameAsVision, snapshotVisionAsTextAi } from "@/lib/ai/roles";
+import { applyTextRoleConfig, getConfigForRole, isTextSameAsVision, snapshotVisionAsTextAi, type AiModelRole } from "@/lib/ai/roles";
 import { getVendorName, isVendorProvider, VENDOR_PROVIDER_IDS } from "@/lib/ai/vendor-presets";
 import type { AppConfig } from "@/types/api";
 
@@ -29,11 +29,12 @@ interface AiProviderSettingsProps {
 
 interface ProviderFieldsProps {
     config: AppConfig;
+    role: AiModelRole;
     onChange: (next: AppConfig) => void;
 }
 
 /** 单个渠道的提供商选择与凭据表单 */
-function ProviderFields({ config, onChange }: ProviderFieldsProps) {
+function ProviderFields({ config, role, onChange }: ProviderFieldsProps) {
     const { t, language } = useLanguage();
     const setProvider = (val: AppConfig["aiProvider"]) => onChange({ ...config, aiProvider: val });
 
@@ -61,22 +62,23 @@ function ProviderFields({ config, onChange }: ProviderFieldsProps) {
             </div>
 
             {config.aiProvider === "openai" && (
-                <OpenAIInstanceSettings value={config.openai} onChange={(openai) => onChange({ ...config, openai })} />
+                <OpenAIInstanceSettings value={config.openai} role={role} onChange={(openai) => onChange({ ...config, openai })} />
             )}
             {config.aiProvider === "gemini" && (
-                <GeminiSettings value={config.gemini} onChange={(gemini) => onChange({ ...config, gemini })} />
+                <GeminiSettings value={config.gemini} role={role} onChange={(gemini) => onChange({ ...config, gemini })} />
             )}
             {config.aiProvider === "minimax-code" && (
                 <MiniMaxCodeSettings value={config.minimaxCode} onChange={(minimaxCode) => onChange({ ...config, minimaxCode })} />
             )}
             {config.aiProvider === "anthropic" && (
-                <AnthropicSettings value={config.anthropic} onChange={(anthropic) => onChange({ ...config, anthropic })} />
+                <AnthropicSettings value={config.anthropic} role={role} onChange={(anthropic) => onChange({ ...config, anthropic })} />
             )}
             {isVendorProvider(config.aiProvider) && (
                 <VendorSettings
                     key={config.aiProvider}
                     provider={config.aiProvider}
                     value={config[config.aiProvider]}
+                    role={role}
                     onChange={(vendorConfig) => onChange({ ...config, [config.aiProvider]: vendorConfig })}
                 />
             )}
@@ -115,9 +117,10 @@ export function AiProviderSettings({ config, setConfig, loading, saving, onSave 
                     <h3 className="text-sm font-semibold">{t.settings?.ai?.visionRole || "Multimodal model"}</h3>
                     <p className="text-xs text-muted-foreground">{t.settings?.ai?.visionRoleDesc}</p>
                 </div>
-                <ProviderFields config={getConfigForRole(config, "vision")} onChange={setConfig} />
+                <ProviderFields config={getConfigForRole(config, "vision")} role="vision" onChange={setConfig} />
                 <AiConnectionTest
                     config={getConfigForRole(config, "vision")}
+                    role="vision"
                     saving={saving}
                     testLabel={t.settings?.ai?.testVision}
                     saveButton={null}
@@ -157,10 +160,12 @@ export function AiProviderSettings({ config, setConfig, loading, saving, onSave 
                     </div>
                     <ProviderFields
                         config={textView}
+                        role="text"
                         onChange={(view) => setConfig((prev) => applyTextRoleConfig(prev, view))}
                     />
                     <AiConnectionTest
                         config={textView}
+                        role="text"
                         saving={saving}
                         testLabel={t.settings?.ai?.testText}
                         saveButton={null}
