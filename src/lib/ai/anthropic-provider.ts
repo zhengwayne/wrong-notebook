@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
-import type { AnalyzeImageResult } from './types';
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion, AnalyzeImageResult } from "./types";
 import { parseJsonCompletion, usageFromAnthropic } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateReanswerRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -8,20 +7,20 @@ import type { NarrationSegment } from '../svg-animation';
 import { parseLatexFix } from './latex-fix';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
-import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, extractJsonObject, parseDifficultyStars, parseFigure } from './schema';
+import { parseGradeRecognition, parseMasteryEvaluation, parseAnswerGrading, parseTagSuggestion, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { generateExamPaperReadRequest } from './prompt-requests';
 import { parseExamPaperByMode } from './exam-paper-read';
 import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { trimTrailingSlashes } from '../utils';
-import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
-import { normalizeMistakeStatusForSave } from '../mistake-status';
-import { parseRecognizedGrade } from '../question-grade';
+import { withTruncationRetry } from './truncation';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
+import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:anthropic');
 
@@ -53,64 +52,6 @@ function imageBlock(base64: string, mimeType?: string): Anthropic.ImageBlockPara
             data: match ? match[2] : base64,
         },
     };
-}
-
-/** 提取 <tag>…</tag> 内容；analysis 未闭合时视为被截断，读取到末尾 */
-function extractTag(text: string, tagName: string): string | null {
-    const startTag = `<${tagName}>`;
-    const endTag = `</${tagName}>`;
-    const startIndex = text.indexOf(startTag);
-    if (startIndex === -1) {
-        return null;
-    }
-
-    const contentStartIndex = startIndex + startTag.length;
-    const endIndex = text.lastIndexOf(endTag);
-    if (endIndex === -1 && tagName === 'analysis') {
-        logger.warn({ tagName }, 'Tag was verified unclosed, treating as truncated and reading to end');
-        return text.substring(contentStartIndex).trim();
-    }
-    if (endIndex === -1 || contentStartIndex >= endIndex) {
-        return null;
-    }
-    return text.substring(contentStartIndex, endIndex).trim();
-}
-
-function splitKnowledgePoints(raw: string | null): string[] {
-    return (raw || '').split(/[,，\n]/).map(k => k.trim()).filter(k => k.length > 0);
-}
-
-function parseQuestionResponse(text: string): ParsedQuestion {
-    const questionText = extractTag(text, "question_text");
-    const answerText = extractTag(text, "answer_text");
-    const analysis = extractTag(text, "analysis");
-    if (!questionText || !answerText || !analysis) {
-        logger.error({ rawTextSample: text.substring(0, 500) }, 'Missing critical XML tags');
-        throw new Error("Invalid AI response: Missing critical XML tags (<question_text>, <answer_text>, or <analysis>)");
-    }
-
-    const wrongAnswerText = extractTag(text, "wrong_answer_text") || "";
-    const result: ParsedQuestion = {
-        questionText,
-        answerText,
-        analysis,
-        wrongAnswerText,
-        mistakeAnalysis: extractTag(text, "mistake_analysis") || "",
-        mistakeStatus: normalizeMistakeStatusForSave(extractTag(text, "mistake_status"), wrongAnswerText),
-        subject: normalizeSubject(extractTag(text, "subject")) || '其他',
-        knowledgePoints: splitKnowledgePoints(extractTag(text, "knowledge_points")),
-        requiresImage: extractTag(text, "requires_image")?.toLowerCase().trim() === 'true',
-        gradeSemester: parseRecognizedGrade(extractTag(text, "grade_semester")),
-        difficultyStars: parseDifficultyStars(extractTag(text, "difficulty_stars")),
-        ...parseFigure(extractTag(text, "has_figure"), extractTag(text, "figure_svg")),
-    };
-
-    const validation = safeParseParsedQuestion(result);
-    if (!validation.success) {
-        logger.warn({ validationError: validation.error.format() }, 'Schema validation warning');
-        return result;
-    }
-    return validation.data;
 }
 
 /** 兼容接口沿用的 API 版本：SDK 1.x 默认发送 2026-10-21，第三方兼容接口未必支持 */
@@ -251,34 +192,38 @@ export class AnthropicProvider implements AIService {
         try {
             const text = await this.complete(systemPrompt.system, userPrompt, getInitialMaxTokens(this.model));
             logger.box('🤖 AI Raw Response', text);
-            return normalizeGeneratedQuestion(parseQuestionResponse(text));
+            return normalizeGeneratedQuestion(parseQuestionXml(text));
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during question generation');
             this.handleError(error);
-            throw error;
         }
     }
 
 
     async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
-        const response = await withTruncationRetry(async (limit) => {
-            const message = await this.client.messages.create({
-                model: this.model,
-                max_tokens: limit,
-                system: request.system,
-                messages: [{ role: 'user', content: request.user }],
-            });
-            const text = message.content
-                .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-                .map((block) => block.text)
-                .join('');
-            return {
-                text,
-                usage: message.usage,
-                choices: [{ finish_reason: message.stop_reason === 'max_tokens' ? 'length' : message.stop_reason, message: { content: text } }],
-            };
-        }, 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
-        return parseJsonCompletion(response.text, usageFromAnthropic(response.usage));
+        try {
+            const response = await withTruncationRetry(async (limit) => {
+                const message = await this.client.messages.create({
+                    model: this.model,
+                    max_tokens: limit,
+                    system: request.system,
+                    messages: [{ role: 'user', content: request.user }],
+                });
+                const text = message.content
+                    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+                    .map((block) => block.text)
+                    .join('');
+                return {
+                    text,
+                    usage: message.usage,
+                    choices: [{ finish_reason: message.stop_reason === 'max_tokens' ? 'length' : message.stop_reason, message: { content: text } }],
+                };
+            }, 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            return parseJsonCompletion(response.text, usageFromAnthropic(response.usage));
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during structured JSON completion');
+            this.handleError(error);
+        }
     }
 
     async reanswerQuestion(questionText: string, language: 'zh' | 'en' = 'zh', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult> {
@@ -299,22 +244,10 @@ export class AnthropicProvider implements AIService {
             const text = await this.complete(prompt.system, content, getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'AI raw response');
 
-            const wrongAnswerText = extractTag(text, "wrong_answer_text") || "";
-            return normalizeAiQuestionTags({
-                answerText: extractTag(text, "answer_text") || "",
-                analysis: extractTag(text, "analysis") || "",
-                knowledgePoints: splitKnowledgePoints(extractTag(text, "knowledge_points")),
-                wrongAnswerText,
-                mistakeAnalysis: extractTag(text, "mistake_analysis") || "",
-                mistakeStatus: normalizeMistakeStatusForSave(extractTag(text, "mistake_status"), wrongAnswerText),
-                subject: normalizeSubject(extractTag(text, "subject")),
-                gradeSemester: parseRecognizedGrade(extractTag(text, "grade_semester")),
-                difficultyStars: parseDifficultyStars(extractTag(text, "difficulty_stars")),
-            }, { candidateTags });
+            return parseReanswerXml(text, candidateTags);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during reanswer');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -325,16 +258,10 @@ export class AnthropicProvider implements AIService {
         try {
             const text = await this.complete(prompt.system, prompt.user, 4096);
             logger.debug({ rawResponse: text }, 'GeoGebra AI raw response');
-            const parsed = extractJsonObject(text) as { suitable?: unknown; commands?: unknown; description?: unknown };
-            return {
-                suitable: Boolean(parsed.suitable),
-                commands: Array.isArray(parsed.commands) ? parsed.commands : [],
-                description: typeof parsed.description === 'string' ? parsed.description : "",
-            };
+            return parseGeogebraJson(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during GeoGebra analysis');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -420,15 +347,14 @@ export class AnthropicProvider implements AIService {
 
         try {
             const text = await this.complete(prompt.system, [
-                imageBlock(imageBase64, mimeType), { type: 'text', text: prompt.user },
-                { type: 'text', text: '请重新绘制图中题目的配图。' },
+                imageBlock(imageBase64, mimeType),
+                { type: 'text', text: prompt.user },
             ], getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
-            return parseFigure(extractTag(text, "has_figure"), extractTag(text, "figure_svg"));
+            return parseFigure(extractXmlTag(text, "has_figure"), extractXmlTag(text, "figure_svg"));
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during figure SVG generation');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -443,7 +369,6 @@ export class AnthropicProvider implements AIService {
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during LaTeX fix');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -454,11 +379,10 @@ export class AnthropicProvider implements AIService {
         try {
             const text = await this.complete(prompt.system, prompt.user, 16384);
             logger.debug({ rawResponse: text }, 'SVG animation AI raw response');
-            return sanitizeSvgAnimation(extractTag(text, "svg_animation") || text);
+            return sanitizeSvgAnimation(extractXmlTag(text, "svg_animation") || text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG animation generation');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -469,45 +393,14 @@ export class AnthropicProvider implements AIService {
         try {
             const text = await this.complete(prompt.system, prompt.user, 4096);
             logger.debug({ rawResponse: text }, 'SVG narration AI raw response');
-            return parseNarration(extractTag(text, "narration") || text);
+            return parseNarration(extractXmlTag(text, "narration") || text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG narration generation');
             this.handleError(error);
-            throw error;
         }
     }
 
-    private handleError(error: unknown) {
-        logger.error({ error }, 'Anthropic error');
-        if (error instanceof Error && (error.message === AI_OUTPUT_TRUNCATED || error.message.startsWith('AI_RESPONSE_ERROR:'))) {
-            throw error;
-        }
-
-        // SDK 的 APIError 带 HTTP 状态码，优先按状态码判断
-        if (error instanceof Anthropic.APIConnectionTimeoutError) throw new Error("AI_TIMEOUT_ERROR", { cause: error });
-        if (error instanceof Anthropic.APIConnectionError) throw new Error("AI_CONNECTION_FAILED", { cause: error });
-        if (error instanceof Anthropic.APIError && error.status) {
-            const status = error.status;
-            if (status === 401) throw new Error("AI_AUTH_ERROR", { cause: error });
-            if (status === 403) throw new Error("AI_PERMISSION_DENIED", { cause: error });
-            if (status === 404) throw new Error("AI_NOT_FOUND", { cause: error });
-            if (status === 408) throw new Error("AI_TIMEOUT_ERROR", { cause: error });
-            if (status === 429) throw new Error("AI_QUOTA_EXCEEDED", { cause: error });
-            if (status >= 500) throw new Error("AI_SERVICE_UNAVAILABLE", { cause: error }); // 含 529 overloaded
-        }
-
-        if (error instanceof Error) {
-            const msg = error.message.toLowerCase();
-            if (msg.includes('fetch failed') || msg.includes('network') || msg.includes('connect')) {
-                throw new Error("AI_CONNECTION_FAILED", { cause: error });
-            }
-            if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted')) {
-                throw new Error("AI_TIMEOUT_ERROR", { cause: error });
-            }
-            if (msg.includes('invalid json') || msg.includes('parse') || msg.includes('json') || msg.includes('missing critical xml')) {
-                throw new Error("AI_RESPONSE_ERROR", { cause: error });
-            }
-        }
-        throw new Error("AI_UNKNOWN_ERROR", { cause: error });
+    private handleError(error: unknown): never {
+        normalizeAiError(error, 'Anthropic');
     }
 }
