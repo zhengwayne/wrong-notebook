@@ -11,11 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettings } from "@/components/settings/general-settings";
 import {
     AdminSettingsTabContent,
+    DangerSettingsTabContent,
     LazyAboutSettings,
     LazyAccountSettings,
     LazyAiProviderSettings,
-    LazyDangerZoneSettings,
-    LazyDataBackupSettings,
     LazyPromptSettings,
     LazyTtsSettings,
 } from "@/components/settings/lazy-panels";
@@ -176,16 +175,17 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                         )}
 
                         <TabsContent value="danger" className="space-y-4 py-4">
-                            {activeTab === "danger" && (
-                                <div className="space-y-3">
-                                    <LazyDataBackupSettings isAdmin={isAdmin} />
-                                    <LazyDangerZoneSettings isAdmin={isAdmin} />
-                                </div>
-                            )}
+                            {activeTab === "danger" && <DangerSettingsTabContent isAdmin={isAdmin} />}
                         </TabsContent>
 
                         <TabsContent value="about" className="space-y-4 py-4">
-                            {activeTab === "about" && <LazyAboutSettings isAdmin={isAdmin} securityPosture={isAdmin ? config.securityPosture : undefined} />}
+                            {activeTab === "about" && (
+                                <LazyAboutSettings
+                                    isAdmin={isAdmin}
+                                    securityPosture={isAdmin ? config.securityPosture : undefined}
+                                    dataFlow={config.dataFlow}
+                                />
+                            )}
                         </TabsContent>
                     </Tabs>
                 </UserProfileProvider>

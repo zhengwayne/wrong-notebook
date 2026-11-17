@@ -206,6 +206,24 @@ export interface SecurityPosture {
     openclawKeyConfigured: boolean;
 }
 
+export type EndpointLocality = 'official' | 'local' | 'custom_remote';
+
+export interface ModelDataFlow {
+    provider: string;
+    endpointType: EndpointLocality;
+}
+
+export interface DataFlowSummary {
+    vision: ModelDataFlow;
+    textSameAsVision: boolean;
+    text: ModelDataFlow;
+    tts: {
+        mode: string;
+        isCloud: boolean;
+        endpointType: EndpointLocality | 'browser';
+    };
+}
+
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
     /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
@@ -255,6 +273,8 @@ export interface AppConfig extends VendorConfigs {
     tts?: TtsConfig;
     /** 仅向管理员返回的匿名安全态势摘要（不持久化，不含密钥） */
     securityPosture?: SecurityPosture;
+    /** 面向所有用户的脱敏 AI/语音数据去向摘要（不持久化，不含地址或密钥） */
+    dataFlow?: DataFlowSummary;
 }
 
 

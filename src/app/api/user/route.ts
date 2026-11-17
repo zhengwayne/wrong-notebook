@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { hash } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { conflict, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
@@ -8,6 +8,7 @@ import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { syncMasteryLevels } from "@/lib/mastery";
 import { userUpdateSchema } from "@/lib/user-profile-schema";
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
+import { deleteUserAccount, UserDeletionError } from "@/lib/user-deletion";
 import { defineApiRoute } from "@/lib/server/api-route";
 import type { Prisma } from "@prisma/client";
 
@@ -157,3 +158,40 @@ export const PATCH = defineApiRoute({ auth: 'user' }, async (req, { user: actorU
         return internalError("Failed to update user profile");
     }
 });
+
+const selfDeleteSchema = z.object({
+    password: z.string().min(1, "Password is required"),
+});
+
+export const DELETE = defineApiRoute(
+    { auth: 'user', bodySchema: selfDeleteSchema },
+    async (_req, { user: actorUser, body }) => {
+        try {
+            const dbUser = await prisma.user.findUnique({
+                where: { id: actorUser.id },
+                select: { password: true },
+            });
+            if (!dbUser) {
+                return notFound("User not found");
+            }
+            const passwordMatched = await compare(body.password, dbUser.password);
+            if (!passwordMatched) {
+                return badRequest("INCORRECT_PASSWORD");
+            }
+
+            await deleteUserAccount(prisma, {
+                targetUserId: actorUser.id,
+                actorKind: "self",
+            });
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (error instanceof UserDeletionError) {
+                if (error.code === "NOT_FOUND") return notFound("User not found");
+                if (error.code === "PROTECTED_DEFAULT_ADMIN") return badRequest("Cannot delete super admin");
+                if (error.code === "LAST_ACTIVE_ADMIN") return badRequest("Cannot delete the last active admin");
+            }
+            logger.error({ error }, 'Failed to delete current user account');
+            return internalError("Failed to delete user account");
+        }
+    },
+);

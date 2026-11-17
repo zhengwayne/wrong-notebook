@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { badRequest, internalError, validationError } from "@/lib/api-errors"
+import { badRequest, internalError, notFound, validationError } from "@/lib/api-errors"
 import { createLogger } from "@/lib/logger"
 import { USER_SAFE_SELECT } from "@/lib/user-select"
+import { deleteUserAccount, UserDeletionError } from "@/lib/user-deletion"
 import { defineApiRoute } from "@/lib/server/api-route"
 
 const logger = createLogger('api:admin:users:id');
@@ -71,28 +72,22 @@ export const DELETE = defineApiRoute<Request, { id: string }>(
         try {
             // Prevent deleting self
             if (id === actorUser.id) {
-                return badRequest("Cannot delete your own account")
+                return badRequest("Cannot delete your own account");
             }
 
-            // Prevent deleting super admin
-            const targetUser = await prisma.user.findUnique({
-                where: { id },
-                select: { id: true, email: true, role: true },
-            })
-
-            if (targetUser?.role === 'admin' && targetUser.email === 'admin@localhost') {
-                return badRequest("Cannot delete super admin")
-            }
-
-            const user = await prisma.user.delete({
-                where: { id },
-                select: USER_SAFE_SELECT,
-            })
-
-            return NextResponse.json(user)
+            const user = await deleteUserAccount(prisma, {
+                targetUserId: id,
+                actorKind: "admin",
+            });
+            return NextResponse.json(user);
         } catch (error) {
+            if (error instanceof UserDeletionError) {
+                if (error.code === "NOT_FOUND") return notFound("User not found");
+                if (error.code === "PROTECTED_DEFAULT_ADMIN") return badRequest("Cannot delete super admin");
+                if (error.code === "LAST_ACTIVE_ADMIN") return badRequest("Cannot delete the last active admin");
+            }
             logger.error({ error }, 'Error deleting user');
-            return internalError("Failed to delete user")
+            return internalError("Failed to delete user");
         }
     },
 );

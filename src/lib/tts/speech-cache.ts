@@ -346,3 +346,39 @@ export async function clearSpeechCache(): Promise<void> {
     pending.clear();
     await fs.rm(cacheDir(), { recursive: true, force: true });
 }
+
+/** 注销用户时从 TTS 缓存授权清单移除该用户，若该音频不再属于任何用户则物理删除 .mp3 与 .json */
+export async function purgeUserFromSpeechCache(userId: string): Promise<void> {
+    if (!userId) return;
+    const dir = cacheDir();
+    let names: string[];
+    try {
+        names = await fs.readdir(dir);
+    } catch {
+        return;
+    }
+
+    for (const name of names) {
+        if (!name.endsWith('.json')) continue;
+        const id = name.slice(0, -5);
+        if (!SPEECH_ID_PATTERN.test(id)) continue;
+        await withMetaLock(id, async () => {
+            const raw = await readMetaRaw(id);
+            if (!raw || !Array.isArray(raw.authorizedUserIds)) return;
+            const existing = normalizeUserIds(raw.authorizedUserIds as string[]);
+            if (!existing.includes(userId)) return;
+
+            const remaining = existing.filter((item) => item !== userId);
+            if (remaining.length === 0) {
+                await fs.rm(audioPath(id), { force: true });
+                await fs.rm(metaPath(id), { force: true });
+                return;
+            }
+
+            const source = parseSpeechSource(raw);
+            if (source) {
+                await writeMetaAtomic(id, { ...source, authorizedUserIds: remaining });
+            }
+        });
+    }
+}

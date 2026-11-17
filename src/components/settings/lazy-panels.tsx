@@ -13,7 +13,19 @@ export const LazyDebugLogSettings = dynamic(() => import("@/components/settings/
 export const LazyUserManagement = dynamic(() => import("@/components/admin/user-management").then((m) => m.UserManagement), { ssr: false });
 export const LazyDataBackupSettings = dynamic(() => import("@/components/settings/data-backup-settings").then((m) => m.DataBackupSettings), { ssr: false });
 export const LazyDangerZoneSettings = dynamic(() => import("@/components/settings/danger-zone-settings").then((m) => m.DangerZoneSettings), { ssr: false });
+export const LazyDeleteAccountSettings = dynamic(() => import("@/components/settings/delete-account-settings").then((m) => m.DeleteAccountSettings), { ssr: false });
 export const LazyAboutSettings = dynamic(() => import("@/components/settings/about-settings").then((m) => m.AboutSettings), { ssr: false });
+
+/** 设置页危险区域标签面板：集中展示备份、清空/重置与账户注销 */
+export function DangerSettingsTabContent({ isAdmin }: { isAdmin: boolean }) {
+    return (
+        <div className="space-y-3">
+            <LazyDataBackupSettings isAdmin={isAdmin} />
+            <LazyDangerZoneSettings isAdmin={isAdmin} />
+            <LazyDeleteAccountSettings />
+        </div>
+    );
+}
 
 /** 设置页管理员标签面板：仅在管理员点开对应标签后加载 */
 export function AdminSettingsTabContent({

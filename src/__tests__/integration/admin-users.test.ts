@@ -9,10 +9,13 @@ const mocks = vi.hoisted(() => ({
     mockPrismaUser: {
         findMany: vi.fn(),
         findUnique: vi.fn(),
+        count: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
     },
     mockAiUsage: { groupBy: vi.fn() },
+    mockLearnerBackfillAudit: { deleteMany: vi.fn() },
+    mockKnowledgeTag: { updateMany: vi.fn(), deleteMany: vi.fn() },
     mockSession: {
         user: {
             id: 'admin-id',
@@ -28,6 +31,15 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         user: mocks.mockPrismaUser,
         aiUsage: mocks.mockAiUsage,
+        learnerBackfillAudit: mocks.mockLearnerBackfillAudit,
+        knowledgeTag: mocks.mockKnowledgeTag,
+        $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+            fn({
+                user: mocks.mockPrismaUser,
+                learnerBackfillAudit: mocks.mockLearnerBackfillAudit,
+                knowledgeTag: mocks.mockKnowledgeTag,
+            }),
+        ),
     },
 }));
 
@@ -72,6 +84,7 @@ describe('/api/admin/users', () => {
         vi.clearAllMocks();
         // Reset session to admin by default
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
+        mocks.mockPrismaUser.count.mockResolvedValue(1);
         setupUserLookup();
     });
 

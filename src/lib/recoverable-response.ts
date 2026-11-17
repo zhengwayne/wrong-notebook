@@ -290,3 +290,13 @@ export function resetRecoverableResponsesForTest(): void {
 export function clearRecoverableResponses(): void {
     entries.clear();
 }
+
+/** 注销/删除用户时从进程内热缓存移除该用户的断线恢复响应 */
+export function purgeUserRecoverableResponses(userId: string): void {
+    if (!userId) return;
+    for (const [id, entry] of entries) {
+        if (entry.userId === userId) {
+            entries.delete(id);
+        }
+    }
+}

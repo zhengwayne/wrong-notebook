@@ -397,6 +397,16 @@ export function resetBackgroundTasksForTest(): void {
     tasks.clear();
 }
 
+/** 注销/删除用户时从进程内热缓存清理该用户的后台任务记录 */
+export function purgeUserBackgroundTasks(userId: string): void {
+    if (!userId) return;
+    for (const [id, task] of tasks) {
+        if (task.userId === userId) {
+            tasks.delete(id);
+        }
+    }
+}
+
 /** 清理所有后台任务缓存及旧版本遗留持久化文件（供 system-reset 调用） */
 export function clearAllBackgroundTasks(): void {
     store.__backgroundTasksGeneration = (store.__backgroundTasksGeneration ?? 0) + 1;

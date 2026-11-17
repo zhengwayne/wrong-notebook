@@ -5,17 +5,19 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Info, MessageSquareText, Scr
 import { Button } from "@/components/ui/button";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { AndroidAppSetting } from "@/components/settings/android-app-setting";
+import { DataFlowDisclosure } from "@/components/settings/data-flow-disclosure";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { PROJECT_REPO_URL } from "@/lib/constants/project";
-import type { SecurityPosture } from "@/types/api";
+import type { DataFlowSummary, SecurityPosture } from "@/types/api";
 
 interface AboutSettingsProps {
     isAdmin?: boolean;
     securityPosture?: SecurityPosture;
+    dataFlow?: DataFlowSummary;
 }
 
-/** 关于：版本号、安卓 App、管理员安全态势提醒与项目链接 */
-export function AboutSettings({ isAdmin = false, securityPosture }: AboutSettingsProps) {
+/** 关于：版本号、安卓 App、AI 数据流向告知、管理员安全态势提醒与项目链接 */
+export function AboutSettings({ isAdmin = false, securityPosture, dataFlow }: AboutSettingsProps) {
     const { t } = useLanguage();
     const [version, setVersion] = useState("");
 
@@ -88,6 +90,8 @@ export function AboutSettings({ isAdmin = false, securityPosture }: AboutSetting
             </div>
 
             <AndroidAppSetting />
+
+            <DataFlowDisclosure dataFlow={dataFlow} />
 
             {postureChecks.length > 0 && (
                 <div className="w-full max-w-xl mx-auto px-4 text-left">
