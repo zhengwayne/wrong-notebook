@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, CalendarCheck, ClipboardCheck, FileText, PlusCircle, Route, Sparkles, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarCheck, Camera, ClipboardCheck, FileText, PlusCircle, Route, Sparkles, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Persona } from "@/lib/personas";
 import { landingPath } from "@/lib/personas";
@@ -16,7 +16,8 @@ export type NavKey =
     | "children"
     | "todayTasks"
     | "practice"
-    | "path";
+    | "path"
+    | "papers";
 
 export interface NavItem {
     key: NavKey;
@@ -64,7 +65,8 @@ export const TEACHER_NAV_ITEMS: NavItem[] = [
 ];
 
 export const PARENT_NAV_ITEMS: NavItem[] = [
-    { key: "children", href: "/parent", icon: Users, match: (p) => p.startsWith("/parent") },
+    { key: "children", href: "/parent", icon: Users, match: (p) => p === "/parent" },
+    { key: "papers", href: "/parent/papers/new", icon: Camera, match: (p) => p.startsWith("/parent/papers") },
     { key: "todayTasks", href: "/review", icon: CalendarCheck, match: (p) => p.startsWith("/review") },
     {
         key: "practice",
@@ -78,7 +80,7 @@ export const PARENT_NAV_ITEMS: NavItem[] = [
 ];
 
 const TEACHER_MOBILE_PRIMARY_KEYS = ["grading", "classes", "stats", "notebooks"] as const;
-const PARENT_MOBILE_PRIMARY_KEYS = ["children", "todayTasks", "practice", "path"] as const;
+const PARENT_MOBILE_PRIMARY_KEYS = ["children", "papers", "practice", "path"] as const;
 
 export const MOBILE_PRIMARY_KEYS = ["home", "notebooks", "learn", "grading"] as const;
 

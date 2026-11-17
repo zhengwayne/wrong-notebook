@@ -54,6 +54,7 @@ model User {
   knowledgeMasteries KnowledgeMastery[]
   learningPaths LearningPath[]
   learners     Learner[]
+  parentPapers ParentPaper[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -510,6 +511,7 @@ model Learner {
 
   errorItems      ErrorItem[]
   practiceRecords PracticeRecord[]
+  parentPapers    ParentPaper[]
 
   @@index([userId, kind])
 }
@@ -528,6 +530,35 @@ model LearnerBackfillAudit {
 
   @@index([batchId])
   @@index([entityType, entityId])
+}
+
+
+// 家长为孩子上传的试卷：先存为待识别草稿，确认前不写入错题本
+model ParentPaper {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  title     String?
+  /// pending_recognition（识别与确认在后续阶段）
+  status    String   @default("pending_recognition")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pages     ParentPaperPage[]
+
+  @@index([userId, learnerId, createdAt])
+}
+
+model ParentPaperPage {
+  id        String   @id @default(cuid())
+  paperId   String
+  paper     ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  position  Int
+  imageUrl  String
+  createdAt DateTime @default(now())
+
+  @@index([paperId, position])
 }
 
 model KnowledgeMastery {

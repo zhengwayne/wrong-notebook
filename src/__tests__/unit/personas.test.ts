@@ -54,9 +54,9 @@ describe('persona navigation', () => {
 
     it('emphasises children, tasks, practice and path for parents, and hides grading', () => {
         const items = navItemsForPersona('parent');
-        expect(items.map((item) => item.key).slice(0, 4)).toEqual(['children', 'todayTasks', 'practice', 'path']);
+        expect(items.map((item) => item.key).slice(0, 5)).toEqual(['children', 'papers', 'todayTasks', 'practice', 'path']);
         expect(items.some((item) => item.key === 'grading')).toBe(false);
-        expect(mobilePrimaryItemsForPersona('parent').map((item) => item.key)).toEqual(['children', 'todayTasks', 'practice', 'path']);
+        expect(mobilePrimaryItemsForPersona('parent').map((item) => item.key)).toEqual(['children', 'papers', 'practice', 'path']);
     });
 
     it('keeps the current layout for self-study', () => {

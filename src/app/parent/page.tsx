@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookOpen, CalendarCheck, Route, Users } from "lucide-react";
+import { BookOpen, CalendarCheck, Camera, FileText, Route, Users } from "lucide-react";
 import { ChildLearnersManager } from "@/components/child-learners-manager";
 import { HomeSection, MasteryList, PracticeTrendChart, TodayStepList, WeakPointList } from "@/components/home/home-panels";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
+import { withChildParam } from "@/lib/current-child";
 import type { PracticeTrendDay } from "@/lib/home-aggregates";
 
 interface ParentHomeData {
@@ -39,6 +41,7 @@ function ParentHome() {
     const router = useRouter();
     const params = useSearchParams();
     usePageTitle(t.pageTitle.parentHome);
+    const { setLearner, hrefWithChild } = useCurrentChild();
     const learnerId = params.get("learnerId") || "";
     const [data, setData] = useState<ParentHomeData | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -51,11 +54,13 @@ function ParentHome() {
             if (id) query.set("learnerId", id);
             const result = await apiClient.get<ParentHomeData>(`/api/parent/home?${query}`);
             setData(result);
+            if (result.child) setLearner({ id: result.child.id, name: result.child.name });
+            else if (result.selectedLearnerId) setLearner(result.selectedLearnerId);
         } catch (err) {
             frontendLogger.error("[ParentHome]", "Failed to load parent home", { error: err });
             setError(getApiErrorMessage(err) || copy.loadError);
         }
-    }, [language, copy.loadError]);
+    }, [language, copy.loadError, setLearner]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换孩子时拉取首页数据
@@ -74,9 +79,10 @@ function ParentHome() {
     const child = data?.child;
     const selectedId = data?.selectedLearnerId || learnerId || children[0]?.id || "";
     const followUps = child ? [
-        { href: "/review", icon: CalendarCheck, title: copy.review, desc: copy.todayDesc },
-        { href: `/notebooks`, icon: BookOpen, title: copy.practice, desc: copy.practiceDesc },
-        { href: `/learn?studentKey=${encodeURIComponent(child.id)}`, icon: Route, title: copy.path, desc: copy.pathDesc },
+        { href: hrefWithChild("/review"), icon: CalendarCheck, title: copy.review, desc: copy.todayDesc },
+        { href: hrefWithChild("/notebooks"), icon: BookOpen, title: copy.practice, desc: copy.practiceDesc },
+        { href: hrefWithChild("/learn"), icon: Route, title: copy.path, desc: copy.pathDesc },
+        { href: withChildParam("/parent/papers", child.id), icon: FileText, title: copy.viewPapers, desc: copy.uploadDesc },
     ] : [];
 
     return (
@@ -86,9 +92,19 @@ function ParentHome() {
                     title={copy.title}
                     description={error || copy.desc}
                     actions={(
-                        <Button type="button" variant="outline" onClick={() => setManaging((open) => !open)}>
-                            {managing ? copy.hideManage : copy.manageChildren}
-                        </Button>
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                            {selectedId && (
+                                <Button asChild className="w-full sm:w-auto">
+                                    <Link href={withChildParam("/parent/papers/new", selectedId)}>
+                                        <Camera className="h-4 w-4" aria-hidden="true" />
+                                        {copy.upload}
+                                    </Link>
+                                </Button>
+                            )}
+                            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setManaging((open) => !open)}>
+                                {managing ? copy.hideManage : copy.manageChildren}
+                            </Button>
+                        </div>
                     )}
                 />
 
@@ -114,32 +130,32 @@ function ParentHome() {
                         )}
 
                         {child && (
-                            <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-                                <div className="space-y-8">
+                            <div className="space-y-8">
+                                <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
                                     <HomeSection title={copy.weakPoints}>
                                         <WeakPointList items={child.weakPoints} empty={copy.noWeakPoints} />
                                     </HomeSection>
-                                    <HomeSection title={copy.todayTasks}>
-                                        <TodayStepList steps={child.today} empty={copy.noToday} studentKey={child.id} />
-                                    </HomeSection>
-                                    <HomeSection title={copy.practiceTrend}>
-                                        <PracticeTrendChart days={child.practiceTrend} empty={copy.noTrend} />
-                                        {child.practiceSummary.attempted > 0 && (
-                                            <p className="text-xs text-muted-foreground">
-                                                {copy.attempted.replace("{count}", String(child.practiceSummary.attempted))}
-                                                {" · "}
-                                                {copy.correctRate.replace("{rate}", `${Math.round((child.practiceSummary.correct / child.practiceSummary.attempted) * 100)}%`)}
-                                            </p>
-                                        )}
+                                    <HomeSection title={copy.mastery}>
+                                        <MasteryList items={child.mastery} empty={copy.noMastery} />
                                     </HomeSection>
                                 </div>
-                                <HomeSection title={copy.mastery}>
-                                    <MasteryList items={child.mastery} empty={copy.noMastery} />
+                                <HomeSection title={copy.practiceTrend}>
+                                    <PracticeTrendChart days={child.practiceTrend} empty={copy.noTrend} />
+                                    {child.practiceSummary.attempted > 0 && (
+                                        <p className="text-xs text-muted-foreground">
+                                            {copy.attempted.replace("{count}", String(child.practiceSummary.attempted))}
+                                            {" · "}
+                                            {copy.correctRate.replace("{rate}", `${Math.round((child.practiceSummary.correct / child.practiceSummary.attempted) * 100)}%`)}
+                                        </p>
+                                    )}
+                                </HomeSection>
+                                <HomeSection title={copy.todayTasks}>
+                                    <TodayStepList steps={child.today} empty={copy.noToday} studentKey={child.id} />
                                 </HomeSection>
                             </div>
                         )}
 
-                        <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             {followUps.map((link) => {
                                 const Icon = link.icon;
                                 return (
