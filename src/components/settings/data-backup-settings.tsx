@@ -42,7 +42,7 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
         }
         setExporting(true);
         try {
-            await downloadFile(all ? '/api/export?all=true' : '/api/export', all ? 'wrong-notebook-export-all.json' : 'wrong-notebook-export.json');
+            await downloadFile(all ? '/api/export?all=true' : '/api/export', all ? 'XueJi-export-all.json' : 'XueJi-export.json');
             toast.success(t.settings?.exportSuccess || "Export successful");
         } catch (error) {
             frontendLogger.error('[DataBackupSettings]', all ? 'Export all failed' : 'Export failed', { error });

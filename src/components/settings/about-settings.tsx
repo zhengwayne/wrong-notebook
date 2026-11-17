@@ -29,7 +29,7 @@ export function AboutSettings() {
     return (
         <div className="flex flex-col items-center justify-center space-y-6 py-8 text-center bg-muted/30 rounded-lg border">
             <div className="space-y-2">
-                <h3 className="text-2xl font-bold">{t.app?.title || "Smart Error Notebook"}</h3>
+                <h3 className="text-2xl font-bold">{t.app?.title || "XueJi"}</h3>
                 <p className="text-muted-foreground">
                     {t.settings?.about?.desc || "AI-powered learning assistant"}
                 </p>
@@ -55,7 +55,7 @@ export function AboutSettings() {
             </div>
 
             <p className="text-xs text-muted-foreground mt-8">
-                {t.settings?.about?.copyright || "© 2026 margrop · Based on wttwins/wrong-notebook · MIT License"}
+                {t.settings?.about?.copyright || "© 2026 margrop · margrop/wrong-notebook · MIT License"}
             </p>
         </div>
     );

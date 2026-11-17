@@ -129,8 +129,8 @@ export async function GET(req: Request) {
 
         const jsonString = JSON.stringify(exportData, null, 2);
         const filename = exportAll
-            ? `wrong-notebook-export-all-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`
-            : `wrong-notebook-export-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`;
+            ? `XueJi-export-all-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`
+            : `XueJi-export-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`;
 
         return new NextResponse(jsonString, {
             headers: {

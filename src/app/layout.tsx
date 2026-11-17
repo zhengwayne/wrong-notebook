@@ -33,11 +33,11 @@ export const viewport: Viewport = {
 // 浏览器标题由各页面通过 usePageTitle 设置，这里的 <title> 只作首屏默认值；
 // 不放进 metadata，避免 Next 流式输出的 metadata 覆盖页面设置的标题
 export const metadata: Metadata = {
-  description: "基于AI的智能错题管理系统，帮助学生高效整理、分析和复习错题",
+  description: "学迹（XueJi）是基于 AI 的学习助手，帮助学生高效整理、分析和复习错题",
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '智能错题本',
+    title: '学迹',
   },
   formatDetection: {
     telephone: false,
@@ -59,7 +59,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>AI智能错题本</title>
+        <title>学迹</title>
         {/* 首屏绘制前按本地缓存的主题偏好设置 dark 类，避免深色模式下先闪现浅色页面 */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>

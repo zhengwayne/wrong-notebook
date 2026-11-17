@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icons/icon.png" width="128" height="128" alt="Smart Wrong Notebook app icon">
+  <img src="public/icons/icon.png" width="128" height="128" alt="XueJi app icon">
 </p>
 
-# Smart Wrong Notebook (智能错题本)
+# XueJi (学迹)
 
 [简体中文](README.md) | **English**
 

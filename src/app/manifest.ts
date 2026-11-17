@@ -3,9 +3,9 @@ import type { MetadataRoute } from 'next'
 export default function manifest(): MetadataRoute.Manifest {
     return {
         id: '/',
-        name: '智能错题本',
-        short_name: '错题本',
-        description: 'AI 驱动的智能错题管理系统，帮助学生高效整理、分析和复习错题',
+        name: '学迹',
+        short_name: '学迹',
+        description: '学迹（XueJi）是 AI 驱动的学习助手，帮助学生高效整理、分析和复习错题',
         lang: 'zh-CN',
         start_url: '/',
         scope: '/',

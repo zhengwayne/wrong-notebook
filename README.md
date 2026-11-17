@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icons/icon.png" width="128" height="128" alt="智能错题本应用图标">
+  <img src="public/icons/icon.png" width="128" height="128" alt="学迹应用图标">
 </p>
 
-# Smart Wrong Notebook (智能错题本)
+# 学迹（XueJi）
 
 **简体中文** | [English](README.en.md)
 
@@ -547,7 +547,7 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 
 使用中遇到问题、想分享用法或提建议，欢迎加入 QQ 群 **964325781**，或用 QQ 扫描下方二维码。Bug 和功能需求仍建议提交到 [Issues](https://github.com/margrop/wrong-notebook/issues)，方便跟踪处理；在群里发截图前请隐去孩子姓名、学校、账号和访问地址。
 
-<img src="doc/images/qq-group.webp" alt="智能错题本用户交流 QQ 群二维码，群号 964325781" width="240">
+<img src="doc/images/qq-group.webp" alt="学迹用户交流 QQ 群二维码，群号 964325781" width="240">
 
 也可以在 X 上关注作者 [@MargropMe](https://x.com/MargropMe)，获取更新动态或私信交流。
 
