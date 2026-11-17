@@ -7,8 +7,24 @@ import { createLogger } from "@/lib/logger"
 import { DEFAULT_ADMIN_PASSWORD, isDefaultAdminPassword } from "@/lib/default-admin"
 import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors"
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit"
+import { isPersona, parsePersonas } from "@/lib/personas"
 
 const logger = createLogger('auth');
+
+
+async function personaClaims(userId: string) {
+    const row = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { personas: true, activePersona: true, personasConfirmedAt: true },
+    })
+    const personas = parsePersonas(row?.personas)
+    const activePersona = isPersona(row?.activePersona) ? row.activePersona : null
+    return {
+        personas,
+        activePersona,
+        needsPersonaConfirmation: !row?.personasConfirmedAt,
+    }
+}
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma),
@@ -91,12 +107,17 @@ export const authOptions: NextAuthOptions = {
 
                 logger.info({ email: user.email }, 'Login successful');
 
+                const personas = parsePersonas(user.personas)
+                const activePersona = isPersona(user.activePersona) ? user.activePersona : null
                 return {
                     id: user.id,
                     email: user.email,
                     name: user.name,
                     role: user.role,
                     mustChangePassword: isDefaultAdminPassword(user.role, credentials.password),
+                    personas,
+                    activePersona,
+                    needsPersonaConfirmation: !user.personasConfirmedAt,
                 }
             }
         })
@@ -124,6 +145,9 @@ export const authOptions: NextAuthOptions = {
                     id: token.id,
                     role: token.role,
                     mustChangePassword: token.mustChangePassword === true,
+                    personas: token.personas ?? [],
+                    activePersona: token.activePersona ?? null,
+                    needsPersonaConfirmation: token.needsPersonaConfirmation === true,
                 }
             }
         },
@@ -135,14 +159,34 @@ export const authOptions: NextAuthOptions = {
                     id: user.id,
                     role: user.role,
                     mustChangePassword: user.mustChangePassword === true,
+                    personas: user.personas ?? [],
+                    activePersona: user.activePersona ?? null,
+                    needsPersonaConfirmation: user.needsPersonaConfirmation === true,
                 }
             }
             // 客户端改完密码后调用 update()，以数据库中的密码为准重新判断，不信任客户端传值
-            if (trigger === "update" && token.mustChangePassword) {
-                const dbUser = await prisma.user.findUnique({ where: { id: token.id }, select: { password: true } })
-                const stillDefault = !!dbUser && await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password)
-                logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password')
-                return { ...token, mustChangePassword: stillDefault }
+            if (trigger === "update") {
+                const next = { ...token }
+                if (token.mustChangePassword) {
+                    const dbUser = await prisma.user.findUnique({ where: { id: token.id }, select: { password: true } })
+                    const stillDefault = !!dbUser && await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password)
+                    logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password')
+                    next.mustChangePassword = stillDefault
+                }
+                if (token.id) {
+                    const claims = await personaClaims(token.id)
+                    Object.assign(next, claims)
+                }
+                return next
+            }
+            // 升级后已登录的旧 token 还没有身份字段，补一次，让现有账户看到确认页
+            if (token.id && token.needsPersonaConfirmation === undefined) {
+                try {
+                    const claims = await personaClaims(token.id)
+                    return { ...token, ...claims }
+                } catch (error) {
+                    logger.error({ error, userId: token.id }, 'JWT callback - Failed to load persona claims')
+                }
             }
             logger.debug('JWT callback - Subsequent call');
             return token

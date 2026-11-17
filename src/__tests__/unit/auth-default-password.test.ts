@@ -97,10 +97,18 @@ describe('jwt 回调', () => {
         expect(token.mustChangePassword).toBe(true);
     });
 
-    it('未标记的 token 在 update 时不查库', async () => {
+    it('update 时即使无需改密也会刷新身份字段', async () => {
+        mocks.findUnique.mockResolvedValue({
+            personas: '["self"]',
+            activePersona: 'self',
+            personasConfirmedAt: new Date(),
+        });
+
         const token = await jwt({ token: { id: 'user-1', mustChangePassword: false } as JWT, trigger: 'update' });
 
-        expect(mocks.findUnique).not.toHaveBeenCalled();
+        expect(mocks.compare).not.toHaveBeenCalled();
         expect(token.mustChangePassword).toBe(false);
+        expect(token.needsPersonaConfirmation).toBe(false);
+        expect(token.activePersona).toBe('self');
     });
 });

@@ -1,4 +1,5 @@
 import { DefaultSession } from "next-auth"
+import type { Persona } from "@/lib/personas"
 
 declare module "next-auth" {
     interface Session {
@@ -7,6 +8,9 @@ declare module "next-auth" {
             role?: string
             /** 管理员仍在使用默认密码，必须先修改 */
             mustChangePassword?: boolean
+            personas?: Persona[]
+            activePersona?: Persona | null
+            needsPersonaConfirmation?: boolean
         } & DefaultSession["user"]
     }
 
@@ -14,6 +18,9 @@ declare module "next-auth" {
         role?: string
         isActive?: boolean
         mustChangePassword?: boolean
+        personas?: Persona[]
+        activePersona?: Persona | null
+        needsPersonaConfirmation?: boolean
     }
 }
 
@@ -22,5 +29,8 @@ declare module "next-auth/jwt" {
         id: string
         role?: string
         mustChangePassword?: boolean
+        personas?: Persona[]
+        activePersona?: Persona | null
+        needsPersonaConfirmation?: boolean
     }
 }

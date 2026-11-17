@@ -6,24 +6,28 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { LogOut, MoreHorizontal, Settings, Shield } from "lucide-react";
+import { PersonaSwitcher } from "@/components/persona-switcher";
 import { SettingsDialog, requestOpenSettings } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { MOBILE_MORE_ITEMS, MOBILE_PRIMARY_ITEMS, NAV_ITEMS, isMobileMoreActive, type NavItem } from "@/lib/nav-items";
+import { homeHrefForPersona, isMobileMoreActive, mobileMoreItemsForPersona, mobilePrimaryItemsForPersona, navItemsForPersona, type NavItem } from "@/lib/nav-items";
+import type { Persona } from "@/lib/personas";
 import { useSetupRedirect } from "@/lib/use-setup-redirect";
 import { cn } from "@/lib/utils";
 
 /** 登录、注册与打印页不显示导航 */
-const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
+const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/initialize/, /^\/onboarding/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
 
 function navLabel(
     t: { nav: Record<string, string> },
     key: NavItem["key"],
     compact = false,
+    persona?: Persona | null,
 ): string {
+    if (persona === "teacher" && key === "grading" && t.nav.gradingCollect) return t.nav.gradingCollect;
     if (compact && key === "learn" && t.nav.learnShort) return t.nav.learnShort;
     return t.nav[key];
 }
@@ -32,19 +36,21 @@ function NavLink({
     item,
     pathname,
     compact = false,
+    persona,
     onNavigate,
     className,
 }: {
     item: NavItem;
     pathname: string;
     compact?: boolean;
+    persona?: Persona | null;
     onNavigate?: () => void;
     className?: string;
 }) {
     const { t } = useLanguage();
     const active = item.match(pathname);
     const Icon = item.icon;
-    const label = navLabel(t, item.key, compact);
+    const label = navLabel(t, item.key, compact, persona);
     return (
         <Link
             href={item.href}
@@ -64,13 +70,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const { t } = useLanguage();
     const { data: session, status } = useSession();
     const isAdmin = session?.user?.role === "admin";
+    const activePersona = session?.user?.activePersona ?? null;
+    const navItems = navItemsForPersona(activePersona);
+    const mobilePrimaryItems = mobilePrimaryItemsForPersona(activePersona);
+    const mobileMoreItems = mobileMoreItemsForPersona(activePersona);
+    const homeHref = homeHrefForPersona(activePersona);
     const isBare = BARE_PATHS.some((pattern) => pattern.test(pathname));
     useSetupRedirect(isAdmin && !isBare);
     const [moreOpen, setMoreOpen] = useState(false);
     const moreTitleId = useId();
     const moreDescId = useId();
     const morePanelId = useId();
-    const moreActive = isMobileMoreActive(pathname);
+    const moreActive = isMobileMoreActive(pathname, activePersona);
 
     if (isBare || status === "unauthenticated") {
         return <ErrorBoundary>{children}</ErrorBoundary>;
@@ -97,7 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-40 border-b border-border/80 bg-card/85 backdrop-blur-md supports-[backdrop-filter]:bg-card/75 print:hidden">
                 <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 md:h-16 md:px-8">
                     <Link
-                        href="/"
+                        href={homeHref}
                         className="flex shrink-0 items-center gap-2.5 rounded-lg py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <Image
@@ -113,13 +124,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Link>
 
                     <nav aria-label={t.nav.primaryNav} className="ml-4 hidden items-center gap-1 md:flex">
-                        {NAV_ITEMS.map((item) => {
+                        {navItems.map((item) => {
                             const active = item.match(pathname);
                             return (
                                 <NavLink
                                     key={item.key}
                                     item={item}
                                     pathname={pathname}
+                                    persona={activePersona}
                                     className={cn(
                                         "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                         active
@@ -143,6 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 <span className="truncate text-foreground/85">{userName}</span>
                             </span>
                         )}
+                        <PersonaSwitcher />
                         {isAdmin && (
                             <Button asChild variant="ghost" size="icon" className="rounded-full">
                                 <Link href="/admin" title={t.nav.admin} aria-label={t.nav.admin}>
@@ -177,10 +190,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-card/92 backdrop-blur-md md:hidden print:hidden"
             >
                 <div className="grid h-16 grid-cols-5 px-1">
-                    {MOBILE_PRIMARY_ITEMS.map((item) => {
+                    {mobilePrimaryItems.map((item) => {
                         const active = item.match(pathname);
                         const Icon = item.icon;
-                        const label = navLabel(t, item.key, true);
+                        const label = navLabel(t, item.key, true, activePersona);
                         return (
                             <Link
                                 key={item.key}
@@ -242,7 +255,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             {t.nav.moreMenu}
                         </SheetDescription>
                         <ul className="mt-3 space-y-1" role="list">
-                            {MOBILE_MORE_ITEMS.map((item) => {
+                            {mobileMoreItems.map((item) => {
                                 const active = item.match(pathname);
                                 const Icon = item.icon;
                                 return (
@@ -259,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                             )}
                                         >
                                             <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                                            {navLabel(t, item.key)}
+                                            {navLabel(t, item.key, false, activePersona)}
                                         </Link>
                                     </li>
                                 );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,9 @@ import { getApiErrorMessage, getErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import type { UpdateUserProfileRequest, UserProfile } from "@/types/api";
+import { ChildLearnersManager } from "@/components/child-learners-manager";
+import { PersonaPicker } from "@/components/persona-picker";
+import type { Persona } from "@/lib/personas";
 
 interface ProfileFormState {
     name: string;
@@ -27,7 +31,11 @@ const EMPTY_PROFILE: ProfileFormState = { name: "", email: "", educationStage: "
 /** 账户设置：姓名、邮箱、学段、入学年份和修改密码 */
 export function AccountSettings() {
     const { t } = useLanguage();
+    const { update } = useSession();
     const [profile, setProfile] = useState<ProfileFormState>(EMPTY_PROFILE);
+    const [personas, setPersonas] = useState<Persona[]>([]);
+    const [savingPersonas, setSavingPersonas] = useState(false);
+    const [personasLoaded, setPersonasLoaded] = useState(false);
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -42,6 +50,13 @@ export function AccountSettings() {
                 enrollmentYear: data.enrollmentYear || "",
                 password: ""
             });
+            try {
+                const personaState = await apiClient.get<{ personas: Persona[]; confirmed: boolean }>("/api/persona");
+                if (personaState.confirmed) setPersonas(personaState.personas);
+                setPersonasLoaded(true);
+            } catch (error) {
+                frontendLogger.error('[AccountSettings]', 'Failed to fetch personas', { error });
+            }
         } catch (error) {
             frontendLogger.error('[AccountSettings]', 'Failed to fetch profile', { error });
         } finally {
@@ -98,6 +113,7 @@ export function AccountSettings() {
     }
 
     return (
+        <>
         <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -174,5 +190,40 @@ export function AccountSettings() {
                 {t.settings?.account?.update || "Update Profile"}
             </Button>
         </div>
+        {personasLoaded && (
+            <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+                <div>
+                    <h3 className="text-sm font-semibold">{t.persona.settingsTitle}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{t.persona.settingsDesc}</p>
+                </div>
+                <PersonaPicker value={personas} onChange={setPersonas} />
+                <Button
+                    type="button"
+                    onClick={async () => {
+                        if (personas.length === 0) {
+                            toast.error(t.persona.required);
+                            return;
+                        }
+                        setSavingPersonas(true);
+                        try {
+                            await apiClient.post("/api/persona", { personas, confirm: true });
+                            await update();
+                            toast.success(t.persona.saved);
+                        } catch (error) {
+                            toast.error(getApiErrorMessage(error) || t.persona.saveFailed);
+                        } finally {
+                            setSavingPersonas(false);
+                        }
+                    }}
+                    disabled={savingPersonas || personas.length === 0}
+                    className="w-full"
+                >
+                    {savingPersonas && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t.persona.save}
+                </Button>
+                {personas.includes("parent") && <ChildLearnersManager className="pt-2 border-t" />}
+            </div>
+        )}
+        </>
     );
 }

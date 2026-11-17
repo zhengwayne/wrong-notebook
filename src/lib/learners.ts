@@ -79,3 +79,52 @@ export async function createChildLearner(db: Db, userId: string, name: string): 
         },
     });
 }
+
+
+export class LearnerNotFoundError extends Error {
+    constructor() {
+        super('LEARNER_NOT_FOUND');
+        this.name = 'LearnerNotFoundError';
+    }
+}
+
+export async function updateChildLearner(db: Db, userId: string, learnerId: string, name: string): Promise<LearnerRow> {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('LEARNER_NAME_REQUIRED');
+    const existing = await db.learner.findFirst({
+        where: { id: learnerId, userId, kind: LEARNER_KIND.child },
+    });
+    if (!existing) throw new LearnerNotFoundError();
+    return db.learner.update({
+        where: { id: existing.id },
+        data: { name: trimmed },
+    });
+}
+
+/**
+ * 删除孩子档案。默认只删档案，错题的 learnerId 会被置空并保留。
+ * 仅当 deleteQuestions 为 true 时才一并删除该孩子名下的错题（调用方必须先得到明确确认）。
+ */
+export async function deleteChildLearner(
+    db: Db,
+    userId: string,
+    learnerId: string,
+    options: { deleteQuestions?: boolean } = {},
+): Promise<{ deletedQuestions: number }> {
+    const existing = await db.learner.findFirst({
+        where: { id: learnerId, userId, kind: LEARNER_KIND.child },
+    });
+    if (!existing) throw new LearnerNotFoundError();
+
+    let deletedQuestions = 0;
+    if (options.deleteQuestions) {
+        const result = await db.errorItem.deleteMany({ where: { userId, learnerId } });
+        deletedQuestions = result.count;
+    } else {
+        // SQLite 迁移未给 learnerId 建外键，需显式解绑，避免删档案时错题仍指向已删孩子
+        await db.errorItem.updateMany({ where: { userId, learnerId }, data: { learnerId: null } });
+        await db.practiceRecord.updateMany({ where: { userId, learnerId }, data: { learnerId: null } });
+    }
+    await db.learner.delete({ where: { id: existing.id } });
+    return { deletedQuestions };
+}

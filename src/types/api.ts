@@ -351,6 +351,8 @@ export interface RegisterRequest {
     password: string;
     educationStage: string;
     enrollmentYear: number;
+    personas?: string[];
+    children?: { name: string }[];
 }
 
 // ============ 举一反三记录与掌握概率 ============

@@ -233,4 +233,65 @@ describe('proxy', () => {
             expect(response?.headers.get('location')).toContain('callbackUrl');
         });
     });
+
+    describe('身份确认与按身份落地', () => {
+        it('未确认身份的已登录用户应跳到确认页，且不自动写入选择', async () => {
+            vi.mocked(getToken).mockResolvedValue({ id: 'user-1', needsPersonaConfirmation: true } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/onboarding/persona');
+        });
+
+        it('改默认密码优先于身份确认', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'admin-1',
+                role: 'admin',
+                mustChangePassword: true,
+                needsPersonaConfirmation: true,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/setup');
+        });
+
+        it('已确认的老师从 / 进入老师首页', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'teacher',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/teacher');
+        });
+
+        it('已确认的家长从 / 进入家长首页', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'parent',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/parent');
+        });
+
+        it('自学身份继续留在 /', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'self',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response).toBeUndefined();
+        });
+    });
 });

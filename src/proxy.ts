@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { createLogger } from "@/lib/logger";
+import { isPersona, landingPath } from "@/lib/personas";
 
 const logger = createLogger('proxy');
 
@@ -31,8 +32,17 @@ export async function proxy(req: NextRequest) {
 
         if (isAuthPage) {
             if (isAuth) {
-                logger.debug('Redirecting authenticated user to /');
-                return NextResponse.redirect(new URL("/", req.url));
+                if (token?.mustChangePassword) {
+                    logger.debug('Redirecting authenticated user with default password to /setup');
+                    return NextResponse.redirect(new URL("/setup", req.url));
+                }
+                if (token?.needsPersonaConfirmation) {
+                    logger.debug('Redirecting authenticated user to persona onboarding');
+                    return NextResponse.redirect(new URL("/onboarding/persona", req.url));
+                }
+                const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+                logger.debug({ home }, 'Redirecting authenticated user away from auth page');
+                return NextResponse.redirect(new URL(home, req.url));
             }
             return null;
         }
@@ -56,10 +66,29 @@ export async function proxy(req: NextRequest) {
             return NextResponse.redirect(new URL("/setup", req.url));
         }
 
+        const isPersonaOnboarding = req.nextUrl.pathname.startsWith("/onboarding");
+        if (token?.needsPersonaConfirmation && !isPersonaOnboarding) {
+            logger.info({ userId: token.id, path: req.nextUrl.pathname }, 'Redirecting user to persona confirmation');
+            return NextResponse.redirect(new URL("/onboarding/persona", req.url));
+        }
+        if (!token?.needsPersonaConfirmation && isPersonaOnboarding) {
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            return NextResponse.redirect(new URL(home, req.url));
+        }
+
+        // 已确认身份时，按当前身份进入对应首页
+        if (req.nextUrl.pathname === "/" && !token?.needsPersonaConfirmation) {
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            if (home !== "/") {
+                return NextResponse.redirect(new URL(home, req.url));
+            }
+        }
+
         // Admin route protection: only allow users with admin role
         if (isAdminPage && token?.role !== "admin") {
             logger.warn({ userId: token?.id, path: req.nextUrl.pathname }, 'Non-admin user attempting to access admin area');
-            return NextResponse.redirect(new URL("/", req.url));
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            return NextResponse.redirect(new URL(home, req.url));
         }
     } catch (e) {
         // 无法确认登录状态时按未登录处理（失败即拒绝），否则会绕过强制改密和管理员页面的拦截
