@@ -5,7 +5,6 @@ import { clampNormalizedBBox, type QuestionBBox } from "@/lib/parent-paper-revie
 
 const GAP = 0.008;
 const MIN_WIDTH = 0.04;
-const MIN_HEIGHT = 0.02;
 
 function overlaps(a: QuestionBBox, b: QuestionBBox): boolean {
     return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -48,9 +47,12 @@ export function resolveOverlappingBBoxes(boxes: QuestionBBox[]): QuestionBBox[] 
                 if (!overlaps(left, right)) continue;
                 const sameRow = verticalOverlap(left, right) >= Math.min(left.height, right.height) * 0.45
                     && Math.abs((left.y + left.height / 2) - (right.y + right.height / 2)) <= Math.max(left.height, right.height) * 0.6;
-                if (sameRow && right.x >= left.x) {
-                    const width = right.x - GAP - left.x;
-                    if (width >= MIN_WIDTH) next[i] = withBox(left, { width });
+                if (sameRow) {
+                    const [leftIndex, rightIndex] = next[i].x <= next[j].x ? [i, j] : [j, i];
+                    const prior = next[leftIndex];
+                    const latter = next[rightIndex];
+                    const width = latter.x - GAP - prior.x;
+                    if (width >= MIN_WIDTH) next[leftIndex] = withBox(prior, { width });
                 }
             }
         }
@@ -64,7 +66,7 @@ export function resolveOverlappingBBoxes(boxes: QuestionBBox[]): QuestionBBox[] 
                 if (!overlaps(upper, lower)) continue;
                 if (lower.y >= upper.y && horizontalOverlap(upper, lower) > Math.min(upper.width, lower.width) * 0.25) {
                     const height = lower.y - GAP - upper.y;
-                    if (height >= MIN_HEIGHT) next[i] = withBox(upper, { height });
+                    if (height > 0) next[i] = withBox(upper, { height });
                 }
             }
         }

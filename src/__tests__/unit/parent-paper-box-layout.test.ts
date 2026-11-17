@@ -22,6 +22,26 @@ describe("resolveOverlappingBBoxes", () => {
         expect(first.height).toBeGreaterThan(0.02);
     });
 
+    it("clips the left box even when the right-column box is slightly higher", () => {
+        const [left, right] = resolveOverlappingBBoxes([
+            { pageIndex: 0, x: 0.226, y: 0.39, width: 0.348, height: 0.125 },
+            { pageIndex: 0, x: 0.536, y: 0.385, width: 0.388, height: 0.15 },
+        ]);
+        expect(left.x + left.width).toBeLessThanOrEqual(0.536);
+        expect(right.x).toBeCloseTo(0.536, 3);
+        expect(right.width).toBeCloseTo(0.388, 3);
+    });
+
+    it("clips a stacked box even when only a thin gap remains", () => {
+        const [first, second] = resolveOverlappingBBoxes([
+            { pageIndex: 0, x: 0.226, y: 0.835, width: 0.718, height: 0.065 },
+            { pageIndex: 0, x: 0.226, y: 0.862, width: 0.718, height: 0.068 },
+        ]);
+        expect(first.y + first.height).toBeLessThanOrEqual(0.862);
+        expect(second.y).toBeCloseTo(0.862, 3);
+        expect(first.height).toBeGreaterThan(0);
+    });
+
     it("does not clip boxes on different pages", () => {
         const boxes = resolveOverlappingBBoxes([
             { pageIndex: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.4 },
