@@ -114,6 +114,24 @@ describe('persona confirmation and child learners', () => {
         expect(saved?.personasConfirmedAt).toBeTruthy();
     });
 
+    it('two personas can be selected and saved together', async () => {
+        const user = await db.user.create({
+            data: { id: 'u-multi', email: 'multi@example.com', password: 'x' },
+        });
+        mocks.session = sessionOf(user.email, user.id);
+        const response = await postPersona(new Request('http://localhost/api/persona', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ personas: ['teacher', 'parent'], confirm: true }),
+        }));
+        const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data.personas).toEqual(['teacher', 'parent']);
+        expect(['teacher', 'parent']).toContain(data.activePersona);
+        const saved = await db.user.findUnique({ where: { id: user.id } });
+        expect(parsePersonas(saved?.personas)).toEqual(['teacher', 'parent']);
+    });
+
     it('parents can manage at most 3 children; deleting a child keeps questions unless explicitly confirmed', async () => {
         const user = await db.user.create({
             data: {
