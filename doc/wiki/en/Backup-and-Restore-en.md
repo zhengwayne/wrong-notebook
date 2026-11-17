@@ -29,6 +29,11 @@ This example uses the directory layout from the [deployment guide](Deployment-en
 
 If the data directory is mounted over NFS / CIFS on a NAS (where shared-memory locks do not work reliably), set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE` (which automatically switches `synchronous` to `FULL`).
 
+## Daily consistent snapshots and pre-migration backups
+
+- **Daily automatic snapshots**: While running, the server creates a consistent daily snapshot in `backups/daily-snapshot-YYYY-MM-DD.db` via SQLite `VACUUM INTO`, keeping the latest 7 files by default (configurable with `DAILY_SNAPSHOT_RETENTION`). The last success timestamp appears in **Settings → Data Management**, and failures show a banner on the home page. Docker deployments that already snapshot volumes can disable it with `DAILY_SNAPSHOT_ENABLED=false`.
+- **Pre-migration backups**: The package launcher (npm / Desktop / fnOS) and Docker entrypoint run a WAL checkpoint and back up existing databases to `backups/pre-migrate-*` (keeping the latest 3) before running `prisma migrate deploy`, refusing to start and printing restore instructions if a migration fails.
+
 Run in the deployment directory:
 
 ```bash

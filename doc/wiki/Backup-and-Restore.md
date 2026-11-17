@@ -29,6 +29,11 @@
 
 如果数据目录挂载在 NAS 的 NFS / CIFS 网络卷上（不支持跨节点共享内存锁），可在环境变量中设置 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE`（此时会自动切换为 `synchronous=FULL`）。
 
+## 每日一致性快照与迁移前备份
+
+- **每日自动快照**：服务运行期间默认每天通过 SQLite `VACUUM INTO` 在数据目录的 `backups/` 下生成一份一致性快照（`daily-snapshot-YYYY-MM-DD.db`），默认保留最近 7 份（可通过 `DAILY_SNAPSHOT_RETENTION` 调整）。可在「设置 → 数据管理」查看最近成功时间，快照失败时首页顶部会出现提醒。已有宿主机卷快照的 Docker 部署可设置 `DAILY_SNAPSHOT_ENABLED=false` 关闭。
+- **迁移前自动备份**：安装包（npm / 桌面版 / 飞牛OS）和 Docker 镜像在启动执行 `prisma migrate deploy` 前会自动把当前数据库刷盘检查点后备份到 `backups/pre-migrate-*`（最多保留最近 3 份），迁移失败时停止启动并提示恢复路径。
+
 在部署目录执行：
 
 ```bash

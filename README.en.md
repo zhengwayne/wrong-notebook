@@ -423,6 +423,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | Database URL | Source: `file:./dev.db`; Docker: `file:/app/data/dev.db` | SQLite database path |
 | `SQLITE_JOURNAL_MODE` | SQLite journal mode | `WAL` | One of `WAL`, `DELETE`, `TRUNCATE`, `PERSIST`, `MEMORY`, `OFF`; use `DELETE` or `TRUNCATE` on NAS NFS/CIFS network mounts |
+| `DAILY_SNAPSHOT_ENABLED` | Daily database snapshots | `true` | Runs `VACUUM INTO` daily into `backups/`; set to `false` in Docker if you already snapshot volumes |
+| `DAILY_SNAPSHOT_RETENTION` | Snapshot retention count | `7` | Number of recent daily snapshots kept in `backups/` |
 | `NEXTAUTH_SECRET` | Auth secret | None | Encrypts sessions; required in production. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Public URL | None | The URL users visit, e.g. `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | Trust host header | `true` in the Docker image | When `true`, the URL is inferred from the request; suits Docker and reverse proxies |

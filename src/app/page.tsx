@@ -16,6 +16,7 @@ import { PageContainer } from "@/components/ui/page-container";
 import { PageLoading } from "@/components/ui/page-loading";
 import { ProgressFeedback } from "@/components/ui/progress-feedback";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { SnapshotWarningBanner } from "@/components/snapshot-warning-banner";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
@@ -106,6 +107,7 @@ function HomeContent() {
 
     return (
         <PageContainer maxWidth={flow.step === "review" || flow.step === "confirm" ? "6xl" : "4xl"} className="space-y-6">
+            <SnapshotWarningBanner />
             <ProgressFeedback status={flow.analysisStep} />
 
             {flow.step === "upload" && (

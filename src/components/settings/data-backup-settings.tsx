@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { CheckCircle2, Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DailySnapshotStatus } from "@/components/settings/daily-snapshot-status";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { downloadFile } from "@/lib/download-file";
@@ -175,6 +176,8 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
                     {t.settings?.importDataDesc || "Import data from JSON file. Existing data will be skipped."}
                 </p>
             </div>
+
+            <DailySnapshotStatus isAdmin={isAdmin} />
         </div>
     );
 }

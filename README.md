@@ -421,6 +421,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | 数据库连接地址 | 源码 `file:./dev.db`；Docker `file:/app/data/dev.db` | SQLite 数据库路径 |
 | `SQLITE_JOURNAL_MODE` | SQLite 日志模式 | `WAL` | 可选 `WAL`、`DELETE`、`TRUNCATE`、`PERSIST`、`MEMORY`、`OFF`；NAS NFS/CIFS 网络卷建议设为 `DELETE` 或 `TRUNCATE` |
+| `DAILY_SNAPSHOT_ENABLED` | 每日自动快照 | `true` | 每天自动执行 `VACUUM INTO` 生成一致性快照到 `backups/`；已有卷快照的 Docker 部署可设为 `false` |
+| `DAILY_SNAPSHOT_RETENTION` | 快照保留份数 | `7` | `backups/` 中保留的最近每日快照数量 |
 | `NEXTAUTH_SECRET` | Auth 密钥 | 无 | 用于加密 Session，生产环境必须设置，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 访问地址 | 无 | 部署后的访问地址，如 `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | 信任主机头 | Docker 镜像中为 `true` | 为 `true` 时根据请求自动推断访问地址，适合 Docker/反向代理 |
