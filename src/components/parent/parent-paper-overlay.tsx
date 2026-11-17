@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { ZoomControls } from "@/components/zoom-controls";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ import { toast } from "@/lib/feedback";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { useImageZoom } from "@/lib/use-image-zoom";
 
-const FIT_STYLE = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", display: "block" as const };
 const HANDLES: Array<Exclude<BoxHandle, "move">> = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 const HANDLE_STYLE: Record<Exclude<BoxHandle, "move">, string> = {
@@ -57,8 +56,34 @@ export function ParentPaperOverlay({
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<QuestionBBox | null>(null);
     const [exporting, setExporting] = useState(false);
-    const { containerRef, zoom, imageStyle, measureImage, zoomIn, zoomOut, reset, pinchingRef } = useImageZoom(FIT_STYLE);
+    const shellRef = useRef<HTMLDivElement | null>(null);
+    const [fitBox, setFitBox] = useState({ width: 0, height: 0 });
+    const fitStyle = useMemo(() => ({
+        maxWidth: fitBox.width ? `${fitBox.width}px` : "100%",
+        maxHeight: fitBox.height ? `${fitBox.height}px` : "100%",
+        width: "auto" as const,
+        height: "auto" as const,
+        display: "block" as const,
+    }), [fitBox]);
+    const { containerRef, zoom, imageStyle, measureImage, zoomIn, zoomOut, reset, pinchingRef } = useImageZoom(fitStyle);
     const overlayRef = useRef<HTMLDivElement>(null);
+    const setShell = (element: HTMLDivElement | null) => {
+        shellRef.current = element;
+        containerRef(element);
+    };
+    useLayoutEffect(() => {
+        const element = shellRef.current;
+        if (!element) return;
+        const update = () => setFitBox({ width: element.clientWidth, height: element.clientHeight });
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+    useLayoutEffect(() => {
+        const image = shellRef.current?.querySelector("img");
+        if (image instanceof HTMLImageElement) measureImage(image);
+    }, [fitBox, measureImage]);
     const dragRef = useRef<{ handle: BoxHandle | "draw"; start: { x: number; y: number }; box: { x: number; y: number; width: number; height: number } } | null>(null);
 
     const orderedPages = useMemo(() => [...pages].sort((a, b) => a.position - b.position), [pages]);
@@ -209,7 +234,7 @@ export function ParentPaperOverlay({
 
             <div className="relative overflow-hidden rounded-2xl border border-border bg-[#f5f3ff]">
                 <div
-                    ref={containerRef}
+                    ref={setShell}
                     className="flex h-[calc(100dvh-16rem-env(safe-area-inset-bottom,0px))] items-center justify-center overflow-auto overscroll-contain md:h-[min(85dvh,calc(100dvh-9rem))]"
                     style={{ touchAction: editing ? "none" : "pan-x pan-y" }}
                 >
