@@ -55,10 +55,29 @@ export async function resolveStudent(userId: string, studentKey?: string | null,
         where: { id: key, class: { userId } },
         include: { class: { select: { id: true, name: true } } },
     });
-    if (!student) return null;
-    const subjectIds = await findStudentSubjectIds(userId, student.name);
+    if (student) {
+        const subjectIds = await findStudentSubjectIds(userId, student.name);
+        const filtered = subjectId ? subjectIds.filter((id) => id === subjectId) : subjectIds;
+        return { studentKey: student.id, studentName: student.name, classId: student.classId, subjectIds: filtered };
+    }
+
+    // 兼容 Learner.id：家长的孩子用 Learner.id 作为 studentKey；老师学生若传入 Learner.id 则回落到花名册 id
+    const learner = await prisma.learner.findFirst({ where: { id: key, userId } });
+    if (!learner) return null;
+    if (learner.kind === 'student' && learner.gradingStudentId) {
+        return resolveStudent(userId, learner.gradingStudentId, subjectId);
+    }
+    if (learner.kind === 'self') {
+        return resolveStudent(userId, SELF_STUDENT_KEY, subjectId);
+    }
+    const itemSubjects = await prisma.errorItem.findMany({
+        where: { userId, learnerId: learner.id, subjectId: { not: null } },
+        select: { subjectId: true },
+        distinct: ['subjectId'],
+    });
+    const subjectIds = itemSubjects.map((row) => row.subjectId).filter((id): id is string => !!id);
     const filtered = subjectId ? subjectIds.filter((id) => id === subjectId) : subjectIds;
-    return { studentKey: student.id, studentName: student.name, classId: student.classId, subjectIds: filtered };
+    return { studentKey: learner.id, studentName: learner.name, classId: null, subjectIds: filtered };
 }
 
 async function loadItems(userId: string, subjectIds: string[]) {

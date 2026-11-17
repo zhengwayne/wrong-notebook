@@ -46,6 +46,7 @@ model User {
   variantRuns    VariantRun[]
   knowledgeMasteries KnowledgeMastery[]
   learningPaths LearningPath[]
+  learners     Learner[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -147,6 +148,9 @@ model ErrorItem {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  learnerId        String?
+  learner          Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+
   reviewSchedules ReviewSchedule[]
   practiceRecords PracticeRecord[]
   examQuestions   ExamQuestion[]
@@ -155,6 +159,7 @@ model ErrorItem {
   // 列表、统计都按用户取错题并按时间排序；SQLite 不会自动给外键建索引
   @@index([userId, createdAt])
   @@index([subjectId])
+  @@index([learnerId])
 }
 
 model ReviewSchedule {
@@ -196,11 +201,15 @@ model PracticeRecord {
   examQuestionId String?
   examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
   
+  learnerId  String?
+  learner    Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([errorItemId, createdAt])
   @@index([examQuestionId])
   @@index([userId, createdAt])
+  @@index([learnerId])
   variantItems VariantItem[]
 }
 
@@ -286,6 +295,7 @@ model GradingStudent {
   order       Int      @default(0)
   submissions GradingSubmission[]
   variantRuns VariantRun[]
+  learner     Learner?
   createdAt   DateTime @default(now())
 
   @@unique([classId, studentNo])
@@ -475,6 +485,43 @@ model VariantStageLog {
 
 
 // ===== 学习路径：知识点掌握模型与分步路径（借鉴 DeepTutor Mastery Path 的阶段门与复述复习，独立实现） =====
+
+// 学习者：本人（默认，错题可不挂 learnerId）、家长名下的孩子（每户最多 3 个）、老师花名册学生
+model Learner {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// self | child | student
+  kind             String
+  name             String
+  /// 老师的学生：对应花名册，studentKey 仍用 GradingStudent.id
+  gradingStudentId String?  @unique
+  gradingStudent   GradingStudent? @relation(fields: [gradingStudentId], references: [id], onDelete: SetNull)
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  errorItems      ErrorItem[]
+  practiceRecords PracticeRecord[]
+
+  @@index([userId, kind])
+}
+
+// 回填审计：只记录本次脚本改过的行，便于原样撤回，不删除任何错题
+model LearnerBackfillAudit {
+  id                String   @id @default(cuid())
+  batchId           String
+  userId            String
+  entityType        String   // learner | errorItem | practiceRecord
+  entityId          String
+  action            String   // create | link
+  previousLearnerId String?
+  newLearnerId      String?
+  createdAt         DateTime @default(now())
+
+  @@index([batchId])
+  @@index([entityType, entityId])
+}
 
 model KnowledgeMastery {
   id             String   @id @default(cuid())

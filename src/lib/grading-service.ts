@@ -10,6 +10,7 @@ import { getErrorMessage } from "@/lib/error-message";
 import { generateUniqueShortId } from "@/lib/short-id";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
+import { ensureLearnerForGradingStudent } from "@/lib/learners";
 import {
     gradeAnswers, isWrong, parseJsonStringArray, totalScore,
     MAX_GRADING_QUESTIONS,
@@ -241,6 +242,11 @@ export async function confirmSubmission(submissionId: string, userId: string): P
 
     const imported = await prisma.$transaction(async (tx) => {
         const notebook = await resolveStudentNotebook(tx, userId, `${studentName}·${task.subjectName}`, task.subjectName);
+        const learner = await ensureLearnerForGradingStudent(tx, {
+            userId,
+            gradingStudentId: submission.student!.id,
+            name: studentName,
+        });
         let count = 0;
         for (const result of submission.results) {
             if (!isWrong(result.verdict) || result.errorItemId) continue;
@@ -250,6 +256,7 @@ export async function confirmSubmission(submissionId: string, userId: string): P
                 data: {
                     shortId: await generateUniqueShortId(tx),
                     userId,
+                    learnerId: learner.id,
                     subjectId: notebook.id,
                     originalImageUrl: firstImage,
                     questionText: question.questionText || `${task.title} 第 ${question.number} 题`,
