@@ -167,15 +167,15 @@
 
 ### OPT-07 · 学习者作用域隔离与档案治理（P1，Batch C + Batch F）
 
-- **Batch C（孩子之间）**：`LearningScope = { userId, learnerId }` 覆盖判重、重复练习、统计、清空、复习和 Openclaw 入口（R03）；创建孩子在事务中原子检查数量上限；删除孩子默认软归档（`archivedAt`），或在单个事务中硬删除全部相关数据（R12）。
+- **Batch C（孩子之间，已完成：`bea3a21`）**：`LearningScope = { userId, learnerId }` 覆盖判重、重复练习、统计、清空、复习和 Openclaw 入口（R03）；创建孩子在事务中原子检查数量上限；删除孩子默认软归档（`archivedAt`），或在单个事务中硬删除全部相关数据（R12）。
 - **Batch F（教师端，R07）**：不再按姓名匹配错题本或用 `OR` 合并，新写入严格按 `learnerId` / `gradingStudentId` 关联；历史归属按原审查 D2 的流程修复（只读盘点、导出歧义清单、唯一可确定的自动回填、歧义由人工确认、写审计日志）。
 
 **验收**：两个账户、各两个孩子、加上跨班同名学生的矩阵下，录入、判重、统计、复习、清空完全隔离；10 个并发创建请求最多成功 3 个；删除中途注入异常后没有残留的半完成数据。依赖 OPT-06、OPT-08 外键迁移。
 
-### OPT-08 · 迁移前备份与外键迁移（P1，Batch A + Batch C）
+### OPT-08 · 迁移前备份与外键迁移（P1，Batch A + Batch C，已完成：`d45ccda`、`0812330`）
 
 - **Batch A：迁移前自动备份与启动保护（已完成：`d45ccda`）**。在 `launcher.js` 的 `prepare()` 中，`migrate deploy` 之前、服务启动之前：如果 `-wal` 文件非空，用随包的 `@prisma/client` 临时连接执行 `wal_checkpoint(TRUNCATE)`（先把 `PRISMA_QUERY_ENGINE_LIBRARY` 同步到 `process.env`，显式传入数据库 URL，`finally` 中断开连接），然后把 `.db` 原子复制为 `backups/pre-migrate-<version>-<ts>.db`，保留最近 3 份；如果没能清空 `-wal`，就把 `.db`、`-wal`、`-shm` 三个文件一起复制到单独目录，并写恢复说明。迁移失败时打印恢复指引并拒绝启动。`instrumentation.ts` 中的 `applyLearnerBackfill` 加幂等完成标记，不再每次冷启动都执行；修复 fnOS 安装回调吞掉错误的问题，升级回调补上备份。
-- **Batch C：外键迁移**。先运行只读的旧库审计脚本，处理孤儿 `learnerId`，**用户确认审计结果后**，用 `PRAGMA defer_foreign_keys=ON` 重建 `ErrorItem` 和 `PracticeRecord`，保留全部列和索引，补上 `ON DELETE SET NULL` 外键（R06）。
+- **Batch C：外键迁移（已完成：`0812330`）**。先运行只读的旧库审计脚本（`scripts/audit-learner-foreign-keys.mjs`），处理孤儿 `learnerId`（记入 `LearnerBackfillAudit` 并安全置空），用 `PRAGMA defer_foreign_keys=ON` 重建 `ErrorItem` 和 `PracticeRecord`，保留全部列和索引，补上 `ON DELETE SET NULL` 外键（R06），迁移漂移归零。
 
 **验收**：在包含 1 万道错题和非空 `-wal` 的旧版样本库上，自动生成完整的备份（包含 `-wal` 中已提交的事务）；迁移后 `prisma migrate diff` 退出码为 0，`PRAGMA foreign_key_check` 为空；`/api/health` 冷启动就绪时间少于 15 秒。回滚使用事前备份加旧版本安装包，不做会丢列的 down 迁移。
 
@@ -338,8 +338,8 @@ eval/
 | 日志断言测试 | 生产模式下日志不含 `data:image`、测试学生姓名、提示词片段 | 日志泄露回退 | 0（已完成：`1f2edc1`） |
 | 偏好往返测试 | 根据 `userUpdateSchema` 的键自动生成 PATCH→GET 往返用例 | R08 同类问题 | 0（已完成：`3ecc30f`） |
 | ESLint 事务规则 | 禁止在 `$transaction` 回调中引用全局 `prisma` | OPT-06 漏传 `tx` | A（已完成：`150ac2f`） |
-| 双租户测试工具 | `withTwoTenants()` 自动创建两个账户、两个孩子和同名学生，断言跨作用域访问返回 404 | R03、R07、越权 | C |
-| 备份覆盖测试 | 通过 Prisma DMMF 枚举全部模型，每个模型必须出现在“导出”或“明确不导出”清单中 | R05 回退 | C |
+| 双租户测试工具 | `withTwoTenants()` 自动创建两个账户、两个孩子和同名学生，断言跨作用域访问返回 404 | R03、R07、越权 | C（已完成：`bea3a21`） |
+| 备份覆盖测试 | 通过 Prisma DMMF 枚举全部模型，每个模型必须出现在“导出”或“明确不导出”清单中 | R05 回退 | C（已完成：`f6bb37f`） |
 | system-reset 覆盖测试 | 同样基于 DMMF，断言重置后所有业务表为空 | 漏删新表 | D |
 | 路由清单测试 | 扫描 `src/app/api/**/route.ts`，要求导出的处理函数都由 `defineApiRoute` 包装，并与 `api-auth-inventory.json` 快照对比；新增公开路由必须显式登记 | 绕过鉴权 | F |
 | ESLint 会话规则 | `src/app/api/**` 禁止直接导入 `getServerSession` | R01 回退 | F |
@@ -367,7 +367,7 @@ OPT-08 只在迁移前备份一次。补充：
 | **Batch 0 止血**（已完成：`ec8ee57`、`3ecc30f`、`b2b6226`、`1f2edc1`） | 恢复公开历史检查，堵住日志泄露 | OPT-01 的 Batch 0 部分（测试路径、R08、`config.ts`、`debug`）；OPT-03 日志静默；OPT-18 工作区卫生；OPT-21 日志断言和偏好往返测试 | 1.5–2 | 成本低、收益确定，与部署形态无关；不恢复公开历史检查，后续所有推送都会被阻止 |
 | **Batch A 数据不丢**（已完成：`150ac2f`、`d45ccda`、`1c0ab8b`、`5d9e4e6`） | 家庭用户没有运维能力，先保证可恢复 | OPT-22 每日快照；OPT-08 迁移前备份与启动保护；OPT-06；OPT-05 | 4–6 | 后续所有迁移都依赖这层保障 |
 | **Batch B AI 质量**（已完成：`3a203ae`、`a5fbbb4`、`448ffd9`、`b2d6a3f`、`d67925e`） | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
-| **Batch C 孩子之间隔离** | 多孩子家庭的正确性 | OPT-08 外键迁移（先审计、经用户确认）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
+| **Batch C 孩子之间隔离**（已完成：`0812330`、`bea3a21`、`f6bb37f`） | 多孩子家庭的正确性 | OPT-08 外键迁移（只读审计与外键重建）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
 | **Batch D 可迁移备份** | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（先验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
 | **Batch E 学习效果与体验** | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
 | **Batch F 多账户与加固** | 跨账户安全 | OPT-02（D1a 优先，包装器按模块迁移）；OPT-01 的 Batch F 部分；OPT-07 教师部分；OPT-10；`/api/tts/:id` 归属校验；OPT-21 路由清单与会话规则 | 8–11 | 家庭单账户下风险低；满足 3.2 节条件时整体或部分提前 |
