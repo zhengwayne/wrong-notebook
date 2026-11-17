@@ -6,6 +6,7 @@ import { consumeAiQuota, type QuotaUser } from '@/lib/ai-quota';
 import { getAIService } from '@/lib/ai';
 import type { DifficultyLevel } from '@/lib/ai/types';
 import { trackBackgroundTask } from '@/lib/background-tasks';
+import { sanitizeFigureSvg } from '@/lib/figure-svg';
 import { serializeLastPractice } from '@/lib/last-practice';
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from '@/lib/mastery-status';
 import { createLogger } from '@/lib/logger';
@@ -128,7 +129,7 @@ async function persistPipeline(runId: string, result: PipelineResult, title?: st
                 questionText: item.question?.questionText,
                 answerText: item.question?.answerText,
                 analysis: item.question?.analysis,
-                figureSvg: item.question?.figureSvg ?? null,
+                figureSvg: sanitizeFigureSvg(item.question?.figureSvg),
                 knowledgePoints: JSON.stringify(item.question?.knowledgePoints || item.plan.knowledgePoints || []),
                 plannedDifficulty: item.plan.difficulty,
                 checkedDifficulty: item.checkedDifficulty ?? null,
@@ -245,12 +246,13 @@ export async function startLegacyRun(options: {
     const generated = await getAIService('text').generateSimilarQuestion(
         options.question, options.knowledgePoints, options.language, options.difficulty, options.gradeSemester, options.figureSvg,
     );
+    const cleanFigureSvg = sanitizeFigureSvg(generated.figureSvg);
     const lastPractice = {
         questionText: generated.questionText,
         answerText: generated.answerText,
         analysis: generated.analysis,
         subject: subjectLabel(generated.subject || options.subjectName),
-        figureSvg: generated.figureSvg ?? null,
+        figureSvg: cleanFigureSvg,
         difficulty: options.difficulty,
         generatedAt: new Date().toISOString(),
     };
@@ -274,7 +276,7 @@ export async function startLegacyRun(options: {
                     questionText: generated.questionText,
                     answerText: generated.answerText,
                     analysis: generated.analysis,
-                    figureSvg: generated.figureSvg ?? null,
+                    figureSvg: cleanFigureSvg,
                     knowledgePoints: JSON.stringify(options.knowledgePoints),
                     plannedDifficulty: options.difficulty,
                     reviewedAt: new Date(),
@@ -484,7 +486,7 @@ export async function startClassRuns(user: QuotaUser, options: {
     return { runIds, classWeaknesses };
 }
 
-export async function reviewVariantItem(userId: string, itemId: string, action: 'approve' | 'reject' | 'edit', edits?: { questionText?: string; answerText?: string; analysis?: string }, note?: string) {
+export async function reviewVariantItem(userId: string, itemId: string, action: 'approve' | 'reject' | 'edit', edits?: { questionText?: string; answerText?: string; analysis?: string; figureSvg?: string | null }, note?: string) {
     const item = await prisma.variantItem.findFirst({
         where: { id: itemId, run: { userId } },
         include: { run: true },
@@ -492,10 +494,14 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
     if (!item) return null;
     if (item.status === 'approved' && action !== 'edit') return { error: 'ALREADY_APPROVED' as const };
 
+    const cleanFigureSvg = edits && 'figureSvg' in edits
+        ? sanitizeFigureSvg(edits.figureSvg)
+        : sanitizeFigureSvg(item.figureSvg);
     const data: Record<string, unknown> = { reviewNote: note || item.reviewNote, reviewedAt: new Date() };
     if (edits?.questionText) data.questionText = edits.questionText;
     if (edits?.answerText) data.answerText = edits.answerText;
     if (edits?.analysis) data.analysis = edits.analysis;
+    if (edits && 'figureSvg' in edits) data.figureSvg = cleanFigureSvg;
 
     if (action === 'reject') {
         data.status = 'rejected';
@@ -512,6 +518,7 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
     data.questionText = questionText;
     data.answerText = answerText;
     data.analysis = analysis;
+    data.figureSvg = cleanFigureSvg;
     data.status = 'approved';
     await prisma.variantItem.update({ where: { id: itemId }, data });
     await prisma.variantStageLog.create({ data: { runId: item.runId, itemId, stage: 'review', status: 'ok', detail: JSON.stringify({ action, note }) } });
@@ -525,7 +532,7 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
                     questionText,
                     answerText,
                     analysis,
-                    figureSvg: item.figureSvg,
+                    figureSvg: cleanFigureSvg,
                     difficulty: (item.plannedDifficulty as VariantDifficulty) || 'medium',
                     generatedAt: new Date().toISOString(),
                 }),
@@ -572,7 +579,7 @@ export async function createExamFromApproved(userId: string, runId: string, titl
                     questionText: item.questionText,
                     answerText: item.answerText,
                     analysis: item.analysis,
-                    figureSvg: item.figureSvg,
+                    figureSvg: sanitizeFigureSvg(item.figureSvg),
                 },
             });
             await tx.variantItem.update({ where: { id: item.id }, data: { examQuestionId: question.id } });

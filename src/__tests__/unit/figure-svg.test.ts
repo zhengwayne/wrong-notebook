@@ -44,6 +44,18 @@ describe('sanitizeFigureSvg', () => {
         expect(svg).toContain('<rect');
     });
 
+    it('截断多 SVG 中夹带的 HTML 容器闭合逃逸并清除嵌套 </body>/</html>', () => {
+        const splitSvg = '<svg viewBox="0 0 10 10"><circle r="3"/></svg></body><script>alert(1)</script><svg><rect width="1" height="1"/></svg>';
+        const cleanSplit = sanitizeFigureSvg(splitSvg)!;
+        expect(cleanSplit).not.toMatch(/<\/?body|<script|<rect/i);
+        expect(cleanSplit).toContain('<circle');
+
+        const nestedEscape = '<svg viewBox="0 0 10 10"><circle r="3"/></bo</body>dy><body onload="alert(1)"><html/></svg>';
+        const cleanNested = sanitizeFigureSvg(nestedEscape)!;
+        expect(cleanNested).not.toMatch(/<\/?(?:body|html|head)|onload/i);
+        expect(cleanNested).toContain('<circle');
+    });
+
     it('没有图形元素、不是 SVG、超长或不是字符串时返回 null', () => {
         expect(sanitizeFigureSvg('<svg xmlns="http://www.w3.org/2000/svg"></svg>')).toBeNull();
         expect(sanitizeFigureSvg('<svg><script>alert(1)</script></svg>')).toBeNull();

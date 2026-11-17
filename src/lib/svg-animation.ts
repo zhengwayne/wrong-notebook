@@ -214,11 +214,13 @@ export function getSvgAspectRatio(svg: string): number {
 }
 
 /**
- * 放进 sandbox iframe 的文档：CSP 禁止加载任何外部资源，SVG 铺满画面
+ * 放进 sandbox iframe 的文档：CSP 禁止加载任何外部资源，SVG 铺满画面。
+ * 拼接进 body 前强制走一次 sanitizeSvgAnimation，避免未净化或畸形 SVG 逃逸 HTML 容器。
  */
 export function buildSvgAnimationDocument(svg: string): string {
+    const cleanSvg = sanitizeSvgAnimation(svg) ?? '';
     return '<!doctype html><html><head><meta charset="utf-8">'
         + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:">'
         + '<style>html,body{margin:0;height:100%;background:#fff;overflow:hidden}svg{display:block;width:100%;height:100%}</style>'
-        + `</head><body>${svg}</body></html>`;
+        + `</head><body>${cleanSvg}</body></html>`;
 }

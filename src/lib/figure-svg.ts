@@ -13,22 +13,44 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // 可执行或可嵌入外部内容的元素，连同内容一起删除
 const DANGEROUS_ELEMENTS = /<(script|foreignObject|iframe|object|embed|audio|video|image)\b[\s\S]*?(<\/\1\s*>|\/>)/gi;
 const DANGEROUS_OPEN_TAGS = /<\/?(script|foreignObject|iframe|object|embed|audio|video|image)\b[^>]*>/gi;
+// HTML 文档结构标签，防止畸形或闭合重组后逃逸宿主容器
+const CONTAINER_ESCAPE_TAGS = /<\/?(?:html|head|body)\b[^>]*>/gi;
+const CONTAINER_ESCAPE_PREFIX = /<\/?(?:html|head|body)\b/i;
 
 const MAX_SANITIZE_PASSES = 10;
+
+/** 提取第一个与根 <svg> 嵌套深度配对的完整 <svg>...</svg> 块，防止跨越多个 <svg> 夹带中间 HTML */
+function extractBalancedSvg(raw: string): string | null {
+    const startMatch = /<svg(?=[\s>/])/i.exec(raw);
+    if (!startMatch) return null;
+    const start = startMatch.index;
+    const tagPattern = /<svg(?=[\s>/])|<\/svg\s*>/gi;
+    tagPattern.lastIndex = start + startMatch[0].length;
+    let depth = 1;
+    let match: RegExpExecArray | null;
+    while ((match = tagPattern.exec(raw)) !== null) {
+        if (match[0].startsWith('</')) {
+            depth -= 1;
+            if (depth === 0) {
+                return raw.slice(start, match.index + match[0].length);
+            }
+        } else {
+            depth += 1;
+        }
+    }
+    return null;
+}
 
 /**
  * 从 AI 回复中取出 <svg>…</svg> 并净化；没有有效 SVG、超长或净化后为空时返回 null
  */
 export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_SVG_LENGTH): string | null {
     if (typeof raw !== 'string') return null;
-    const start = raw.search(/<svg[\s>]/i);
-    const end = raw.toLowerCase().lastIndexOf('</svg>');
-    if (start === -1 || end === -1 || end < start) return null;
-
-    let svg = raw.slice(start, end + '</svg>'.length);
+    let svg = extractBalancedSvg(raw);
+    if (!svg) return null;
     if (svg.length > maxLength) return null;
 
-    // 删除一处可能拼出新的危险片段（如 <scr<script>ipt>），反复净化直到结果不再变化
+    // 删除一处可能拼出新的危险片段（如 <scr<script>ipt> 或 </bo</body>dy>），反复净化直到结果不再变化
     let previous: string;
     let pass = 0;
     do {
@@ -39,6 +61,7 @@ export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_S
         svg = svg.replace(/<\?[\s\S]*?\?>/g, '');
         svg = svg.replace(DANGEROUS_ELEMENTS, '');
         svg = svg.replace(DANGEROUS_OPEN_TAGS, '');
+        svg = svg.replace(CONTAINER_ESCAPE_TAGS, '');
         // 事件属性（onload 等）
         svg = svg.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
         // 只允许指向本文档内部的链接（#id），去掉外部和 javascript: 链接
@@ -48,6 +71,8 @@ export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_S
         svg = svg.replace(/url\(\s*(['"]?)(?!#)[^)]*\)/gi, 'none');
         svg = svg.replace(/(?:javascript|vbscript|data)\s*:/gi, '');
     } while (svg !== previous);
+
+    if (CONTAINER_ESCAPE_PREFIX.test(svg)) return null;
 
     if (!/<svg[^>]*\sxmlns\s*=/i.test(svg)) {
         svg = svg.replace(/<svg/i, `<svg xmlns="${SVG_NS}"`);

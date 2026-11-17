@@ -211,13 +211,14 @@ describe('/api/practice', () => {
         });
 
         it('应该暂存最近一次生成的题目与解答', async () => {
+            const validSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="20"/></svg>';
             mocks.mockPrismaErrorItem.findUnique.mockResolvedValue(mockErrorItem);
             mocks.mockAIService.generateSimilarQuestion.mockResolvedValue({
                 questionText: '求解 3x = 9',
                 answerText: 'x = 3',
                 analysis: '两边除以 3',
                 knowledgePoints: [],
-                figureSvg: '<svg></svg>',
+                figureSvg: validSvg,
             });
 
             const request = new Request('http://localhost/api/practice/generate', {
@@ -238,7 +239,7 @@ describe('/api/practice', () => {
                 answerText: 'x = 3',
                 analysis: '两边除以 3',
                 subject: '数学',
-                figureSvg: '<svg></svg>',
+                figureSvg: validSvg,
                 difficulty: 'hard',
             });
             expect(typeof saved.generatedAt).toBe('string');

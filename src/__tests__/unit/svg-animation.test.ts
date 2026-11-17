@@ -109,6 +109,22 @@ describe('SVG 动画时长与画面', () => {
         expect(doc).toContain("default-src 'none'");
         expect(doc).toContain(animation);
     });
+
+    it('iframe 文档对传入的未净化 SVG 与容器逃逸载荷先做净化', () => {
+        const malicious = animation.replace('</svg>', '</bo</body>dy><script>alert(1)</script><a href="javascript:evil()"><circle onload="x()" r="2"/></a></svg>')
+            + '</body><script>alert(2)</script><svg><rect/></svg>';
+        const doc = buildSvgAnimationDocument(malicious);
+        // 整个 HTML 文档中只能出现模板末尾的一个 </body> 和 </html>
+        expect(doc.match(/<\/body>/gi)).toHaveLength(1);
+        expect(doc.match(/<\/html>/gi)).toHaveLength(1);
+        expect(doc).not.toMatch(/<script|onload=|javascript:/i);
+
+        // 完全无有效图形的逃逸载荷不会写进 body
+        const rawEscape = '</body><script>alert(1)</script>';
+        const safeDoc = buildSvgAnimationDocument(rawEscape);
+        expect(safeDoc.match(/<\/body>/gi)).toHaveLength(1);
+        expect(safeDoc).not.toMatch(/<script/i);
+    });
 });
 
 import { embedNarration, extractSubtitleNarration, getEmbeddedNarration, parseNarration, MAX_NARRATION_SEGMENTS } from '@/lib/svg-animation';

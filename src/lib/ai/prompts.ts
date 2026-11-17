@@ -1407,13 +1407,22 @@ Plan exactly the requested number of variants. Keep the same core knowledge poin
 export function generateVariantQuestionPrompt(language: 'zh' | 'en'): string {
     return language === 'en'
         ? `Generate one variant question from the plan in the input JSON. Keep the same core skill, change numbers, context or wording, and do not copy the original stem.
+Rules you MUST follow:
+- Output ONLY a fill-in-the-blank or open-ended / step-by-step question; NEVER include question numbers, point values, or multiple-choice / true-false options (no A/B/C/D, ①②③④, or option boxes).
+- If you include a diagram in figureSvg, output a single valid inline <svg> with xmlns="http://www.w3.org/2000/svg" and viewBox (width 400~600), white background, black strokes, basic shapes only, and NO <script>, <image>, <foreignObject>, external links or on* event attributes.
+- Use KaTeX-compatible LaTeX ($...$ / $$...$$) inside questionText, answerText and analysis; since the whole response is JSON, escape every backslash as \\\\ inside JSON strings.
 Return JSON only:
 {"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"math expression only, never code","expected":"answer"} or null}
-computable is required for questions that can be checked by arithmetic or algebra (use * for multiplication). Leave it null for open-ended or non-math items. Use LaTeX in text when needed. Output JSON only.`
+computable is required for questions that can be checked by arithmetic or algebra (use * for multiplication). Leave it null for open-ended or non-math items. Output JSON only.`
         : `根据输入 JSON 中的规划生成一道变式题。保持核心考点，更换数据、情境或表述，不要照抄原题题干。
+${GENERATED_QUESTION_RULES}
+【配图规范（仅当需要配图并输出 figureSvg 时适用）】
+${FIGURE_SVG_RULES}
+【公式格式（置于 JSON 字符串内时注意将反斜杠转义为 \\\\）】
+${LATEX_RULES}
 只输出 JSON：
 {"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"仅数学表达式，禁止代码","expected":"答案"} 或 null}
-能用四则运算或代数验算的题必须提供 computable（乘法用 *）。开放题或非数学题填 null。需要公式时使用 LaTeX。只输出 JSON。`;
+能用四则运算或代数验算的题必须提供 computable（乘法用 *）。开放题或非数学题填 null。只输出 JSON。`;
 }
 
 export function generateVariantResolvePrompt(language: 'zh' | 'en'): string {
