@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { ZoomControls } from "@/components/zoom-controls";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -10,6 +10,7 @@ import { frontendLogger } from "@/lib/frontend-logger";
 import { OVERLAY_COLORS, renderAnnotatedPagePng, shareOrDownloadPng } from "@/lib/parent-paper-annotate";
 import { regionToBBox, resizeNormalizedBox, type BoxHandle } from "@/lib/parent-paper-box-edit";
 import { badgePlacements, layoutParentPaperBBoxes } from "@/lib/parent-paper-box-layout";
+import { OVERLAY_BADGE_CLASS, OVERLAY_MARK_CLASS, badgeChromeStyle, markChromeStyle } from "@/lib/parent-paper-overlay-chrome";
 import type { ParentPaperQuestionView } from "@/lib/parent-papers";
 import type { QuestionBBox } from "@/lib/parent-paper-review";
 import { toast } from "@/lib/feedback";
@@ -41,28 +42,6 @@ export interface ParentPaperOverlayProps {
 }
 
 
-function badgeChromeStyle(
-    placement: { side: "left" | "above"; shift: number } | undefined,
-    box: { x: number },
-    zoom: number,
-    background: string,
-): CSSProperties {
-    const side = placement?.side ?? (box.x >= 0.07 ? "left" : "above");
-    const shift = placement?.shift ?? 0;
-    const scale = zoom > 1 ? 1 / zoom : 1;
-    const translate = side === "left"
-        ? (shift ? `translateY(${shift * 1.05}rem)` : "")
-        : (shift ? `translateX(${shift * 1.15}rem)` : "");
-    const transform = [translate, scale !== 1 ? `scale(${scale})` : ""].filter(Boolean).join(" ") || undefined;
-    return {
-        background,
-        transform,
-        transformOrigin: side === "left" ? "right top" : "left bottom",
-        ...(side === "left"
-            ? { right: "100%", top: 0, marginRight: 2 }
-            : { left: 0, bottom: "100%", marginBottom: 2 }),
-    };
-}
 
 export function ParentPaperOverlay({
     title,
@@ -315,19 +294,14 @@ export function ParentPaperOverlay({
                                         }}
                                     >
                                         <span
-                                            className="absolute z-[3] whitespace-nowrap rounded-sm px-1 py-px text-center text-[10px] font-semibold leading-4 text-white sm:px-1.5 sm:text-[11px]"
-                                            style={badgeChromeStyle(badges[question.id], box, zoom, colors.stroke)}
+                                            className={OVERLAY_BADGE_CLASS}
+                                            style={badgeChromeStyle(badges[question.id], box, colors.stroke)}
                                         >
                                             {question.number}
                                         </span>
                                         <span
-                                            className="absolute right-0.5 top-0.5 text-sm font-bold leading-none sm:text-base"
-                                            style={{
-                                                color: colors.stroke,
-                                                textShadow: "0 0 2px #fff, 0 0 2px #fff",
-                                                transform: zoom > 1 ? `scale(${1 / zoom})` : undefined,
-                                                transformOrigin: "top right",
-                                            }}
+                                            className={OVERLAY_MARK_CLASS}
+                                            style={markChromeStyle(colors.stroke)}
                                             aria-hidden="true"
                                         >
                                             {colors.mark}
