@@ -100,7 +100,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/seed-admin.js ./dist-scri
 RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
 
 # Copy entrypoint script
-COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+# --chmod 需要 BuildKit；经典构建器用这一步设置可执行位
+RUN chmod 755 /app/docker-entrypoint.sh
+
 COPY --chown=nextjs:nodejs https-server.js ./
 
 EXPOSE 3000
