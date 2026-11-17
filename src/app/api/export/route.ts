@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { unauthorized, internalError, forbidden } from "@/lib/api-errors";
+import { badRequest, forbidden, internalError, unauthorized } from "@/lib/api-errors";
 import { authOptions } from "@/lib/auth";
+import { prepareBackupEncryption } from "@/lib/backup/crypto";
 import { createBackupV3Stream } from "@/lib/backup/export-v3";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
@@ -11,7 +12,13 @@ import { exportSpeeches } from "@/lib/tts/speech-cache";
 
 const logger = createLogger('api:export');
 
-export async function GET(req: Request) {
+interface ExportParams {
+    exportAll: boolean;
+    format: 'zip' | 'json';
+    passphrase?: string;
+}
+
+async function executeExport({ exportAll, format, passphrase }: ExportParams) {
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.email) {
@@ -26,13 +33,13 @@ export async function GET(req: Request) {
         return unauthorized("User not found");
     }
 
-    const { searchParams } = new URL(req.url);
-    const exportAll = searchParams.get('all') === 'true';
-    const format = searchParams.get('format') === 'json' ? 'json' : 'zip';
-
     // 只有管理员可以导出全部数据
     if (exportAll && session.user.role !== 'admin') {
         return forbidden("Admin role required");
+    }
+
+    if (passphrase && format === 'json') {
+        return badRequest("Passphrase encryption requires v3 ZIP format");
     }
 
     const userProfile = {
@@ -60,18 +67,26 @@ export async function GET(req: Request) {
             const filename = exportAll
                 ? `XueJi-backup-all-${dateTag}.zip`
                 : `XueJi-backup-${dateTag}.zip`;
+            const encrypted = passphrase ? prepareBackupEncryption(passphrase) : null;
             const stream = createBackupV3Stream({
                 db: prisma,
                 currentUser: userProfile,
                 exportAll,
+                ...(encrypted ? { encryption: encrypted.meta, transformEntry: encrypted.transformEntry } : {}),
             });
-            logger.info({ userId: user.id, scope: exportAll ? 'all' : 'user', format: 'zip-v3' }, 'Streaming ZIP v3 export started');
+            logger.info({
+                userId: user.id,
+                scope: exportAll ? 'all' : 'user',
+                format: 'zip-v3',
+                encrypted: Boolean(encrypted),
+            }, 'Streaming ZIP v3 export started');
             return new NextResponse(stream, {
                 headers: {
                     'Content-Type': 'application/zip',
                     'Content-Disposition': `attachment; filename="${filename}"`,
                     'X-Backup-Format-Version': '3',
-                    'X-Backup-Unencrypted-Warning': '1',
+                    'X-Backup-Encrypted': encrypted ? '1' : '0',
+                    ...(encrypted ? {} : { 'X-Backup-Unencrypted-Warning': '1' }),
                 },
             });
         }
@@ -135,4 +150,29 @@ export async function GET(req: Request) {
         logger.error({ error, userId: user.id }, 'Export failed');
         return internalError("Failed to export data");
     }
+}
+
+export async function GET(req: Request) {
+    const { searchParams } = new URL(req.url);
+    return executeExport({
+        exportAll: searchParams.get('all') === 'true',
+        format: searchParams.get('format') === 'json' ? 'json' : 'zip',
+    });
+}
+
+export async function POST(req: Request) {
+    let body: { all?: unknown; format?: unknown; passphrase?: unknown };
+    try {
+        body = (await req.json()) as { all?: unknown; format?: unknown; passphrase?: unknown };
+    } catch {
+        return badRequest("Invalid JSON format");
+    }
+    const passphrase = typeof body?.passphrase === 'string' && body.passphrase.length > 0
+        ? body.passphrase
+        : undefined;
+    return executeExport({
+        exportAll: body?.all === true,
+        format: body?.format === 'json' ? 'json' : 'zip',
+        passphrase,
+    });
 }

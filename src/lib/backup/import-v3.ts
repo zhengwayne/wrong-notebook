@@ -11,6 +11,7 @@ import { generateUniqueShortId, isShortId } from '@/lib/short-id';
 import { sanitizeSvgAnimation } from '@/lib/svg-animation';
 import { importSpeeches, type BackupSpeech } from '@/lib/tts/speech-cache';
 import { unpackBackupZipStream, type UnpackedBackupArchive } from '@/lib/backup/archive-read';
+import { createBackupEntryDecryptor } from '@/lib/backup/crypto';
 import { BackupError, BackupFormatError, BackupOwnershipError } from '@/lib/backup/errors';
 import { restoreMediaInJsonArray, restoreMediaValue } from '@/lib/backup/media';
 import {
@@ -34,6 +35,7 @@ export interface ImportV3Options {
     source: ReadableStream<Uint8Array> | Uint8Array | Buffer;
     currentUser: { id: string; email: string };
     importAll: boolean;
+    passphrase?: string;
     decryptEntry?: (manifest: BackupManifestV3, entryName: string, packed: Uint8Array) => Uint8Array;
 }
 
@@ -1025,6 +1027,11 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
     try {
         archive = await unpackBackupZipStream(options.source, {
             decryptEntry: options.decryptEntry,
+            resolveDecryptor: (manifest) => (
+                !options.decryptEntry && manifest.encryption
+                    ? createBackupEntryDecryptor(manifest.encryption, options.passphrase)
+                    : undefined
+            ),
         });
     } catch (error) {
         if (error instanceof BackupError) throw error;

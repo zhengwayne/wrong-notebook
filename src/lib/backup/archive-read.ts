@@ -32,6 +32,7 @@ export async function unpackBackupZipStream(
     source: ReadableStream<Uint8Array> | Uint8Array | Buffer,
     options: {
         decryptEntry?: (manifest: BackupManifestV3, entryName: string, packed: Uint8Array) => Uint8Array;
+        resolveDecryptor?: (manifest: BackupManifestV3) => EntryTransform | undefined;
     } = {},
 ): Promise<UnpackedBackupArchive> {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xueji-backup-unzip-'));
@@ -135,9 +136,9 @@ export async function unpackBackupZipStream(
             }
         }
 
-        const maybeDecrypt: EntryTransform | undefined = options.decryptEntry
-            ? (entryName, bytes) => options.decryptEntry!(manifest, entryName, bytes)
-            : undefined;
+        const resolved = options.resolveDecryptor?.(manifest);
+        const maybeDecrypt: EntryTransform | undefined = resolved
+            ?? (options.decryptEntry ? (entryName, bytes) => options.decryptEntry!(manifest, entryName, bytes) : undefined);
 
         return {
             manifest,

@@ -21,6 +21,10 @@ Web exports **never** include user password hashes or server-side AI credentials
    - v1/v2 `.json` files remain accepted on `/api/import`, with warnings noting that newer multi-learner/grading/path tables are absent from legacy files;
    - The legacy `ReviewSchedule` table is no longer used by application logic (review due dates are computed from `PracticeRecord`). v3 import ignores legacy `ReviewSchedule` rows and returns a notice.
 5. Duplicate question matching on import runs within each learner's scope (`{ userId, learnerId }`), recording duplicate hits against that learner without mixing children's histories.
+6. **Optional passphrase encryption (AES-256-GCM + scrypt)**:
+   - Enter a passphrase before exporting to encrypt all `data/*.ndjson`, `media/*`, and `tts/*.mp3` entries via `POST /api/export`. Each entry uses a fresh 12-byte IV and binds its archive path as GCM AAD; `manifest.json` only stores KDF parameters, the random salt, an encrypted `keyCheck` tag, and ciphertext digests—never the passphrase itself.
+   - When exported without a passphrase, the UI and response headers (`X-Backup-Unencrypted-Warning: 1`) remind you that the archive contains student photos and records.
+   - Lost passphrases cannot be recovered or reset. Importing an encrypted archive requires the passphrase (via the Settings input, `passphrase` form field, or `X-Backup-Passphrase` header); missing or incorrect passphrases are rejected cleanly before mutating the database.
 
 ## Docker full-site backup
 

@@ -1,6 +1,6 @@
 /** 请求接口并以附件形式下载，文件名优先取响应头 Content-Disposition */
-export async function downloadFile(url: string, fallbackName: string): Promise<void> {
-    const res = await fetch(url);
+export async function downloadFile(url: string, fallbackName: string, init?: RequestInit): Promise<void> {
+    const res = await fetch(url, init);
     if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || 'Download failed');

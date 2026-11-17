@@ -24,7 +24,7 @@ vi.mock('@/lib/mastery', async (importOriginal) => ({
     scheduleMasteryEvaluation: mocks.scheduleMasteryEvaluation,
 }));
 
-import { GET as EXPORT } from '@/app/api/export/route';
+import { GET as EXPORT, POST as EXPORT_POST } from '@/app/api/export/route';
 import { POST as IMPORT } from '@/app/api/import/route';
 import { sanitizeFigureSvg } from '@/lib/figure-svg';
 import { embedNarration, sanitizeSvgAnimation } from '@/lib/svg-animation';
@@ -50,10 +50,13 @@ async function exportZipBackup(query = ''): Promise<Uint8Array> {
     return new Uint8Array(await response.arrayBuffer());
 }
 
-async function importZipBackup(zipBytes: Uint8Array, query = '') {
+async function importZipBackup(zipBytes: Uint8Array, query = '', passphrase?: string) {
     const body = new Blob([Buffer.from(zipBytes)], { type: 'application/zip' });
     const form = new FormData();
     form.append('file', body, 'backup.zip');
+    if (passphrase !== undefined) {
+        form.append('passphrase', passphrase);
+    }
     const response = await IMPORT(new Request(`http://localhost/api/import${query}`, {
         method: 'POST',
         body: form,
@@ -615,4 +618,64 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         expect(await database.errorItem.count({ where: { userId: 'user-1' } })).toBe(imagesCount + 1);
         expect(peakDelta).toBeLessThan(150 * 1024 * 1024);
     }, 60000);
+
+    it('可选口令加密往返：未加密导出带告警头；加密后缺口令或错口令拒收，正确口令完整还原', async () => {
+        const secret = 'MySecretPass!2026';
+        await database.errorItem.create({
+            data: {
+                id: 'enc-item-1',
+                shortId: 'Enc001',
+                userId: 'user-1',
+                subjectId: 'math',
+                originalImageUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+                questionText: '隐私加密测试题干_SecretMarker',
+                answerText: '42',
+            },
+        });
+
+        // 1. 未设口令导出带 X-Backup-Unencrypted-Warning: 1
+        const plainRes = await EXPORT(new Request('http://localhost/api/export'));
+        expect(plainRes.status).toBe(200);
+        expect(plainRes.headers.get('x-backup-unencrypted-warning')).toBe('1');
+        expect(plainRes.headers.get('x-backup-encrypted')).toBe('0');
+
+        // 2. 带口令 POST /api/export 导出加密 ZIP
+        const encRes = await EXPORT_POST(new Request('http://localhost/api/export', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ passphrase: secret }),
+        }));
+        expect(encRes.status).toBe(200);
+        expect(encRes.headers.get('x-backup-encrypted')).toBe('1');
+        expect(encRes.headers.get('x-backup-unencrypted-warning')).toBeNull();
+        const encZipBytes = new Uint8Array(await encRes.arrayBuffer());
+
+        const unpacked = unzipSync(encZipBytes);
+        const manifest = JSON.parse(Buffer.from(unpacked['manifest.json']).toString('utf8')) as BackupManifestV3;
+        expect(manifest.encryption).toMatchObject({ algorithm: 'aes-256-gcm', kdf: 'scrypt' });
+        expect(manifest.warnings).not.toContain('BACKUP_UNENCRYPTED');
+        expect(JSON.stringify(manifest)).not.toContain(secret);
+        expect(Buffer.from(unpacked['data/errorItems.ndjson']).toString('utf8')).not.toContain('SecretMarker');
+
+        await clearUserData();
+
+        // 3. 缺少口令被拒收
+        const missingRes = await importZipBackup(encZipBytes);
+        expect(missingRes.response.status).toBe(400);
+        expect(missingRes.data.code).toBe('BACKUP_PASSPHRASE_REQUIRED');
+        expect(await database.errorItem.count()).toBe(0);
+
+        // 4. 错误口令被拒收
+        const wrongRes = await importZipBackup(encZipBytes, '', 'wrong-passphrase');
+        expect(wrongRes.response.status).toBe(400);
+        expect(wrongRes.data.code).toBe('BACKUP_INVALID_PASSPHRASE');
+        expect(await database.errorItem.count()).toBe(0);
+
+        // 5. 正确口令完整导入恢复
+        const okRes = await importZipBackup(encZipBytes, '', secret);
+        expect(okRes.response.status).toBe(200);
+        const restored = await database.errorItem.findFirstOrThrow({ where: { userId: 'user-1', questionText: '隐私加密测试题干_SecretMarker' } });
+        expect(restored.answerText).toBe('42');
+        expect(restored.originalImageUrl).toContain('data:image/png;base64,');
+    });
 });

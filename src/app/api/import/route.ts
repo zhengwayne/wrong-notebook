@@ -41,11 +41,19 @@ export async function POST(req: Request) {
     let task: BackgroundTaskHandle | null = null;
     try {
         const contentType = (req.headers.get('content-type') || '').toLowerCase();
+        const headerPassphrase = req.headers.get('x-backup-passphrase');
+        let passphrase = typeof headerPassphrase === 'string' && headerPassphrase.length > 0
+            ? headerPassphrase
+            : undefined;
         task = startBackgroundTask({ userId: user.id, kind: 'data_import' });
 
         if (contentType.includes('multipart/form-data')) {
             const formData = await req.formData();
             const file = formData.get('file');
+            const rawPassphrase = formData.get('passphrase');
+            if (typeof rawPassphrase === 'string' && rawPassphrase.length > 0) {
+                passphrase = rawPassphrase;
+            }
             if (!(file instanceof Blob)) {
                 task.fail('Missing backup file');
                 return badRequest("Missing backup file");
@@ -58,6 +66,7 @@ export async function POST(req: Request) {
                     source: file.stream() as ReadableStream<Uint8Array>,
                     currentUser: { id: user.id, email: user.email },
                     importAll,
+                    passphrase,
                 });
                 task.succeed();
                 return NextResponse.json({ success: true, formatVersion: 3, stats, warnings });
@@ -80,6 +89,7 @@ export async function POST(req: Request) {
                 source,
                 currentUser: { id: user.id, email: user.email },
                 importAll,
+                passphrase,
             });
             task.succeed();
             return NextResponse.json({ success: true, formatVersion: 3, stats, warnings });
@@ -98,6 +108,7 @@ export async function POST(req: Request) {
                 source: rawBuf,
                 currentUser: { id: user.id, email: user.email },
                 importAll,
+                passphrase,
             });
             task.succeed();
             return NextResponse.json({ success: true, formatVersion: 3, stats, warnings });
