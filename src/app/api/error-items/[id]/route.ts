@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { unauthorized, forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
+import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
@@ -111,12 +112,14 @@ export async function PUT(
         if (analysis !== undefined) updateData.analysis = analysis;
         if (wrongAnswerText !== undefined) updateData.wrongAnswerText = wrongAnswerText || null;
         if (mistakeAnalysis !== undefined) updateData.mistakeAnalysis = mistakeAnalysis || null;
+        let resolvedSubjectName = errorItem.subject?.name ?? null;
         if (subjectId !== undefined) {
             // 验证目标错题本存在且属于该用户
             const targetSubject = await prisma.subject.findUnique({ where: { id: subjectId } });
             if (!targetSubject || targetSubject.userId !== user.id) {
                 return forbidden("Not authorized to move to this notebook");
             }
+            resolvedSubjectName = targetSubject.name;
             updateData.subject = subjectId === "" ? { disconnect: true } : { connect: { id: subjectId } };
         }
         if (mistakeStatus !== undefined || wrongAnswerText !== undefined || mistakeAnalysis !== undefined) {
@@ -138,20 +141,15 @@ export async function PUT(
                     ? JSON.parse(knowledgePoints)
                     : [];
 
-            // 推断学科
-            const subjectKey = errorItem.subject?.name?.toLowerCase().includes('math') ||
-                errorItem.subject?.name?.includes('数学')
-                ? 'math'
-                : errorItem.subject?.name?.toLowerCase().includes('english') ||
-                    errorItem.subject?.name?.includes('英语')
-                    ? 'english'
-                    : 'other';
+            // 按错题本名称推断全学科标识，支持全部学科而非仅 math/english
+            const subjectKey = inferSubjectFromName(resolvedSubjectName) || 'other';
 
             const tagConnections: { id: string }[] = [];
             for (const tagName of tagNames) {
                 let tag = await prisma.knowledgeTag.findFirst({
                     where: {
                         name: tagName,
+                        subject: subjectKey,
                         OR: [
                             { isSystem: true },
                             { userId: user.id },

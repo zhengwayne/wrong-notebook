@@ -141,7 +141,7 @@ export async function POST(req: Request) {
 
             // 推断学科
             const subject = await tx.subject.findUnique({ where: { id: subjectId || '' } });
-            const subjectKey = inferSubjectFromName(subject?.name ?? null) || 'other';
+            const subjectKey = inferSubjectFromName(subject?.name ?? subjectName ?? null) || 'other';
             logger.debug({ subjectId, subjectName: subject?.name, subjectKey }, 'Subject inferred');
 
             // 处理每个标签
@@ -150,6 +150,7 @@ export async function POST(req: Request) {
                     let tag = await tx.knowledgeTag.findFirst({
                         where: {
                             name: tagName,
+                            subject: subjectKey,
                             OR: [
                                 { isSystem: true },
                                 { userId: user.id },

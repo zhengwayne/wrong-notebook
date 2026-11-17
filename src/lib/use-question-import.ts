@@ -119,6 +119,11 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
 
     /** 多题始终进入确认页；单题仍遵循「导入前人工确认」偏好 */
     const handleParsed = async (data: ParsedQuestion | AnalyzeResponse, imageUrl: string | null) => {
+        if ('failedCount' in data && typeof data.failedCount === 'number' && data.failedCount > 0) {
+            toast.warning(
+                (t.importFlow?.partialParseFailed || '{count} question(s) could not be parsed completely and were skipped.').replace('{count}', String(data.failedCount))
+            );
+        }
         const items = itemsFromAnalyze(data);
         if (items.length > 1) {
             setCurrentImage(imageUrl);

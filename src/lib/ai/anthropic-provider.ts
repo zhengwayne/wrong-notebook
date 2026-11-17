@@ -226,8 +226,9 @@ export class AnthropicProvider implements AIService {
                 { type: 'text', text: systemPrompt.user },
             ], initialMax);
             logger.box('🤖 AI Raw Response', text);
-            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
-            const parsedResult = toAnalyzeImageResult(items);
+            const parsed = parseAnalyzeResponse(text);
+            const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
             return parsedResult;
         } catch (error) {

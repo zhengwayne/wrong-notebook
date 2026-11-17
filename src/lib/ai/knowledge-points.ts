@@ -1,9 +1,17 @@
+import { SUBJECT_DISPLAY_NAMES } from '@/lib/notebook-scope';
 import { MAX_KNOWLEDGE_TAGS } from './schema';
 import type { PromptOptions } from './prompts';
 
 const SUBJECT_TAG_FIELDS = {
-    数学: 'prefetchedMathTags', 物理: 'prefetchedPhysicsTags', 化学: 'prefetchedChemistryTags',
-    生物: 'prefetchedBiologyTags', 英语: 'prefetchedEnglishTags',
+    [SUBJECT_DISPLAY_NAMES.math]: 'prefetchedMathTags',
+    [SUBJECT_DISPLAY_NAMES.physics]: 'prefetchedPhysicsTags',
+    [SUBJECT_DISPLAY_NAMES.chemistry]: 'prefetchedChemistryTags',
+    [SUBJECT_DISPLAY_NAMES.biology]: 'prefetchedBiologyTags',
+    [SUBJECT_DISPLAY_NAMES.english]: 'prefetchedEnglishTags',
+    [SUBJECT_DISPLAY_NAMES.chinese]: 'prefetchedChineseTags',
+    [SUBJECT_DISPLAY_NAMES.history]: 'prefetchedHistoryTags',
+    [SUBJECT_DISPLAY_NAMES.geography]: 'prefetchedGeographyTags',
+    [SUBJECT_DISPLAY_NAMES.politics]: 'prefetchedPoliticsTags',
 } as const;
 
 /** 有候选集合时只采用集合内的标签；未提供集合时仍去重并限制数量。 */

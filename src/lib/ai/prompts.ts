@@ -533,21 +533,26 @@ export function generateAnalyzePrompt(
 ): string {
   const langInstruction = generateFieldLanguageInstruction(language);
 
-  // 获取各学科标签（优先使用预获取的数据库标签）
-  const mathTags = getMathTagsForGrade(grade || null, options?.prefetchedMathTags);
-  const mathTagsString = mathTags.length > 0 ? mathTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+  const SINGLE_SUBJECT_TAGS: ReadonlyArray<{
+    subject: string;
+    label: string;
+    field: keyof PromptOptions;
+    note?: string;
+  }> = [
+    { subject: '数学', label: '数学标签 (Math Tags)', field: 'prefetchedMathTags', note: '（人教版课内知识点，小学另含高思竞赛数学课外拓展知识点）' },
+    { subject: '物理', label: '物理标签 (Physics Tags)', field: 'prefetchedPhysicsTags' },
+    { subject: '化学', label: '化学标签 (Chemistry Tags)', field: 'prefetchedChemistryTags' },
+    { subject: '生物', label: '生物标签 (Biology Tags)', field: 'prefetchedBiologyTags' },
+    { subject: '英语', label: '英语标签 (English Tags)', field: 'prefetchedEnglishTags' },
+    { subject: '语文', label: '语文标签 (Chinese Tags)', field: 'prefetchedChineseTags' },
+    { subject: '历史', label: '历史标签 (History Tags)', field: 'prefetchedHistoryTags' },
+    { subject: '地理', label: '地理标签 (Geography Tags)', field: 'prefetchedGeographyTags' },
+    { subject: '政治', label: '政治标签 (Politics Tags)', field: 'prefetchedPoliticsTags' },
+  ];
 
-  const physicsTags = options?.prefetchedPhysicsTags || [];
-  const physicsTagsString = physicsTags.length > 0 ? physicsTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const chemistryTags = options?.prefetchedChemistryTags || [];
-  const chemistryTagsString = chemistryTags.length > 0 ? chemistryTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const biologyTags = options?.prefetchedBiologyTags || [];
-  const biologyTagsString = biologyTags.length > 0 ? biologyTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const englishTags = options?.prefetchedEnglishTags || [];
-  const englishTagsString = englishTags.length > 0 ? englishTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+  const matchedSubject = !options?.candidateTags && subject
+    ? SINGLE_SUBJECT_TAGS.find((entry) => entry.subject === subject)
+    : undefined;
 
   // 根据科目决定显示哪些标签（节省 token，提高准确性）
   let tagsSection = "";
@@ -561,55 +566,28 @@ ${tags.length > 0 ? tags.map(tag => `"${tag}"`).join(", ") : '（无可用标签
 **重要提示**：
 - 必须从上述列表中选择精确匹配的标签，不要改写、不要自创
 - 每题最多 5 个标签`;
-  } else if (subject === '数学') {
-    tagsSection = `**数学标签 (Math Tags):**
-使用课程大纲（人教版课内知识点，小学另含高思竞赛数学课外拓展知识点）中的**精确标签名称**，可选标签如下：
-${mathTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '物理') {
-    tagsSection = `**物理标签 (Physics Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${physicsTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '化学') {
-    tagsSection = `**化学标签 (Chemistry Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${chemistryTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '生物') {
-    tagsSection = `**生物标签 (Biology Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${biologyTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '英语') {
-    tagsSection = `**英语标签 (English Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${englishTagsString}
+  } else if (matchedSubject) {
+    const rawTags = matchedSubject.subject === '数学'
+      ? getMathTagsForGrade(grade || null, options?.prefetchedMathTags)
+      : ((options?.[matchedSubject.field] as string[] | undefined) || []);
+    const tagsString = rawTags.length > 0 ? rawTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+    tagsSection = `**${matchedSubject.label}:**
+使用课程大纲${matchedSubject.note || ''}中的**精确标签名称**，可选标签如下：
+${tagsString}
 
 **重要提示**：
 - 必须从上述列表中选择精确匹配的标签
 - 每题最多 5 个标签`;
   } else {
     // 未知科目：只列出本次传入的学科标签（调用方已按年级筛选）
+    const mathTags = getMathTagsForGrade(grade || null, options?.prefetchedMathTags);
     const named = [
       ['数学', mathTags],
       ['语文', options?.prefetchedChineseTags || []],
-      ['英语', englishTags],
-      ['物理', physicsTags],
-      ['化学', chemistryTags],
-      ['生物', biologyTags],
+      ['英语', options?.prefetchedEnglishTags || []],
+      ['物理', options?.prefetchedPhysicsTags || []],
+      ['化学', options?.prefetchedChemistryTags || []],
+      ['生物', options?.prefetchedBiologyTags || []],
       ['历史', options?.prefetchedHistoryTags || []],
       ['地理', options?.prefetchedGeographyTags || []],
       ['政治', options?.prefetchedPoliticsTags || []],

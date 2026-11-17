@@ -252,8 +252,9 @@ export class GeminiProvider implements AIService {
             logger.box('🤖 AI Raw Response', text);
 
             if (!text) throw new Error(response.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? AI_OUTPUT_TRUNCATED : "Empty response from AI");
-            const items = parseAnalyzeResponse(text).map((item) => normalizeAiQuestionTags(item, tagOptions));
-            const parsedResult = toAnalyzeImageResult(items);
+            const parsed = parseAnalyzeResponse(text);
+            const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 

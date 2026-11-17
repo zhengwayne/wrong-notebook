@@ -1490,6 +1490,7 @@ export const translations = {
             statusUnknown: "Unchecked",
             emptySelection: "Select at least one question to save.",
             savedCount: "Saved {count} questions.",
+            partialParseFailed: "{count} question(s) could not be parsed completely and were skipped. Please check the original image.",
         },
         questionSimilarity: {
             title: "Compare similarity",
@@ -3488,6 +3489,7 @@ export const translations = {
             statusUnknown: "未判断",
             emptySelection: "请至少勾选一道题再保存。",
             savedCount: "已保存 {count} 道错题。",
+            partialParseFailed: "有 {count} 道题识别格式不完整，已跳过，请对照原图核对。",
         },
         questionSimilarity: {
             title: "比较相似度",

@@ -216,7 +216,7 @@ async function resolveStudentNotebook(tx: Prisma.TransactionClient, userId: stri
 async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: string[], subjectKey: string) {
     const ids: { id: string }[] = [];
     for (const name of names) {
-        const existing = await tx.knowledgeTag.findFirst({ where: { name, OR: [{ isSystem: true }, { userId }] }, select: { id: true } });
+        const existing = await tx.knowledgeTag.findFirst({ where: { name, subject: subjectKey, OR: [{ isSystem: true }, { userId }] }, select: { id: true } });
         const tag = existing || await tx.knowledgeTag.create({ data: { name, subject: subjectKey, isSystem: false, userId }, select: { id: true } });
         ids.push({ id: tag.id });
     }

@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const warnMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/logger', () => ({
+    createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: warnMock, error: vi.fn() }),
+}));
+
 import {
     defaultSelectedAnalyzeItems,
     normalizeQuestionText,
@@ -22,8 +28,12 @@ ${extras}
 </item>`;
 
 describe('parseAnalyzeResponse', () => {
+    beforeEach(() => {
+        warnMock.mockClear();
+    });
+
     it('没有 item 包裹时按单题解析，保持旧行为', () => {
-        const items = parseAnalyzeResponse(`
+        const { items, failedCount } = parseAnalyzeResponse(`
 <question_text>1+1</question_text>
 <answer_text>2</answer_text>
 <analysis>加法。</analysis>
@@ -33,10 +43,12 @@ describe('parseAnalyzeResponse', () => {
 <subject>数学</subject>
 <knowledge_points>加法</knowledge_points>
 `);
+        expect(failedCount).toBe(0);
         expect(items).toHaveLength(1);
         expect(items[0].questionText).toBe('1+1');
         expect(items[0].wrongAnswerText).toBe('3');
         expect(toAnalyzeImageResult(items).items).toHaveLength(1);
+        expect(toAnalyzeImageResult(items).failedCount).toBeUndefined();
     });
 
     it('把一页中的多道错题拆成多条，字段互不串题', () => {
@@ -51,7 +63,8 @@ describe('parseAnalyzeResponse', () => {
 <subject>数学</subject>
 <knowledge_points>有余数的除法</knowledge_points>
 </item>`;
-        const items = parseAnalyzeResponse(xml);
+        const { items, failedCount } = parseAnalyzeResponse(xml);
+        expect(failedCount).toBe(0);
         expect(splitAnalyzeItems(xml)).toHaveLength(2);
         expect(items).toHaveLength(2);
         expect(items[0].questionText).toContain('540');
@@ -61,8 +74,19 @@ describe('parseAnalyzeResponse', () => {
         expect(items[1].knowledgePoints).toEqual(['有余数的除法']);
     });
 
+    it('多题中坏掉一题时返回其余题目、failedCount 为 1 并记录 warn 日志', () => {
+        const brokenItem = '<item><question_text>缺失答案的题目</question_text><analysis>只有解析</analysis></item>';
+        const xml = `${item(1)}\n${brokenItem}\n${item(3)}`;
+        const { items, failedCount } = parseAnalyzeResponse(xml);
+        expect(items).toHaveLength(2);
+        expect(failedCount).toBe(1);
+        expect(toAnalyzeImageResult(items, failedCount).failedCount).toBe(1);
+        expect(warnMock).toHaveBeenCalledTimes(1);
+        expect(warnMock).toHaveBeenCalledWith(expect.objectContaining({ index: 1, totalChunks: 3 }), expect.any(String));
+    });
+
     it('默认只勾选看得出错的题目', () => {
-        const items = parseAnalyzeResponse(`${item(1)}
+        const { items } = parseAnalyzeResponse(`${item(1)}
 <item>
 <question_text>空白题</question_text>
 <answer_text>1</answer_text>
@@ -98,7 +122,7 @@ describe('normalizeQuestionText', () => {
     });
 
     it('经 XML 解析后的题干也会做同样的整理', () => {
-        const items = parseAnalyzeResponse(`
+        const { items } = parseAnalyzeResponse(`
 <item>
 <question_text>I.Sounds A 级：Read and judge (判断) ( ____
 )2.The birds l<u>ea</u>ves.</question_text>

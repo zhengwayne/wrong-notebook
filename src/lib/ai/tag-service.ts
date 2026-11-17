@@ -191,13 +191,13 @@ export async function getNotebookCandidateTags(scope: NotebookScope): Promise<Ca
 
 
 /**
- * 按年级给出合理学科，避免把高中物理/化学/生物标签送给小学识别请求。
- * primary (1-6): 数学、语文、英语；初高中再纳入理化生与政史地。
+ * 按年级给出合理学科：小学 (1-6) 保留数学、语文、英语；
+ * 初高中 (7-12) 或未设定年级（null/undefined）返回全部 9 科，避免未设年级时漏掉理化生与政史地。
  */
 export function plausibleSubjectsForGrade(grade: GradeLevel | null | undefined): NotebookSubject[] {
     const primary: NotebookSubject[] = ['math', 'chinese', 'english'];
     const secondary: NotebookSubject[] = [...primary, 'physics', 'chemistry', 'biology', 'history', 'geography', 'politics'];
-    if (!grade || grade <= 6) return primary;
+    if (grade != null && grade <= 6) return primary;
     return secondary;
 }
 

@@ -131,7 +131,7 @@ async function handlePost(req: Request) {
                 ? { ...item, gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: item.gradeSemester }, getAppTimeZone()) }
                 : item
         ));
-        return NextResponse.json(toAnalyzeImageResult(items));
+        return NextResponse.json(toAnalyzeImageResult(items, analysisResult.failedCount));
     } catch (error) {
         const message = getErrorMessage(error);
         logger.error({

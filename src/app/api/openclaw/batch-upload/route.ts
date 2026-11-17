@@ -150,13 +150,14 @@ async function createErrorItem(
         const tagConnections: { id: string }[] = [];
 
         const subject = subjectId ? await tx.subject.findUnique({ where: { id: subjectId } }) : null;
-        const subjectKey = subject ? inferSubjectFromName(subject.name) : null;
+        const subjectKey = (subject ? inferSubjectFromName(subject.name) : null) || (parsedData?.subject ? inferSubjectFromName(parsedData.subject) : null) || 'other';
 
         for (const tagName of tagNames) {
             try {
                 let tag = await tx.knowledgeTag.findFirst({
                     where: {
                         name: tagName,
+                        subject: subjectKey,
                         OR: [
                             { isSystem: true },
                             { userId: userId },
@@ -165,14 +166,14 @@ async function createErrorItem(
                 });
 
                 if (!tag) {
-                    const parentId = finalGradeSemester && subjectKey
+                    const parentId = finalGradeSemester && subjectKey !== 'other'
                         ? await findParentTagIdForGrade(finalGradeSemester, subjectKey, tx)
                         : null;
 
                     tag = await tx.knowledgeTag.create({
                         data: {
                             name: tagName,
-                            subject: subjectKey || 'other',
+                            subject: subjectKey,
                             isSystem: false,
                             userId: userId,
                             parentId: parentId || undefined,

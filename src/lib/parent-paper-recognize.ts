@@ -281,7 +281,7 @@ async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: 
         const trimmed = name.trim();
         if (!trimmed) continue;
         const existing = await tx.knowledgeTag.findFirst({
-            where: { name: trimmed, OR: [{ isSystem: true }, { userId }] },
+            where: { name: trimmed, subject: subjectKey, OR: [{ isSystem: true }, { userId }] },
             select: { id: true },
         });
         const tag = existing || await tx.knowledgeTag.create({

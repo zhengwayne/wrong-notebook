@@ -3,8 +3,12 @@
  */
 import { parseRecognizedGrade } from "../question-grade";
 import { normalizeMistakeStatusForSave } from "../mistake-status";
+import { createLogger } from "../logger";
+import { getErrorMessage } from "../error-message";
 import { parseDifficultyStars, parseFigure } from "./schema";
 import { safeParseParsedQuestion, type ParsedQuestionFromSchema } from "./schema";
+
+const logger = createLogger("ai:parse-analyze");
 
 export function extractXmlTag(text: string, tagName: string): string | null {
     const startTag = `<${tagName}>`;
@@ -96,25 +100,33 @@ export function parseOneAnalyzeItem(text: string): ParsedQuestionFromSchema {
     return validation.success ? validation.data : result;
 }
 
-export function parseAnalyzeResponse(text: string): ParsedQuestionFromSchema[] {
+export interface ParseAnalyzeResult {
+    items: ParsedQuestionFromSchema[];
+    failedCount: number;
+}
+
+export function parseAnalyzeResponse(text: string): ParseAnalyzeResult {
     const items: ParsedQuestionFromSchema[] = [];
-    for (const chunk of splitAnalyzeItems(text)) {
+    let failedCount = 0;
+    const chunks = splitAnalyzeItems(text);
+    for (const [index, chunk] of chunks.entries()) {
         try {
             items.push(parseOneAnalyzeItem(chunk));
-        } catch {
-            // 某一条缺字段时跳过，只要还有能解析的题
+        } catch (error) {
+            failedCount += 1;
+            logger.warn({ index, totalChunks: chunks.length, chunkLength: chunk.length, error: getErrorMessage(error) }, "解析单道识别题目失败，已跳过");
         }
     }
     if (items.length === 0) {
         throw new Error("Invalid AI response: Missing critical XML tags (<question_text>, <answer_text>, or <analysis>)");
     }
-    return items;
+    return { items, failedCount };
 }
 
-export type AnalyzeImageResult = ParsedQuestionFromSchema & { items: ParsedQuestionFromSchema[] };
+export type AnalyzeImageResult = ParsedQuestionFromSchema & { items: ParsedQuestionFromSchema[]; failedCount?: number };
 
-export function toAnalyzeImageResult(items: ParsedQuestionFromSchema[]): AnalyzeImageResult {
-    return { ...items[0], items };
+export function toAnalyzeImageResult(items: ParsedQuestionFromSchema[], failedCount = 0): AnalyzeImageResult {
+    return failedCount > 0 ? { ...items[0], items, failedCount } : { ...items[0], items };
 }
 
 /** 默认勾选：只保存 visibly 做错的题 */

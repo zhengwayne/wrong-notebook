@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     saveParsedQuestion: vi.fn(),
     toastError: vi.fn(),
     toastSuccess: vi.fn(),
+    toastWarning: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
@@ -25,7 +26,7 @@ vi.mock('@/lib/question-import', () => ({
     saveParsedQuestion: mocks.saveParsedQuestion,
 }));
 vi.mock('@/lib/image-utils', () => ({ processImageFile: vi.fn(async () => 'data:image/jpeg;base64,AAAA') }));
-vi.mock('@/lib/feedback', () => ({ toast: { error: mocks.toastError, success: mocks.toastSuccess } }));
+vi.mock('@/lib/feedback', () => ({ toast: { error: mocks.toastError, success: mocks.toastSuccess, warning: mocks.toastWarning } }));
 vi.mock('@/lib/frontend-logger', () => ({ frontendLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const parsed = { questionText: '1 + 1 = ?', answerText: '2', analysis: '加法', knowledgePoints: ['加法'], subject: '数学', requiresImage: false };
@@ -130,5 +131,13 @@ describe('题目导入流程', () => {
         expect(mocks.toastError).toHaveBeenCalled();
         expect(flow.analysisStep).toBe('idle');
         expect(mocks.saveParsedQuestion).not.toHaveBeenCalled();
+    });
+
+    it('部分题目解析失败时弹出警告提示', async () => {
+        mocks.post.mockResolvedValueOnce({ ...parsed, items: [parsed], failedCount: 1 });
+        await render();
+        await act(async () => flow.cropComplete(new Blob(['x'])));
+        await act(async () => {});
+        expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
     });
 });
