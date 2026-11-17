@@ -198,7 +198,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 ### OPT-11 · Backup v3 (split into 11a and 11b)
 
-**OPT-11a · Streaming ZIP backup v3 (P1, Batch D)**
+**OPT-11a · Streaming ZIP backup v3 (P1, Batch D, Done: `01fec89`, `b02986f`)**
 
 - Reuse the existing `fflate` dependency to export a streaming `.zip`: `manifest.json` (`formatVersion: 3`, per-entity counts, SHA-256 digests) + `data/*.ndjson` + `media/<sha256>`. Export splits `data:` URLs into media files directly, **with no dependency on an Asset table**.
 - Add `Learner`, `ParentPaper*`, `Grading*`, `VariantRun.stages`, `KnowledgeMastery` and `LearningPath*`, and fix the hard-coded `VariantRun.userId` in `importAll` (R05). Recomputable derived state (mastery, memory model) is classified separately and can be rebuilt after import.
@@ -229,13 +229,13 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: item creation, duplicate hits and practice answers no longer call AI implicitly; same-millisecond evidence sorts deterministically; learning-path tests pass under the new contract; a cached `GET /api/learning-path` performs no database writes; `listClassPaths` issues at least 50% fewer SQL queries for 30 students; today's reviews are correct under both `algorithmVersion` values. Depends on OPT-07.
 
-### OPT-13 · Android `sharp` and multi-platform smoke tests (P1, Batch D)
+### OPT-13 · Android `sharp` and multi-platform smoke tests (P1, Batch D, Done: `76aac87`)
 
-1. **Verify `@img/sharp-wasm32` first** (about 0.5 person-days). Android's Node runtime is based on bionic and cannot load the glibc linux-arm64 prebuilt package, while the wasm build is platform-independent. Check whether it loads, whether exam-paper cropping and auto-trim run in acceptable time, and how much the APK grows.
-2. If it works: keep a single server-side cropping path, drop `@img/sharp-linux-x64` from `android-runtime.mjs` and bundle the wasm package instead. If not: drop the x64 binary, crop with frontend Canvas on the standalone build, and mark both paths clearly in the code.
-3. Extend `package-launcher.test.ts` to cover first-run `seed.db` copying, incremental migrations, the pre-migration backup and alias resolution. In `packages.yml`, add a real `/api/health` smoke test on the unpacked desktop build, simulated tests for the fnOS scripts, and structure assertions on the Android `server.zip`.
+1. **`@img/sharp-wasm32` verified**: tested in a Node subprocess blocking all non-`wasm32` native `@img/sharp-*` addons. `@img/sharp-wasm32` (`0.35.5` + `@emnapi/runtime` `1.11.3`) cold-loads in ~93ms, `normalize` takes ~51ms, `autoCrop` ~160ms, and single-region crop ~11ms on a synthetic 1800×2400 exam sheet, adding ~8.9MB for `node_modules/@img/sharp-wasm32`.
+2. Single server-side cropping path preserved: `prepareAndroidServerTree` in `android-runtime.mjs` strips all platform `@img/*` packages except `colour` and `sharp-wasm32`, bundles `@img/sharp-wasm32` and `@emnapi/*`, and avoids duplicating crop logic in frontend Canvas.
+3. Extended `package-launcher.test.ts` (first-run `seed.db` copy, incremental migrations, pre-migration backup, and `installExternalAliasResolver`), added `android-sharp-runtime.test.ts`, and added unpacked desktop `/api/health` startup, fnOS install/upgrade backup lifecycle, and Android `server.zip` checks in `.github/workflows/packages.yml`.
 
-**Acceptance**: `server.zip` contains no `linux-x64` native binary; the standalone Android build no longer saves the whole page after cropping a question; the desktop build actually starts and `/api/health` returns `ok`; the wasm verification outcome is recorded here.
+**Acceptance**: `server.zip` contains no native binaries (`sharp-linux-*` etc.); the standalone Android build runs server-side cropping via `sharp-wasm32` instead of saving whole pages; the unpacked desktop build starts and `/api/health` returns `ok`; wasm verification results recorded here.
 
 ### OPT-14 · Lighter first load on the frontend (P2, Batch E)
 
@@ -321,7 +321,7 @@ The users are mostly primary and secondary school students. Today the server sto
 | Item | Design | Rating | Batch |
 | --- | --- | --- | --- |
 | Server-side image normalization | Every entry point (recognition, Openclaw, parent exam papers, teacher grading) goes through `normalizeImage()`: decode with sharp, rotate by orientation, **strip all metadata**, cap the longest edge, re-encode; also check the real MIME type and a pixel limit (OPT-02 only limits bytes). Frontend compression is an optimization; the server is the security boundary. The `originalImageUrl` protocol check is done here too | P1 | B (Done: `b2d6a3f`) |
-| Backup encryption | ZIP v3 supports optional passphrase encryption (AES-256-GCM with a key derived from the passphrase by scrypt), with the encryption parameters stored in plain text in the manifest; unencrypted exports show a notice | P2 | D |
+| Backup encryption | ZIP v3 supports optional passphrase encryption (AES-256-GCM with a key derived from the passphrase by scrypt), with the encryption parameters stored in plain text in the manifest; unencrypted exports show a notice | P2 | D (Done: `9cbee2b`) |
 | Self-service deletion | `DELETE /api/user`: requires re-entering the password, offers an export first, then deletes all data in one transaction (relying on OPT-08's foreign keys) and writes one audit record with no personal data; admin user deletion reuses the same service | P2 | G |
 | Disclosure of data flows | The settings page and `doc/PRIVACY*.md` state that images are sent to the currently configured AI provider, name it, and mention that a local model endpoint can be used instead | P2 | G |
 
@@ -340,7 +340,7 @@ Each guardrail goes into the same commit as the problem it prevents.
 | ESLint transaction rule | Forbid referencing the global `prisma` inside a `$transaction` callback | Missing `tx` from OPT-06 | A (Done: `150ac2f`) |
 | Two-tenant test helper | `withTwoTenants()` creates two accounts, two children and same-name students, and asserts that cross-scope access returns 404 | R03, R07, IDOR | C (Done: `bea3a21`) |
 | Backup coverage test | Enumerate every model through Prisma DMMF; each must appear on either the "exported" or the "deliberately not exported" list | R05 regressions | C (Done: `f6bb37f`) |
-| system-reset coverage test | Also DMMF-based: assert that all business tables are empty after a reset | Missed new tables | D |
+| system-reset coverage test | Also DMMF-based: assert that all business tables are empty after a reset | Missed new tables | D (Done: `01fec89`) |
 | Route inventory test | Scan `src/app/api/**/route.ts`, require every exported handler to be wrapped by `defineApiRoute`, and compare with an `api-auth-inventory.json` snapshot; new public routes must be registered explicitly | Bypassed auth | F |
 | ESLint session rule | Forbid importing `getServerSession` directly in `src/app/api/**` | R01 regressions | F |
 
@@ -368,7 +368,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | **Batch A Never lose data** (Done: `150ac2f`, `d45ccda`, `1c0ab8b`, `5d9e4e6`) | Families have no ops skills, so recovery comes first | OPT-22 daily snapshots; OPT-08 pre-migration backup and startup protection; OPT-06; OPT-05 | 4–6 | Every later migration relies on this layer |
 | **Batch B AI quality** (Done: `3a203ae`, `a5fbbb4`, `448ffd9`, `b2d6a3f`, `d67925e`) | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
 | **Batch C Isolation between children** (Done: `0812330`, `bea3a21`, `f6bb37f`) | Correctness for families with several children | OPT-08 foreign-key migration (read-only audit and FK table rebuild); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
-| **Batch D Portable backup** | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm first); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
+| **Batch D Portable backup** (Done: `01fec89`, `b02986f`, `9cbee2b`, `76aac87`) | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm verified); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
 | **Batch E Learning effect and experience** | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |
 | **Batch F Multiple accounts and hardening** | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
 | **Batch G On demand** | Long-term quality | OPT-16; OPT-17; OPT-11b (depending on benchmarks); OPT-20 self-service deletion and data-flow disclosure; OPT-18 documentation debt | TBD | — |
@@ -404,7 +404,7 @@ Batches B and C have no hard dependency on each other and can run in parallel wi
 **Not re-measured during the merge**
 
 - Coverage figures, test file counts (the 35 / 151 split), jsdom setup counts, component line counts and similar numbers come from the assessment plan's measurements; use fresh measurements at implementation time.
-- The speed and size impact of `sharp-wasm32` on Android devices is not yet verified (step one of OPT-13).
+- `@img/sharp-wasm32` (`0.35.5` + `@emnapi/runtime`) loading, normalization, auto-trim, and single-region crop timing and ~8.9MB package footprint have been verified in Node with native `@img/sharp-*` addons blocked; on-device Android wall-clock speed can be re-checked against preview builds.
 - WAL behavior on network volumes (NFS/CIFS) was not tested; the default for `SQLITE_JOURNAL_MODE` may need adjusting based on feedback from NAS users.
 
 **Explicitly deferred**

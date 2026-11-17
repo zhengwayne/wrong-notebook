@@ -198,7 +198,7 @@
 
 ### OPT-11 · 备份 v3（拆为 11a 与 11b）
 
-**OPT-11a · 流式 ZIP 备份 v3（P1，Batch D）**
+**OPT-11a · 流式 ZIP 备份 v3（P1，Batch D，已完成：`01fec89`、`b02986f`）**
 
 - 复用已有依赖 `fflate`，导出为流式 `.zip`：`manifest.json`（`formatVersion: 3`、各实体计数、SHA-256 摘要）+ `data/*.ndjson` + `media/<sha256>`。导出时直接把 `data:` URL 拆成媒体文件，**不依赖 Asset 表**。
 - 补全 `Learner`、`ParentPaper*`、`Grading*`、`VariantRun.stages`、`KnowledgeMastery`、`LearningPath*`，修正 `importAll` 中硬编码的 `VariantRun.userId`（R05）。可重算的派生状态（掌握度、记忆模型）单独归类，导入后可以重建。
@@ -229,13 +229,13 @@
 
 **验收**：录题、判重命中和作答练习不再隐式调用 AI；同毫秒证据排序确定；学习路径测试按新契约通过；`GET /api/learning-path` 命中缓存时数据库零写入；`listClassPaths` 30 名学生时 SQL 查询数下降至少 50%；`algorithmVersion` 两种取值下“今日待复习”都正确。依赖 OPT-07。
 
-### OPT-13 · 安卓 `sharp` 与多端冒烟（P1，Batch D）
+### OPT-13 · 安卓 `sharp` 与多端冒烟（P1，Batch D，已完成：`76aac87`）
 
-1. **先验证 `@img/sharp-wasm32`**（约 0.5 人日）。安卓的 Node 运行时基于 bionic，无法加载 glibc 版的 linux-arm64 预编译包，而 wasm 版与平台无关。验证内容：能否加载、试卷裁剪和自动裁边的耗时是否可接受、APK 体积变化。
-2. 可行：保留唯一的服务端裁剪逻辑，`android-runtime.mjs` 打包时剔除 `@img/sharp-linux-x64`，改带 wasm 包。不可行：剔除 x64 二进制，单机版改由前端 Canvas 裁剪，并在代码中明确标注两条路径。
-3. 扩充 `package-launcher.test.ts`：首次复制 `seed.db`、增量迁移、迁移前备份、别名解析。`packages.yml` 中补充桌面版解包后的真实 `/api/health` 冒烟、fnOS 脚本模拟测试和安卓 `server.zip` 结构断言。
+1. **已完成 `@img/sharp-wasm32` 验证**：在阻断一切非 `wasm32` 原生 `@img/sharp-*` 模块的 Node 环境中实测，`@img/sharp-wasm32`（`0.35.5` + `@emnapi/runtime` `1.11.3`）冷加载约 93ms，1800×2400 模拟试卷 `normalize` 约 51ms、`autoCrop` 约 160ms、单题裁剪约 11ms，`node_modules/@img/sharp-wasm32` 体积约 8.9MB，可稳定运行。
+2. 决定保留唯一的服务端裁剪路径：`android-runtime.mjs` 导出 `prepareAndroidServerTree` 清理全部非 `colour`/`sharp-wasm32` 的平台 `@img/*` 原生包，并补齐 `@img/sharp-wasm32` 及 `@emnapi/runtime` 等纯 JS/WASM 运行时，不再引入前端 Canvas 第二套裁剪逻辑。
+3. 已扩充 `package-launcher.test.ts`（首次复制 `seed.db`、增量迁移与迁移前备份、`installExternalAliasResolver` 别名解析）并新建 `android-sharp-runtime.test.ts`；`.github/workflows/packages.yml` 已补充桌面解包 `/api/health` 启动冒烟、fnOS 生命周期及升级备份冒烟、安卓 `server.zip` 结构断言。
 
-**验收**：`server.zip` 中没有 `linux-x64` 原生二进制；安卓单机版框选切题后不再保存整页原图；桌面产物实际启动后 `/api/health` 返回 `ok`；wasm 验证结论写入本条。
+**验收**：`server.zip` 中无 `linux-x64` 等原生二进制；安卓单机版框选切题与自动裁边由 `sharp-wasm32` 正常执行且不再回退保存整页原图；桌面产物启动后 `/api/health` 返回 `ok`。
 
 ### OPT-14 · 前端首屏减负（P2，Batch E）
 
@@ -321,7 +321,7 @@ eval/
 | 项 | 设计 | 定级 | 批次 |
 | --- | --- | --- | --- |
 | 服务端图片规范化 | 所有入口（识别、Openclaw、家长试卷、教师批改）统一经过 `normalizeImage()`：sharp 解码，按方向旋转，**去除全部元数据**，限制最长边，重新编码；同时检查真实 MIME 和像素上限（OPT-02 只限制字节数）。前端压缩只是优化，服务端处理才是安全边界。`originalImageUrl` 协议校验一起完成 | P1 | B（已完成：`b2d6a3f`） |
-| 备份加密 | ZIP v3 支持可选口令加密（AES-256-GCM，用 scrypt 从口令派生密钥），manifest 中明文记录加密参数；未加密导出时给出提示 | P2 | D |
+| 备份加密 | ZIP v3 支持可选口令加密（AES-256-GCM，用 scrypt 从口令派生密钥），manifest 中明文记录加密参数；未加密导出时给出提示 | P2 | D（已完成：`9cbee2b`） |
 | 自助删除 | `DELETE /api/user`：要求重新输入密码，先引导导出，然后在一个事务中删除全部数据（依赖 OPT-08 外键），只写一条不含个人信息的审计记录；管理员删除用户复用同一服务 | P2 | G |
 | 数据去向告知 | 在设置页和 `doc/PRIVACY*.md` 写明图片会发送给当前配置的 AI 提供商，列出是哪一家，并提示可以改用本地模型端点 | P2 | G |
 
@@ -340,7 +340,7 @@ eval/
 | ESLint 事务规则 | 禁止在 `$transaction` 回调中引用全局 `prisma` | OPT-06 漏传 `tx` | A（已完成：`150ac2f`） |
 | 双租户测试工具 | `withTwoTenants()` 自动创建两个账户、两个孩子和同名学生，断言跨作用域访问返回 404 | R03、R07、越权 | C（已完成：`bea3a21`） |
 | 备份覆盖测试 | 通过 Prisma DMMF 枚举全部模型，每个模型必须出现在“导出”或“明确不导出”清单中 | R05 回退 | C（已完成：`f6bb37f`） |
-| system-reset 覆盖测试 | 同样基于 DMMF，断言重置后所有业务表为空 | 漏删新表 | D |
+| system-reset 覆盖测试 | 同样基于 DMMF，断言重置后所有业务表为空 | 漏删新表 | D（已完成：`01fec89`） |
 | 路由清单测试 | 扫描 `src/app/api/**/route.ts`，要求导出的处理函数都由 `defineApiRoute` 包装，并与 `api-auth-inventory.json` 快照对比；新增公开路由必须显式登记 | 绕过鉴权 | F |
 | ESLint 会话规则 | `src/app/api/**` 禁止直接导入 `getServerSession` | R01 回退 | F |
 
@@ -368,7 +368,7 @@ OPT-08 只在迁移前备份一次。补充：
 | **Batch A 数据不丢**（已完成：`150ac2f`、`d45ccda`、`1c0ab8b`、`5d9e4e6`） | 家庭用户没有运维能力，先保证可恢复 | OPT-22 每日快照；OPT-08 迁移前备份与启动保护；OPT-06；OPT-05 | 4–6 | 后续所有迁移都依赖这层保障 |
 | **Batch B AI 质量**（已完成：`3a203ae`、`a5fbbb4`、`448ffd9`、`b2d6a3f`、`d67925e`） | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
 | **Batch C 孩子之间隔离**（已完成：`0812330`、`bea3a21`、`f6bb37f`） | 多孩子家庭的正确性 | OPT-08 外键迁移（只读审计与外键重建）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
-| **Batch D 可迁移备份** | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（先验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
+| **Batch D 可迁移备份**（已完成：`01fec89`、`b02986f`、`9cbee2b`、`76aac87`） | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（已验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
 | **Batch E 学习效果与体验** | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
 | **Batch F 多账户与加固** | 跨账户安全 | OPT-02（D1a 优先，包装器按模块迁移）；OPT-01 的 Batch F 部分；OPT-07 教师部分；OPT-10；`/api/tts/:id` 归属校验；OPT-21 路由清单与会话规则 | 8–11 | 家庭单账户下风险低；满足 3.2 节条件时整体或部分提前 |
 | **Batch G 按需** | 长期质量 | OPT-16；OPT-17；OPT-11b（视基准）；OPT-20 自助删除与数据去向告知；OPT-18 文档债收口 | 另估 | — |
@@ -404,7 +404,7 @@ Batch B 与 Batch C 之间没有强依赖，人手充足时可以并行。
 **合并时未重新测量**
 
 - 覆盖率数字、测试文件数（35 / 151 的拆分）、jsdom 创建次数、组件行数等，来自评估方案实测，实施时以当时的实测为准。
-- `sharp-wasm32` 在安卓设备上的耗时和体积影响尚未验证（OPT-13 第一步）。
+- `@img/sharp-wasm32`（`0.35.5` + `@emnapi/runtime`）已在禁用原生 `@img/sharp-*` 模块的 Node 环境中实测验证加载、规范化、自动裁边与单题裁剪耗时与约 8.9MB 包体积；安卓真机物理耗时可在发布预览包时复核。
 - 网络卷（NFS/CIFS）上 WAL 模式的实际表现没有测试，`SQLITE_JOURNAL_MODE` 的默认值可能需要按 NAS 用户的反馈调整。
 
 **明确暂缓**
