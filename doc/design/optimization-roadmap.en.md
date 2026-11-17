@@ -211,7 +211,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance (11a)**: exporting a 500MB sample database with images and importing it into an empty one adds less than 150MB to peak RSS; after a v3 round trip, entity counts, learner ownership, `stages` and media SHA-256 all match exactly; after `system-reset`, business tables and caches are empty. Depends on OPT-07 and OPT-08.
 
-### OPT-12 · Unified mastery and per-item memory model (P1 + P2 gradual rollout, Batch E; includes E3)
+### OPT-12 · Unified mastery and per-item memory model (P1 + P2 gradual rollout, Batch E; includes E3, Done: `6b0282f`, `6fa9ff1`)
 
 **12a · Knowledge-point layer (P1)**
 
@@ -237,7 +237,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: `server.zip` contains no native binaries (`sharp-linux-*` etc.); the standalone Android build runs server-side cropping via `sharp-wasm32` instead of saving whole pages; the unpacked desktop build starts and `/api/health` returns `ok`; wasm verification results recorded here.
 
-### OPT-14 · Lighter first load on the frontend (P2, Batch E)
+### OPT-14 · Lighter first load on the frontend (P2, Batch E, Done: `38483c9`)
 
 - `app-shell.tsx` lazy-loads `SettingsDialog` with `next/dynamic`; its tabs render only when active.
 - Split translations into `translations/types.ts`, `zh.ts` (bundled statically, keeping synchronous hydration through `useSyncExternalStore` with no flash), `en.ts` (loaded on demand when switching, cached before listeners are notified), and `index.ts` for tests. `api-client.ts` and `question-deduplication.ts` stop importing the whole translation table, so the English dictionary does not leak back into the first-load chunk.
@@ -245,7 +245,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: the home page client chunk contains neither admin components nor the English dictionary; switching to English requests a separate `en` chunk with no hydration errors; `translations.test.ts` passes.
 
-### OPT-15 · Client protocol, image handling and accessibility (P1, Batch E)
+### OPT-15 · Client protocol, image handling and accessibility (P1, Batch E, Done: `f4c7547`)
 
 - `api-client.ts`: read the response body once and parse by content type, handle 204 separately, and throw a protocol error on unexpected non-JSON; merge the external signal and the timeout with `AbortSignal.any`; set `Content-Type` only when there is a JSON body; handle `SESSION_REVOKED` / `ACCOUNT_DISABLED` (together with OPT-02); add the missing AI error-code mappings in `use-practice-session`.
 - `image-utils.ts`: fill a white background before converting to JPEG; check size and orientation for images under 1MB too.
@@ -369,7 +369,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | **Batch B AI quality** (Done: `3a203ae`, `a5fbbb4`, `448ffd9`, `b2d6a3f`, `d67925e`) | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
 | **Batch C Isolation between children** (Done: `0812330`, `bea3a21`, `f6bb37f`) | Correctness for families with several children | OPT-08 foreign-key migration (read-only audit and FK table rebuild); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
 | **Batch D Portable backup** (Done: `01fec89`, `b02986f`, `9cbee2b`, `76aac87`) | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm verified); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
-| **Batch E Learning effect and experience** | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |
+| **Batch E Learning effect and experience** (Done: `6b0282f`, `6fa9ff1`, `f4c7547`, `38483c9`) | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |
 | **Batch F Multiple accounts and hardening** | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
 | **Batch G On demand** | Long-term quality | OPT-16; OPT-17; OPT-11b (depending on benchmarks); OPT-20 self-service deletion and data-flow disclosure; OPT-18 documentation debt | TBD | — |
 

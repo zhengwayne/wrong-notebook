@@ -211,7 +211,7 @@
 
 **验收（11a）**：500MB 含图样本库导出、空库导入，RSS 峰值增量小于 150MB；v3 往返后全部实体数量、学习者归属、`stages`、媒体 SHA-256 完全一致；`system-reset` 后业务表和缓存为空。依赖 OPT-07、OPT-08。
 
-### OPT-12 · 掌握度统一与逐题记忆模型（P1 + P2 灰度，Batch E；含 E3）
+### OPT-12 · 掌握度统一与逐题记忆模型（P1 + P2 灰度，Batch E；含 E3，已完成：`6b0282f`、`6fa9ff1`）
 
 **12a · 知识点层（P1）**
 
@@ -237,7 +237,7 @@
 
 **验收**：`server.zip` 中无 `linux-x64` 等原生二进制；安卓单机版框选切题与自动裁边由 `sharp-wasm32` 正常执行且不再回退保存整页原图；桌面产物启动后 `/api/health` 返回 `ok`。
 
-### OPT-14 · 前端首屏减负（P2，Batch E）
+### OPT-14 · 前端首屏减负（P2，Batch E，已完成：`38483c9`）
 
 - `app-shell.tsx` 用 `next/dynamic` 懒加载 `SettingsDialog`，内部标签页按激活状态渲染。
 - 翻译拆为 `translations/types.ts`、`zh.ts`（静态内嵌，保持 `useSyncExternalStore` 同步水合，无闪烁）、`en.ts`（切换时按需加载，先写入缓存再通知），`index.ts` 供测试使用；`api-client.ts` 和 `question-deduplication.ts` 不再整体导入翻译表，避免英文词典回流首屏。
@@ -245,7 +245,7 @@
 
 **验收**：首页客户端 chunk 不含管理员组件和英文词典；切换英文时单独请求 `en` chunk 且没有水合错误；`translations.test.ts` 通过。
 
-### OPT-15 · 客户端协议、图片处理与可访问性（P1，Batch E）
+### OPT-15 · 客户端协议、图片处理与可访问性（P1，Batch E，已完成：`f4c7547`）
 
 - `api-client.ts`：响应体只读一次并按类型解析，204 单独处理，意外的非 JSON 响应抛协议错误；用 `AbortSignal.any` 合并外部信号和超时；只在有 JSON 请求体时设置 `Content-Type`；处理 `SESSION_REVOKED` / `ACCOUNT_DISABLED`（与 OPT-02 联动）；`use-practice-session` 补齐 AI 错误码映射。
 - `image-utils.ts`：转 JPEG 前先填充白色背景；小于 1MB 的图片也检查尺寸和方向。
@@ -369,7 +369,7 @@ OPT-08 只在迁移前备份一次。补充：
 | **Batch B AI 质量**（已完成：`3a203ae`、`a5fbbb4`、`448ffd9`、`b2d6a3f`、`d67925e`） | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
 | **Batch C 孩子之间隔离**（已完成：`0812330`、`bea3a21`、`f6bb37f`） | 多孩子家庭的正确性 | OPT-08 外键迁移（只读审计与外键重建）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
 | **Batch D 可迁移备份**（已完成：`01fec89`、`b02986f`、`9cbee2b`、`76aac87`） | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（已验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
-| **Batch E 学习效果与体验** | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
+| **Batch E 学习效果与体验**（已完成：`6b0282f`、`6fa9ff1`、`f4c7547`、`38483c9`） | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
 | **Batch F 多账户与加固** | 跨账户安全 | OPT-02（D1a 优先，包装器按模块迁移）；OPT-01 的 Batch F 部分；OPT-07 教师部分；OPT-10；`/api/tts/:id` 归属校验；OPT-21 路由清单与会话规则 | 8–11 | 家庭单账户下风险低；满足 3.2 节条件时整体或部分提前 |
 | **Batch G 按需** | 长期质量 | OPT-16；OPT-17；OPT-11b（视基准）；OPT-20 自助删除与数据去向告知；OPT-18 文档债收口 | 另估 | — |
 
