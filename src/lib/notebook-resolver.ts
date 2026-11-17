@@ -15,7 +15,7 @@ export async function resolveNotebookForSubject(userId: string, subjectName: str
     });
 
     const matched = notebooks.find((notebook) => notebook.name === name)
-        || notebooks.find((notebook) => notebook.name.includes(name) || name.includes(notebook.name));
+        || notebooks.find((notebook) => !notebook.name.includes('·') && (notebook.name.includes(name) || name.includes(notebook.name)));
     if (matched) {
         return matched;
     }

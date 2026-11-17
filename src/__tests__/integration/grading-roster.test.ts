@@ -12,8 +12,14 @@ const mocks = vi.hoisted(() => ({
     classFindMany: vi.fn(),
     classCreate: vi.fn(),
     studentFindMany: vi.fn(),
-    studentCreate: vi.fn(),
+    studentCreate: vi.fn(async (args?: { data?: { name?: string } }) => ({
+        id: 'stu-created',
+        name: args?.data?.name ?? '新学生',
+    })),
     studentUpdate: vi.fn(),
+    learnerFindUnique: vi.fn(),
+    learnerCreate: vi.fn(),
+    learnerUpdate: vi.fn(),
     taskFindFirst: vi.fn(),
     submissionFindFirst: vi.fn(),
     submissionFindMany: vi.fn(),
@@ -27,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 const tx = {
     gradingClass: { create: mocks.classCreate },
     gradingStudent: { create: mocks.studentCreate, update: mocks.studentUpdate },
+    learner: { findUnique: mocks.learnerFindUnique, create: mocks.learnerCreate, update: mocks.learnerUpdate },
     gradingSubmission: { create: mocks.submissionCreate, update: mocks.submissionUpdate },
     gradingResult: { deleteMany: mocks.resultDeleteMany },
 };
@@ -72,6 +79,22 @@ beforeEach(() => {
     mocks.consumeAiQuota.mockResolvedValue(null);
     mocks.classFindMany.mockResolvedValue(existingClasses);
     mocks.classCreate.mockResolvedValue({ id: 'c-new' });
+    mocks.studentCreate.mockImplementation(async (args?: { data?: { name?: string } }) => ({
+        id: 'stu-created',
+        name: args?.data?.name ?? '新学生',
+    }));
+    mocks.learnerFindUnique.mockImplementation(async ({ where }: { where?: { gradingStudentId?: string } }) => {
+        if (where?.gradingStudentId === 's1') return { id: 'ln-s1', userId: 'u1', kind: 'student', name: '张三', gradingStudentId: 's1' };
+        return null;
+    });
+    mocks.learnerCreate.mockImplementation(async ({ data }: { data: { name: string; gradingStudentId: string } }) => ({
+        id: `ln-${data.gradingStudentId}`,
+        ...data,
+    }));
+    mocks.learnerUpdate.mockImplementation(async ({ where, data }: { where: { id: string }; data: { name: string } }) => ({
+        id: where.id,
+        ...data,
+    }));
     mocks.submissionFindMany.mockResolvedValue([]);
     mocks.transaction.mockImplementation(async (arg: unknown) => (typeof arg === 'function' ? arg(tx) : arg));
     mocks.studentFindMany.mockResolvedValue([
@@ -111,13 +134,26 @@ describe('POST /api/grading/roster/import', () => {
         expect(mocks.classCreate).toHaveBeenCalledWith({ data: { userId: 'u1', name: '七年级2班' }, select: { id: true } });
         expect(mocks.studentUpdate).toHaveBeenCalledWith({ where: { id: 's1' }, data: { name: '张三丰', studentNo: '01' } });
         expect(mocks.studentUpdate).toHaveBeenCalledWith({ where: { id: 's2' }, data: { name: '李四', studentNo: '02' } });
-        expect(mocks.studentCreate).toHaveBeenCalledWith({ data: { classId: 'c-new', name: '王五', studentNo: '01', order: 0 } });
+        expect(mocks.studentCreate).toHaveBeenCalledWith({
+            data: { classId: 'c-new', name: '王五', studentNo: '01', order: 0 },
+            select: { id: true, name: true },
+        });
+        expect(mocks.learnerUpdate).toHaveBeenCalledWith({ where: { id: 'ln-s1' }, data: { name: '张三丰' } });
+        expect(mocks.learnerCreate).toHaveBeenCalledWith({
+            data: { userId: 'u1', kind: 'student', name: '李四', gradingStudentId: 's2' },
+        });
+        expect(mocks.learnerCreate).toHaveBeenCalledWith({
+            data: { userId: 'u1', kind: 'student', name: '王五', gradingStudentId: 'stu-created' },
+        });
     });
 
     it('Excel 解析出的行同样可以导入，没有班级列时用默认班级', async () => {
         const response = await importRoster(json({ rows: [['学号', '姓名'], ['3', '赵六']], defaultClassName: '七年级1班', commit: true }));
         expect(response.status).toBe(200);
-        expect(mocks.studentCreate).toHaveBeenCalledWith({ data: { classId: 'c1', name: '赵六', studentNo: '3', order: 2 } });
+        expect(mocks.studentCreate).toHaveBeenCalledWith({
+            data: { classId: 'c1', name: '赵六', studentNo: '3', order: 2 },
+            select: { id: true, name: true },
+        });
     });
 
     it('没有有效行时不能确认', async () => {

@@ -1,14 +1,13 @@
 /**
  * 老师首页：按班级汇总收卷情况与统计，并提供学生档案。
- * 统计只使用该班学生的批改结果和「学生名·学科」错题本（或已关联的 learner），
- * 不会把老师账户本人的错题曲线混进全班。
+ * 统计只使用该班学生的批改结果和已精确关联到该生 Learner ID 的错题，
+ * 不会按姓名兜底而把同名学生或老师账户本人的错题混进全班。
  */
 import { prisma } from '@/lib/prisma';
 import { getItemTags } from '@/lib/item-tags';
 import { LEARNER_KIND } from '@/lib/learners';
 import { collectEvidence, getOrReplanPath, presentPath, resolveStudent } from '@/lib/learning-path/service';
 import { buildMasteryMap } from '@/lib/learning-path/mastery-model';
-import { isStudentNotebook } from '@/lib/variant/notebooks';
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief } from '@/lib/variant/weakness-profile';
 import { getAppTimeZone } from '@/lib/config';
 import {
@@ -72,44 +71,26 @@ async function collectionFor(userId: string, classes: Awaited<ReturnType<typeof 
     );
 }
 
-async function classItemScope(userId: string, students: Array<{ id: string; name: string }>) {
-    const names = students.map((student) => student.name);
-    const notebooks = await prisma.subject.findMany({
-        where: { userId },
-        select: { id: true, name: true },
-    });
-    const subjectIds = notebooks
-        .filter((notebook) => names.some((name) => isStudentNotebook(notebook.name, name)))
-        .map((notebook) => notebook.id);
-    const learners = await prisma.learner.findMany({
-        where: { userId, kind: LEARNER_KIND.student, gradingStudentId: { in: students.map((student) => student.id) } },
-        select: { id: true, gradingStudentId: true },
-    });
-    return { subjectIds, learnerIds: learners.map((row) => row.id), learners };
+async function classItemScope(userId: string, students: Array<{ id: string }>) {
+    const learners = students.length === 0
+        ? []
+        : await prisma.learner.findMany({
+            where: { userId, kind: LEARNER_KIND.student, gradingStudentId: { in: students.map((student) => student.id) } },
+            select: { id: true, gradingStudentId: true },
+        });
+    return { learnerIds: learners.map((row) => row.id), learners };
 }
 
 function studentKeyForItem(
-    item: { learnerId: string | null; subjectId: string | null },
-    students: Array<{ id: string; name: string }>,
-    notebooks: Array<{ id: string; name: string }>,
+    item: { learnerId: string | null },
     learners: Array<{ id: string; gradingStudentId: string | null }>,
 ): string | null {
-    const learner = learners.find((row) => row.id === item.learnerId);
-    if (learner?.gradingStudentId) return learner.gradingStudentId;
-    if (item.subjectId) {
-        const notebook = notebooks.find((row) => row.id === item.subjectId);
-        if (notebook) {
-            const owner = students.find((student) => isStudentNotebook(notebook.name, student.name));
-            if (owner) return owner.id;
-        }
-    }
-    return null;
+    return learners.find((row) => row.id === item.learnerId)?.gradingStudentId ?? null;
 }
 
 async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwnedClasses>>[number]) {
     const studentIds = cls.students.map((student) => student.id);
-    const notebooks = await prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } });
-    const { subjectIds, learnerIds, learners } = await classItemScope(userId, cls.students);
+    const { learnerIds, learners } = await classItemScope(userId, cls.students);
 
     const submissions = studentIds.length === 0
         ? []
@@ -139,23 +120,19 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
     );
     const errorRates = knowledgeErrorRatesFromResults(gradedResults, UNLABELED_POINT);
 
-    const itemWhere = [
-        ...(subjectIds.length > 0 ? [{ subjectId: { in: subjectIds } }] : []),
-        ...(learnerIds.length > 0 ? [{ learnerId: { in: learnerIds } }] : []),
-    ];
-    const items = itemWhere.length === 0
+    const items = learnerIds.length === 0
         ? []
         : await prisma.errorItem.findMany({
-            where: { userId, OR: itemWhere },
+            where: { userId, learnerId: { in: learnerIds } },
             include: { tags: { select: { name: true, parentId: true } } },
             orderBy: { createdAt: 'desc' },
         });
 
-    const scopedItems = items.filter((item) => studentKeyForItem(item, cls.students, notebooks, learners));
+    const scopedItems = items.filter((item) => studentKeyForItem(item, learners));
     const causes = frequentErrorCauses(
         scopedItems.map((item) => ({
             errorType: item.errorType,
-            studentKey: studentKeyForItem(item, cls.students, notebooks, learners),
+            studentKey: studentKeyForItem(item, learners),
         })),
         UNLABELED_CAUSE,
     );
@@ -245,22 +222,14 @@ export async function getTeacherStudentProfile(userId: string, studentId: string
     if (!student) return null;
 
     const result = await getOrReplanPath(userId, { studentKey: student.id, language });
-    const notebooks = await prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } });
-    const subjectIds = notebooks
-        .filter((notebook) => isStudentNotebook(notebook.name, student.name))
-        .map((notebook) => notebook.id);
     const learner = await prisma.learner.findUnique({
         where: { gradingStudentId: student.id },
         select: { id: true },
     });
-    const itemWhere = [
-        ...(subjectIds.length > 0 ? [{ subjectId: { in: subjectIds } }] : []),
-        ...(learner ? [{ learnerId: learner.id }] : []),
-    ];
-    const recentItems = itemWhere.length === 0
+    const recentItems = !learner
         ? []
         : await prisma.errorItem.findMany({
-            where: { userId, OR: itemWhere },
+            where: { userId, learnerId: learner.id },
             include: { tags: { select: { name: true } } },
             orderBy: { createdAt: 'desc' },
             take: RECENT_ITEM_LIMIT,

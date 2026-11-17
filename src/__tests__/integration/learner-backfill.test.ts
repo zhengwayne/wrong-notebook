@@ -18,7 +18,14 @@ vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
 import { confirmSubmission } from '@/lib/grading-service';
-import { applyLearnerBackfill, ensureLearnerBackfillOnce, revertLearnerBackfill } from '@/lib/learner-backfill';
+import {
+    applyLearnerBackfill,
+    applyManualLearnerDecisions,
+    ensureLearnerBackfillOnce,
+    exportAmbiguousLearnerItems,
+    inventoryLearnerBackfill,
+    revertLearnerBackfill,
+} from '@/lib/learner-backfill';
 import { ChildLearnerLimitError, MAX_CHILD_LEARNERS, createChildLearner, studentKeyOf, LEARNER_KIND } from '@/lib/learners';
 import { resolveStudent } from '@/lib/learning-path/service';
 import { SELF_STUDENT_KEY } from '@/lib/learning-path/types';
@@ -310,6 +317,115 @@ describe('学习者迁移与回填', () => {
         await expect(createChildLearner(db, 'u1', '孩子四')).rejects.toBeInstanceOf(ChildLearnerLimitError);
         expect(MAX_CHILD_LEARNERS).toBe(3);
         expect(LEARNER_KIND.child).toBe('child');
+
+        await db.$disconnect();
+    }, 120000);
+
+    it('D2 治理流程：只读盘点、跨班同名 GradingResult 精确回填、歧义导出与人工确认，且撤回绝不误删 unlink_orphan', async () => {
+        const root = makePrismaTree(join(directory, 'd2-tree'), true);
+        const url = `file:${join(directory, 'd2.db')}`;
+        migrateDeploy(url, root);
+        const db = new PrismaClient({ datasources: { db: { url } } });
+        mocks.prisma = db;
+
+        await seedRealistic(db, true);
+
+        // 在 seedRealistic 的跨班同名“刘七”（stu-liu-a / stu-liu-b）基础上，增加一条带 GradingResult 溯源的历史错题
+        await db.subject.create({
+            data: { id: 'nb-liu-math', userId: 'teacher-1', name: '刘七·数学', stage: 'senior_high', subjectKey: 'math' },
+        });
+        await db.errorItem.create({
+            data: {
+                id: 'item-liu-graded',
+                shortId: 'Lg0001',
+                userId: 'teacher-1',
+                subjectId: 'nb-liu-math',
+                questionText: '来自一班刘七历史改卷确认的错题',
+                originalImageUrl: '',
+            },
+        });
+        await db.gradingTask.create({
+            data: {
+                id: 'task-d2',
+                userId: 'teacher-1',
+                classId: 'class-a',
+                title: '期中测',
+                subjectName: '数学',
+                questions: { create: { id: 'kq-d2', order: 1, number: '1', type: 'objective', maxScore: 5, answer: 'A' } },
+                submissions: {
+                    create: {
+                        id: 'sub-liu-a',
+                        studentId: 'stu-liu-a',
+                        status: 'confirmed',
+                        images: '[]',
+                        results: {
+                            create: {
+                                id: 'res-liu-a',
+                                keyQuestionId: 'kq-d2',
+                                verdict: 'wrong',
+                                score: 0,
+                                errorItemId: 'item-liu-graded',
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        // 写入一条系统迁移阶段生成的 unlink_orphan 审计记录，撤回任何回填时都不得误删
+        await db.learnerBackfillAudit.create({
+            data: {
+                batchId: 'migration:20261118020000_add_learner_foreign_keys',
+                userId: 'teacher-1',
+                entityType: 'errorItem',
+                entityId: 'historical-orphan-1',
+                action: 'unlink_orphan',
+                previousLearnerId: 'dead-learner-1',
+                newLearnerId: null,
+            },
+        });
+
+        // Step 1: 只读盘点不产生任何 Learner 或写库
+        const inv = await inventoryLearnerBackfill(db);
+        expect(inv.deterministicallyLinkableByGrading).toBe(1);
+        expect(inv.deterministicallyLinkableByName).toBe(3); // 张三2题 + 李四1题
+        expect(inv.ambiguousErrorItems).toBe(1); // item-liu（无 GradingResult 溯源链）
+        expect(inv.orphanedStudentNotebooks).toBe(1); // nb-ghost: 赵六·英语
+        expect(await db.learner.count()).toBe(0);
+
+        // Step 2: 精确 + 唯一自动回填，同名 Liu Qi 也各自拥有独立 Learner 且精准识别一班刘七的改卷溯源题
+        const applied = await applyLearnerBackfill(db);
+        expect(applied.linkedByGradingResult).toBe(1);
+        expect(applied.linkedByUniqueName).toBe(3);
+        const liuA = await db.learner.findUnique({ where: { gradingStudentId: 'stu-liu-a' } });
+        const liuB = await db.learner.findUnique({ where: { gradingStudentId: 'stu-liu-b' } });
+        expect(liuA).toBeTruthy();
+        expect(liuB).toBeTruthy();
+        expect((await db.errorItem.findUniqueOrThrow({ where: { id: 'item-liu-graded' } })).learnerId).toBe(liuA!.id);
+        expect((await db.errorItem.findUniqueOrThrow({ where: { id: 'item-liu' } })).learnerId).toBeNull();
+
+        // Step 3: 导出仍存歧义清单并执行人工指派到二班刘七
+        const exported = await exportAmbiguousLearnerItems(db);
+        expect(exported.ambiguousItems.map((i) => i.errorItemId)).toEqual(['item-liu']);
+        expect(exported.ambiguousItems[0].candidates.map((c) => c.gradingStudentId).sort()).toEqual(['stu-liu-a', 'stu-liu-b']);
+        expect(exported.orphanedStudentNotebooks.map((n) => n.subjectName)).toEqual(['赵六·英语']);
+
+        const manual = await applyManualLearnerDecisions(db, [
+            { errorItemId: 'item-liu', target: { kind: 'student', gradingStudentId: 'stu-liu-b' } },
+        ]);
+        expect(manual.appliedCount).toBe(1);
+        expect((await db.errorItem.findUniqueOrThrow({ where: { id: 'item-liu' } })).learnerId).toBe(liuB!.id);
+
+        // 先单独撤回人工确认批次
+        await revertLearnerBackfill(db, manual.batchId);
+        expect((await db.errorItem.findUniqueOrThrow({ where: { id: 'item-liu' } })).learnerId).toBeNull();
+        expect((await db.errorItem.findUniqueOrThrow({ where: { id: 'item-liu-graded' } })).learnerId).toBe(liuA!.id);
+
+        // Step 4: 全量撤回回填，断言恢复到回填前状态但保留外键迁移产生的 unlink_orphan 审计
+        await revertLearnerBackfill(db);
+        expect(await db.errorItem.count({ where: { learnerId: { not: null } } })).toBe(0);
+        const preservedMigrationAudit = await db.learnerBackfillAudit.findMany({ where: { action: 'unlink_orphan' } });
+        expect(preservedMigrationAudit).toHaveLength(1);
+        expect(preservedMigrationAudit[0].batchId).toBe('migration:20261118020000_add_learner_foreign_keys');
 
         await db.$disconnect();
     }, 120000);

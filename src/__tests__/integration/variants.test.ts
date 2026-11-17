@@ -103,10 +103,6 @@ beforeEach(async () => {
         { id: 'nb-li', name: '李四·数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' },
         { id: 'nb-wang', name: '王五·数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' },
     ] });
-    await database.errorItem.createMany({ data: [
-        { id: 'item-eq', shortId: 'Eq0001', userId: 'user-1', subjectId: 'nb-li', questionText: '解方程 2x+1=7', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
-        { id: 'item-eq-2', shortId: 'Eq0002', userId: 'user-1', subjectId: 'nb-wang', questionText: '解方程 4x-2=10', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
-    ] });
     await database.gradingClass.create({
         data: {
             id: 'class-1', userId: 'user-1', name: '初二1班',
@@ -116,6 +112,14 @@ beforeEach(async () => {
             ] },
         },
     });
+    await database.learner.createMany({ data: [
+        { id: 'ln-li', userId: 'user-1', kind: 'student', name: '李四', gradingStudentId: 'stu-li' },
+        { id: 'ln-wang', userId: 'user-1', kind: 'student', name: '王五', gradingStudentId: 'stu-wang' },
+    ] });
+    await database.errorItem.createMany({ data: [
+        { id: 'item-eq', shortId: 'Eq0001', userId: 'user-1', learnerId: 'ln-li', subjectId: 'nb-li', questionText: '解方程 2x+1=7', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
+        { id: 'item-eq-2', shortId: 'Eq0002', userId: 'user-1', learnerId: 'ln-wang', subjectId: 'nb-wang', questionText: '解方程 4x-2=10', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
+    ] });
 });
 
 afterAll(async () => {

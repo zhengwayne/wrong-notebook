@@ -31,8 +31,12 @@ import { GET as GET_ANALYTICS } from '@/app/api/analytics/route';
 import { DELETE as CLEAR_ERROR_ITEMS } from '@/app/api/error-items/clear/route';
 import { GET as LIST_ERROR_ITEMS } from '@/app/api/error-items/list/route';
 import { POST as CREATE_ERROR_ITEM } from '@/app/api/error-items/route';
+import { POST as CREATE_GRADING_CLASS } from '@/app/api/grading/classes/route';
+import { POST as IMPORT_ROSTER } from '@/app/api/grading/roster/import/route';
 import { GET as GET_LEARNERS, POST as CREATE_LEARNER } from '@/app/api/learners/route';
 import { DELETE as DELETE_CHILD } from '@/app/api/learners/[id]/route';
+import { GET as GET_CLASS_PATH } from '@/app/api/learning-path/class/route';
+import { GET as GET_LEARNING_PATH } from '@/app/api/learning-path/route';
 import { GET as GET_NOTEBOOK } from '@/app/api/notebooks/[id]/route';
 import { GET as GET_NOTEBOOKS } from '@/app/api/notebooks/route';
 import { POST as OPENCLAW_UPLOAD } from '@/app/api/openclaw/batch-upload/route';
@@ -41,6 +45,9 @@ import { GET as GET_REVIEW_DUE } from '@/app/api/review/due/route';
 import { DELETE as CLEAR_PRACTICE } from '@/app/api/stats/practice/clear/route';
 import { GET as GET_PRACTICE_STATS } from '@/app/api/stats/practice/route';
 import { GET as GET_TAGS_STATS } from '@/app/api/tags/stats/route';
+import { GET as GET_TEACHER_HOME } from '@/app/api/teacher/home/route';
+import { GET as GET_TEACHER_STUDENT } from '@/app/api/teacher/students/[studentId]/route';
+import { GET as GET_WEAKNESS } from '@/app/api/variants/weakness/route';
 import { recordExamResults } from '@/lib/exam';
 
 let testDb: IsolatedTestDb;
@@ -483,6 +490,184 @@ describe('多孩子学习者全链路作用域隔离（OPT-07 + OPT-21）', () =
             expect(await db.practiceRecord.count({ where: { learnerId: keepChild.id } })).toBe(1);
             expect(await db.knowledgeMastery.count({ where: { studentKey: keepChild.id } })).toBe(1);
             expect(await db.learningPath.count({ where: { studentKey: keepChild.id } })).toBe(1);
+        });
+    });
+
+    it('跨班同名学生在教师首页、档案、学习路径与变式弱点下严格隔离，花名册同步建档与录题不误串本人本', async () => {
+        await withTwoTenants(db, async ({ alice }) => {
+            mocks.session = alice.session;
+
+            // 一班“张三”与二班“张三”历史上共享同一个同名“张三·数学”错题本
+            const sharedNotebook = await db.subject.create({
+                data: { id: 'nb-zhang-shared', userId: alice.user.id, name: '张三·数学', stage: 'junior_high', subjectKey: 'math' },
+            });
+            // 一班再增设同班同学 stu-a2（错一元二次方程 + 随机事件概率）；若系统错把二班张三的随机事件概率串给一班张三，一班就会出现 2 人错随机事件概率而污染共性弱点！
+            // 二班再增设同班同学 stu-b2（错随机事件概率 + 一元二次方程）；同理若一班张三串入二班，二班共性弱点就会被一元二次方程污染！
+            const stuA2 = await db.gradingStudent.create({
+                data: { id: 'stu-a2', classId: alice.classes.classA.id, name: '李四A', studentNo: '02', order: 1 },
+            });
+            const learnerA2 = await db.learner.create({
+                data: { id: 'ln-stu-a2', userId: alice.user.id, kind: 'student', name: '李四A', gradingStudentId: stuA2.id },
+            });
+            const stuB2 = await db.gradingStudent.create({
+                data: { id: 'stu-b2', classId: alice.classes.classB.id, name: '王五B', studentNo: '02', order: 1 },
+            });
+            const learnerB2 = await db.learner.create({
+                data: { id: 'ln-stu-b2', userId: alice.user.id, kind: 'student', name: '王五B', gradingStudentId: stuB2.id },
+            });
+            await db.errorItem.createMany({
+                data: [
+                    {
+                        id: 'zhang-a-item',
+                        shortId: 'Za0001',
+                        userId: alice.user.id,
+                        subjectId: sharedNotebook.id,
+                        learnerId: alice.sameNameStudents.inClassA.learnerId,
+                        questionText: '一班张三专属一元二次方程',
+                        answerText: 'x=1',
+                        errorType: '概念理解',
+                        knowledgePoints: '["一元二次方程"]',
+                        originalImageUrl: '',
+                    },
+                    {
+                        id: 'li-a2-item',
+                        shortId: 'La0002',
+                        userId: alice.user.id,
+                        learnerId: learnerA2.id,
+                        questionText: '一班李四A错题',
+                        answerText: 'x=2',
+                        errorType: '概念理解',
+                        knowledgePoints: '["一元二次方程", "随机事件概率"]',
+                        originalImageUrl: '',
+                    },
+                    {
+                        id: 'zhang-b-item',
+                        shortId: 'Zb0001',
+                        userId: alice.user.id,
+                        subjectId: sharedNotebook.id,
+                        learnerId: alice.sameNameStudents.inClassB.learnerId,
+                        questionText: '二班张三专属概率统计题',
+                        answerText: '1/2',
+                        errorType: '审题不清',
+                        knowledgePoints: '["随机事件概率"]',
+                        originalImageUrl: '',
+                    },
+                    {
+                        id: 'wang-b2-item',
+                        shortId: 'Wb0002',
+                        userId: alice.user.id,
+                        learnerId: learnerB2.id,
+                        questionText: '二班王五B错题',
+                        answerText: '1/3',
+                        errorType: '审题不清',
+                        knowledgePoints: '["随机事件概率", "一元二次方程"]',
+                        originalImageUrl: '',
+                    },
+                ],
+            });
+            // 同班对某共享错题关联一条仅属二班张三的练习记录
+            await db.practiceRecord.create({
+                data: {
+                    userId: alice.user.id,
+                    errorItemId: 'zhang-b-item',
+                    learnerId: alice.sameNameStudents.inClassB.learnerId,
+                    result: 'correct',
+                    isCorrect: true,
+                    source: 'practice',
+                    originalImageUrl: '',
+                },
+            });
+
+            // 1. 教师首页：一班只统计一班张三，二班只统计二班张三
+            const homeA = await (await GET_TEACHER_HOME(new Request(`http://localhost/api/teacher/home?classId=${alice.classes.classA.id}`))).json();
+            const homeB = await (await GET_TEACHER_HOME(new Request(`http://localhost/api/teacher/home?classId=${alice.classes.classB.id}`))).json();
+            expect(homeA.stats.frequentCauses.map((c: { cause: string }) => c.cause)).toEqual(['概念理解']);
+            expect(homeB.stats.frequentCauses.map((c: { cause: string }) => c.cause)).toEqual(['审题不清']);
+            expect(homeA.stats.classWeaknesses.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['一元二次方程']);
+            expect(homeB.stats.classWeaknesses.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['随机事件概率']);
+
+            // 2. 教师端学生档案详情：各自 recentWrong 与薄弱点绝不跨班混入
+            const profileA = await (await GET_TEACHER_STUDENT(
+                new Request(`http://localhost/api/teacher/students/${alice.sameNameStudents.inClassA.gradingStudentId}`),
+                { params: Promise.resolve({ studentId: alice.sameNameStudents.inClassA.gradingStudentId }) },
+            )).json();
+            const profileB = await (await GET_TEACHER_STUDENT(
+                new Request(`http://localhost/api/teacher/students/${alice.sameNameStudents.inClassB.gradingStudentId}`),
+                { params: Promise.resolve({ studentId: alice.sameNameStudents.inClassB.gradingStudentId }) },
+            )).json();
+            expect(profileA.recentWrong.map((x: { id: string }) => x.id)).toEqual(['zhang-a-item']);
+            expect(profileB.recentWrong.map((x: { id: string }) => x.id)).toEqual(['zhang-b-item']);
+            expect(profileA.weakPoints.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['一元二次方程']);
+            expect(profileB.weakPoints.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['随机事件概率']);
+
+            // 3. 单人 & 班级学习路径：即使共用“张三·数学”本也完全隔离
+            const pathA = await (await GET_LEARNING_PATH(
+                new Request(`http://localhost/api/learning-path?studentKey=${alice.sameNameStudents.inClassA.gradingStudentId}&language=zh`),
+            )).json();
+            const pathB = await (await GET_LEARNING_PATH(
+                new Request(`http://localhost/api/learning-path?studentKey=${alice.sameNameStudents.inClassB.gradingStudentId}&language=zh`),
+            )).json();
+            expect(pathA.mastery.map((m: { knowledgePoint: string }) => m.knowledgePoint)).toEqual(['一元二次方程']);
+            expect(pathB.mastery.map((m: { knowledgePoint: string }) => m.knowledgePoint)).toEqual(['随机事件概率']);
+
+            const classPathA = await (await GET_CLASS_PATH(
+                new Request(`http://localhost/api/learning-path/class?classId=${alice.classes.classA.id}&language=zh`),
+            )).json();
+            expect(classPathA.classWeaknesses.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['一元二次方程']);
+
+            // 4. 变式学情弱点接口（按 studentId 与按 classId）同样完全隔离
+            const weakStuA = await (await GET_WEAKNESS(
+                new Request(`http://localhost/api/variants/weakness?studentId=${alice.sameNameStudents.inClassA.gradingStudentId}`),
+            )).json();
+            const weakClassB = await (await GET_WEAKNESS(
+                new Request(`http://localhost/api/variants/weakness?classId=${alice.classes.classB.id}`),
+            )).json();
+            expect(weakStuA.profile.weaknesses.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['一元二次方程']);
+            expect(weakClassB.classWeaknesses.map((w: { knowledgePoint: string }) => w.knowledgePoint)).toEqual(['随机事件概率']);
+
+            // 5. POST /api/error-items 支持 student 类型 learnerId 录题；本人未传 subjectId 时不误落入“张三·数学”学生本
+            const createStuRes = await CREATE_ERROR_ITEM(jsonPost('/api/error-items', {
+                subjectId: sharedNotebook.id,
+                learnerId: alice.sameNameStudents.inClassA.learnerId,
+                questionText: '手工补录给一班张三的几何题',
+                answerText: '90度',
+                knowledgePoints: ['全等三角形'],
+                originalImageUrl: '',
+            }));
+            expect(createStuRes.status).toBe(201);
+            expect((await createStuRes.json()).learnerId).toBe(alice.sameNameStudents.inClassA.learnerId);
+
+            const createSelfRes = await CREATE_ERROR_ITEM(jsonPost('/api/error-items', {
+                subject: '数学',
+                questionText: '老师自己备课的数学题',
+                answerText: '42',
+                knowledgePoints: ['函数'],
+                originalImageUrl: '',
+            }));
+            expect(createSelfRes.status).toBe(201);
+            const selfCreated = await createSelfRes.json();
+            expect(selfCreated.subjectId).not.toBe(sharedNotebook.id);
+            expect(selfCreated.learnerId).toBeNull();
+
+            // 6. 建班 & 名册导入新增/改名学生同步维护各自独立 Learner
+            const newClassRes = await CREATE_GRADING_CLASS(jsonPost('/api/grading/classes', {
+                name: '三班',
+                roster: '张三',
+            }));
+            expect(newClassRes.status).toBe(201);
+            const newClassData = await newClassRes.json();
+            const stuCId = newClassData.students[0].id as string;
+            const learnerC = await db.learner.findUnique({ where: { gradingStudentId: stuCId } });
+            expect(learnerC).toMatchObject({ kind: 'student', name: '张三', gradingStudentId: stuCId });
+            expect(learnerC!.id).not.toBe(alice.sameNameStudents.inClassA.learnerId);
+
+            const renameRes = await IMPORT_ROSTER(jsonPost('/api/grading/roster/import', {
+                rows: [['班级', '姓名'], ['三班', '张三（三班）']],
+                commit: true,
+            }));
+            expect(renameRes.status).toBe(200);
+            const addedLearner = await db.learner.findFirst({ where: { userId: alice.user.id, name: '张三（三班）' } });
+            expect(addedLearner).toBeTruthy();
         });
     });
 });

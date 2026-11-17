@@ -7,7 +7,6 @@ import type { Prisma } from "@prisma/client";
 import { getAppTimeZone } from "@/lib/config";
 import { evaluateDueCandidates } from "@/lib/due-items";
 import { getItemTags } from "@/lib/item-tags";
-import { personalSubjectIds } from "@/lib/home-aggregates";
 import { LEARNER_KIND } from "@/lib/learners";
 import { createLogger } from "@/lib/logger";
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from "@/lib/mastery-status";
@@ -20,8 +19,6 @@ import {
     type ReviewAlgorithmVersion,
 } from "@/lib/memory-model";
 import { prisma } from "@/lib/prisma";
-import { isStudentNotebook } from "@/lib/variant/notebooks";
-import { findStudentSubjectIds } from "@/lib/variant/service";
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief, type ProfileItem } from "@/lib/variant/weakness-profile";
 import { buildMasteryMap, evidenceHash, traceKnowledgeMastery } from "./mastery-model";
 import { planLearningPath, todaySteps } from "./planner";
@@ -59,12 +56,13 @@ export interface ResolvedStudent {
 export async function resolveStudent(userId: string, studentKey?: string | null): Promise<ResolvedStudent | null> {
     const key = studentKey || SELF_STUDENT_KEY;
     if (key === SELF_STUDENT_KEY) {
-        const [subjects, roster, selfLearner] = await Promise.all([
+        const [subjects, selfLearner] = await Promise.all([
             prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } }),
-            prisma.gradingStudent.findMany({ where: { class: { userId } }, select: { name: true } }),
             prisma.learner.findFirst({ where: { userId, kind: LEARNER_KIND.self }, select: { id: true } }),
         ]);
-        const subjectIds = personalSubjectIds(subjects, roster.map((row) => row.name), isStudentNotebook);
+        const subjectIds = subjects
+            .filter((subject) => !subject.name.includes("·"))
+            .map((subject) => subject.id);
         return {
             studentKey: SELF_STUDENT_KEY,
             studentName: "我",
@@ -80,12 +78,11 @@ export async function resolveStudent(userId: string, studentKey?: string | null)
         include: { class: { select: { id: true, name: true } }, learner: { select: { id: true } } },
     });
     if (student) {
-        const subjectIds = await findStudentSubjectIds(userId, student.name);
         return {
             studentKey: student.id,
             studentName: student.name,
             classId: student.classId,
-            subjectIds,
+            subjectIds: [],
             kind: "student",
             learnerId: student.learner?.id ?? null,
         };
@@ -117,22 +114,17 @@ export async function resolveStudent(userId: string, studentKey?: string | null)
 }
 
 function itemWhereForStudent(userId: string, student: ResolvedStudent) {
-    if (student.kind === "child" && student.learnerId) {
+    if (student.kind === "child" || student.kind === "student") {
+        if (!student.learnerId) return null;
         return { userId, learnerId: student.learnerId };
     }
-    if (student.kind === "student") {
-        const clauses = [
-            ...(student.subjectIds.length > 0 ? [{ subjectId: { in: student.subjectIds } }] : []),
-            ...(student.learnerId ? [{ learnerId: student.learnerId }] : []),
-        ];
-        if (clauses.length === 0) return null;
-        return { userId, OR: clauses };
-    }
-    if (student.subjectIds.length === 0) return null;
     return {
         userId,
-        subjectId: { in: student.subjectIds },
-        OR: [{ learnerId: null }, { learner: { kind: LEARNER_KIND.self } }],
+        OR: [
+            { learner: { kind: LEARNER_KIND.self } },
+            { learnerId: null, subjectId: null },
+            { learnerId: null, subject: { NOT: { name: { contains: "·" } } } },
+        ],
     };
 }
 
@@ -317,11 +309,7 @@ export async function collectEvidence(userId: string, student: ResolvedStudent) 
     const algorithmVersion = isReviewAlgorithmVersion(userRow?.reviewAlgorithmVersion)
         ? userRow.reviewAlgorithmVersion
         : DEFAULT_REVIEW_ALGORITHM;
-    const scopeLearnerId = student.kind === "self"
-        ? null
-        : student.kind === "child"
-            ? student.learnerId
-            : undefined;
+    const scopeLearnerId = student.kind === "self" ? null : student.learnerId;
     const [items, submissions] = await Promise.all([
         loadItems(userId, student),
         student.studentKey === SELF_STUDENT_KEY
@@ -771,10 +759,9 @@ export async function listClassPaths(userId: string, classId: string, language: 
     }
 
     const studentIds = cls.students.map((s) => s.id);
-    const [userRow, graph, allSubjects, studentLearners, allSubmissions, existingPaths] = await Promise.all([
+    const [userRow, graph, studentLearners, allSubmissions, existingPaths] = await Promise.all([
         prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true, reviewAlgorithmVersion: true } }),
         loadTagGraph(userId),
-        prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } }),
         prisma.learner.findMany({ where: { userId, gradingStudentId: { in: studentIds } }, select: { id: true, gradingStudentId: true } }),
         prisma.gradingSubmission.findMany({
             where: { studentId: { in: studentIds }, task: { userId }, status: { in: ["graded", "confirmed"] } },
@@ -800,41 +787,24 @@ export async function listClassPaths(userId: string, classId: string, language: 
         submissionsByStudentId.set(sub.studentId, list);
     }
 
-    const studentSubjectsMap = new Map<string, string[]>();
-    const allSubjectIdSet = new Set<string>();
-    const allLearnerIdSet = new Set<string>();
-    for (const student of cls.students) {
-        const subjectIds = allSubjects.filter((s) => isStudentNotebook(s.name, student.name)).map((s) => s.id);
-        studentSubjectsMap.set(student.id, subjectIds);
-        subjectIds.forEach((id) => allSubjectIdSet.add(id));
-        const lid = learnerByStudentId.get(student.id);
-        if (lid) allLearnerIdSet.add(lid);
-    }
-
-    const allSubjectIds = [...allSubjectIdSet];
-    const allLearnerIds = [...allLearnerIdSet];
-    const allItems = allSubjectIds.length === 0 && allLearnerIds.length === 0
+    const allLearnerIds = [...new Set(
+        cls.students
+            .map((student) => learnerByStudentId.get(student.id))
+            .filter((lid): lid is string => typeof lid === "string" && lid.length > 0),
+    )];
+    const allItems = allLearnerIds.length === 0
         ? []
         : await prisma.errorItem.findMany({
             where: {
                 userId,
-                OR: [
-                    ...(allSubjectIds.length > 0 ? [{ subjectId: { in: allSubjectIds } }] : []),
-                    ...(allLearnerIds.length > 0 ? [{ learnerId: { in: allLearnerIds } }] : []),
-                ],
+                learnerId: { in: allLearnerIds },
             },
             include: ITEM_WITH_EVIDENCE_INCLUDE,
             orderBy: { createdAt: "desc" },
         });
 
-    const itemsBySubjectId = new Map<string, LoadedErrorItem[]>();
     const itemsByLearnerId = new Map<string, LoadedErrorItem[]>();
     for (const item of allItems) {
-        if (item.subjectId) {
-            const list = itemsBySubjectId.get(item.subjectId) ?? [];
-            list.push(item);
-            itemsBySubjectId.set(item.subjectId, list);
-        }
         if (item.learnerId) {
             const list = itemsByLearnerId.get(item.learnerId) ?? [];
             list.push(item);
@@ -857,36 +827,17 @@ export async function listClassPaths(userId: string, classId: string, language: 
     const profiles: Array<{ studentKey: string; profile: ReturnType<typeof buildWeaknessProfile> }> = [];
 
     for (const student of cls.students) {
-        const subjectIds = studentSubjectsMap.get(student.id) ?? [];
         const learnerId = learnerByStudentId.get(student.id) ?? null;
         const resolved: ResolvedStudent = {
             studentKey: student.id,
             studentName: student.name,
             classId: cls.id,
-            subjectIds,
+            subjectIds: [],
             kind: "student",
             learnerId,
         };
 
-        // 合并该学生的错题本和 learnerId 关联题并去重
-        const seenItemIds = new Set<string>();
-        const studentItems: LoadedErrorItem[] = [];
-        for (const sid of subjectIds) {
-            for (const item of itemsBySubjectId.get(sid) ?? []) {
-                if (!seenItemIds.has(item.id)) {
-                    seenItemIds.add(item.id);
-                    studentItems.push(item);
-                }
-            }
-        }
-        if (learnerId) {
-            for (const item of itemsByLearnerId.get(learnerId) ?? []) {
-                if (!seenItemIds.has(item.id)) {
-                    seenItemIds.add(item.id);
-                    studentItems.push(item);
-                }
-            }
-        }
+        const studentItems = learnerId ? (itemsByLearnerId.get(learnerId) ?? []) : [];
 
         const submissions = submissionsByStudentId.get(student.id) ?? [];
         const { evidence, dueItemIds, profileItems, memoriesByPoint } = assembleStudentEvidence(
@@ -896,13 +847,14 @@ export async function listClassPaths(userId: string, classId: string, language: 
             timeZone,
             now,
             algorithmVersion,
+            learnerId,
         );
         const mastery = buildMasteryWithMemory(evidence, memoriesByPoint, algorithmVersion, timeZone, now);
         const evidenceHashValue = computeEvidenceHashValue(evidence, algorithmVersion);
         const existing = pathByStudentId.get(student.id) ?? null;
         const profile = buildWeaknessProfile(profileItems);
 
-        if (subjectIds.length > 0 && profileItems.length > 0) {
+        if (profileItems.length > 0) {
             profiles.push({ studentKey: student.id, profile });
         }
 

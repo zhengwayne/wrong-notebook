@@ -18,7 +18,7 @@ import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { deriveErrorType } from "@/lib/error-type";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { LearnerNotFoundError } from "@/lib/learners";
-import { resolveChildLearningScope } from "@/lib/learning-scope";
+import { resolveLearningScope } from "@/lib/learning-scope";
 import { ImageValidationError, normalizeOptionalImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:error-items');
@@ -115,9 +115,9 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 
         let scope;
         try {
-            scope = await resolveChildLearningScope(prisma, user.id, requestedLearnerId);
+            scope = await resolveLearningScope(prisma, user.id, requestedLearnerId);
         } catch (error) {
-            if (error instanceof LearnerNotFoundError) return notFound("Child not found");
+            if (error instanceof LearnerNotFoundError) return notFound("Learner not found");
             throw error;
         }
         const learnerId = scope.learnerId ?? undefined;

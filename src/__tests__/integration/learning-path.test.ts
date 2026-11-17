@@ -63,9 +63,18 @@ beforeEach(async () => {
         { id: "tag-arith", name: "整数运算", subject: "math", isSystem: true, order: 1 },
         { id: "tag-eq", name: "方程", subject: "math", isSystem: true, parentId: "tag-arith", order: 2 },
     ] });
+    await database.gradingClass.create({
+        data: {
+            id: "class-1", userId: "user-1", name: "初二1班",
+            students: { create: [{ id: "stu-li", name: "李四", studentNo: "08", order: 1 }] },
+        },
+    });
+    await database.learner.create({
+        data: { id: "ln-li", userId: "user-1", kind: "student", name: "李四", gradingStudentId: "stu-li" },
+    });
     await database.errorItem.create({
         data: {
-            id: "item-arith", shortId: "Ar0001", userId: "user-1", subjectId: "nb-li",
+            id: "item-arith", shortId: "Ar0001", userId: "user-1", learnerId: "ln-li", subjectId: "nb-li",
             questionText: "计算 12-5", answerText: "7", analysis: "退位减",
             errorType: "计算", knowledgePoints: '["整数运算"]', originalImageUrl: "",
             tags: { connect: [{ id: "tag-arith" }] },
@@ -73,16 +82,10 @@ beforeEach(async () => {
     });
     await database.errorItem.create({
         data: {
-            id: "item-eq", shortId: "Eq0001", userId: "user-1", subjectId: "nb-li",
+            id: "item-eq", shortId: "Eq0001", userId: "user-1", learnerId: "ln-li", subjectId: "nb-li",
             questionText: "解方程 2x+1=7", answerText: "3", analysis: "移项",
             errorType: "概念", knowledgePoints: '["方程"]', originalImageUrl: "",
             tags: { connect: [{ id: "tag-eq" }] },
-        },
-    });
-    await database.gradingClass.create({
-        data: {
-            id: "class-1", userId: "user-1", name: "初二1班",
-            students: { create: [{ id: "stu-li", name: "李四", studentNo: "08", order: 1 }] },
         },
     });
 });
@@ -128,7 +131,7 @@ describe("学习路径接口（真实 SQLite）", () => {
         expect(again.version).toBe(version);
 
         await database.practiceRecord.create({
-            data: { userId: "user-1", errorItemId: "item-eq", result: "wrong", isCorrect: false, source: "practice", originalImageUrl: "" },
+            data: { userId: "user-1", learnerId: "ln-li", errorItemId: "item-eq", result: "wrong", isCorrect: false, source: "practice", originalImageUrl: "" },
         });
         const thirdRes = await GET_PATH(new Request("http://localhost/api/learning-path?studentKey=stu-li&language=zh"));
         const third = await thirdRes.json();
@@ -252,15 +255,20 @@ describe("学习路径接口（真实 SQLite）", () => {
         for (let i = 1; i <= 30; i++) {
             const name = `学生${String(i).padStart(2, "0")}`;
             const nbId = `nb-c30-${i}`;
+            const stuId = `stu-c30-${i}`;
+            const learnerId = `ln-c30-${i}`;
             await database.subject.create({
                 data: { id: nbId, name: `${name}·数学`, stage: "junior_high", subjectKey: "math", userId: "user-1" },
             });
             await database.gradingStudent.create({
-                data: { id: `stu-c30-${i}`, classId: cls30.id, name, studentNo: String(i), order: i },
+                data: { id: stuId, classId: cls30.id, name, studentNo: String(i), order: i },
+            });
+            await database.learner.create({
+                data: { id: learnerId, userId: "user-1", kind: "student", name, gradingStudentId: stuId },
             });
             await database.errorItem.create({
                 data: {
-                    id: `item-c30-${i}`, shortId: `C3${String(i).padStart(4, "0")}`, userId: "user-1", subjectId: nbId,
+                    id: `item-c30-${i}`, shortId: `C3${String(i).padStart(4, "0")}`, userId: "user-1", learnerId, subjectId: nbId,
                     questionText: `第${i}题`, answerText: "1", knowledgePoints: '["方程"]', originalImageUrl: "",
                 },
             });

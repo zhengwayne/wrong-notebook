@@ -2,6 +2,7 @@
  * 变式审核流程的持久化与编排：启动流水线、写入审核队列、批准后进入练习/试卷、学情画像与对比。
  */
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { consumeAiQuota, type QuotaUser } from '@/lib/ai-quota';
 import { getAIService } from '@/lib/ai';
 import { recordAiProvenance } from '@/lib/ai/provenance';
@@ -9,11 +10,11 @@ import type { DifficultyLevel } from '@/lib/ai/types';
 import { trackBackgroundTask } from '@/lib/background-tasks';
 import { sanitizeFigureSvg } from '@/lib/figure-svg';
 import { serializeLastPractice } from '@/lib/last-practice';
+import { LEARNER_KIND } from '@/lib/learners';
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from '@/lib/mastery-status';
 import { createLogger } from '@/lib/logger';
 import { generateUniqueShortId } from '@/lib/short-id';
 import { createVariantAi, suggestTopic } from './ai-adapter';
-import { isStudentNotebook } from './notebooks';
 import { MAX_AI_CALLS_PER_RUN, MAX_GENERATE_RETRIES, MAX_VARIANTS_PER_RUN, runVariantPipeline, type PipelineInput, type PipelineResult, type StageLog, type TokenUsage } from './pipeline';
 import type { VariantDifficulty, VariantItemStatus, VariantRunKind } from './schemas';
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief, selectPracticeSlots, type ProfileItem, type WeaknessProfile } from './weakness-profile';
@@ -29,7 +30,7 @@ function subjectLabel(name?: string | null): string {
 }
 
 
-type DbItem = Awaited<ReturnType<typeof loadNotebookItems>>[number];
+type DbItem = Awaited<ReturnType<typeof loadItemsByWhere>>[number];
 
 function parseTags(item: { tags: { name: string }[]; knowledgePoints: string | null }): string[] {
     if (item.tags.length > 0) return item.tags.map((tag) => tag.name);
@@ -41,13 +42,18 @@ function parseTags(item: { tags: { name: string }[]; knowledgePoints: string | n
     }
 }
 
-async function loadNotebookItems(userId: string, subjectIds: string[]) {
-    if (subjectIds.length === 0) return [];
+async function loadItemsByWhere(where: Prisma.ErrorItemWhereInput, learnerFilterId?: string) {
     return prisma.errorItem.findMany({
-        where: { userId, subjectId: { in: subjectIds } },
+        where,
         include: {
             tags: { select: { name: true } },
-            practiceRecords: { where: { result: { not: null } }, select: { result: true, isCorrect: true, createdAt: true, questionText: true } },
+            practiceRecords: {
+                where: {
+                    result: { not: null },
+                    ...(learnerFilterId ? { learnerId: learnerFilterId } : {}),
+                },
+                select: { result: true, isCorrect: true, createdAt: true, questionText: true },
+            },
         },
         orderBy: { createdAt: 'desc' },
     });
@@ -75,14 +81,8 @@ async function userThreshold(userId: string): Promise<number> {
     return user?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
 }
 
-export async function findStudentSubjectIds(userId: string, studentName: string): Promise<string[]> {
-    const notebooks = await prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } });
-    return notebooks.filter((item) => isStudentNotebook(item.name, studentName)).map((item) => item.id);
-}
-
-export async function buildProfileForSubjects(userId: string, subjectIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+async function buildProfileFromItems(userId: string, items: DbItem[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
     const threshold = await userThreshold(userId);
-    const items = await loadNotebookItems(userId, subjectIds);
     const profile = buildWeaknessProfile(toProfileItems(items, threshold));
     const previous: Array<{ id: string; text: string }> = [];
     for (const item of items) {
@@ -92,6 +92,28 @@ export async function buildProfileForSubjects(userId: string, subjectIds: string
         }
     }
     return { profile, items, previous };
+}
+
+export async function findStudentLearnerId(userId: string, gradingStudentId: string): Promise<string | null> {
+    const learner = await prisma.learner.findFirst({
+        where: { userId, kind: LEARNER_KIND.student, gradingStudentId },
+        select: { id: true },
+    });
+    return learner?.id ?? null;
+}
+
+export async function buildProfileForSubjects(userId: string, subjectIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+    const items = subjectIds.length === 0 ? [] : await loadItemsByWhere({ userId, subjectId: { in: subjectIds } });
+    return buildProfileFromItems(userId, items);
+}
+
+export async function buildProfileForLearners(userId: string, learnerIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+    if (learnerIds.length === 0) return buildProfileFromItems(userId, []);
+    const items = await loadItemsByWhere(
+        { userId, learnerId: { in: learnerIds } },
+        learnerIds.length === 1 ? learnerIds[0] : undefined,
+    );
+    return buildProfileFromItems(userId, items);
 }
 
 function usageFields(usage: TokenUsage) {
@@ -344,23 +366,41 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
     const studentId = options.studentId;
     let classId: string | undefined;
     let studentName = '';
-    const subjectIds: string[] = [];
+    let learnerId: string | null = null;
     if (options.subjectId) {
         const subject = await prisma.subject.findFirst({ where: { id: options.subjectId, userId: user.id }, select: { id: true, name: true } });
         if (!subject) return null;
-        subjectIds.push(subject.id);
         studentName = subject.name.split('·')[0] || subject.name;
     }
     if (studentId) {
-        const student = await prisma.gradingStudent.findFirst({ where: { id: studentId, class: { userId: user.id } }, include: { class: true } });
+        const student = await prisma.gradingStudent.findFirst({
+            where: { id: studentId, class: { userId: user.id } },
+            include: { class: true, learner: { select: { id: true } } },
+        });
         if (!student) return null;
         studentName = student.name;
         classId = student.classId;
-        subjectIds.push(...await findStudentSubjectIds(user.id, student.name));
+        learnerId = student.learner?.id ?? await findStudentLearnerId(user.id, student.id);
+        if (!learnerId) return { error: 'NO_ITEMS' as const };
     }
-    const uniqueIds = [...new Set(subjectIds)];
-    if (uniqueIds.length === 0) return { error: 'NO_NOTEBOOK' as const };
-    const { profile, items, previous } = await buildProfileForSubjects(user.id, uniqueIds);
+
+    const { profile, items, previous } = studentId
+        ? await buildProfileFromItems(
+            user.id,
+            await loadItemsByWhere(
+                {
+                    userId: user.id,
+                    learnerId: learnerId!,
+                    ...(options.subjectId ? { subjectId: options.subjectId } : {}),
+                },
+                learnerId!,
+            ),
+        )
+        : options.subjectId
+            ? await buildProfileForSubjects(user.id, [options.subjectId])
+            : { profile: buildWeaknessProfile([]), items: [], previous: [] };
+
+    if (!studentId && !options.subjectId) return { error: 'NO_NOTEBOOK' as const };
     if (items.length === 0) return { error: 'NO_ITEMS' as const };
 
     const count = Math.max(3, Math.min(MAX_VARIANTS_PER_RUN, options.count ?? (options.kind === 'topic' ? 4 : 5)));
@@ -388,7 +428,7 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
         title: options.title || topicSuggestion?.title || `${studentName} 个性化练习`,
         studentId,
         classId,
-        subjectId: uniqueIds[0],
+        subjectId: options.subjectId ?? items[0]?.subjectId ?? undefined,
         weaknessProfile: profile,
         topicSuggestion,
         subjectLabel: studentName,
@@ -425,13 +465,18 @@ export async function startClassRuns(user: QuotaUser, options: {
     });
     if (!cls) return null;
     const students = cls.students.slice(0, MAX_CLASS_BATCH);
-    const profiles: Array<{ studentKey: string; profile: WeaknessProfile; studentId: string; subjectIds: string[] }> = [];
+    const learners = await prisma.learner.findMany({
+        where: { userId: user.id, kind: LEARNER_KIND.student, gradingStudentId: { in: students.map((s) => s.id) } },
+        select: { id: true, gradingStudentId: true },
+    });
+    const learnerByStudentId = new Map(learners.map((l) => [l.gradingStudentId!, l.id]));
+    const profiles: Array<{ studentKey: string; profile: WeaknessProfile; studentId: string; learnerId: string }> = [];
     for (const student of students) {
-        const subjectIds = await findStudentSubjectIds(user.id, student.name);
-        if (subjectIds.length === 0) continue;
-        const { profile } = await buildProfileForSubjects(user.id, subjectIds);
+        const studentLearnerId = learnerByStudentId.get(student.id);
+        if (!studentLearnerId) continue;
+        const { profile } = await buildProfileForLearners(user.id, [studentLearnerId]);
         if (profile.itemCount === 0) continue;
-        profiles.push({ studentKey: student.id, profile, studentId: student.id, subjectIds });
+        profiles.push({ studentKey: student.id, profile, studentId: student.id, learnerId: studentLearnerId });
     }
     if (profiles.length === 0) return { error: 'NO_ITEMS' as const, classWeaknesses: [] };
 
@@ -440,9 +485,8 @@ export async function startClassRuns(user: QuotaUser, options: {
         const brief = classTopicBrief(classWeaknesses);
         if (brief.knowledgePoints.length === 0) return { error: 'NO_COMMON' as const, classWeaknesses };
         const topic = await suggestTopic({ ...brief, language: options.language, studentCount: profiles.length });
-        // 用班级共性知识点，从各学生错题中抽代表题作为来源
-        const sourceSubjects = [...new Set(profiles.flatMap((item) => item.subjectIds))];
-        const { items, previous, profile } = await buildProfileForSubjects(user.id, sourceSubjects);
+        // 用班级共性知识点，从各学生精确 learnerId 错题中抽代表题作为来源
+        const { items, previous, profile } = await buildProfileForLearners(user.id, profiles.map((item) => item.learnerId));
         const slots = selectPracticeSlots(
             { ...profile, weaknesses: profile.weaknesses.filter((item) => brief.knowledgePoints.includes(item.knowledgePoint)) },
             toProfileItems(items, await userThreshold(user.id)),
