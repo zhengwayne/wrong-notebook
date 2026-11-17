@@ -13,6 +13,8 @@ interface PrintableQuestionProps {
     options: PrintDisplayOptions;
     /** 显示答案或解析时题目之间多留空白，便于手写 */
     reserveAnswerSpace: boolean;
+    /** 长列表分批加载图片时先占位，滚动或打印前再展开 */
+    deferImage?: boolean;
 }
 
 /** 题目的知识点：优先使用 tags 关联，旧数据回退到 knowledgePoints */
@@ -27,7 +29,7 @@ function tagNames(item: PrintableErrorItem): string[] {
 }
 
 /** 打印页中的一道题：题号、来源信息、原图或文字，以及可选的答案和解析 */
-export function PrintableQuestion({ item, index, options, reserveAnswerSpace }: PrintableQuestionProps) {
+export function PrintableQuestion({ item, index, options, reserveAnswerSpace, deferImage = false }: PrintableQuestionProps) {
     const { t } = useLanguage();
     const tags = tagNames(item);
 
@@ -72,12 +74,22 @@ export function PrintableQuestion({ item, index, options, reserveAnswerSpace }: 
             ) : (
                 item.originalImageUrl && (
                     <div className="mb-4">
-                        <img
-                            src={item.originalImageUrl}
-                            alt={t.detail?.originalProblem || 'Question Image'}
-                            className="h-auto border rounded"
-                            style={{ maxWidth: `${options.imageScale}%` }}
-                        />
+                        {deferImage ? (
+                            <div
+                                data-deferred-image="true"
+                                className="h-40 w-full animate-pulse rounded border bg-muted/40"
+                                style={{ maxWidth: `${options.imageScale}%` }}
+                            />
+                        ) : (
+                            <img
+                                src={item.originalImageUrl}
+                                alt={t.detail?.originalProblem || 'Question Image'}
+                                loading="lazy"
+                                decoding="async"
+                                className="h-auto border rounded"
+                                style={{ maxWidth: `${options.imageScale}%` }}
+                            />
+                        )}
                     </div>
                 )
             )}

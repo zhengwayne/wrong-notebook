@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { requestOpenSettings } from "@/components/settings-dialog";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { requestOpenSettings } from "@/lib/settings-events";
 
 interface SnapshotWarningState {
     enabled: boolean;

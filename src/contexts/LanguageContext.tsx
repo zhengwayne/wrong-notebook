@@ -1,12 +1,18 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useSyncExternalStore } from 'react';
-import { translations, Language } from '@/lib/translations';
+import {
+    getLoadedEnglishDictionary,
+    loadEnglishDictionary,
+    subscribeEnglishDictionary,
+} from '@/lib/translations/loader';
+import type { Language, Translations } from '@/lib/translations/types';
+import { zh } from '@/lib/translations/zh';
 
 interface LanguageContextType {
     language: Language;
     setLanguage: (lang: Language) => void;
-    t: typeof translations['en'];
+    t: Translations;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -32,24 +38,31 @@ function readLanguage(): Language {
 }
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-    // 服务端渲染与水合阶段使用默认语言，之后读取保存的语言
+    // 服务端渲染与水合阶段使用默认中文，切换英文时再按需异步加载英文词典
     const language = useSyncExternalStore(subscribeLanguage, readLanguage, () => DEFAULT_LANGUAGE);
+    const enDictionary = useSyncExternalStore(subscribeEnglishDictionary, getLoadedEnglishDictionary, () => null);
 
     useEffect(() => {
         if (typeof document !== 'undefined') {
             document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
         }
-    }, [language]);
+        if (language === 'en' && !enDictionary) {
+            void loadEnglishDictionary().catch(() => undefined);
+        }
+    }, [language, enDictionary]);
 
     const handleSetLanguage = (lang: Language) => {
         localStorage.setItem(STORAGE_KEY, lang);
+        if (lang === 'en') {
+            void loadEnglishDictionary().catch(() => undefined);
+        }
         languageListeners.forEach((listener) => listener());
     };
 
-    const value = {
+    const value: LanguageContextType = {
         language,
         setLanguage: handleSetLanguage,
-        t: translations[language],
+        t: language === 'en' && enDictionary ? enDictionary : zh,
     };
 
     return (

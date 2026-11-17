@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, Suspense, useCallback } from "react";
+import { useEffect, useState, Suspense, useCallback, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
@@ -20,6 +21,8 @@ import {
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
 
+const PRINT_IMAGE_BATCH_SIZE = 20;
+
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
     const { t } = useLanguage();
@@ -36,6 +39,8 @@ function PrintPreviewContent() {
     });
     const updateOptions = (patch: Partial<PrintDisplayOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [visibleImageLimit, setVisibleImageLimit] = useState(PRINT_IMAGE_BATCH_SIZE);
+    const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
 
     const fetchItems = useCallback(async () => {
         try {
@@ -57,11 +62,32 @@ function PrintPreviewContent() {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或条件变化时加载，请求前后更新加载状态和结果
         fetchItems();
     }, [fetchItems]);
-    const handlePrint = () => {
-        window.print();
-    };
+
+    useEffect(() => {
+        const expandAll = () => setVisibleImageLimit(Number.POSITIVE_INFINITY);
+        window.addEventListener("beforeprint", expandAll);
+        return () => window.removeEventListener("beforeprint", expandAll);
+    }, []);
 
     const selectedItems = getSelectedPrintItems(items, selectedIds);
+
+    useEffect(() => {
+        if (visibleImageLimit >= selectedItems.length) return;
+        const anchor = loadMoreAnchorRef.current;
+        if (!anchor || typeof IntersectionObserver === "undefined") return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                setVisibleImageLimit((limit) => Math.min(selectedItems.length, limit + PRINT_IMAGE_BATCH_SIZE));
+            }
+        }, { rootMargin: "400px" });
+        observer.observe(anchor);
+        return () => observer.disconnect();
+    }, [visibleImageLimit, selectedItems.length]);
+
+    const handlePrint = () => {
+        flushSync(() => setVisibleImageLimit(Number.POSITIVE_INFINITY));
+        window.print();
+    };
     const reserveAnswerSpace = shouldReserveAnswerSpace(options.showAnswers, options.showAnalysis);
     const countLabel = getPrintPreviewCountLabel(items.length, selectedItems.length);
     const emptyState = getPrintPreviewEmptyState(items.length, selectedItems.length);
@@ -125,8 +151,18 @@ function PrintPreviewContent() {
             {/* Print Content */}
             <main id="main-content" tabIndex={-1} className="max-w-4xl mx-auto p-8 print:p-0">
                 {selectedItems.map((item, index) => (
-                    <PrintableQuestion key={item.id} item={item} index={index} options={options} reserveAnswerSpace={reserveAnswerSpace} />
+                    <PrintableQuestion
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        options={options}
+                        reserveAnswerSpace={reserveAnswerSpace}
+                        deferImage={index >= visibleImageLimit}
+                    />
                 ))}
+                {visibleImageLimit < selectedItems.length && (
+                    <div ref={loadMoreAnchorRef} className="h-4 print:hidden" aria-hidden="true" />
+                )}
 
                 {emptyState && (
                     <div className="text-center py-12 text-muted-foreground">

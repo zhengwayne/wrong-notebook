@@ -4,27 +4,21 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { AlertTriangle, BarChart3, Bot, Info, Languages, Loader2, MessageSquareText, Settings, Shield, User, Wand2 } from "lucide-react";
+import { AlertTriangle, Bot, Info, Languages, Loader2, MessageSquareText, Settings, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserManagement } from "@/components/admin/user-management";
-import { AboutSettings } from "@/components/settings/about-settings";
-import { AccountSettings } from "@/components/settings/account-settings";
-import { AiProviderSettings } from "@/components/settings/ai-provider-settings";
-import { DangerZoneSettings } from "@/components/settings/danger-zone-settings";
-import { DataBackupSettings } from "@/components/settings/data-backup-settings";
-import { DebugLogSettings } from "@/components/settings/debug-log-settings";
 import { GeneralSettings } from "@/components/settings/general-settings";
-import { PromptSettings } from "@/components/settings/prompt-settings";
-import { TtsSettings } from "@/components/settings/tts-settings";
+import {
+    AdminSettingsTabContent,
+    LazyAboutSettings,
+    LazyAccountSettings,
+    LazyAiProviderSettings,
+    LazyDangerZoneSettings,
+    LazyDataBackupSettings,
+    LazyPromptSettings,
+    LazyTtsSettings,
+} from "@/components/settings/lazy-panels";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { UserProfileProvider } from "@/contexts/UserProfileContext";
@@ -33,24 +27,12 @@ import { validateAiConfig } from "@/lib/ai-config-validation";
 import { DEFAULT_TIME_ZONE } from "@/lib/date-time";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { OPEN_SETTINGS_EVENT, requestOpenSettings } from "@/lib/settings-events";
 import type { AppConfig } from "@/types/api";
 
-export const OPEN_SETTINGS_EVENT = "wn:open-settings";
+export { OPEN_SETTINGS_EVENT, requestOpenSettings };
 
-/** 让其他入口（如移动端「更多」）打开已挂载的设置对话框，避免再挂一份 */
-export function requestOpenSettings() {
-    if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event(OPEN_SETTINGS_EVENT));
-    }
-}
-
-interface SettingsTabProps {
-    value: string;
-    icon: ReactNode;
-    label: string;
-}
-
-function SettingsTab({ value, icon, label }: SettingsTabProps) {
+function SettingsTab({ value, icon, label }: { value: string; icon: ReactNode; label: string }) {
     return (
         <TabsTrigger value={value} aria-label={label} className="px-2 sm:px-3">
             {icon}
@@ -59,24 +41,25 @@ function SettingsTab({ value, icon, label }: SettingsTabProps) {
     );
 }
 
-export function SettingsDialog() {
+export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean }) {
     const { setTimeZone } = useTimeZone();
     const { data: session } = useSession();
-    const isAdmin = session?.user?.role === 'admin';
+    const isAdmin = session?.user?.role === "admin";
     const { t } = useLanguage();
     const router = useRouter();
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(defaultOpen);
+    const [activeTab, setActiveTab] = useState("general");
     const dialogContentRef = useRef<HTMLDivElement>(null);
     const [saving, setSaving] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [config, setConfig] = useState<AppConfig>({ aiProvider: 'minimax' });
+    const [config, setConfig] = useState<AppConfig>({ aiProvider: "minimax" });
 
     const fetchSettings = useCallback(async () => {
         setLoading(true);
         try {
             setConfig(await apiClient.get<AppConfig>("/api/settings"));
         } catch (error) {
-            frontendLogger.error('[SettingsDialog]', 'Failed to fetch settings', { error });
+            frontendLogger.error("[SettingsDialog]", "Failed to fetch settings", { error });
         } finally {
             setLoading(false);
         }
@@ -84,7 +67,7 @@ export function SettingsDialog() {
 
     useEffect(() => {
         if (open) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或条件变化时加载，请求前后更新加载状态和结果
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：弹窗开启时加载配置并更新加载状态
             fetchSettings();
         }
     }, [open, fetchSettings]);
@@ -108,10 +91,9 @@ export function SettingsDialog() {
             setConfig(updated);
             setTimeZone(updated.timeZone || DEFAULT_TIME_ZONE);
             toast.success(t.settings?.messages?.saved || "Settings saved");
-            // 保存成功后滚动到顶部，方便关闭对话框
-            dialogContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            dialogContentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) {
-            frontendLogger.error('[SettingsDialog]', 'Failed to save settings', { error });
+            frontendLogger.error("[SettingsDialog]", "Failed to save settings", { error });
             toast.error(t.settings?.messages?.saveFailed || "Failed to save");
         } finally {
             setSaving(false);
@@ -126,101 +108,86 @@ export function SettingsDialog() {
     );
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setActiveTab("general"); }}>
             <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
+                <Button variant="ghost" size="icon" className="rounded-full" title={t.settings?.title || "Settings"} aria-label={t.settings?.title || "Settings"}>
                     <Settings className="h-5 w-5" />
-                    <span className="sr-only">{t.settings?.title || "Settings"}</span>
                 </Button>
             </DialogTrigger>
             <DialogContent ref={dialogContentRef} className="w-[calc(100vw-2rem)] sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{t.settings?.title || "Settings"}</DialogTitle>
-                    <DialogDescription>
-                        {t.settings?.desc || 'Manage your preferences and data.'}
-                    </DialogDescription>
+                    <DialogDescription>{t.settings?.desc || "Manage your preferences and data."}</DialogDescription>
                 </DialogHeader>
 
                 <UserProfileProvider enabled={open}>
-                <Tabs defaultValue="general" className="w-full">
-                    <TabsList className={`grid w-full grid-cols-4 ${isAdmin ? 'sm:grid-cols-7' : 'sm:grid-cols-4'} gap-1 h-auto`}>
-                        <SettingsTab value="general" icon={<Languages className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.general || "General"} />
-                        <SettingsTab value="account" icon={<User className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.account || "Account"} />
-                        {isAdmin && (
-                            <>
-                                <SettingsTab value="ai" icon={<Bot className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.ai || "AI Provider"} />
-                                <SettingsTab value="prompts" icon={<MessageSquareText className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.prompts || "Prompts"} />
-                                <SettingsTab value="admin" icon={<Shield className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.admin || "User Management"} />
-                            </>
-                        )}
-                        <SettingsTab value="danger" icon={<AlertTriangle className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.danger || "Danger"} />
-                        <SettingsTab value="about" icon={<Info className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.about || "About"} />
-                    </TabsList>
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <TabsList className={`grid w-full grid-cols-4 ${isAdmin ? "sm:grid-cols-7" : "sm:grid-cols-4"} gap-1 h-auto`}>
+                            <SettingsTab value="general" icon={<Languages className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.general || "General"} />
+                            <SettingsTab value="account" icon={<User className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.account || "Account"} />
+                            {isAdmin && (
+                                <>
+                                    <SettingsTab value="ai" icon={<Bot className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.ai || "AI Provider"} />
+                                    <SettingsTab value="prompts" icon={<MessageSquareText className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.prompts || "Prompts"} />
+                                    <SettingsTab value="admin" icon={<Shield className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.admin || "User Management"} />
+                                </>
+                            )}
+                            <SettingsTab value="danger" icon={<AlertTriangle className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.danger || "Danger"} />
+                            <SettingsTab value="about" icon={<Info className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.about || "About"} />
+                        </TabsList>
 
-                    <TabsContent value="general" className="space-y-4 py-4">
-                        <GeneralSettings config={config} setConfig={setConfig} isAdmin={isAdmin} disabled={loading || saving} />
-                        {isAdmin && saveButton(t.settings?.save || "Save Settings")}
-                    </TabsContent>
-
-                    <TabsContent value="account" className="space-y-4 py-4">
-                        <AccountSettings />
-                    </TabsContent>
-
-                    <TabsContent value="ai" className="space-y-4 py-4">
-                        <AiProviderSettings config={config} setConfig={setConfig} loading={loading} saving={saving} onSave={handleSaveSettings} />
-                        {!loading && <TtsSettings config={config} setConfig={setConfig} saving={saving} onSave={handleSaveSettings} />}
-                    </TabsContent>
-
-                    <TabsContent value="prompts" className="space-y-4 py-4">
-                        <PromptSettings
-                            config={config}
-                            onUpdate={(type, value) => setConfig(prev => ({ ...prev, prompts: { ...prev.prompts, [type]: value } }))}
-                        />
-                        {saveButton(t.settings?.prompts?.save || "Save Prompt Settings")}
-                    </TabsContent>
-
-                    {isAdmin && (
-                        <TabsContent value="admin" className="space-y-4 py-4">
-                            <Button
-                                variant="outline"
-                                className="w-full justify-start gap-2"
-                                onClick={() => {
-                                    setOpen(false);
-                                    router.push("/admin");
-                                }}
-                            >
-                                <BarChart3 className="h-4 w-4" />
-                                {t.admin?.dashboard?.title || "Admin Dashboard"}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="w-full justify-start gap-2"
-                                onClick={() => {
-                                    setOpen(false);
-                                    router.push("/setup");
-                                }}
-                            >
-                                <Wand2 className="h-4 w-4" />
-                                {t.setup.rerun}
-                            </Button>
-                            <DebugLogSettings />
-                            <div className="border-t pt-4">
-                                <UserManagement />
-                            </div>
+                        <TabsContent value="general" className="space-y-4 py-4">
+                            {activeTab === "general" && (
+                                <>
+                                    <GeneralSettings config={config} setConfig={setConfig} isAdmin={isAdmin} disabled={loading || saving} />
+                                    {isAdmin && saveButton(t.settings?.save || "Save Settings")}
+                                </>
+                            )}
                         </TabsContent>
-                    )}
 
-                    <TabsContent value="danger" className="space-y-4 py-4">
-                        <div className="space-y-3">
-                            <DataBackupSettings isAdmin={isAdmin} />
-                            <DangerZoneSettings isAdmin={isAdmin} />
-                        </div>
-                    </TabsContent>
+                        <TabsContent value="account" className="space-y-4 py-4">
+                            {activeTab === "account" && <LazyAccountSettings />}
+                        </TabsContent>
 
-                    <TabsContent value="about" className="space-y-4 py-4">
-                        <AboutSettings />
-                    </TabsContent>
-                </Tabs>
+                        <TabsContent value="ai" className="space-y-4 py-4">
+                            {activeTab === "ai" && (
+                                <>
+                                    <LazyAiProviderSettings config={config} setConfig={setConfig} loading={loading} saving={saving} onSave={handleSaveSettings} />
+                                    {!loading && <LazyTtsSettings config={config} setConfig={setConfig} saving={saving} onSave={handleSaveSettings} />}
+                                </>
+                            )}
+                        </TabsContent>
+
+                        <TabsContent value="prompts" className="space-y-4 py-4">
+                            {activeTab === "prompts" && (
+                                <>
+                                    <LazyPromptSettings config={config} onUpdate={(type, value) => setConfig(prev => ({ ...prev, prompts: { ...prev.prompts, [type]: value } }))} />
+                                    {saveButton(t.settings?.prompts?.save || "Save Prompt Settings")}
+                                </>
+                            )}
+                        </TabsContent>
+
+                        {isAdmin && (
+                            <TabsContent value="admin" className="space-y-4 py-4">
+                                {activeTab === "admin" && (
+                                    <AdminSettingsTabContent onNavigate={(href) => { setOpen(false); router.push(href); }} />
+                                )}
+                            </TabsContent>
+                        )}
+
+                        <TabsContent value="danger" className="space-y-4 py-4">
+                            {activeTab === "danger" && (
+                                <div className="space-y-3">
+                                    <LazyDataBackupSettings isAdmin={isAdmin} />
+                                    <LazyDangerZoneSettings isAdmin={isAdmin} />
+                                </div>
+                            )}
+                        </TabsContent>
+
+                        <TabsContent value="about" className="space-y-4 py-4">
+                            {activeTab === "about" && <LazyAboutSettings />}
+                        </TabsContent>
+                    </Tabs>
                 </UserProfileProvider>
             </DialogContent>
         </Dialog>

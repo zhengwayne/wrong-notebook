@@ -1,66 +1,55 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { LogOut, MoreHorizontal, Settings, Shield } from "lucide-react";
+import { LogOut, Settings, Shield } from "lucide-react";
+import { MobileNav, navLabel } from "@/components/layout/mobile-nav";
 import { PersonaSwitcher } from "@/components/persona-switcher";
-import { SettingsDialog, requestOpenSettings } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { homeHrefForPersona, isMobileMoreActive, mobileMoreItemsForPersona, mobilePrimaryItemsForPersona, navItemsForPersona, type NavItem } from "@/lib/nav-items";
-import { useCurrentChild } from "@/lib/use-current-child";
+import { homeHrefForPersona, navItemsForPersona, type NavItem } from "@/lib/nav-items";
 import type { Persona } from "@/lib/personas";
+import { OPEN_SETTINGS_EVENT } from "@/lib/settings-events";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { useSetupRedirect } from "@/lib/use-setup-redirect";
 import { cn } from "@/lib/utils";
+
+const LazySettingsDialog = dynamic(
+    () => import("@/components/settings-dialog").then((m) => m.SettingsDialog),
+    { ssr: false },
+);
 
 /** 登录、注册与打印页不显示导航 */
 const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/initialize/, /^\/onboarding/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
 
-function navLabel(
-    t: { nav: Record<string, string> },
-    key: NavItem["key"],
-    compact = false,
-    persona?: Persona | null,
-): string {
-    if (persona === "teacher" && key === "grading" && t.nav.gradingCollect) return t.nav.gradingCollect;
-    if (compact && key === "learn" && t.nav.learnShort) return t.nav.learnShort;
-    if (compact && key === "papers" && t.nav.papersShort) return t.nav.papersShort;
-    return t.nav[key];
-}
-
 function NavLink({
     item,
     pathname,
-    compact = false,
     persona,
     href,
-    onNavigate,
     className,
 }: {
     item: NavItem;
     pathname: string;
-    compact?: boolean;
     persona?: Persona | null;
     href?: string;
-    onNavigate?: () => void;
     className?: string;
 }) {
     const { t } = useLanguage();
     const active = item.match(pathname);
     const Icon = item.icon;
-    const label = navLabel(t, item.key, compact, persona);
+    const label = navLabel(t, item.key, false, persona);
     return (
         <Link
             href={href || item.href}
             className={className}
             aria-current={active ? "page" : undefined}
-            onClick={onNavigate}
         >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             {label}
@@ -76,17 +65,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const isAdmin = session?.user?.role === "admin";
     const activePersona = session?.user?.activePersona ?? null;
     const navItems = navItemsForPersona(activePersona);
-    const mobilePrimaryItems = mobilePrimaryItemsForPersona(activePersona);
-    const mobileMoreItems = mobileMoreItemsForPersona(activePersona);
     const homeHref = homeHrefForPersona(activePersona);
     const { hrefWithChild } = useCurrentChild();
     const isBare = BARE_PATHS.some((pattern) => pattern.test(pathname));
     useSetupRedirect(isAdmin && !isBare);
-    const [moreOpen, setMoreOpen] = useState(false);
-    const moreTitleId = useId();
-    const moreDescId = useId();
-    const morePanelId = useId();
-    const moreActive = isMobileMoreActive(pathname, activePersona);
+    const [settingsMounted, setSettingsMounted] = useState(false);
+
+    useEffect(() => {
+        const onOpen = () => setSettingsMounted(true);
+        window.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+        return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    }, []);
 
     if (isBare || status === "unauthenticated") {
         return <ErrorBoundary>{children}</ErrorBoundary>;
@@ -94,15 +83,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     const userName = session?.user?.name || session?.user?.email || "";
 
-    const openSettingsFromMore = () => {
-        setMoreOpen(false);
-        // 等「更多」面板关闭后再打开设置，避免两个模态框叠在一起
-        window.setTimeout(() => requestOpenSettings(), 0);
-    };
-
     return (
         <div className="min-h-screen">
-            {/* 键盘用户按 Tab 首先聚焦的跳过导航锚点 */}
             <a
                 href="#main-content"
                 className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[110] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring"
@@ -142,7 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                         "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                         active
                                             ? "bg-accent text-accent-foreground shadow-2xs"
-                                            : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                                            : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                                     )}
                                 />
                             );
@@ -170,7 +152,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             </Button>
                         )}
                         <ThemeToggle />
-                        <SettingsDialog />
+                        {settingsMounted ? (
+                            <LazySettingsDialog defaultOpen />
+                        ) : (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full"
+                                onClick={() => setSettingsMounted(true)}
+                                title={t.settings?.title || "Settings"}
+                                aria-label={t.settings?.title || "Settings"}
+                            >
+                                <Settings className="h-5 w-5" />
+                            </Button>
+                        )}
                         <Button
                             type="button"
                             variant="ghost"
@@ -190,131 +186,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
 
-            <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-            <nav
-                aria-label={t.nav.mobileNav}
-                className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-card/92 backdrop-blur-md md:hidden print:hidden"
-            >
-                <div className="grid h-16 grid-cols-5 px-1">
-                    {mobilePrimaryItems.map((item) => {
-                        const active = item.match(pathname);
-                        const Icon = item.icon;
-                        const label = navLabel(t, item.key, true, activePersona);
-                        return (
-                            <Link
-                                key={item.key}
-                                href={hrefWithChild(item.href)}
-                                className={cn(
-                                    "flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                                    active ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                                )}
-                                aria-current={active ? "page" : undefined}
-                            >
-                                <span
-                                    className={cn(
-                                        "flex h-7 w-11 items-center justify-center rounded-full transition-colors",
-                                        active && "bg-accent text-accent-foreground"
-                                    )}
-                                >
-                                    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                                </span>
-                                <span className="max-w-full truncate">{label}</span>
-                            </Link>
-                        );
-                    })}
-                    <SheetTrigger asChild>
-                    <button
-                        type="button"
-                        className={cn(
-                            "flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                            moreActive || moreOpen ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                        )}
-                        aria-haspopup="dialog"
-                        aria-controls={morePanelId}
-                        aria-current={moreActive ? "true" : undefined}
-                    >
-                        <span
-                            className={cn(
-                                "flex h-7 w-11 items-center justify-center rounded-full transition-colors",
-                                (moreActive || moreOpen) && "bg-accent text-accent-foreground"
-                            )}
-                        >
-                            <MoreHorizontal className="h-5 w-5 shrink-0" aria-hidden="true" />
-                        </span>
-                        <span className="max-w-full truncate">{t.nav.more}</span>
-                    </button>
-                    </SheetTrigger>
-                </div>
-            </nav>
-                <SheetContent
-                    id={morePanelId}
-                    closeLabel={t.common.close}
-                    aria-labelledby={moreTitleId}
-                    aria-describedby={moreDescId}
-                    className="md:hidden"
-                >
-                    <div className="px-4 pb-4 pt-3">
-                        <SheetTitle id={moreTitleId} className="text-base font-semibold tracking-tight">
-                            {t.nav.more}
-                        </SheetTitle>
-                        <SheetDescription id={moreDescId} className="sr-only">
-                            {t.nav.moreMenu}
-                        </SheetDescription>
-                        <ul className="mt-3 space-y-1" role="list">
-                            {mobileMoreItems.map((item) => {
-                                const active = item.match(pathname);
-                                const Icon = item.icon;
-                                return (
-                                    <li key={item.key}>
-                                        <Link
-                                            href={hrefWithChild(item.href)}
-                                            aria-current={active ? "page" : undefined}
-                                            onClick={() => setMoreOpen(false)}
-                                            className={cn(
-                                                "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                                                active
-                                                    ? "bg-accent text-accent-foreground"
-                                                    : "text-foreground hover:bg-muted/80"
-                                            )}
-                                        >
-                                            <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                                            {navLabel(t, item.key, false, activePersona)}
-                                        </Link>
-                                    </li>
-                                );
-                            })}
-                            <li>
-                                <button
-                                    type="button"
-                                    onClick={openSettingsFromMore}
-                                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring"
-                                >
-                                    <Settings className="h-5 w-5 shrink-0" aria-hidden="true" />
-                                    {t.settings.title}
-                                </button>
-                            </li>
-                            {isAdmin && (
-                                <li>
-                                    <Link
-                                        href="/admin"
-                                        aria-current={pathname.startsWith("/admin") ? "page" : undefined}
-                                        onClick={() => setMoreOpen(false)}
-                                        className={cn(
-                                            "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                                            pathname.startsWith("/admin")
-                                                ? "bg-accent text-accent-foreground"
-                                                : "text-foreground hover:bg-muted/80"
-                                        )}
-                                    >
-                                        <Shield className="h-5 w-5 shrink-0" aria-hidden="true" />
-                                        {t.nav.admin}
-                                    </Link>
-                                </li>
-                            )}
-                        </ul>
-                    </div>
-                </SheetContent>
-            </Sheet>
+            <MobileNav
+                pathname={pathname}
+                isAdmin={isAdmin}
+                activePersona={activePersona}
+                hrefWithChild={hrefWithChild}
+            />
         </div>
     );
 }

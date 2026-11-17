@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { learningScopeWhere, type LearningScope } from '@/lib/learning-scope';
 import { DEFAULT_QUESTION_DUPLICATE_THRESHOLD, duplicateQuestionSimilarity } from '@/lib/question-similarity';
-import { translations } from '@/lib/translations';
+import { zh } from '@/lib/translations/zh';
 
 export interface ImportedQuestionContent {
     questionText?: string | null;
@@ -91,7 +91,7 @@ export async function recordDuplicateQuestion(
         similarity: duplicate.similarity,
         mistakeRecorded: true as const,
         practiceRecordId: record.id,
-        message: translations.zh.importFlow.duplicate,
+        message: zh.importFlow.duplicate,
     };
 }
 

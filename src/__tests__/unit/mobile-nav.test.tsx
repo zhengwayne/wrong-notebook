@@ -32,14 +32,14 @@ vi.mock("next/image", () => ({
 }));
 
 vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => <button type="button">主题</button> }));
-vi.mock("@/components/settings-dialog", () => ({
-    SettingsDialog: () => <button type="button">顶栏设置</button>,
+vi.mock("@/lib/settings-events", () => ({
+    OPEN_SETTINGS_EVENT: "wn:open-settings",
     requestOpenSettings: vi.fn(),
 }));
 vi.mock("@/lib/use-setup-redirect", () => ({ useSetupRedirect: () => undefined }));
 
 import { AppShell } from "@/components/app-shell";
-import { requestOpenSettings } from "@/components/settings-dialog";
+import { requestOpenSettings } from "@/lib/settings-events";
 
 let root: Root;
 let container: HTMLDivElement;

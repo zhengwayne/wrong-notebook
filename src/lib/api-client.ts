@@ -1,5 +1,6 @@
 import { toast } from "@/lib/feedback";
-import { translations } from "@/lib/translations";
+import { getLoadedAiDailyLimitMessage } from "@/lib/translations/loader";
+import type { Language } from "@/lib/translations/types";
 
 type RequestOptions = RequestInit & {
     params?: Record<string, string>;
@@ -62,13 +63,13 @@ function triggerSessionRevokedSignOut(code: string) {
  */
 function notifyAiDailyLimit(data: unknown) {
     if (typeof data !== 'object' || data === null || !('code' in data) || data.code !== 'AI_DAILY_LIMIT_EXCEEDED') return;
-    let language: keyof typeof translations = 'zh';
+    let language: Language = 'zh';
     try {
         if (localStorage.getItem('app-language') === 'en') language = 'en';
     } catch {
         // 无法读取时使用默认语言
     }
-    toast.warning(translations[language].errors.AI_DAILY_LIMIT_EXCEEDED);
+    toast.warning(getLoadedAiDailyLimitMessage(language));
 }
 
 /** 断线后轮询结果的间隔 */
