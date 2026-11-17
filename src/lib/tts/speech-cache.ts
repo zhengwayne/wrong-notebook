@@ -251,3 +251,9 @@ export async function importSpeeches(entries: unknown): Promise<number> {
     if (imported) pruneCache().catch((error) => logger.warn({ error }, 'Failed to prune TTS cache'));
     return imported;
 }
+
+/** 清理本地云端语音磁盘缓存（供 system-reset 调用） */
+export async function clearSpeechCache(): Promise<void> {
+    pending.clear();
+    await fs.rm(cacheDir(), { recursive: true, force: true });
+}

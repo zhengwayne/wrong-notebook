@@ -288,3 +288,23 @@ export function flushBackgroundTasksForTest(): void {
     if (saveTimer) clearTimeout(saveTimer);
     saveNow();
 }
+
+/** 清理所有后台任务登记并删除本地持久化文件（供 system-reset 调用） */
+export function clearAllBackgroundTasks(): void {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    tasks.clear();
+    const file = store.__backgroundTasksFile !== undefined
+        ? store.__backgroundTasksFile
+        : path.join(process.env.CONFIG_DIR || path.join(process.cwd(), 'config'), 'background-tasks.json');
+    if (file) {
+        try {
+            fs.rmSync(/* turbopackIgnore: true */ file, { force: true });
+        } catch (error) {
+            logger.warn({ error }, 'Failed to remove background tasks persistence file');
+        }
+    }
+    store.__backgroundTasksLoaded = false;
+}

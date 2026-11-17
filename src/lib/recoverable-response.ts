@@ -107,3 +107,8 @@ export function getStoredResponse(id: string): StoredResponse | null {
 export function resetRecoverableResponsesForTest(): void {
     entries.clear();
 }
+
+/** 清空内存中的断线重取响应缓存（供 system-reset 调用） */
+export function clearRecoverableResponses(): void {
+    entries.clear();
+}
