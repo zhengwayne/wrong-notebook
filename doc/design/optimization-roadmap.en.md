@@ -131,11 +131,11 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 ### OPT-03 · Shared AI provider base and log leak prevention (P0 part + P1, Batch 0 + Batch B)
 
 - **Batch 0 [P0] (Done: `1f2edc1`)**: in production, `logger.box` no longer prints content, only provenance and lengths. Debug output requires an explicit environment variable and is truncated and redacted. Add a test asserting that production-mode logs contain no `data:image`, test student names or prompt fragments.
-- **Batch B [P1]**: extract `base-xml-parser.ts` and `error-normalizer.ts` to unify tag parsing across the four providers (including the fallback for an unclosed `<analysis>`), exception handling in `completeJson`, and the `AI_*` error codes. Add `MAX_TOKENS` truncation retries to Gemini's remaining 13 methods; extend LongCat's `input_image` adapter to every method that takes images; fix Azure's wrong `deployment` argument and the missing `model` in `recognizeGrade`. No external AI SDK.
+- **Batch B [P1] (Done: `a5fbbb4`)**: extract `base-xml-parser.ts` and `error-normalizer.ts` to unify tag parsing across the four providers (including the fallback for an unclosed `<analysis>`), exception handling in `completeJson`, and the `AI_*` error codes. Add `MAX_TOKENS` truncation retries to Gemini's remaining 13 methods; extend LongCat's `input_image` adapter to every method that takes images; fix Azure's wrong `deployment` argument and the missing `model` in `recognizeGrade`. No external AI SDK.
 
 **Acceptance**: a unit-test matrix of four providers × core methods returns a unified error code, or retries successfully, under 401, 429, timeout and truncation; with `NODE_ENV=production`, logs contain no full prompts or student answers.
 
-### OPT-04 · Tags for all subjects and hardened structured parsing (P1, Batch B)
+### OPT-04 · Tags for all subjects and hardened structured parsing (P1, Batch B, Done: `3a203ae`)
 
 - `SUBJECT_TAG_FIELDS` covers all 9 subjects, with `SUBJECT_DISPLAY_NAMES` as the single source; `plausibleSubjectsForGrade(null)` returns every subject; creating and editing items look up tags by `(name, subject)`.
 - `extractJsonObject` runs a string-aware repair pass **before the first `JSON.parse`**: it only touches backslashes inside strings; skips already doubled `\\`; keeps `\"`, `\/` and valid `\uXXXX`; and for `\b`, `\f`, `\n`, `\r` and `\t`, which are valid escapes that would silently become control characters, it doubles the backslash only when a known LaTeX command name follows. `\n` matches only commands such as `neq`, `nabla` and `notin`, so normal line breaks are untouched; the `\t` word list excludes `to` to avoid rewriting tab-separated text. A second pass (trailing commas, raw newlines inside strings) runs only if the first parse still fails.
@@ -179,7 +179,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: on a legacy sample database with 10,000 items and a non-empty `-wal`, a complete backup is produced automatically (including committed transactions in `-wal`); after migrating, `prisma migrate diff` exits 0 and `PRAGMA foreign_key_check` is empty; `/api/health` is ready within 15 seconds of a cold start. Roll back with the pre-migration backup plus the previous installer, never with a column-dropping down migration.
 
-### OPT-09 · Variant pipeline and math verification (P1, Batch B; includes E7)
+### OPT-09 · Variant pipeline and math verification (P1, Batch B; includes E7, Done: `448ffd9`)
 
 - Inject the shared question, LaTeX and SVG rules into the variant prompts; `variant/pipeline.ts` calls `normalizeGeneratedQuestion` to block multiple-choice questions and question numbers or scores; always call `sanitizeFigureSvg` before writing or copying.
 - In `svg-animation.ts`, `buildSvgAnimationDocument` calls `sanitizeSvgAnimation` before building HTML. Because extraction takes everything from the first `<svg` to the last `</svg>`, a payload may smuggle `</body>` or `</html>` in between; reject such structural tags outright. If stripping is chosen instead, strip in a loop until nothing changes, so nested constructs like `</bo</body>dy>` cannot reassemble. The frontend currently renders SVG through `<img src=data:...>`, so scripts do not execute directly; this item is defense in depth and protects export scenarios.
@@ -277,7 +277,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: `git status` shows no local backup files; after the merge, `check-public-history.py main` exits 0; the Wiki in both languages covers the shipped features.
 
-### OPT-19 · AI quality evaluation and provenance (P1, Batch B; from E1)
+### OPT-19 · AI quality evaluation and provenance (P1, Batch B; from E1, Done: `d67925e`)
 
 OPT-03 and OPT-04 fix behavioral differences between providers, but still cannot tell whether a model or prompt change made things better or worse. The repository has only smoke-test scripts, and the database does not record which provider, model and prompt version produced an AI result.
 
@@ -320,7 +320,7 @@ The users are mostly primary and secondary school students. Today the server sto
 
 | Item | Design | Rating | Batch |
 | --- | --- | --- | --- |
-| Server-side image normalization | Every entry point (recognition, Openclaw, parent exam papers, teacher grading) goes through `normalizeImage()`: decode with sharp, rotate by orientation, **strip all metadata**, cap the longest edge, re-encode; also check the real MIME type and a pixel limit (OPT-02 only limits bytes). Frontend compression is an optimization; the server is the security boundary. The `originalImageUrl` protocol check is done here too | P1 | B |
+| Server-side image normalization | Every entry point (recognition, Openclaw, parent exam papers, teacher grading) goes through `normalizeImage()`: decode with sharp, rotate by orientation, **strip all metadata**, cap the longest edge, re-encode; also check the real MIME type and a pixel limit (OPT-02 only limits bytes). Frontend compression is an optimization; the server is the security boundary. The `originalImageUrl` protocol check is done here too | P1 | B (Done: `b2d6a3f`) |
 | Backup encryption | ZIP v3 supports optional passphrase encryption (AES-256-GCM with a key derived from the passphrase by scrypt), with the encryption parameters stored in plain text in the manifest; unencrypted exports show a notice | P2 | D |
 | Self-service deletion | `DELETE /api/user`: requires re-entering the password, offers an export first, then deletes all data in one transaction (relying on OPT-08's foreign keys) and writes one audit record with no personal data; admin user deletion reuses the same service | P2 | G |
 | Disclosure of data flows | The settings page and `doc/PRIVACY*.md` state that images are sent to the currently configured AI provider, name it, and mention that a local model endpoint can be used instead | P2 | G |
@@ -366,7 +366,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | --- | --- | --- | --- | --- |
 | **Batch 0 Stop the bleeding** (Done: `ec8ee57`, `3ecc30f`, `b2b6226`, `1f2edc1`) | Restore the public history check, plug the log leak | The Batch 0 part of OPT-01 (test path, R08, `config.ts`, `debug`); OPT-03 log silencing; OPT-18 workspace hygiene; OPT-21 log assertion and preference round-trip tests | 1.5–2 | Cheap with certain payoff, independent of deployment form; without the public history check, every later push is blocked |
 | **Batch A Never lose data** (Done: `150ac2f`, `d45ccda`, `1c0ab8b`, `5d9e4e6`) | Families have no ops skills, so recovery comes first | OPT-22 daily snapshots; OPT-08 pre-migration backup and startup protection; OPT-06; OPT-05 | 4–6 | Every later migration relies on this layer |
-| **Batch B AI quality** | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
+| **Batch B AI quality** (Done: `3a203ae`, `a5fbbb4`, `448ffd9`, `b2d6a3f`, `d67925e`) | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
 | **Batch C Isolation between children** | Correctness for families with several children | OPT-08 foreign-key migration (audit first, user confirms); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
 | **Batch D Portable backup** | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm first); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
 | **Batch E Learning effect and experience** | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |

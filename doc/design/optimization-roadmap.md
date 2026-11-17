@@ -131,11 +131,11 @@
 ### OPT-03 · AI 提供商公共基座与日志防泄露（P0 部分 + P1，Batch 0 + Batch B）
 
 - **Batch 0【P0】（已完成：`1f2edc1`）**：生产环境中 `logger.box` 不再输出正文，只记录溯源信息和长度；需要调试时，由显式的环境变量开启，并经过长度截断和脱敏。增加测试，断言生产模式的日志中不会出现 `data:image`、测试学生姓名和提示词片段。
-- **Batch B【P1】**：抽出 `base-xml-parser.ts` 和 `error-normalizer.ts`，统一四个提供商的标签解析（包括未闭合 `<analysis>` 的兜底）、`completeJson` 的异常捕获和 `AI_*` 错误码；Gemini 其余 13 个方法补上 `MAX_TOKENS` 截断重试；LongCat 的 `input_image` 适配覆盖所有带图方法；修正 Azure 传错的 `deployment` 参数和 `recognizeGrade` 漏传 `model`。不引入外部 AI SDK。
+- **Batch B【P1】（已完成：`a5fbbb4`）**：抽出 `base-xml-parser.ts` 和 `error-normalizer.ts`，统一四个提供商的标签解析（包括未闭合 `<analysis>` 的兜底）、`completeJson` 的异常捕获和 `AI_*` 错误码；Gemini 其余 13 个方法补上 `MAX_TOKENS` 截断重试；LongCat 的 `input_image` 适配覆盖所有带图方法；修正 Azure 传错的 `deployment` 参数和 `recognizeGrade` 漏传 `model`。不引入外部 AI SDK。
 
 **验收**：四个提供商 × 核心方法的单测矩阵，在 401、429、超时、截断场景下返回统一错误码或自动重试成功；`NODE_ENV=production` 下日志不含完整提示词和学生答案。
 
-### OPT-04 · 全学科标签与结构化解析加固（P1，Batch B）
+### OPT-04 · 全学科标签与结构化解析加固（P1，Batch B，已完成：`3a203ae`）
 
 - `SUBJECT_TAG_FIELDS` 覆盖全部 9 科，以 `SUBJECT_DISPLAY_NAMES` 为唯一来源；`plausibleSubjectsForGrade(null)` 返回全部学科；错题录入和详情按 `(name, subject)` 查找标签。
 - `extractJsonObject` 在**第一次 `JSON.parse` 之前**运行一遍字符串感知的修复：只处理字符串内的反斜杠；跳过已经双写的 `\\`；保留 `\"`、`\/` 和合法的 `\uXXXX`；对 `\b`、`\f`、`\n`、`\r`、`\t` 这五个本身合法、会被静默解析成控制字符的转义，只在后面紧跟已知 LaTeX 命令名时补成双反斜杠。`\n` 只匹配 `neq`、`nabla`、`notin` 等命令，不影响正常换行；`\t` 的词表不包含 `to`，避免误改制表符文本。第一次解析仍失败时，才执行第二遍（清理尾逗号、转义字符串中的裸换行）。
@@ -179,7 +179,7 @@
 
 **验收**：在包含 1 万道错题和非空 `-wal` 的旧版样本库上，自动生成完整的备份（包含 `-wal` 中已提交的事务）；迁移后 `prisma migrate diff` 退出码为 0，`PRAGMA foreign_key_check` 为空；`/api/health` 冷启动就绪时间少于 15 秒。回滚使用事前备份加旧版本安装包，不做会丢列的 down 迁移。
 
-### OPT-09 · 变式流水线与数学验算（P1，Batch B；含 E7）
+### OPT-09 · 变式流水线与数学验算（P1，Batch B；含 E7，已完成：`448ffd9`）
 
 - 变式出题提示词注入通用的出题、LaTeX、SVG 规则，`variant/pipeline.ts` 调用 `normalizeGeneratedQuestion` 拦截选择题和题号分值；写入和复制前统一调用 `sanitizeFigureSvg`。
 - `svg-animation.ts` 中 `buildSvgAnimationDocument` 拼接 HTML 前先调用 `sanitizeSvgAnimation`；由于提取逻辑取第一个 `<svg` 到最后一个 `</svg>`，中间可能夹带 `</body>`、`</html>`，应直接拒绝这类结构标签；如果选择剥离，必须循环剥离到不再变化，防止 `</bo</body>dy>` 这类嵌套构造重组。当前前端以 `<img src=data:...>` 渲染 SVG，脚本不会直接执行，这一项属于纵深防御和导出场景的保护。
@@ -277,7 +277,7 @@
 
 **验收**：`git status` 中没有本地备份文件；合入后 `check-public-history.py main` 退出码为 0；Wiki 中英文页面覆盖已上线功能。
 
-### OPT-19 · AI 质量评测与溯源（P1，Batch B；来自 E1）
+### OPT-19 · AI 质量评测与溯源（P1，Batch B；来自 E1，已完成：`d67925e`）
 
 OPT-03、OPT-04 修复了提供商之间的行为差异，但仍然回答不了“换模型或改提示词之后效果是变好还是变差”。仓库只有冒烟脚本，数据库中也没有记录某条 AI 结果来自哪个提供商、模型和提示词版本。
 
@@ -320,7 +320,7 @@ eval/
 
 | 项 | 设计 | 定级 | 批次 |
 | --- | --- | --- | --- |
-| 服务端图片规范化 | 所有入口（识别、Openclaw、家长试卷、教师批改）统一经过 `normalizeImage()`：sharp 解码，按方向旋转，**去除全部元数据**，限制最长边，重新编码；同时检查真实 MIME 和像素上限（OPT-02 只限制字节数）。前端压缩只是优化，服务端处理才是安全边界。`originalImageUrl` 协议校验一起完成 | P1 | B |
+| 服务端图片规范化 | 所有入口（识别、Openclaw、家长试卷、教师批改）统一经过 `normalizeImage()`：sharp 解码，按方向旋转，**去除全部元数据**，限制最长边，重新编码；同时检查真实 MIME 和像素上限（OPT-02 只限制字节数）。前端压缩只是优化，服务端处理才是安全边界。`originalImageUrl` 协议校验一起完成 | P1 | B（已完成：`b2d6a3f`） |
 | 备份加密 | ZIP v3 支持可选口令加密（AES-256-GCM，用 scrypt 从口令派生密钥），manifest 中明文记录加密参数；未加密导出时给出提示 | P2 | D |
 | 自助删除 | `DELETE /api/user`：要求重新输入密码，先引导导出，然后在一个事务中删除全部数据（依赖 OPT-08 外键），只写一条不含个人信息的审计记录；管理员删除用户复用同一服务 | P2 | G |
 | 数据去向告知 | 在设置页和 `doc/PRIVACY*.md` 写明图片会发送给当前配置的 AI 提供商，列出是哪一家，并提示可以改用本地模型端点 | P2 | G |
@@ -366,7 +366,7 @@ OPT-08 只在迁移前备份一次。补充：
 | --- | --- | --- | --- | --- |
 | **Batch 0 止血**（已完成：`ec8ee57`、`3ecc30f`、`b2b6226`、`1f2edc1`） | 恢复公开历史检查，堵住日志泄露 | OPT-01 的 Batch 0 部分（测试路径、R08、`config.ts`、`debug`）；OPT-03 日志静默；OPT-18 工作区卫生；OPT-21 日志断言和偏好往返测试 | 1.5–2 | 成本低、收益确定，与部署形态无关；不恢复公开历史检查，后续所有推送都会被阻止 |
 | **Batch A 数据不丢**（已完成：`150ac2f`、`d45ccda`、`1c0ab8b`、`5d9e4e6`） | 家庭用户没有运维能力，先保证可恢复 | OPT-22 每日快照；OPT-08 迁移前备份与启动保护；OPT-06；OPT-05 | 4–6 | 后续所有迁移都依赖这层保障 |
-| **Batch B AI 质量** | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
+| **Batch B AI 质量**（已完成：`3a203ae`、`a5fbbb4`、`448ffd9`、`b2d6a3f`、`d67925e`） | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
 | **Batch C 孩子之间隔离** | 多孩子家庭的正确性 | OPT-08 外键迁移（先审计、经用户确认）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
 | **Batch D 可迁移备份** | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（先验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
 | **Batch E 学习效果与体验** | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
