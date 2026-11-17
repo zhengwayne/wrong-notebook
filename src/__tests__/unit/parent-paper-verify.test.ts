@@ -5,6 +5,10 @@ import {
     applyIndependentCheck,
     localVerifyMath,
     looksLikeMath,
+    answersConfidentlyDiffer,
+    evaluateArithmeticExpression,
+    extractFinalMathValue,
+    extractQuestionMath,
     normalizeMathText,
     shouldVerifyQuestion,
     verifyParentPaperQuestions,
@@ -232,5 +236,127 @@ describe("verifyParentPaperQuestions", () => {
         const [checked] = await verifyParentPaperQuestions([original], { aiVerify });
         expect(aiVerify).not.toHaveBeenCalled();
         expect(checked).toEqual(original);
+    });
+});
+
+describe("real 递等式 paper strings", () => {
+    const paper = {
+        "一、1": question({
+            number: "一、1",
+            questionText: "递等式计算（能巧则巧）：$1856 - 258 + 242$",
+            studentAnswer: "$=1598+242=1840$",
+            correctAnswer: "$1840$",
+            verdict: "correct",
+        }),
+        "一、2": question({
+            number: "一、2",
+            questionText: "递等式计算（能巧则巧）：$2310 \\div [235 - 160 \\div (21 + 19)]$",
+            studentAnswer: "$=2310\\div[235-160\\div 40]=2310\\div[235-4]=2310\\div 231=10$",
+            correctAnswer: "$10$",
+            verdict: "correct",
+        }),
+        "一、3": question({
+            number: "一、3",
+            questionText: "递等式计算（能巧则巧）：$41 \\times 25$",
+            studentAnswer: "$=(40+1)\\times 25=(25\\times 40)+(1\\times 25)=1000+25=1025$",
+            correctAnswer: "$1025$",
+            verdict: "correct",
+        }),
+        "一、4": question({
+            number: "一、4",
+            questionText: "递等式计算（能巧则巧）：$199 \\times 99 + 199$",
+            studentAnswer: "$=199\\times 99+199\\times 1=(1+99)\\times 199=100\\times 199=19900$",
+            correctAnswer: "$19900$",
+            verdict: "correct",
+        }),
+        "一、5": question({
+            number: "一、5",
+            questionText: "递等式计算（能巧则巧）：$32 \\times 32 + 32 \\times 69 - 32$",
+            studentAnswer: "$=32\\times 32+32\\times 69-32\\times 1=(32+69-1)\\times 32=(101-1)\\times 32=100\\times 32=3200$",
+            correctAnswer: "$3200$",
+            verdict: "correct",
+        }),
+        "二(1)": question({
+            number: "二(1)",
+            questionText: "列式计算：$30$ 除 $159$ 与 $441$ 的和，商是几？",
+            studentAnswer: "$(159+441)\\div 30=600\\div 30=20$",
+            correctAnswer: "$(159 + 441) \\div 30 = 20$",
+            verdict: "correct",
+        }),
+        "六、1": question({
+            number: "六、1",
+            questionText: "王叔叔计划 $50$ 天加工 $1200$ 个零件，实际比计划提前 $10$ 天完成任务，实际每天加工多少个零件？",
+            studentAnswer: "$1200\\div 50=24(\\text{个})$，$50\\times 1200=6000(\\text{个})$，$50-10=40(\\text{个})$，$6000\\div 40=50(\\text{个})$。答：实际每天加工 $50$ 个零件",
+            correctAnswer: "实际加工天数：50-10=40（天）；实际每天加工：1200÷40=30（个）。答：实际每天加工30个零件。",
+            verdict: "wrong",
+        }),
+        "六、2": question({
+            number: "六、2",
+            questionText: "某货场运来 $3600$ 千克的煤，计划烧 $40$ 天，如果每天节约 $10$ 千克，这些煤可以炼多少天？",
+            studentAnswer: "$3600\\div 40=90(\\text{kg})$，$90-10=80(\\text{kg})$，$3600\\div 80=43(\\text{天})$。答：这些煤可以炼 $43$ 天",
+            correctAnswer: "原计划每天烧煤：3600÷40=90（千克）；节约后每天烧煤：90−10=80（千克）；可以烧：3600÷80=45（天）。答：这些煤可以烧45天。",
+            verdict: "wrong",
+        }),
+    };
+
+    it("evaluates the full expression, not the first two terms", () => {
+        expect(evaluateArithmeticExpression("1856-258+242")).toBe("1840");
+        expect(evaluateArithmeticExpression("2310/(235-160/(21+19))")).toBe("10");
+        expect(evaluateArithmeticExpression("41*25")).toBe("1025");
+        expect(evaluateArithmeticExpression("199*99+199")).toBe("19900");
+        expect(evaluateArithmeticExpression("32*32+32*69-32")).toBe("3200");
+        expect(evaluateArithmeticExpression("1856-258+apple")).toBeNull();
+        expect(extractQuestionMath(paper["一、1"].questionText)).toBe("1856-258+242");
+        expect(extractQuestionMath(paper["一、2"].questionText)).toBe("2310/(235-160/(21+19))");
+    });
+
+    it("reads the final value of a 递等式 student answer", () => {
+        expect(extractFinalMathValue(paper["一、1"].studentAnswer)).toBe("1840");
+        expect(extractFinalMathValue(paper["一、2"].studentAnswer)).toBe("10");
+        expect(extractFinalMathValue(paper["一、3"].studentAnswer)).toBe("1025");
+        expect(extractFinalMathValue(paper["一、4"].studentAnswer)).toBe("19900");
+        expect(extractFinalMathValue(paper["一、5"].studentAnswer)).toBe("3200");
+        expect(extractFinalMathValue(paper["二(1)"].studentAnswer)).toBe("20");
+        expect(extractFinalMathValue(paper["六、1"].studentAnswer)).toBe("50");
+        expect(extractFinalMathValue(paper["六、1"].correctAnswer)).toBe("30");
+        expect(extractFinalMathValue(paper["六、2"].studentAnswer)).toBe("43");
+        expect(extractFinalMathValue(paper["六、2"].correctAnswer)).toBe("45");
+        expect(answersConfidentlyDiffer(paper["六、1"].studentAnswer, paper["六、1"].correctAnswer)).toBe(true);
+        expect(answersConfidentlyDiffer(paper["一、3"].studentAnswer, "1025")).toBe(false);
+        expect(answersConfidentlyDiffer("画一个圆", "以点 O 为圆心画圆")).toBe(false);
+    });
+
+    it("agrees with correct 递等式 work and does not flag it", async () => {
+        const aiVerify = vi.fn();
+        const items = ["一、1", "一、2", "一、3", "一、4", "一、5"].map((key) => paper[key as keyof typeof paper]);
+        const checked = await verifyParentPaperQuestions(items, { aiVerify });
+        expect(aiVerify).not.toHaveBeenCalled();
+        for (const item of checked) {
+            expect(item.verdict).toBe("correct");
+            expect(item.confidence).toBe(0.99);
+            expect(isLowConfidence(item.confidence)).toBe(false);
+        }
+        expect(localVerifyMath(paper["一、1"])).toMatchObject({ source: "local", verdict: "correct", correctAnswer: "1840" });
+        expect(localVerifyMath(paper["一、2"])).toMatchObject({ verdict: "correct", correctAnswer: "10" });
+        expect(localVerifyMath(paper["一、4"])).toMatchObject({ verdict: "correct", correctAnswer: "19900" });
+        expect(localVerifyMath(paper["一、5"])).toMatchObject({ verdict: "correct", correctAnswer: "3200" });
+    });
+
+    it("does not parse a word problem as a truncated sum, and does not flag same-verdict wording differences", async () => {
+        expect(localVerifyMath(paper["二(1)"])).toBeNull();
+        expect(localVerifyMath(paper["六、1"])).toBeNull();
+        const original = paper["二(1)"];
+        const [checked] = await verifyParentPaperQuestions([original], {
+            aiVerify: async () => ({ verdict: "correct", correctAnswer: "20", source: "ai" }),
+        });
+        expect(checked.confidence).toBe(0.99);
+        expect(checked.verdict).toBe("correct");
+
+        const [word] = await verifyParentPaperQuestions([paper["六、1"]], {
+            aiVerify: async () => ({ verdict: "wrong", correctAnswer: "30", source: "ai" }),
+        });
+        expect(word.verdict).toBe("wrong");
+        expect(word.confidence).toBe(0.99);
+        expect(isLowConfidence(word.confidence)).toBe(false);
     });
 });

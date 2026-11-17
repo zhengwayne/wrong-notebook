@@ -87,14 +87,183 @@ function numbersClose(left: number, right: number): boolean {
     return Math.abs(left - right) <= 1e-6;
 }
 
-/** 把「x = 3」「$3$」等作成答规范成可比较的文本或数值 */
-export function normalizeStudentMathAnswer(answer: string): string {
-    let text = normalizeMathText(answer);
-    text = text.replace(/^[a-zA-Z]=/, "");
-    return text;
+/** 把全角运算符号和方括号规范成可计算的 ASCII */
+export function prepareMathSource(text: string): string {
+    return normalizeMathText(text)
+        .replace(/[∗·]/g, "*")
+        .replace(/[／]/g, "/")
+        .replace(/[\[{［【]/g, "(")
+        .replace(/[\]}］】]/g, ")");
 }
 
-function answersMatch(student: string, expected: string): boolean {
+type MathToken =
+    | { type: "num"; value: number }
+    | { type: "op"; value: "+" | "-" | "*" | "/" }
+    | { type: "lp" }
+    | { type: "rp" };
+
+function tokenizeArithmetic(source: string): MathToken[] | null {
+    const tokens: MathToken[] = [];
+    let i = 0;
+    while (i < source.length) {
+        const char = source[i];
+        if (char >= "0" && char <= "9" || (char === "." && source[i + 1] >= "0" && source[i + 1] <= "9")) {
+            const match = source.slice(i).match(/^\d+(?:\.\d+)?/);
+            if (!match) return null;
+            tokens.push({ type: "num", value: Number(match[0]) });
+            i += match[0].length;
+            continue;
+        }
+        if (char === "+" || char === "-" || char === "*" || char === "/") {
+            tokens.push({ type: "op", value: char });
+            i += 1;
+            continue;
+        }
+        if (char === "(") { tokens.push({ type: "lp" }); i += 1; continue; }
+        if (char === ")") { tokens.push({ type: "rp" }); i += 1; continue; }
+        return null;
+    }
+    return tokens;
+}
+
+function evaluateTokens(tokens: MathToken[]): number | null {
+    let index = 0;
+    const peek = () => tokens[index];
+    const take = () => tokens[index++];
+
+    const parseExpression = (): number | null => {
+        let left = parseTerm();
+        if (left == null) return null;
+        while (peek()?.type === "op" && (peek() as { value: string }).value === "+" || peek()?.type === "op" && (peek() as { value: string }).value === "-") {
+            const op = (take() as { type: "op"; value: "+" | "-" }).value;
+            const right = parseTerm();
+            if (right == null) return null;
+            left = op === "+" ? left + right : left - right;
+        }
+        return left;
+    };
+
+    const parseTerm = (): number | null => {
+        let left = parseUnary();
+        if (left == null) return null;
+        while (peek()?.type === "op" && ((peek() as { value: string }).value === "*" || (peek() as { value: string }).value === "/")) {
+            const op = (take() as { type: "op"; value: "*" | "/" }).value;
+            const right = parseUnary();
+            if (right == null) return null;
+            if (op === "/") {
+                if (right === 0) return null;
+                left = left / right;
+            } else {
+                left = left * right;
+            }
+        }
+        return left;
+    };
+
+    const parseUnary = (): number | null => {
+        if (peek()?.type === "op" && (peek() as { value: string }).value === "+") {
+            take();
+            return parseUnary();
+        }
+        if (peek()?.type === "op" && (peek() as { value: string }).value === "-") {
+            take();
+            const value = parseUnary();
+            return value == null ? null : -value;
+        }
+        return parsePrimary();
+    };
+
+    const parsePrimary = (): number | null => {
+        const token = peek();
+        if (!token) return null;
+        if (token.type === "num") {
+            take();
+            return token.value;
+        }
+        if (token.type === "lp") {
+            take();
+            const value = parseExpression();
+            if (value == null || peek()?.type !== "rp") return null;
+            take();
+            return value;
+        }
+        return null;
+    };
+
+    const value = parseExpression();
+    if (value == null || index !== tokens.length) return null;
+    return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 计算完整四则运算式。必须吃完整串，前缀匹配不算，解析不了返回 null。
+ */
+export function evaluateArithmeticExpression(text: string): string | null {
+    const prepared = prepareMathSource(text).replace(/=+$/g, "");
+    if (!prepared || /[xX]/.test(prepared)) return null;
+    if (!/^[0-9()+\-*/.]+$/.test(prepared)) return null;
+    const tokens = tokenizeArithmetic(prepared);
+    if (!tokens?.length) return null;
+    const value = evaluateTokens(tokens);
+    return value == null ? null : formatNumber(value);
+}
+
+function mathCandidates(prepared: string): string[] {
+    return (prepared.match(/[0-9xX()+\-*/.=]+/g) ?? [])
+        .map((item) => item.replace(/X/g, "x").replace(/^=+|=+$/g, ""))
+        .filter((item) => item.length > 0 && /[0-9]/.test(item));
+}
+
+/** 从题干里取出可以完整求解的最长算式或方程；拿不准则放弃。 */
+export function extractQuestionMath(text: string): string | null {
+    const prepared = prepareMathSource(text);
+    const candidates = mathCandidates(prepared).sort((a, b) => b.length - a.length);
+    for (const candidate of candidates) {
+        if (candidate.includes("x") && candidate.includes("=")) {
+            if (solveLinearEquation(candidate.replace(/[()]/g, ""))) return candidate.replace(/[()]/g, "");
+            continue;
+        }
+        // 题干里单独出现的数字不是算式，避免把「30 除 159 与 441 的和」误判成 159
+        if (!/[+\-*/]/.test(candidate)) continue;
+        if (evaluateArithmeticExpression(candidate) != null) return candidate;
+    }
+    return null;
+}
+
+function leadingMathChunk(text: string): string | null {
+    const match = text.match(/^[0-9()+\-*/.]+/);
+    if (!match) return null;
+    return match[0].replace(/[+\-*/.(]+$/, "");
+}
+
+function extractFinalFromChunk(text: string): string | null {
+    const prepared = prepareMathSource(text);
+    const parts = prepared.split("=").map((part) => part.replace(/^[,，;；]+|[,，;；]+$/g, "")).filter(Boolean);
+    const target = parts.length ? parts[parts.length - 1] : prepared;
+    const chunk = leadingMathChunk(target);
+    if (!chunk) return null;
+    const asNumber = parseNumber(chunk);
+    if (asNumber != null) return formatNumber(asNumber);
+    return evaluateArithmeticExpression(chunk);
+}
+
+/** 取递等式或「答：」后的最终值，用于比较，而不是第一段中间结果。 */
+export function extractFinalMathValue(answer: string): string | null {
+    const stripped = stripLatex(answer);
+    const reply = stripped.split(/答[:：]/).slice(1).join("答：");
+    if (reply.trim()) {
+        const fromReply = extractFinalFromChunk(reply);
+        if (fromReply != null) return fromReply;
+    }
+    return extractFinalFromChunk(stripped);
+}
+
+/** 把「x = 3」「$3$」以及递等式末值作成答规范成可比较的文本或数值 */
+export function normalizeStudentMathAnswer(answer: string): string {
+    return extractFinalMathValue(answer) ?? prepareMathSource(answer).replace(/^[a-zA-Z]=/, "");
+}
+
+export function answersMatch(student: string, expected: string): boolean {
     const left = normalizeStudentMathAnswer(student);
     const right = normalizeStudentMathAnswer(expected);
     if (!left || !right) return false;
@@ -107,23 +276,20 @@ function answersMatch(student: string, expected: string): boolean {
     return compareObjective(student, { answer: expected, acceptedAnswers: [right] }) === "correct";
 }
 
-function evaluateBinary(left: number, op: string, right: number): number | null {
-    switch (op) {
-        case "+": return left + right;
-        case "-": return left - right;
-        case "*": return left * right;
-        case "/": return right === 0 ? null : left / right;
-        default: return null;
-    }
+/** 两边都能解析出最终值且不相等时才算有把握的答案冲突。 */
+export function answersConfidentlyDiffer(left: string, right: string): boolean {
+    const a = extractFinalMathValue(left);
+    const b = extractFinalMathValue(right);
+    if (a == null || b == null) return false;
+    const aNum = parseNumber(a);
+    const bNum = parseNumber(b);
+    if (aNum != null && bNum != null) return !numbersClose(aNum, bNum);
+    return a !== b;
 }
 
-const BINARY_PATTERN = /^([-+]?\d+(?:\.\d+)?)([+\-*/])([-+]?\d+(?:\.\d+)?)(?:=.*)?$/;
-
-function solveArithmetic(normalized: string): string | null {
-    const match = normalized.match(BINARY_PATTERN);
-    if (!match) return null;
-    const value = evaluateBinary(Number(match[1]), match[2], Number(match[3]));
-    return value == null || !Number.isFinite(value) ? null : formatNumber(value);
+function verdictsConfidentlyDisagree(left: ParentReviewVerdict, right: ParentReviewVerdict): boolean {
+    const ok = (verdict: ParentReviewVerdict) => verdict === "correct";
+    return ok(left) !== ok(right);
 }
 
 const EQUATION_X_LEFT = /^([-+])?(?:(\d+(?:\.\d+)?))?x(?:([+-]\d+(?:\.\d+)?))?=(?:([-+]?\d+(?:\.\d+)?))$/;
@@ -159,21 +325,13 @@ function solveLinearEquation(normalized: string): string | null {
     return formatNumber((c - b) / a);
 }
 
-function firstEquationOrExpression(text: string): string | null {
-    const normalized = normalizeMathText(text);
-    const withEq = normalized.match(/[0-9xX()+\-*/.]+(?:[0-9xX()+\-*/.]*=[0-9xX()+\-*/.]*)/);
-    if (withEq?.[0]) return withEq[0].replace(/X/g, "x");
-    const expr = normalized.match(/[-+]?\d+(?:\.\d+)?[+\-*/][-+]?\d+(?:\.\d+)?/);
-    return expr?.[0] ?? null;
-}
-
 /**
- * 对能可靠解析的四则运算和一元一次方程独立求解。解析不了则返回 null。
+ * 对能可靠解析的四则运算和一元一次方程独立求解。解析不了则返回 null，不把半截算式当成答案。
  */
 export function localVerifyMath(question: ParentReviewQuestion): IndependentCheck | null {
-    const source = firstEquationOrExpression(question.questionText);
+    const source = extractQuestionMath(question.questionText);
     if (!source) return null;
-    const computed = source.includes("x") ? solveLinearEquation(source) : solveArithmetic(source);
+    const computed = source.includes("x") ? solveLinearEquation(source.replace(/[()]/g, "")) : evaluateArithmeticExpression(source);
     if (computed == null) return null;
     const correct = source.includes("x") && !/^[+-]?\d+(?:\.\d+)?$/.test(computed)
         ? computed
@@ -270,9 +428,9 @@ export function applyIndependentCheck(
     const answerConflicts = Boolean(
         check.correctAnswer
         && question.correctAnswer
-        && !answersMatch(question.correctAnswer, check.correctAnswer),
+        && answersConfidentlyDiffer(question.correctAnswer, check.correctAnswer),
     );
-    const disagreed = check.verdict !== question.verdict || answerConflicts;
+    const disagreed = verdictsConfidentlyDisagree(check.verdict, question.verdict) || answerConflicts;
     if (!disagreed) {
         return question.correctAnswer ? question : { ...question, correctAnswer: check.correctAnswer || question.correctAnswer };
     }
