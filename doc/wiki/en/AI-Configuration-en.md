@@ -11,6 +11,8 @@ Admins can change the AI configuration in the web settings. Once saved, later re
 
 AI settings, connection tests, model lists and prompt settings are admin-only. The OpenAI configuration supports up to 10 instances; the currently active instance decides which configuration is used.
 
+> **Security boundaries**: the settings endpoints mask all saved API keys as `********` so testing or partial saves never leak or overwrite stored credentials; custom AI and voice endpoint URLs allow only `http:` / `https:` without embedded credentials, block unspecified (`0.0.0.0/8`, `::`), link-local and cloud-metadata targets (`169.254.0.0/16`, `100.100.100.200`, `fe80::/10`, `metadata.google.internal`, etc., including DNS resolution checks), enforce a 15-second timeout and forbid HTTP redirects while keeping local or LAN Ollama/vLLM deployments working.
+
 ## Provider parameters
 
 | Provider | Required | Endpoint and default model |

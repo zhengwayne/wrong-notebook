@@ -20,7 +20,7 @@ The project uses the Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4
 | `src/__tests__/`, `e2e/`, `tests/publication/` | Unit, integration, E2E and publication check tests |
 | `scripts/`, `doc/` | Maintenance scripts and topic documents |
 
-AI requests are dispatched to a provider on the server and call external services; business data is stored in SQLite through Prisma. The background task list lives in process memory and is mirrored to `background-tasks.json` in the config directory; after a restart only the records remain and nothing resumes, so it is not a substitute for a persistent job queue.
+AI requests are dispatched to a provider on the server and call external services; business data and async operation state are stored in SQLite through Prisma (background tasks and recoverable responses are persisted in `AsyncOperation`, retiring `background-tasks.json`; `running` jobs are marked `interrupted` during startup recovery rather than resumed).
 
 ## Common checks
 
@@ -61,7 +61,8 @@ After changing logic, run at least the unit and integration tests. Changes to do
 - TypeScript avoids `any`; type imports use `import type`; the `@/` alias points to `src/`.
 - React components declare Props types, and large components are split; pages work on both mobile and desktop.
 - Interface text goes into `translations.ts` (Chinese and English keys must match, which a unit test checks); API errors use `api-errors`; front end and back end use the project loggers.
-- Validate user input with zod first, and query the database through Prisma's parameterized APIs.
+- Validate user input with zod first, and query the database through Prisma's parameterized APIs; wrap API route handlers with `defineApiRoute` (ESLint forbids importing `getServerSession` directly in API routes, enforced alongside `api-auth-inventory.test.ts`).
+- Historical learner ownership governance (including same-name students across classes) uses `scripts/backfill-learners.ts` (`--inventory`, `--export-ambiguous`, `--apply-decisions`, `--revert`).
 
 ## Changing AI features
 

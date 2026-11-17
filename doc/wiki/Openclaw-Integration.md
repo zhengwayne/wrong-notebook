@@ -29,7 +29,7 @@ OPENCLAW_INTEGRATION_API_KEY=替换为随机生成的集成密钥
 
 可用 `openssl rand -hex 32` 生成集成密钥。`OPENCLAW_API_URL` 在代码中的缺省值为 `http://localhost:8080`；容器部署时需改成容器可访问的 agent 地址。
 
-`apikey` 模式必须同时配置非空的 `OPENCLAW_INTEGRATION_API_KEY` 才会启用；否则代码进入用户名密码认证分支。修改环境变量后，应重启或重建服务使其生效。
+`apikey` 模式必须同时配置非空的 `OPENCLAW_INTEGRATION_API_KEY` 才会启用（使用恒定时间比对校验；未配置时若仍设为 `apikey` 将直接拒绝请求，不再静默回退）。修改环境变量后，应重启或重建服务使其生效。
 
 ## API Key 模式请求
 
@@ -49,7 +49,7 @@ OPENCLAW_INTEGRATION_API_KEY=替换为随机生成的集成密钥
 }
 ```
 
-目标用户必须已经存在。`subjectId` 可省略；填写时应使用目标用户已有的错题本 ID。
+目标用户必须已经存在、处于启用状态（`isActive: true`）且邮箱/用户名唯一匹配。`subjectId` 和可选 `learnerId` 会严格校验目标用户本人归属，越权访问返回 `404`。
 
 把实际请求体保存为 `request.json`，并在调用端环境中提供集成密钥后，可执行：
 
@@ -64,16 +64,14 @@ curl --fail-with-body http://localhost:3000/api/openclaw/batch-upload \
 
 ## 用户名密码模式
 
-默认 `OPENCLAW_AUTH_MODE=credentials`。请求体携带 `username`、`password`、可选 `subjectId` 和相同结构的 `images`；`username` 可使用用户邮箱或用户名。通过 HTTPS 传输并避免记录请求中的密码。
+默认 `OPENCLAW_AUTH_MODE=credentials`。请求体携带 `username`、`password`、可选 `subjectId` / `learnerId` 和相同结构的 `images`；`username` 支持按大小写不敏感精确匹配用户邮箱或用户名，同样校验 `isActive` 与账户/IP 登录限流。请通过 HTTPS 传输并避免记录请求中的密码。
 
 ## 输入限制与超时
 
 - 每批最多 20 张图片。
 - 预期格式为 JPG、JPEG 或 PNG（`mimeType` 须为 `image/jpeg` 或 `image/png`），单张解码后估算大小不超过 5 MiB。
 - `base64` 使用纯 Base64，文件名扩展名应与图片内容匹配。
-- 图片按顺序逐张识别；当前单张识别超时为 `min(3000, OPENCLAW_TIMEOUT / 图片数)` 毫秒。
-
-当前实现的单张超时最多 3 秒；只调大 `OPENCLAW_TIMEOUT` 不会突破这一上限。接入耗时较长的 agent 时，需要特别核对接口实现与实际响应时间。
+- 图片按顺序逐张识别；当前单张识别超时为 `max(3000, floor(OPENCLAW_TIMEOUT / 图片数))` 毫秒（不低于 3 秒）。
 
 ## agent 识别接口
 

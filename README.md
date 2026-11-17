@@ -426,6 +426,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `NEXTAUTH_SECRET` | Auth 密钥 | 无 | 用于加密 Session，生产环境必须设置，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 访问地址 | 无 | 部署后的访问地址，如 `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | 信任主机头 | Docker 镜像中为 `true` | 为 `true` 时根据请求自动推断访问地址，适合 Docker/反向代理 |
+| `TRUST_PROXY` | 代理 IP 头信任模式 | `false` | 默认 `false` 忽略代理 IP 头防伪造绕过限流；Nginx/Caddy 反代设 `true`，Cloudflare 后设 `cloudflare` |
+| `TRUSTED_PROXY_HOPS` | 可信反向代理层数 | `1` | 仅 `TRUST_PROXY=true` 时生效，从 `X-Forwarded-For` 末端取第 N 跳客户端 IP |
 | `NEXTAUTH_DEBUG` | NextAuth 调试日志 | `false` | 设为 `true` 时输出 NextAuth 详细调试日志 |
 | `LOG_LEVEL` | 日志级别 | 开发 `debug` / 生产 `info` | 可选 `trace`、`debug`、`info`、`warn`、`error`、`fatal`，详见 [日志指南](doc/LOGGING_GUIDE.md) |
 | `LOG_AI_PAYLOADS` | 生产输出 AI 调试载荷 | `false` | 生产环境默认不向 stdout 打印完整提示词与学生答案；设为 `true` 时输出脱敏并截断后的载荷 |

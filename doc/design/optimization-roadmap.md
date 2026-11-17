@@ -107,7 +107,7 @@
 4. `src/lib/auth.ts` 去掉硬编码的 `debug: true`，改为 `NEXTAUTH_DEBUG === 'true'`。【P2】（已完成：`b2b6226`）
 5. `.gitignore` 增加 `*.db.bak-*`、`*.db.live-migrated-*`、`*.log.bak-*`（见 OPT-18）。（已完成：`ec8ee57`）
 
-**Batch F（跨账户加固）**
+**Batch F（跨账户加固，已完成：`60600b9`）**
 
 - `subjectId` 归属校验（`where: { id: subjectId, userId }`，跨用户返回 404），并修复 `error-items/[id]` 中空串无法解绑的问题。【P1】
 - 定义 `USER_SAFE_SELECT`，管理员用户接口只返回安全字段，`isActive` 使用 zod 校验。【P2】
@@ -116,7 +116,7 @@
 
 **验收**：`check-public-history.py HEAD` 只剩历史对象问题（见 OPT-18）；偏好开关刷新后保持；POSIX 下 `app-config.json` 权限为 `0600`；Batch F 部分按评估方案的验收项执行。
 
-### OPT-02 · 统一认证 Actor 与 `defineApiRoute` 包装器（P1/P2，Batch F）
+### OPT-02 · 统一认证 Actor 与 `defineApiRoute` 包装器（P1/P2，Batch F，已完成：`c01b58b`、`afb9ac7`、`152547a`）
 
 - **D1a 会话检查（P1，约 1 人日）**：`getCurrentUser` 和 `jwt` 回调按稳定的 `userId` 查询最新的 `isActive`、`role`。这一步不需要迁移，满足 3.2 节触发条件时最先提前。
 - **完整方案**：`User` 新增 `authVersion`（改密、禁用、降权时在事务内递增）；`src/lib/server/actor.ts` 提供 `requireActor()` / `requireAdminActor()`；失效时返回 `401 SESSION_REVOKED | ACCOUNT_DISABLED`，前端防抖后自动登出（与 OPT-15 联动）。
@@ -168,7 +168,7 @@
 ### OPT-07 · 学习者作用域隔离与档案治理（P1，Batch C + Batch F）
 
 - **Batch C（孩子之间，已完成：`bea3a21`）**：`LearningScope = { userId, learnerId }` 覆盖判重、重复练习、统计、清空、复习和 Openclaw 入口（R03）；创建孩子在事务中原子检查数量上限；删除孩子默认软归档（`archivedAt`），或在单个事务中硬删除全部相关数据（R12）。
-- **Batch F（教师端，R07）**：不再按姓名匹配错题本或用 `OR` 合并，新写入严格按 `learnerId` / `gradingStudentId` 关联；历史归属按原审查 D2 的流程修复（只读盘点、导出歧义清单、唯一可确定的自动回填、歧义由人工确认、写审计日志）。
+- **Batch F（教师端，R07，已完成：`a16b1e4`）**：不再按姓名匹配错题本或用 `OR` 合并，新写入严格按 `learnerId` / `gradingStudentId` 关联；历史归属按原审查 D2 的流程修复（只读盘点、导出歧义清单、唯一可确定的自动回填、歧义由人工确认、写审计日志）。
 
 **验收**：两个账户、各两个孩子、加上跨班同名学生的矩阵下，录入、判重、统计、复习、清空完全隔离；10 个并发创建请求最多成功 3 个；删除中途注入异常后没有残留的半完成数据。依赖 OPT-06、OPT-08 外键迁移。
 
@@ -188,7 +188,7 @@
 
 **验收**：原审查 D4 的全部反例（缺根、坐标不同、`1=1`、`2x=6`、`expected` 与 `answerText` 冲突、跳过难度检查）加上 `e` 常数用例全部通过，并进入 `eval/datasets/verify/`；含 A/B/C/D 或 `<script>` 的变式被拒收或净化；含 `</body><script>`、`onload`、`javascript:` 的 SVG 载荷无法逃逸。
 
-### OPT-10 · 批改确认竞态与统一作业表（P2，Batch F）
+### OPT-10 · 批改确认竞态与统一作业表（P2，Batch F，已完成：`fa435f4`、`7ce1664`）
 
 - 家长和教师的批改确认在短事务内用条件更新抢占状态（`updateMany` 带 `status` 和 `version` 条件），新增 `SourceImport(userId, sourceKind, sourceQuestionId)` 唯一约束防止重复导入；耗时的图片裁剪放在事务外，提交前核对源版本，冲突返回 409（R11）。
 - 用一张 `AsyncOperation` 表统一原审查 D3 的幂等表、现有的 `recoverable-response` 内存缓存和 `background-tasks`（淘汰 `config/background-tasks.json`）：`(userId, kind, idempotencyKey)` + `requestHash`，同键同内容复用结果，同键异内容返回 409，跨用户返回 404（R02）。**第一版不做租约和心跳**：单实例部署下，重启时把运行中的任务标记为 `interrupted` 已经足够。
@@ -207,7 +207,7 @@
 - `admin/system-reset` 清理全部业务表和磁盘缓存，只保留当前管理员账号和 `isSystem: true` 的系统知识点树。
 - 同步更新 `src/app/api/export`、`src/app/api/import`、`data-backup.test.ts` 和备份 Wiki（中英文）。
 
-**OPT-11b · Asset 文件存储（P2，Batch G，视基准结果决定）**：按原审查 D8 的原则，等 OPT-17 的基准数据出来后再决定是否把图片从数据库迁到 `${DATA_DIR}/assets/`。如果实施，采用“双读、校验、保留旧字段一段时间”的平滑迁移，并提供鉴权的 `/api/assets/:id`。`/api/tts/:id` 的归属校验不依赖 Asset，放在 Batch F。
+**OPT-11b · Asset 文件存储（P2，Batch G，视基准结果决定）**：按原审查 D8 的原则，等 OPT-17 的基准数据出来后再决定是否把图片从数据库迁到 `${DATA_DIR}/assets/`。如果实施，采用“双读、校验、保留旧字段一段时间”的平滑迁移，并提供鉴权的 `/api/assets/:id`。`/api/tts/:id` 的归属校验不依赖 Asset，已在 Batch F 完成（`60600b9`）。
 
 **验收（11a）**：500MB 含图样本库导出、空库导入，RSS 峰值增量小于 150MB；v3 往返后全部实体数量、学习者归属、`stages`、媒体 SHA-256 完全一致；`system-reset` 后业务表和缓存为空。依赖 OPT-07、OPT-08。
 
@@ -341,8 +341,8 @@ eval/
 | 双租户测试工具 | `withTwoTenants()` 自动创建两个账户、两个孩子和同名学生，断言跨作用域访问返回 404 | R03、R07、越权 | C（已完成：`bea3a21`） |
 | 备份覆盖测试 | 通过 Prisma DMMF 枚举全部模型，每个模型必须出现在“导出”或“明确不导出”清单中 | R05 回退 | C（已完成：`f6bb37f`） |
 | system-reset 覆盖测试 | 同样基于 DMMF，断言重置后所有业务表为空 | 漏删新表 | D（已完成：`01fec89`） |
-| 路由清单测试 | 扫描 `src/app/api/**/route.ts`，要求导出的处理函数都由 `defineApiRoute` 包装，并与 `api-auth-inventory.json` 快照对比；新增公开路由必须显式登记 | 绕过鉴权 | F |
-| ESLint 会话规则 | `src/app/api/**` 禁止直接导入 `getServerSession` | R01 回退 | F |
+| 路由清单测试 | 扫描 `src/app/api/**/route.ts`，要求导出的处理函数都由 `defineApiRoute` 包装，并与 `api-auth-inventory.json` 快照对比；新增公开路由必须显式登记 | 绕过鉴权 | F（已完成：`c01b58b`） |
+| ESLint 会话规则 | `src/app/api/**` 禁止直接导入 `getServerSession` | R01 回退 | F（已完成：`c01b58b`） |
 
 备份覆盖、偏好往返和 system-reset 覆盖三项成本很低，把 AGENTS.md 中“新增字段要同步导出导入”从约定变成了机器检查。
 
@@ -370,7 +370,7 @@ OPT-08 只在迁移前备份一次。补充：
 | **Batch C 孩子之间隔离**（已完成：`0812330`、`bea3a21`、`f6bb37f`） | 多孩子家庭的正确性 | OPT-08 外键迁移（只读审计与外键重建）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
 | **Batch D 可迁移备份**（已完成：`01fec89`、`b02986f`、`9cbee2b`、`76aac87`） | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（已验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
 | **Batch E 学习效果与体验**（已完成：`6b0282f`、`6fa9ff1`、`f4c7547`、`38483c9`） | 复习与日常使用 | OPT-12a；OPT-12b 灰度；OPT-15；OPT-14 | 7–10 | 依赖 Batch C 的学习者作用域 |
-| **Batch F 多账户与加固** | 跨账户安全 | OPT-02（D1a 优先，包装器按模块迁移）；OPT-01 的 Batch F 部分；OPT-07 教师部分；OPT-10；`/api/tts/:id` 归属校验；OPT-21 路由清单与会话规则 | 8–11 | 家庭单账户下风险低；满足 3.2 节条件时整体或部分提前 |
+| **Batch F 多账户与加固**（已完成：`60600b9`、`c01b58b`、`afb9ac7`、`152547a`、`a16b1e4`、`fa435f4`、`7ce1664`） | 跨账户安全 | OPT-02（D1a 优先，包装器按模块迁移）；OPT-01 的 Batch F 部分；OPT-07 教师部分；OPT-10；`/api/tts/:id` 归属校验；OPT-21 路由清单与会话规则 | 8–11 | 家庭单账户下风险低；满足 3.2 节条件时整体或部分提前 |
 | **Batch G 按需** | 长期质量 | OPT-16；OPT-17；OPT-11b（视基准）；OPT-20 自助删除与数据去向告知；OPT-18 文档债收口 | 另估 | — |
 
 Batch 0–F 合计约 **37–51 人日**；做到 Batch D 约 **22–30 人日**。评估方案的 Batch 0–D 为 24–33.5 人日，差异主要来自：OPT-02 的路由迁移不再压在一个批次内、新增 OPT-19–OPT-22，以及 OPT-12b。

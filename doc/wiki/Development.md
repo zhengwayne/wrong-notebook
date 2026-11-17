@@ -20,7 +20,7 @@
 | `src/__tests__/`、`e2e/`、`tests/publication/` | 单元、集成、E2E 与公开发布检查测试 |
 | `scripts/`、`doc/` | 开发维护脚本与专项文档 |
 
-AI 请求由服务端选择提供商并调用外部服务，业务数据经 Prisma 存入 SQLite。后台任务列表存于进程内存并同步写入配置目录的 `background-tasks.json`，重启后只保留记录、不会恢复执行，不能用它替代持久化任务队列。
+AI 请求由服务端选择提供商并调用外部服务，业务数据与异步任务状态经 Prisma 存入 SQLite（后台任务与断线恢复结果统一保存在 `AsyncOperation` 表，不再写入 `background-tasks.json`；进程重启时 `running` 任务由启动自愈标记为 `interrupted`，不会自动恢复执行）。
 
 ## 常用检查
 
@@ -61,7 +61,8 @@ bash scripts/ci.sh
 - TypeScript 避免 `any`，类型导入使用 `import type`，路径别名 `@/` 指向 `src/`。
 - React 组件定义 Props 类型，较大的组件拆分；页面兼顾移动端与桌面端。
 - 界面文本进入 `translations.ts`，API 错误使用 `api-errors`，前后端分别使用项目日志工具。
-- 用户输入优先用 zod 校验，数据库查询使用 Prisma 参数化接口。
+- 用户输入优先用 zod 校验，数据库查询使用 Prisma 参数化接口；需登录或限流校验的 API 路由使用 `defineApiRoute` 包装（ESLint 禁止在路由中直接调用 `getServerSession`，并由 `api-auth-inventory.test.ts` 检查公开接口清单）。
+- 教师端历史数据（含跨班同名学生）归属治理与回填可使用 `scripts/backfill-learners.ts`（支持 `--inventory` 只读盘点、`--export-ambiguous` 导出歧义列表、`--apply-decisions` 导入人工确认、`--revert` 撤销自动回填）。
 
 ## 修改 AI 功能
 

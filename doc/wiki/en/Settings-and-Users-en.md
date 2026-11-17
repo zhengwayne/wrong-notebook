@@ -50,7 +50,7 @@ See the [time zone notes](https://github.com/margrop/wrong-notebook/blob/main/do
 | Regular user | Manage their own questions, practice, exam papers and preferences; import and export their own data |
 | Admin | Global AI and prompt settings, time zone, registration switch, user management and site-wide data import/export |
 
-Admins open the dashboard from "Settings → User Management" to see usage statistics and enable, disable or delete users. Confirm the target and [back up your data](Backup-and-Restore-en) before deleting.
+Admins open the dashboard from "Settings → User Management" to see usage statistics and enable, disable or delete users. Confirm the target and [back up your data](Backup-and-Restore-en) before deleting. When an account is disabled, its password is reset by an admin, or the user changes their password, the server increments `authVersion` so all existing sessions (JWTs) are immediately revoked and signed out.
 
 New sign-ups are off by default, so strangers cannot register and use up your AI quota when the service is reachable from the internet. To create accounts for family members, an admin turns on "Allow New Registrations" under "Settings → User Management" and turns it off again once the accounts exist. The environment variable `ALLOW_REGISTRATION=true` changes the default; a switch saved on the web page takes precedence. Instances that saved settings on the web page before upgrading keep their existing switch. While sign-ups are off, the sign-in page hides "Register now" and asks visitors to contact the administrator.
 
@@ -70,7 +70,7 @@ When several people recognize questions or generate explanations at once, a burs
 - AI calls to the same provider, API address and model never exceed the limit at the same time. Further calls wait in a queue and start in order as earlier ones finish; different models are counted separately.
 - Values range from 1 to 100, default 5. Lower it when the provider limits strictly (free quotas, trial plans); raise it when calls queue for long without any 429 errors.
 - A saved value applies to later calls immediately. The environment variable `AI_CONCURRENCY_LIMIT` sets the default; a value saved on the web page takes precedence.
-- Time spent in the queue counts toward the AI timeout on the page, so a task that waits too long may show a timeout.
+- The queue enforces bounded waiting capacity and a wait timeout: exceeding either returns HTTP `429` or `503` with a `Retry-After` header so pending requests do not pile up unboundedly; time spent in the queue also counts toward the page's AI timeout.
 
 Fresh installs create the first admin with a one-time setup link (see the [FAQ](FAQ-en)) instead of shipping a default admin with a fixed password. Upgrades keep existing accounts; `scripts/seed-admin.js` only restores the admin role of an existing `admin@localhost` and never creates an account.
 
@@ -80,7 +80,7 @@ The task entry at the bottom right of the page shows the status of long operatio
 
 The percentage on the entry screen is an estimate by stage (compress, upload, analyze, process, save), not the AI's real progress; the elapsed time shows how long you have been waiting.
 
-The task list lives in the server process's memory. Navigating away usually does not stop processing that has already started on the server, but a restart clears the list and running tasks are not resumed from it. Completed business data is whatever was saved to the database.
+Task state is persisted in the SQLite `AsyncOperation` table (retaining finished records for 30 minutes). Navigating away does not stop processing already running on the server; tasks still running during a restart are marked interrupted (shown as failed with "Interrupted by a server restart") and do not auto-resume. Saved questions and exam papers in the database remain the source of truth.
 
 ## Check the running version
 

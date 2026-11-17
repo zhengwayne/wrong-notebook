@@ -29,7 +29,7 @@ OPENCLAW_INTEGRATION_API_KEY=replace-with-a-random-integration-key
 
 Generate the integration key with `openssl rand -hex 32`. `OPENCLAW_API_URL` defaults to `http://localhost:8080` in the code; in container deployments, change it to an agent address reachable from the container.
 
-`apikey` mode is only enabled when a non-empty `OPENCLAW_INTEGRATION_API_KEY` is also set; otherwise the code falls back to username/password authentication. Restart or recreate the service after changing environment variables.
+`apikey` mode requires a non-empty `OPENCLAW_INTEGRATION_API_KEY` (verified via constant-time comparison; when `OPENCLAW_AUTH_MODE=apikey` without a key, requests are rejected instead of falling back). Restart or recreate the service after changing environment variables.
 
 ## API key mode request
 
@@ -49,7 +49,7 @@ Send `Content-Type: application/json` and `x-api-key: <your integration key>`. E
 }
 ```
 
-The target user must already exist. `subjectId` is optional; when given, it must be the ID of one of the target user's notebooks.
+The target user must already exist, be active (`isActive: true`), and match uniquely by email/username. Optional `subjectId` and `learnerId` are strictly verified for ownership by that user (cross-user access returns `404`).
 
 Save the actual body as `request.json` and, with the integration key available in the caller's environment, run:
 
@@ -64,16 +64,14 @@ The endpoint returns after processing the whole batch, so give the caller a long
 
 ## Username/password mode
 
-`OPENCLAW_AUTH_MODE=credentials` is the default. The body carries `username`, `password`, an optional `subjectId` and the same `images` structure; `username` can be the user's email or username. Send it over HTTPS and avoid logging the password in the request.
+`OPENCLAW_AUTH_MODE=credentials` is the default. The body carries `username`, `password`, optional `subjectId` / `learnerId`, and the same `images` structure; `username` matches email or username uniquely (case-insensitively) and checks `isActive` along with account and IP sign-in rate limiting. Send it over HTTPS and avoid logging the password in the request.
 
 ## Input limits and timeouts
 
 - At most 20 images per batch.
 - Expected formats are JPG, JPEG or PNG (`mimeType` must be `image/jpeg` or `image/png`), each at most an estimated 5 MiB after decoding.
 - `base64` is plain Base64, and the file extension should match the image content.
-- Images are recognized one by one in order; the per-image timeout is currently `min(3000, OPENCLAW_TIMEOUT / image count)` milliseconds.
-
-With the current implementation the per-image timeout is at most 3 seconds; raising `OPENCLAW_TIMEOUT` alone does not lift this cap. When integrating a slow agent, check the implementation against the actual response time.
+- Images are recognized one by one in order; the per-image timeout is `max(3000, floor(OPENCLAW_TIMEOUT / image count))` milliseconds (at least 3 seconds).
 
 ## Agent recognition API
 

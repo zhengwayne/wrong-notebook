@@ -107,7 +107,7 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 4. Remove the hard-coded `debug: true` from `src/lib/auth.ts` in favor of `NEXTAUTH_DEBUG === 'true'`. [P2] (Done: `b2b6226`)
 5. Add `*.db.bak-*`, `*.db.live-migrated-*` and `*.log.bak-*` to `.gitignore` (see OPT-18). (Done: `ec8ee57`)
 
-**Batch F (cross-account hardening)**
+**Batch F (cross-account hardening, Done: `60600b9`)**
 
 - Check `subjectId` ownership (`where: { id: subjectId, userId }`, 404 across users) and fix `error-items/[id]` so an empty string can unlink the subject. [P1]
 - Define `USER_SAFE_SELECT` so the admin user endpoints return only safe fields; validate `isActive` with zod. [P2]
@@ -116,7 +116,7 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 
 **Acceptance**: `check-public-history.py HEAD` reports only the historical object (see OPT-18); the preference survives a refresh; `app-config.json` is `0600` on POSIX; the Batch F part follows the assessment plan's acceptance items.
 
-### OPT-02 · Unified auth actor and `defineApiRoute` wrapper (P1/P2, Batch F)
+### OPT-02 · Unified auth actor and `defineApiRoute` wrapper (P1/P2, Batch F, Done: `c01b58b`, `afb9ac7`, `152547a`)
 
 - **D1a session check (P1, about 1 person-day)**: `getCurrentUser` and the `jwt` callback look up the current `isActive` and `role` by the stable `userId`. No migration is needed; it is the first thing pulled forward when a section 3.2 trigger applies.
 - **Full design**: add `authVersion` to `User` (incremented inside the transaction on password change, disable or demotion); `src/lib/server/actor.ts` provides `requireActor()` / `requireAdminActor()`; on invalidation return `401 SESSION_REVOKED | ACCOUNT_DISABLED`, and the frontend signs out after debouncing (together with OPT-15).
@@ -168,7 +168,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 ### OPT-07 · Learner scope isolation and profile management (P1, Batch C + Batch F)
 
 - **Batch C (between children, Done: `bea3a21`)**: `LearningScope = { userId, learnerId }` covers duplicate detection, repeated practice, statistics, clearing, review and the Openclaw endpoint (R03). Creating a child checks the count limit atomically in a transaction. Deleting a child archives it by default (`archivedAt`), or hard-deletes all related data in a single transaction (R12).
-- **Batch F (teachers, R07)**: stop matching notebooks by name or merging with `OR`; new writes link strictly by `learnerId` / `gradingStudentId`. Fix historical ownership with the original review's D2 process (read-only inventory, export an ambiguity list, auto-backfill only unambiguous cases, manual confirmation for ambiguous ones, audit log).
+- **Batch F (teachers, R07, Done: `a16b1e4`)**: stop matching notebooks by name or merging with `OR`; new writes link strictly by `learnerId` / `gradingStudentId`. Fix historical ownership with the original review's D2 process (read-only inventory, export an ambiguity list, auto-backfill only unambiguous cases, manual confirmation for ambiguous ones, audit log).
 
 **Acceptance**: with two accounts, two children each, and same-name students across classes, entry, duplicate detection, statistics, review and clearing are fully isolated; at most 3 of 10 concurrent create requests succeed; injecting an error mid-deletion leaves no half-finished data. Depends on OPT-06 and the OPT-08 foreign-key migration.
 
@@ -188,7 +188,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: all counterexamples from the original review's D4 (missing roots, different coordinates, `1=1`, `2x=6`, `expected` contradicting `answerText`, skipped difficulty check) plus the constant-`e` case pass and are added to `eval/datasets/verify/`; variants containing A/B/C/D options or `<script>` are rejected or sanitized; SVG payloads containing `</body><script>`, `onload` or `javascript:` cannot escape.
 
-### OPT-10 · Grading confirmation races and a unified job table (P2, Batch F)
+### OPT-10 · Grading confirmation races and a unified job table (P2, Batch F, Done: `fa435f4`, `7ce1664`)
 
 - Parent and teacher grading confirmation claims the state with a conditional update inside a short transaction (`updateMany` conditioned on `status` and `version`), plus a `SourceImport(userId, sourceKind, sourceQuestionId)` unique constraint against duplicate imports. Slow image cropping runs outside the transaction, and the source version is re-checked before committing, returning 409 on conflict (R11).
 - One `AsyncOperation` table replaces the original review's D3 idempotency table, the current in-memory `recoverable-response` cache and `background-tasks` (retiring `config/background-tasks.json`): `(userId, kind, idempotencyKey)` + `requestHash`; the same key with the same body reuses the result, the same key with a different body returns 409, and other users get 404 (R02). **The first version has no leases or heartbeats**: with a single instance, marking running jobs `interrupted` on restart is enough.
@@ -207,7 +207,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 - `admin/system-reset` clears every business table and the disk caches, keeping only the current admin account and the `isSystem: true` system knowledge-point tree.
 - Update `src/app/api/export`, `src/app/api/import`, `data-backup.test.ts` and the backup Wiki pages (both languages) together.
 
-**OPT-11b · Asset file storage (P2, Batch G, depending on benchmarks)**: following the original review's D8, decide whether to move images from the database to `${DATA_DIR}/assets/` only after OPT-17 produces benchmark data. If done, migrate gradually (dual reads, verification, keep the old field for a while) and serve them through an authenticated `/api/assets/:id`. The ownership check for `/api/tts/:id` does not depend on assets and goes in Batch F.
+**OPT-11b · Asset file storage (P2, Batch G, depending on benchmarks)**: following the original review's D8, decide whether to move images from the database to `${DATA_DIR}/assets/` only after OPT-17 produces benchmark data. If done, migrate gradually (dual reads, verification, keep the old field for a while) and serve them through an authenticated `/api/assets/:id`. The ownership check for `/api/tts/:id` does not depend on assets and has been completed in Batch F (`60600b9`).
 
 **Acceptance (11a)**: exporting a 500MB sample database with images and importing it into an empty one adds less than 150MB to peak RSS; after a v3 round trip, entity counts, learner ownership, `stages` and media SHA-256 all match exactly; after `system-reset`, business tables and caches are empty. Depends on OPT-07 and OPT-08.
 
@@ -341,8 +341,8 @@ Each guardrail goes into the same commit as the problem it prevents.
 | Two-tenant test helper | `withTwoTenants()` creates two accounts, two children and same-name students, and asserts that cross-scope access returns 404 | R03, R07, IDOR | C (Done: `bea3a21`) |
 | Backup coverage test | Enumerate every model through Prisma DMMF; each must appear on either the "exported" or the "deliberately not exported" list | R05 regressions | C (Done: `f6bb37f`) |
 | system-reset coverage test | Also DMMF-based: assert that all business tables are empty after a reset | Missed new tables | D (Done: `01fec89`) |
-| Route inventory test | Scan `src/app/api/**/route.ts`, require every exported handler to be wrapped by `defineApiRoute`, and compare with an `api-auth-inventory.json` snapshot; new public routes must be registered explicitly | Bypassed auth | F |
-| ESLint session rule | Forbid importing `getServerSession` directly in `src/app/api/**` | R01 regressions | F |
+| Route inventory test | Scan `src/app/api/**/route.ts`, require every exported handler to be wrapped by `defineApiRoute`, and compare with an `api-auth-inventory.json` snapshot; new public routes must be registered explicitly | Bypassed auth | F (Done: `c01b58b`) |
+| ESLint session rule | Forbid importing `getServerSession` directly in `src/app/api/**` | R01 regressions | F (Done: `c01b58b`) |
 
 The backup coverage, preference round-trip and system-reset coverage tests are cheap, and they turn the AGENTS.md rule "new fields must be added to export and import" from a convention into a machine check.
 
@@ -370,7 +370,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | **Batch C Isolation between children** (Done: `0812330`, `bea3a21`, `f6bb37f`) | Correctness for families with several children | OPT-08 foreign-key migration (read-only audit and FK table rebuild); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
 | **Batch D Portable backup** (Done: `01fec89`, `b02986f`, `9cbee2b`, `76aac87`) | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm verified); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
 | **Batch E Learning effect and experience** (Done: `6b0282f`, `6fa9ff1`, `f4c7547`, `38483c9`) | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |
-| **Batch F Multiple accounts and hardening** | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
+| **Batch F Multiple accounts and hardening** (Done: `60600b9`, `c01b58b`, `afb9ac7`, `152547a`, `a16b1e4`, `fa435f4`, `7ce1664`) | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
 | **Batch G On demand** | Long-term quality | OPT-16; OPT-17; OPT-11b (depending on benchmarks); OPT-20 self-service deletion and data-flow disclosure; OPT-18 documentation debt | TBD | — |
 
 Batches 0–F total about **37–51 person-days**; through Batch D, about **22–30 person-days**. The assessment plan's Batches 0–D came to 24–33.5 person-days. The difference comes mainly from no longer packing OPT-02's route migration into one batch, the new OPT-19–OPT-22, and OPT-12b.

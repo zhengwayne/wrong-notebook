@@ -84,7 +84,7 @@ The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing databa
 
 For access by domain name, use an HTTPS certificate trusted by browsers. A reverse proxy can forward HTTPS requests to the app's HTTP port; set `NEXTAUTH_URL` to the external HTTPS address.
 
-The reverse proxy should forward `X-Real-IP` or `X-Forwarded-For`, because failed sign-ins are counted per client IP. The app sends security headers such as `X-Frame-Options: SAMEORIGIN` by default, so pages on other domains cannot embed it in an iframe; configure HSTS on the reverse proxy if you need it.
+The reverse proxy should forward `X-Real-IP` or `X-Forwarded-For`, and you should set `TRUST_PROXY=true` (with `TRUSTED_PROXY_HOPS`, default `1`) or `TRUST_PROXY=cloudflare` behind Cloudflare; by default `TRUST_PROXY=false` ignores all proxy IP headers to prevent clients from spoofing IPs to bypass rate limiting. The app sends security headers such as `X-Frame-Options: SAMEORIGIN` by default, so pages on other domains cannot embed it in an iframe; configure HSTS on the reverse proxy if you need it.
 
 The app also provides built-in HTTPS; see [`docker-compose.https.yml`](https://github.com/margrop/wrong-notebook/blob/main/docker-compose.https.yml) in the repository:
 

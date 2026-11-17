@@ -21,7 +21,7 @@ Check that `NEXTAUTH_URL` equals the full address the browser actually uses, tha
 
 ## "Too many failed attempts" when signing in?
 
-To stop brute-force attacks, sign-in is paused for 15 minutes after 5 wrong passwords for one account, or 20 failed sign-ins from one IP, within 15 minutes; during the pause even the correct password is rejected. Sign-up and the setup link allow at most 10 attempts per IP per hour. Try again after the wait, or restart the service to clear the counters. Behind a reverse proxy, forward `X-Real-IP` or `X-Forwarded-For`; otherwise every visitor counts as the same IP.
+To stop brute-force attacks, sign-in is paused for 15 minutes after 5 wrong passwords for one account, or 20 failed sign-ins from one IP, within 15 minutes; during the pause even the correct password is rejected. Sign-up and the setup link allow at most 10 attempts per IP per hour. Try again after the wait, or restart the service to clear the counters. Behind a reverse proxy, forward `X-Real-IP` or `X-Forwarded-For` and set `TRUST_PROXY=true` (with `TRUSTED_PROXY_HOPS`) or `TRUST_PROXY=cloudflare`; by default `TRUST_PROXY=false` ignores proxy IP headers so clients cannot spoof them.
 
 ## I changed environment variables but the AI still uses the old configuration?
 
@@ -61,11 +61,11 @@ The percentage is an estimate for the current stage; AI services usually do not 
 
 ## A background task says "Interrupted by a server restart"?
 
-The background task list is saved to `background-tasks.json` in the config directory, so tasks that finished in the last 30 minutes are still listed after a restart. AI calls run inside the app process; tasks still running at restart cannot continue and are marked as failed with "Interrupted by a server restart". Before retrying, check whether the question or exam paper was already saved; the task list only shows progress, and the notebooks and exam pages are the source of truth for saved data.
+The background task list is persisted in the SQLite `AsyncOperation` table, so tasks that finished in the last 30 minutes are still listed after a restart. AI calls run inside the app process; tasks still running at restart are marked `interrupted` during startup recovery and shown as failed with "Interrupted by a server restart". Before retrying, check whether the question or exam paper was already saved; the task list only shows progress, and the notebooks and exam pages are the source of truth for saved data.
 
 ## Does HTTP 207 mean the Openclaw import succeeded?
 
-`207` means some items in the batch failed; with the current implementation it can be returned even when every recognition failed. Always read `successCount`, `failCount` and each item in `results`. The per-image recognition timeout is currently at most 3 seconds; see [Openclaw Integration](Openclaw-Integration-en) for more limits.
+`207` means some items in the batch failed; with the current implementation it can be returned even when every recognition failed. Always read `successCount`, `failCount` and each item in `results`. The per-image recognition timeout is at least 3 seconds; see [Openclaw Integration](Openclaw-Integration-en) for more limits.
 
 ## Can the exported JSON restore the whole site?
 

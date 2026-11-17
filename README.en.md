@@ -428,6 +428,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `NEXTAUTH_SECRET` | Auth secret | None | Encrypts sessions; required in production. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Public URL | None | The URL users visit, e.g. `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | Trust host header | `true` in the Docker image | When `true`, the URL is inferred from the request; suits Docker and reverse proxies |
+| `TRUST_PROXY` | Proxy IP header trust mode | `false` | `false` by default (ignores proxy IP headers against spoofing); set `true` behind Nginx/Caddy or `cloudflare` behind Cloudflare |
+| `TRUSTED_PROXY_HOPS` | Trusted reverse-proxy hops | `1` | Used when `TRUST_PROXY=true`; reads the Nth client IP from the tail of `X-Forwarded-For` |
 | `NEXTAUTH_DEBUG` | NextAuth debug logs | `false` | Set to `true` to enable verbose NextAuth debug logging |
 | `LOG_LEVEL` | Log level | `debug` in development / `info` in production | `trace`, `debug`, `info`, `warn`, `error` or `fatal`; see [LOGGING_GUIDE.md](doc/LOGGING_GUIDE.md) (Chinese) |
 | `LOG_AI_PAYLOADS` | Print AI payloads in production | `false` | By default production stdout omits prompts and student answers; set to `true` for redacted and truncated payload logs |
