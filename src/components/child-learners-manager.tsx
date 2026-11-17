@@ -19,7 +19,7 @@ export interface ChildLearner {
     itemCount: number;
 }
 
-export function ChildLearnersManager({ className }: { className?: string }) {
+export function ChildLearnersManager({ className, onChanged }: { className?: string; onChanged?: () => void }) {
     const { t } = useLanguage();
     const copy = t.persona.children;
     const [children, setChildren] = useState<ChildLearner[]>([]);
@@ -57,6 +57,7 @@ export function ChildLearnersManager({ className }: { className?: string }) {
             setChildren((current) => [...current, created]);
             setName("");
             toast.success(copy.saved);
+            onChanged?.();
         } catch (error) {
             toast.error(getApiErrorMessage(error) || copy.saveFailed);
         } finally {
@@ -74,6 +75,7 @@ export function ChildLearnersManager({ className }: { className?: string }) {
             setChildren((current) => current.map((child) => (child.id === updated.id ? { ...child, name: updated.name } : child)));
             setEditing(null);
             toast.success(copy.saved);
+            onChanged?.();
         } catch (error) {
             toast.error(getApiErrorMessage(error) || copy.saveFailed);
         } finally {
@@ -95,6 +97,7 @@ export function ChildLearnersManager({ className }: { className?: string }) {
             setRemoving(null);
             setDeleteQuestions(false);
             toast.success(copy.deleted);
+            onChanged?.();
         } catch (error) {
             toast.error(getApiErrorMessage(error) || copy.deleteFailed);
         } finally {

@@ -1,46 +1,171 @@
 "use client";
 
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, CalendarCheck, Route } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { BookOpen, CalendarCheck, Route, Users } from "lucide-react";
 import { ChildLearnersManager } from "@/components/child-learners-manager";
+import { HomeSection, MasteryList, PracticeTrendChart, TodayStepList, WeakPointList } from "@/components/home/home-panels";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageContainer } from "@/components/ui/page-container";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLoading } from "@/components/ui/page-loading";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { apiClient } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/error-message";
+import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
+import type { PracticeTrendDay } from "@/lib/home-aggregates";
 
-export default function ParentHomePage() {
-    const { t } = useLanguage();
+interface ParentHomeData {
+    children: Array<{ id: string; name: string; itemCount: number }>;
+    selectedLearnerId: string | null;
+    child: {
+        id: string;
+        name: string;
+        weakPoints: Array<{ knowledgePoint: string; itemCount: number; unmasteredCount?: number; score?: number }>;
+        mastery: Array<{ knowledgePoint: string; score: number; evidenceCount: number; dueAt: string | null }>;
+        today: Array<{ id?: string; title: string; reason?: string; type: string; status: string; knowledgePoints?: string[] }>;
+        practiceTrend: PracticeTrendDay[];
+        practiceSummary: { attempted: number; correct: number };
+    } | null;
+}
+
+function ParentHome() {
+    const { t, language } = useLanguage();
+    const copy = t.persona.parentHome;
+    const router = useRouter();
+    const params = useSearchParams();
     usePageTitle(t.pageTitle.parentHome);
-    const links = [
-        { href: "/review", icon: CalendarCheck, title: t.nav.todayTasks, desc: t.persona.parentHome.todayDesc },
-        { href: "/notebooks", icon: BookOpen, title: t.nav.practice, desc: t.persona.parentHome.practiceDesc },
-        { href: "/learn", icon: Route, title: t.nav.path, desc: t.persona.parentHome.pathDesc },
-    ];
+    const learnerId = params.get("learnerId") || "";
+    const [data, setData] = useState<ParentHomeData | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [managing, setManaging] = useState(false);
+
+    const load = useCallback(async (id?: string) => {
+        setError(null);
+        try {
+            const query = new URLSearchParams({ language: language === "en" ? "en" : "zh" });
+            if (id) query.set("learnerId", id);
+            const result = await apiClient.get<ParentHomeData>(`/api/parent/home?${query}`);
+            setData(result);
+        } catch (err) {
+            frontendLogger.error("[ParentHome]", "Failed to load parent home", { error: err });
+            setError(getApiErrorMessage(err) || copy.loadError);
+        }
+    }, [language, copy.loadError]);
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换孩子时拉取首页数据
+        void load(learnerId || undefined);
+    }, [learnerId, load]);
+
+    const selectChild = (id: string) => {
+        const query = new URLSearchParams(params.toString());
+        query.set("learnerId", id);
+        router.replace(`/parent?${query.toString()}`, { scroll: false });
+    };
+
+    if (!data && !error) return <PageLoading />;
+
+    const children = data?.children ?? [];
+    const child = data?.child;
+    const selectedId = data?.selectedLearnerId || learnerId || children[0]?.id || "";
+    const followUps = child ? [
+        { href: "/review", icon: CalendarCheck, title: copy.review, desc: copy.todayDesc },
+        { href: `/notebooks`, icon: BookOpen, title: copy.practice, desc: copy.practiceDesc },
+        { href: `/learn?studentKey=${encodeURIComponent(child.id)}`, icon: Route, title: copy.path, desc: copy.pathDesc },
+    ] : [];
 
     return (
         <PageContainer>
-            <div className="mx-auto max-w-3xl space-y-8 py-6">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">{t.persona.parentHome.title}</h1>
-                    <p className="mt-2 text-sm text-muted-foreground">{t.persona.parentHome.desc}</p>
-                </div>
-                <ChildLearnersManager />
-                <div className="grid gap-3 sm:grid-cols-3">
-                    {links.map((link) => {
-                        const Icon = link.icon;
-                        return (
-                            <Link
-                                key={link.href}
-                                href={link.href}
-                                className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/50"
-                            >
-                                <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
-                                <div className="mt-3 text-sm font-semibold">{link.title}</div>
-                                <p className="mt-1 text-sm text-muted-foreground">{link.desc}</p>
-                            </Link>
-                        );
-                    })}
-                </div>
+            <div className="mx-auto max-w-5xl space-y-8 py-6">
+                <PageHeader
+                    title={copy.title}
+                    description={error || copy.desc}
+                    actions={(
+                        <Button type="button" variant="outline" onClick={() => setManaging((open) => !open)}>
+                            {managing ? copy.hideManage : copy.manageChildren}
+                        </Button>
+                    )}
+                />
+
+                {managing && <ChildLearnersManager onChanged={() => void load(learnerId || undefined)} />}
+
+                {children.length === 0 ? (
+                    <>
+                        {!managing && <ChildLearnersManager onChanged={() => void load(learnerId || undefined)} />}
+                        <EmptyState icon={Users} title={copy.empty} className="py-8" />
+                    </>
+                ) : (
+                    <>
+                        {children.length > 1 && (
+                            <SegmentedControl
+                                ariaLabel={copy.selectChild}
+                                value={selectedId}
+                                onChange={selectChild}
+                                options={children.map((item) => ({ value: item.id, label: item.name }))}
+                            />
+                        )}
+                        {children.length === 1 && (
+                            <h2 className="text-lg font-semibold">{children[0].name}</h2>
+                        )}
+
+                        {child && (
+                            <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
+                                <div className="space-y-8">
+                                    <HomeSection title={copy.weakPoints}>
+                                        <WeakPointList items={child.weakPoints} empty={copy.noWeakPoints} />
+                                    </HomeSection>
+                                    <HomeSection title={copy.todayTasks}>
+                                        <TodayStepList steps={child.today} empty={copy.noToday} studentKey={child.id} />
+                                    </HomeSection>
+                                    <HomeSection title={copy.practiceTrend}>
+                                        <PracticeTrendChart days={child.practiceTrend} empty={copy.noTrend} />
+                                        {child.practiceSummary.attempted > 0 && (
+                                            <p className="text-xs text-muted-foreground">
+                                                {copy.attempted.replace("{count}", String(child.practiceSummary.attempted))}
+                                                {" · "}
+                                                {copy.correctRate.replace("{rate}", `${Math.round((child.practiceSummary.correct / child.practiceSummary.attempted) * 100)}%`)}
+                                            </p>
+                                        )}
+                                    </HomeSection>
+                                </div>
+                                <HomeSection title={copy.mastery}>
+                                    <MasteryList items={child.mastery} empty={copy.noMastery} />
+                                </HomeSection>
+                            </div>
+                        )}
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            {followUps.map((link) => {
+                                const Icon = link.icon;
+                                return (
+                                    <Link
+                                        key={link.href}
+                                        href={link.href}
+                                        className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/50"
+                                    >
+                                        <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
+                                        <div className="mt-3 text-sm font-semibold">{link.title}</div>
+                                        <p className="mt-1 text-sm text-muted-foreground">{link.desc}</p>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
             </div>
         </PageContainer>
+    );
+}
+
+export default function ParentHomePage() {
+    return (
+        <Suspense fallback={<PageLoading />}>
+            <ParentHome />
+        </Suspense>
     );
 }
