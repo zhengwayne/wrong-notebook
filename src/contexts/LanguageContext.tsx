@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useSyncExternalStore } from 'react';
+import React, { createContext, useContext, useEffect, useSyncExternalStore } from 'react';
 import { translations, Language } from '@/lib/translations';
 
 interface LanguageContextType {
@@ -34,6 +34,12 @@ function readLanguage(): Language {
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
     // 服务端渲染与水合阶段使用默认语言，之后读取保存的语言
     const language = useSyncExternalStore(subscribeLanguage, readLanguage, () => DEFAULT_LANGUAGE);
+
+    useEffect(() => {
+        if (typeof document !== 'undefined') {
+            document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
+        }
+    }, [language]);
 
     const handleSetLanguage = (lang: Language) => {
         localStorage.setItem(STORAGE_KEY, lang);

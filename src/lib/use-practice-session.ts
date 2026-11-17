@@ -19,6 +19,14 @@ const AI_ERROR_KEYS = [
     ['AI_CONNECTION_FAILED', 'aiConnectionFailed'],
     ['AI_RESPONSE_ERROR', 'aiResponseError'],
     ['AI_AUTH_ERROR', 'aiAuth'],
+    ['AI_TIMEOUT_ERROR', 'AI_TIMEOUT_ERROR'],
+    ['AI_TIMEOUT', 'AI_TIMEOUT_ERROR'],
+    ['AI_QUOTA_EXCEEDED', 'AI_QUOTA_EXCEEDED'],
+    ['AI_RATE_LIMIT', 'AI_QUOTA_EXCEEDED'],
+    ['AI_PERMISSION_DENIED', 'AI_PERMISSION_DENIED'],
+    ['AI_NOT_FOUND', 'AI_NOT_FOUND'],
+    ['AI_SERVICE_UNAVAILABLE', 'AI_SERVICE_UNAVAILABLE'],
+    ['AI_DAILY_LIMIT_EXCEEDED', 'AI_DAILY_LIMIT_EXCEEDED'],
     ['AI_OUTPUT_TRUNCATED', 'AI_OUTPUT_TRUNCATED'],
     ['AI_UNKNOWN_ERROR', 'AI_UNKNOWN_ERROR'],
 ] as const;
@@ -123,8 +131,13 @@ export function usePracticeSession(errorItemId: string | null) {
             }
         } catch (err) {
             frontendLogger.error('[Practice]', 'Failed to generate practice question', { error: err });
-            const msg = getApiErrorMessage(err) || "";
-            const matched = AI_ERROR_KEYS.find(([code]) => msg.includes(code));
+            const code = typeof err === 'object' && err !== null && 'data' in err
+                && typeof err.data === 'object' && err.data !== null && 'code' in err.data
+                && typeof (err.data as { code?: unknown }).code === 'string'
+                ? (err.data as { code: string }).code
+                : '';
+            const msg = `${code} ${getApiErrorMessage(err) || ""}`;
+            const matched = AI_ERROR_KEYS.find(([key]) => msg.includes(key));
             const fallback = t.practice.errors?.default || "Failed to generate";
             setError((matched && t.errors?.[matched[1]]) || fallback);
         } finally {

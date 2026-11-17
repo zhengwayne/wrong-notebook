@@ -50,6 +50,18 @@ interface QuestionImportOptions {
     onParsed?: (data: ParsedQuestion) => void;
 }
 
+/** 仅在用户主动发起耗时 AI 识别时请求桌面通知权限 */
+function requestNotificationPermissionOnAction() {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        try {
+            const pending = Notification.requestPermission?.();
+            void Promise.resolve(pending).catch(() => undefined);
+        } catch {
+            // 忽略不支持或拒绝环境
+        }
+    }
+}
+
 /**
  * 题目导入流程：裁剪图片 → 压缩 → AI 识别（或文字解题）→ 免确认直接入库，或进入校对页后保存。
  * 首页与错题本的添加错题页共用。
@@ -188,6 +200,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
 
     const analyzeImage = async (file: File) => {
         const startTime = Date.now();
+        requestNotificationPermissionOnAction();
         frontendLogger.info(logPrefix, 'Starting analysis flow', { apiTimeout: aiTimeout, safetyTimeout });
         try {
             setAnalysisStep('compressing');
@@ -223,6 +236,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     /** 文字题目由 AI 解答后导入 */
     const submitText = async (questionText: string) => {
         const startTime = Date.now();
+        requestNotificationPermissionOnAction();
         frontendLogger.info(logPrefix, 'Starting text-based analysis', { textLength: questionText.length });
         try {
             setAnalysisStep('analyzing');

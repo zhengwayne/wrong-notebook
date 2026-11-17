@@ -30,7 +30,7 @@ describe('isNetworkError', () => {
 
 describe('apiClient recoverable', () => {
     it('附带 32 位十六进制的请求编号；普通请求不附带', async () => {
-        fetchMock.mockResolvedValue(json(200, { ok: true }));
+        fetchMock.mockImplementation(async () => json(200, { ok: true }));
         await apiClient.post('/api/x', {}, { recoverable: true });
         await apiClient.post('/api/y', {});
 

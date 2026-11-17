@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { childIdFromSearchParams, isUsableChildId, moveItem, withChildParam } from '@/lib/current-child';
+import { describe, expect, it, vi } from 'vitest';
+import {
+    CURRENT_CHILD_STORAGE_KEY,
+    childIdFromSearchParams,
+    currentChildStorageKey,
+    isUsableChildId,
+    moveItem,
+    readStoredChild,
+    withChildParam,
+    writeStoredChild,
+} from '@/lib/current-child';
 import { isHeicFile } from '@/lib/heic';
 import { isPaperPageImage } from '@/lib/parent-papers';
 
@@ -24,6 +33,31 @@ describe('current child helpers', () => {
         expect(pages).toEqual(['a', 'b', 'c']);
         expect(moveItem(pages, 0, 2)).toEqual(['b', 'c', 'a']);
         expect(moveItem(pages, 1, 1)).toEqual(pages);
+    });
+
+    it('isolates stored child selection per userId', () => {
+        const storage = new Map<string, string>();
+        vi.stubGlobal('window', {
+            localStorage: {
+                getItem: (key: string) => storage.get(key) ?? null,
+                setItem: (key: string, value: string) => { storage.set(key, value); },
+                removeItem: (key: string) => { storage.delete(key); },
+            },
+        });
+        try {
+            expect(currentChildStorageKey('user-a')).toBe(`${CURRENT_CHILD_STORAGE_KEY}:user-a`);
+            writeStoredChild({ id: 'child-1', name: '大宝' }, 'user-a');
+            writeStoredChild({ id: 'child-2', name: '二宝' }, 'user-b');
+
+            expect(readStoredChild('user-a')).toEqual({ id: 'child-1', name: '大宝' });
+            expect(readStoredChild('user-b')).toEqual({ id: 'child-2', name: '二宝' });
+
+            writeStoredChild(null, 'user-a');
+            expect(readStoredChild('user-a')).toBeNull();
+            expect(readStoredChild('user-b')).toEqual({ id: 'child-2', name: '二宝' });
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 });
 

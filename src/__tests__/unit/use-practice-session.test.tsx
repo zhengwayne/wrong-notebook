@@ -100,6 +100,14 @@ describe('usePracticeSession', () => {
         const zh = translations.zh.errors.aiAuth;
         const en = translations.en.errors.aiAuth;
         expect([zh, en]).toContain(session.error);
+
+        mocks.post.mockRejectedValueOnce({ data: { code: 'AI_DAILY_LIMIT_EXCEEDED', message: 'limit' } });
+        await act(async () => session.generateQuestion());
+        expect([translations.zh.errors.AI_DAILY_LIMIT_EXCEEDED, translations.en.errors.AI_DAILY_LIMIT_EXCEEDED]).toContain(session.error);
+
+        mocks.post.mockRejectedValueOnce({ data: { message: 'AI_RATE_LIMIT' } });
+        await act(async () => session.generateQuestion());
+        expect([translations.zh.errors.AI_QUOTA_EXCEEDED, translations.en.errors.AI_QUOTA_EXCEEDED]).toContain(session.error);
     });
 
     it('答案与标准答案一致时本地直接判对，不调用 AI 判题', async () => {

@@ -27,6 +27,7 @@ import { PromptSettings } from "@/components/settings/prompt-settings";
 import { TtsSettings } from "@/components/settings/tts-settings";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
+import { UserProfileProvider } from "@/contexts/UserProfileContext";
 import { apiClient } from "@/lib/api-client";
 import { validateAiConfig } from "@/lib/ai-config-validation";
 import { DEFAULT_TIME_ZONE } from "@/lib/date-time";
@@ -51,7 +52,7 @@ interface SettingsTabProps {
 
 function SettingsTab({ value, icon, label }: SettingsTabProps) {
     return (
-        <TabsTrigger value={value} className="px-2 sm:px-3">
+        <TabsTrigger value={value} aria-label={label} className="px-2 sm:px-3">
             {icon}
             <span className="hidden sm:inline">{label}</span>
         </TabsTrigger>
@@ -140,6 +141,7 @@ export function SettingsDialog() {
                     </DialogDescription>
                 </DialogHeader>
 
+                <UserProfileProvider enabled={open}>
                 <Tabs defaultValue="general" className="w-full">
                     <TabsList className={`grid w-full grid-cols-4 ${isAdmin ? 'sm:grid-cols-7' : 'sm:grid-cols-4'} gap-1 h-auto`}>
                         <SettingsTab value="general" icon={<Languages className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.general || "General"} />
@@ -219,6 +221,7 @@ export function SettingsDialog() {
                         <AboutSettings />
                     </TabsContent>
                 </Tabs>
+                </UserProfileProvider>
             </DialogContent>
         </Dialog>
     );

@@ -6,6 +6,12 @@ import { SELF_STUDENT_KEY } from "@/lib/learning-path/types";
 
 export const CURRENT_CHILD_STORAGE_KEY = "xueji.currentChildLearner";
 
+/** 按 userId 生成隔离的 localStorage 键，防止同一浏览器切换账号后读取前一账号的孩子选择 */
+export function currentChildStorageKey(userId?: string | null): string {
+    const trimmed = userId?.trim();
+    return trimmed ? `${CURRENT_CHILD_STORAGE_KEY}:${trimmed}` : CURRENT_CHILD_STORAGE_KEY;
+}
+
 export interface StoredChild {
     id: string;
     name?: string;
@@ -23,10 +29,10 @@ export function childIdFromSearchParams(params: URLSearchParams): string | null 
     return null;
 }
 
-export function readStoredChild(): StoredChild | null {
+export function readStoredChild(userId?: string | null): StoredChild | null {
     if (typeof window === "undefined") return null;
     try {
-        const raw = window.localStorage.getItem(CURRENT_CHILD_STORAGE_KEY);
+        const raw = window.localStorage.getItem(currentChildStorageKey(userId));
         if (!raw) return null;
         const parsed = JSON.parse(raw) as StoredChild;
         if (!parsed || !isUsableChildId(parsed.id)) return null;
@@ -36,14 +42,15 @@ export function readStoredChild(): StoredChild | null {
     }
 }
 
-export function writeStoredChild(child: StoredChild | null): void {
+export function writeStoredChild(child: StoredChild | null, userId?: string | null): void {
     if (typeof window === "undefined") return;
+    const key = currentChildStorageKey(userId);
     try {
         if (!child || !isUsableChildId(child.id)) {
-            window.localStorage.removeItem(CURRENT_CHILD_STORAGE_KEY);
+            window.localStorage.removeItem(key);
             return;
         }
-        window.localStorage.setItem(CURRENT_CHILD_STORAGE_KEY, JSON.stringify({
+        window.localStorage.setItem(key, JSON.stringify({
             id: child.id,
             ...(child.name ? { name: child.name } : {}),
         }));

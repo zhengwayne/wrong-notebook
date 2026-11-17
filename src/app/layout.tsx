@@ -57,7 +57,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <title>学迹</title>
         {/* 首屏绘制前按本地缓存的主题偏好设置 dark 类，避免深色模式下先闪现浅色页面 */}

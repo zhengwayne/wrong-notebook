@@ -277,7 +277,7 @@ function LearnPage() {
                     loading={loading && !path}
                     error={error}
                     hasData={Boolean(path)}
-                    onRetry={() => loadPath(studentKey)}
+                    onRetry={() => void loadPath(effectiveStudentKey)}
                     emptyFallback={
                         <EmptyState
                             icon={Route}

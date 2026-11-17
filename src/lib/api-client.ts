@@ -12,9 +12,47 @@ type RequestOptions = RequestInit & {
 };
 
 export class ApiError extends Error {
-    constructor(public status: number, public statusText: string, public data: unknown) {
+    public code?: string;
+
+    constructor(public status: number, public statusText: string, public data: unknown, code?: string) {
         super(`API Error: ${status} ${statusText}`);
         this.name = 'ApiError';
+        this.code = code ?? extractErrorCode(data);
+    }
+}
+
+function extractErrorCode(data: unknown): string | undefined {
+    if (typeof data !== 'object' || data === null) return undefined;
+    const record = data as Record<string, unknown>;
+    if (typeof record.code === 'string' && record.code) return record.code;
+    if (typeof record.error === 'string' && record.error) return record.error;
+    return undefined;
+}
+
+const SESSION_REVOKED_DEBOUNCE_MS = 3000;
+const REVOKED_CODES = new Set(['SESSION_REVOKED', 'ACCOUNT_DISABLED']);
+type SessionRevokedHandler = (code: string) => void | Promise<void>;
+let customSessionRevokedHandler: SessionRevokedHandler | null = null;
+let lastRevokedSignOutAt = -Infinity;
+
+/** 仅用于单测：注入会话撤销/账户禁用回调并重置防抖窗口 */
+export function setOnSessionRevokedForTest(handler: SessionRevokedHandler | null) {
+    customSessionRevokedHandler = handler;
+    lastRevokedSignOutAt = -Infinity;
+}
+
+function triggerSessionRevokedSignOut(code: string) {
+    const now = Date.now();
+    if (now - lastRevokedSignOutAt < SESSION_REVOKED_DEBOUNCE_MS) return;
+    lastRevokedSignOutAt = now;
+    if (customSessionRevokedHandler) {
+        void customSessionRevokedHandler(code);
+        return;
+    }
+    if (typeof window !== 'undefined') {
+        void import('next-auth/react')
+            .then(({ signOut }) => signOut({ callbackUrl: '/login' }))
+            .catch(() => undefined);
     }
 }
 
@@ -79,7 +117,7 @@ async function recoverResponse<T>(requestId: string, deadline: number, originalE
 }
 
 async function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
-    const { params, headers, timeout = 60000, recoverable, ...rest } = options;
+    const { params, headers, timeout = 60000, recoverable, signal: externalSignal, ...rest } = options;
     const requestId = recoverable ? createRequestId() : null;
     const startedAt = Date.now();
 
@@ -89,54 +127,99 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
         finalUrl += `?${searchParams.toString()}`;
     }
 
-    const defaultHeaders: HeadersInit = {
-        'Content-Type': 'application/json',
+    const hasBody = rest.body !== undefined && rest.body !== null;
+    const isBinaryOrForm = (typeof FormData !== 'undefined' && rest.body instanceof FormData)
+        || (typeof Blob !== 'undefined' && rest.body instanceof Blob)
+        || (typeof URLSearchParams !== 'undefined' && rest.body instanceof URLSearchParams);
+    const mergedHeaders: HeadersInit = {
+        ...(hasBody && !isBinaryOrForm ? { 'Content-Type': 'application/json' } : {}),
+        ...(requestId ? { 'X-Request-Id': requestId } : {}),
+        ...headers,
     };
 
-    // 创建 AbortController 用于超时控制
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+        timedOut = true;
+        timeoutController.abort(new DOMException('Request Timeout', 'TimeoutError'));
+    }, timeout);
+
+    let signal: AbortSignal = timeoutController.signal;
+    let cleanupSignalListener: (() => void) | undefined;
+    if (externalSignal) {
+        if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+            signal = AbortSignal.any([timeoutController.signal, externalSignal]);
+        } else {
+            if (externalSignal.aborted) {
+                timeoutController.abort(externalSignal.reason);
+            } else {
+                const forwardAbort = () => timeoutController.abort(externalSignal.reason);
+                externalSignal.addEventListener('abort', forwardAbort, { once: true });
+                cleanupSignalListener = () => externalSignal.removeEventListener('abort', forwardAbort);
+            }
+        }
+    }
 
     try {
         const res = await fetch(finalUrl, {
-            headers: {
-                ...defaultHeaders,
-                ...(requestId ? { 'X-Request-Id': requestId } : {}),
-                ...headers,
-            },
-            signal: controller.signal,
             ...rest,
+            headers: mergedHeaders,
+            signal,
         });
         clearTimeout(timeoutId);
+        cleanupSignalListener?.();
 
-        if (!res.ok) {
-            let errorData;
-            try {
-                errorData = await res.json();
-            } catch {
-                errorData = await res.text();
-            }
-            if (res.status === 429) notifyAiDailyLimit(errorData);
-            throw new ApiError(res.status, res.statusText, errorData);
-        }
-
-        // Handle empty responses (e.g. 204 No Content)
         if (res.status === 204) {
             return {} as T;
         }
 
-        try {
-            return await res.json();
-        } catch {
-            // If JSON parse fails but response was OK, return text or empty object?
-            // For now, assume JSON APIs.
+        const rawText = await res.text();
+        const trimmed = rawText.trim();
+        let parsedBody: unknown = undefined;
+        let isJson = false;
+        if (trimmed.length > 0) {
+            try {
+                parsedBody = JSON.parse(trimmed);
+                isJson = true;
+            } catch {
+                parsedBody = rawText;
+            }
+        }
+
+        if (!res.ok) {
+            const errorData = trimmed.length === 0 ? '' : parsedBody;
+            const code = extractErrorCode(errorData);
+            if (res.status === 429) notifyAiDailyLimit(errorData);
+            if (res.status === 401 && code && REVOKED_CODES.has(code)) {
+                triggerSessionRevokedSignOut(code);
+            }
+            throw new ApiError(res.status, res.statusText, errorData, code);
+        }
+
+        if (trimmed.length === 0) {
             return {} as T;
         }
+        if (!isJson) {
+            throw new ApiError(
+                res.status || 502,
+                res.statusText || 'Invalid JSON response',
+                { code: 'INVALID_JSON_RESPONSE', message: 'Expected JSON response body', rawText: rawText.slice(0, 200) },
+                'INVALID_JSON_RESPONSE',
+            );
+        }
+        return parsedBody as T;
     } catch (error) {
         clearTimeout(timeoutId);
-        if (error instanceof Error && error.name === 'AbortError') {
+        cleanupSignalListener?.();
+        if (externalSignal?.aborted && !timedOut) {
+            throw error;
+        }
+        if (
+            timedOut
+            || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))
+        ) {
             throw new ApiError(408, 'Request Timeout', {
-                message: 'AI_TIMEOUT_ERROR'
+                message: 'AI_TIMEOUT_ERROR',
             });
         }
         if (requestId && isNetworkError(error)) {
@@ -148,8 +231,20 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
 
 export const apiClient = {
     get: <T>(url: string, options?: RequestOptions) => request<T>(url, { ...options, method: 'GET' }),
-    post: <TResponse, TBody = unknown>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'POST', body: JSON.stringify(body) }),
-    put: <TResponse, TBody = unknown>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'PUT', body: JSON.stringify(body) }),
-    patch: <TResponse, TBody = unknown>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
+    post: <TResponse, TBody = unknown>(url: string, body?: TBody, options?: RequestOptions) => request<TResponse>(url, {
+        ...options,
+        method: 'POST',
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    }),
+    put: <TResponse, TBody = unknown>(url: string, body?: TBody, options?: RequestOptions) => request<TResponse>(url, {
+        ...options,
+        method: 'PUT',
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    }),
+    patch: <TResponse, TBody = unknown>(url: string, body?: TBody, options?: RequestOptions) => request<TResponse>(url, {
+        ...options,
+        method: 'PATCH',
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    }),
     delete: <T>(url: string, options?: RequestOptions) => request<T>(url, { ...options, method: 'DELETE' }),
 };

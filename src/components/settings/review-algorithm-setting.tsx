@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useOptionalUserProfile } from "@/contexts/UserProfileContext";
 import { apiClient } from "@/lib/api-client";
 import { getErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
@@ -18,39 +19,50 @@ import type { UserProfile } from "@/types/api";
 /** 个人复习调度算法版本选择（classic Ebbinghaus / fsrs-v1 灰度） */
 export function ReviewAlgorithmSetting() {
     const { t } = useLanguage();
-    const [value, setValue] = useState<ReviewAlgorithmVersion>(DEFAULT_REVIEW_ALGORITHM);
-    const [loading, setLoading] = useState(true);
+    const shared = useOptionalUserProfile();
+    const [standaloneValue, setStandaloneValue] = useState<ReviewAlgorithmVersion>(DEFAULT_REVIEW_ALGORITHM);
+    const [standaloneLoading, setStandaloneLoading] = useState(!shared);
+    const [optimistic, setOptimistic] = useState<ReviewAlgorithmVersion | null>(null);
     const [saving, setSaving] = useState(false);
 
     const load = useCallback(async () => {
-        setLoading(true);
+        setStandaloneLoading(true);
         try {
             const user = await apiClient.get<UserProfile>("/api/user");
-            setValue(isReviewAlgorithmVersion(user.reviewAlgorithmVersion) ? user.reviewAlgorithmVersion : DEFAULT_REVIEW_ALGORITHM);
+            setStandaloneValue(isReviewAlgorithmVersion(user.reviewAlgorithmVersion) ? user.reviewAlgorithmVersion : DEFAULT_REVIEW_ALGORITHM);
         } catch (error) {
             frontendLogger.error("[ReviewAlgorithmSetting]", "Failed to load review algorithm", { error: getErrorMessage(error) });
         } finally {
-            setLoading(false);
+            setStandaloneLoading(false);
         }
     }, []);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：挂载时读取当前账号算法版本偏好
-    useEffect(() => { void load(); }, [load]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：仅在无共享上下文时独立读取偏好
+    useEffect(() => { if (!shared) void load(); }, [shared, load]);
+
+    const baseValue = shared
+        ? (isReviewAlgorithmVersion(shared.profile?.reviewAlgorithmVersion) ? shared.profile.reviewAlgorithmVersion : DEFAULT_REVIEW_ALGORITHM)
+        : standaloneValue;
+    const value = optimistic ?? baseValue;
+    const loading = shared ? shared.loading : standaloneLoading;
 
     const handleChange = async (next: string) => {
         if (!isReviewAlgorithmVersion(next) || next === value) return;
-        const previous = value;
-        setValue(next);
+        setOptimistic(next);
         setSaving(true);
         try {
-            const updated = await apiClient.patch<UserProfile>("/api/user", { reviewAlgorithmVersion: next });
-            setValue(isReviewAlgorithmVersion(updated.reviewAlgorithmVersion) ? updated.reviewAlgorithmVersion : next);
+            const updated = shared
+                ? await shared.patchProfile({ reviewAlgorithmVersion: next })
+                : await apiClient.patch<UserProfile>("/api/user", { reviewAlgorithmVersion: next });
+            if (!shared) {
+                setStandaloneValue(isReviewAlgorithmVersion(updated.reviewAlgorithmVersion) ? updated.reviewAlgorithmVersion : next);
+            }
             toast.success(t.importFlow.preferenceSaved);
         } catch (error) {
-            setValue(previous);
             toast.error(t.importFlow.preferenceSaveFailed);
             frontendLogger.error("[ReviewAlgorithmSetting]", "Failed to update review algorithm", { error: getErrorMessage(error) });
         } finally {
+            setOptimistic(null);
             setSaving(false);
         }
     };
