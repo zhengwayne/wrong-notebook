@@ -9,6 +9,9 @@ import { getItemTags } from "@/lib/item-tags";
 import { getReviewPlan, isReviewDue } from "@/lib/review-schedule";
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief, type ProfileItem } from "@/lib/variant/weakness-profile";
 import { findStudentSubjectIds } from "@/lib/variant/service";
+import { isStudentNotebook } from "@/lib/variant/notebooks";
+import { personalSubjectIds } from "@/lib/home-aggregates";
+import { LEARNER_KIND } from "@/lib/learners";
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from "@/lib/mastery-status";
 import { buildMasteryMap, evidenceHash, traceKnowledgeMastery } from "./mastery-model";
 import { addPrerequisiteEdge, buildPrerequisiteGraph, orderKnowledgePoints, type PrerequisiteTag } from "./prerequisites";
@@ -40,6 +43,8 @@ export interface ResolvedStudent {
     studentName: string;
     classId: string | null;
     subjectIds: string[];
+    kind: "self" | "child" | "student";
+    learnerId: string | null;
 }
 
 export async function resolveStudent(userId: string, studentKey?: string | null, subjectId?: string | null): Promise<ResolvedStudent | null> {
@@ -49,16 +54,39 @@ export async function resolveStudent(userId: string, studentKey?: string | null,
             where: { userId, ...(subjectId ? { id: subjectId } : {}) },
             select: { id: true, name: true },
         });
-        return { studentKey: SELF_STUDENT_KEY, studentName: "我", classId: null, subjectIds: subjects.map((item) => item.id) };
+        const roster = await prisma.gradingStudent.findMany({
+            where: { class: { userId } },
+            select: { name: true },
+        });
+        const selfLearner = await prisma.learner.findFirst({
+            where: { userId, kind: LEARNER_KIND.self },
+            select: { id: true },
+        });
+        const subjectIds = personalSubjectIds(subjects, roster.map((row) => row.name), isStudentNotebook);
+        return {
+            studentKey: SELF_STUDENT_KEY,
+            studentName: "我",
+            classId: null,
+            subjectIds,
+            kind: "self",
+            learnerId: selfLearner?.id ?? null,
+        };
     }
     const student = await prisma.gradingStudent.findFirst({
         where: { id: key, class: { userId } },
-        include: { class: { select: { id: true, name: true } } },
+        include: { class: { select: { id: true, name: true } }, learner: { select: { id: true } } },
     });
     if (student) {
         const subjectIds = await findStudentSubjectIds(userId, student.name);
         const filtered = subjectId ? subjectIds.filter((id) => id === subjectId) : subjectIds;
-        return { studentKey: student.id, studentName: student.name, classId: student.classId, subjectIds: filtered };
+        return {
+            studentKey: student.id,
+            studentName: student.name,
+            classId: student.classId,
+            subjectIds: filtered,
+            kind: "student",
+            learnerId: student.learner?.id ?? null,
+        };
     }
 
     // 兼容 Learner.id：家长的孩子用 Learner.id 作为 studentKey；老师学生若传入 Learner.id 则回落到花名册 id
@@ -77,13 +105,41 @@ export async function resolveStudent(userId: string, studentKey?: string | null,
     });
     const subjectIds = itemSubjects.map((row) => row.subjectId).filter((id): id is string => !!id);
     const filtered = subjectId ? subjectIds.filter((id) => id === subjectId) : subjectIds;
-    return { studentKey: learner.id, studentName: learner.name, classId: null, subjectIds: filtered };
+    return {
+        studentKey: learner.id,
+        studentName: learner.name,
+        classId: null,
+        subjectIds: filtered,
+        kind: "child",
+        learnerId: learner.id,
+    };
 }
 
-async function loadItems(userId: string, subjectIds: string[]) {
-    if (subjectIds.length === 0) return [];
+function itemWhereForStudent(userId: string, student: ResolvedStudent) {
+    if (student.kind === "child" && student.learnerId) {
+        return { userId, learnerId: student.learnerId };
+    }
+    if (student.kind === "student") {
+        const clauses = [
+            ...(student.subjectIds.length > 0 ? [{ subjectId: { in: student.subjectIds } }] : []),
+            ...(student.learnerId ? [{ learnerId: student.learnerId }] : []),
+        ];
+        if (clauses.length === 0) return null;
+        return { userId, OR: clauses };
+    }
+    if (student.subjectIds.length === 0) return null;
+    return {
+        userId,
+        subjectId: { in: student.subjectIds },
+        OR: [{ learnerId: null }, { learner: { kind: LEARNER_KIND.self } }],
+    };
+}
+
+async function loadItems(userId: string, student: ResolvedStudent) {
+    const where = itemWhereForStudent(userId, student);
+    if (!where) return [];
     return prisma.errorItem.findMany({
-        where: { userId, subjectId: { in: subjectIds } },
+        where,
         include: {
             tags: { select: { name: true, parentId: true } },
             practiceRecords: {
@@ -165,7 +221,7 @@ export async function collectEvidence(userId: string, student: ResolvedStudent):
     profileItems: ProfileItem[];
 }> {
     const threshold = (await prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true } }))?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
-    const items = await loadItems(userId, student.subjectIds);
+    const items = await loadItems(userId, student);
     const evidence: MasteryEvidence[] = [];
     const timeZone = getAppTimeZone();
     const now = new Date();
