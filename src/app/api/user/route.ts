@@ -1,37 +1,17 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { hash } from "bcryptjs";
-import type { Prisma } from "@prisma/client";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { unauthorized, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { syncMasteryLevels } from "@/lib/mastery";
-import { MAX_MASTERY_THRESHOLD, MIN_MASTERY_THRESHOLD } from "@/lib/mastery-status";
-import { THEME_PREFERENCES } from "@/lib/theme";
-import { GRADE_RECOGNITION_MODES } from "@/lib/question-grade";
-import { GRADE_SEMESTERS } from "@/lib/grade-options";
+import { userUpdateSchema } from "@/lib/user-profile-schema";
+import type { Prisma } from "@prisma/client";
 
 const logger = createLogger('api:user');
-
-const userUpdateSchema = z.object({
-    name: z.string().optional(),
-    email: z.string().optional(),
-    password: z.string().optional(),
-    educationStage: z.string().optional(),
-    enrollmentYear: z.number().optional().nullable(),
-    gradeRecognitionMode: z.enum(GRADE_RECOGNITION_MODES).optional(),
-    fixedGradeSemester: z.enum(GRADE_SEMESTERS).nullable().optional(),
-    confirmBeforeImport: z.boolean().optional(),
-    enableGeogebra: z.boolean().optional(),
-    enableSvgAnimation: z.boolean().optional(),
-    variantPipelineEnabled: z.boolean().optional(),
-    themePreference: z.enum(THEME_PREFERENCES).optional(),
-    questionDuplicateThreshold: z.number().min(1).max(100).multipleOf(0.01).optional(),
-    masteryThreshold: z.number().int().min(MIN_MASTERY_THRESHOLD).max(MAX_MASTERY_THRESHOLD).optional(),
-});
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -83,7 +63,7 @@ export async function PATCH(req: Request) {
 
     try {
         const body = await req.json();
-        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, themePreference, questionDuplicateThreshold, masteryThreshold } = userUpdateSchema.parse(body);
+        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, variantPipelineEnabled, themePreference, questionDuplicateThreshold, masteryThreshold } = userUpdateSchema.parse(body);
 
         const updateData: Prisma.UserUpdateInput = {};
         if (gradeRecognitionMode !== undefined) updateData.gradeRecognitionMode = gradeRecognitionMode;
@@ -103,6 +83,9 @@ export async function PATCH(req: Request) {
         }
         if (typeof enableSvgAnimation === 'boolean') {
             updateData.enableSvgAnimation = enableSvgAnimation;
+        }
+        if (typeof variantPipelineEnabled === 'boolean') {
+            updateData.variantPipelineEnabled = variantPipelineEnabled;
         }
         if (themePreference) {
             updateData.themePreference = themePreference;
@@ -151,7 +134,7 @@ export async function PATCH(req: Request) {
                     confirmBeforeImport: true,
                     enableGeogebra: true,
                     enableSvgAnimation: true,
-                variantPipelineEnabled: true,
+                    variantPipelineEnabled: true,
                     themePreference: true,
                     questionDuplicateThreshold: true,
                     masteryThreshold: true,

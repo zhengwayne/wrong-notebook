@@ -45,6 +45,8 @@ vi.mock('bcryptjs', () => ({
 
 // Import after mocks
 import { GET, PATCH } from '@/app/api/user/route';
+import { userUpdateSchema } from '@/lib/user-profile-schema';
+import { GRADE_SEMESTERS } from '@/lib/grade-options';
 import type { Session } from 'next-auth';
 
 describe('/api/user', () => {
@@ -129,6 +131,34 @@ describe('/api/user', () => {
             expect(response.status).toBe(200);
             expect(mocks.mockPrismaUser.update.mock.calls[0][0].data).toEqual({ enableSvgAnimation: false });
             expect(mocks.mockPrismaUser.update.mock.calls[0][0].select.enableSvgAnimation).toBe(true);
+        });
+
+        it('应该更新「分阶段变式流水线」偏好（开启与关闭），并在响应中返回实际值', async () => {
+            for (const enabled of [false, true]) {
+                mocks.mockPrismaUser.update.mockResolvedValue({ variantPipelineEnabled: enabled });
+
+                const response = await PATCH(new Request('http://localhost/api/user', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ variantPipelineEnabled: enabled }),
+                    headers: { 'Content-Type': 'application/json' },
+                }));
+
+                expect(response.status).toBe(200);
+                expect(await response.json()).toEqual({ variantPipelineEnabled: enabled });
+                expect(mocks.mockPrismaUser.update.mock.calls.at(-1)?.[0].data).toEqual({ variantPipelineEnabled: enabled });
+                expect(mocks.mockPrismaUser.update.mock.calls.at(-1)?.[0].select.variantPipelineEnabled).toBe(true);
+            }
+        });
+
+        it('分阶段变式流水线偏好不是布尔值时拒绝更新', async () => {
+            const response = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ variantPipelineEnabled: 'true' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+
+            expect(response.status).toBe(400);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
         });
 
         it('应该更新界面主题偏好，并在响应中返回该字段', async () => {
@@ -657,6 +687,94 @@ describe('/api/user', () => {
             // 验证更新操作使用了 session 中的 email（不能修改其他用户）
             const updateCall = mocks.mockPrismaUser.update.mock.calls[0][0];
             expect(updateCall.where.email).toBe('normaluser@example.com');
+        });
+    });
+
+    describe('userUpdateSchema 全字段 PATCH → GET 往返护栏 (OPT-21)', () => {
+        const ROUNDTRIP_SAMPLES: Record<string, [unknown, unknown]> = {
+            name: ['Alice', 'Bob'],
+            email: ['alice@example.com', 'bob@example.com'],
+            educationStage: ['junior_high', 'senior_high'],
+            enrollmentYear: [2023, 2024],
+            gradeRecognitionMode: ['fixed', 'ai'],
+            fixedGradeSemester: [GRADE_SEMESTERS[0], GRADE_SEMESTERS[1]],
+            confirmBeforeImport: [true, false],
+            enableGeogebra: [true, false],
+            enableSvgAnimation: [false, true],
+            variantPipelineEnabled: [false, true],
+            themePreference: ['light', 'dark'],
+            questionDuplicateThreshold: [85, 92.5],
+            masteryThreshold: [60, 75],
+        };
+
+        it('schema 除 password 外的所有字段都必须在往返样本表中登记并保持 PATCH → GET 一致', async () => {
+            const schemaKeys = Object.keys(userUpdateSchema.shape).filter((key) => key !== 'password').sort();
+            expect(Object.keys(ROUNDTRIP_SAMPLES).sort()).toEqual(schemaKeys);
+
+            const originalEmail = mocks.mockSession.user.email;
+            const storedUser: Record<string, unknown> = {
+                id: 'user-roundtrip',
+                name: 'Init',
+                email: originalEmail,
+                educationStage: 'primary',
+                enrollmentYear: 2022,
+                gradeRecognitionMode: 'fixed',
+                fixedGradeSemester: null,
+                confirmBeforeImport: false,
+                enableGeogebra: false,
+                enableSvgAnimation: true,
+                variantPipelineEnabled: true,
+                themePreference: 'system',
+                questionDuplicateThreshold: 90,
+                masteryThreshold: 50,
+            };
+
+            const project = (row: Record<string, unknown>, select?: Record<string, boolean>) => {
+                if (!select) return { ...row };
+                const out: Record<string, unknown> = {};
+                for (const [key, enabled] of Object.entries(select)) {
+                    if (enabled) out[key] = row[key];
+                }
+                return out;
+            };
+
+            const { getServerSession } = await import('next-auth');
+            vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession as unknown as Session);
+            mocks.mockPrismaUser.update.mockImplementation(async (args: { data: Record<string, unknown>; select?: Record<string, boolean> }) => {
+                Object.assign(storedUser, args.data);
+                if (typeof args.data.email === 'string') {
+                    mocks.mockSession.user.email = args.data.email;
+                }
+                return project(storedUser, args.select);
+            });
+            mocks.mockPrismaUser.findUnique.mockImplementation(async (args: { select?: Record<string, boolean> }) => {
+                return project(storedUser, args.select);
+            });
+
+            try {
+                for (const key of schemaKeys) {
+                    const [firstVal, secondVal] = ROUNDTRIP_SAMPLES[key];
+                    for (const expectedVal of [firstVal, secondVal]) {
+                        const patchRes = await PATCH(new Request('http://localhost/api/user', {
+                            method: 'PATCH',
+                            body: JSON.stringify({ [key]: expectedVal }),
+                            headers: { 'Content-Type': 'application/json' },
+                        }));
+                        expect(patchRes.status).toBe(200);
+                        const patchData = await patchRes.json();
+                        expect(patchData[key]).toEqual(expectedVal);
+
+                        const getRes = await GET();
+                        expect(getRes.status).toBe(200);
+                        const getData = await getRes.json();
+                        expect(getData[key]).toEqual(expectedVal);
+                    }
+                }
+            } finally {
+                mocks.mockSession.user.email = originalEmail;
+                mocks.mockPrismaUser.update.mockReset();
+                mocks.mockPrismaUser.findUnique.mockReset();
+            }
         });
     });
 });

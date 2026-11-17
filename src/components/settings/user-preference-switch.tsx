@@ -36,7 +36,10 @@ export function UserPreferenceSwitch({ field, label, description }: UserPreferen
         setChecked(value);
         setSaving(true);
         try {
-            await apiClient.patch("/api/user", { [field]: value });
+            const updated = await apiClient.patch<UserProfile>("/api/user", { [field]: value });
+            if (typeof updated?.[field] === "boolean") {
+                setChecked(updated[field]);
+            }
             setMessage(t.importFlow.preferenceSaved);
         } catch (error) {
             setChecked(!value);
