@@ -17,6 +17,9 @@ export function getAnalysisErrorMessage(error: unknown, t: Translations): string
     }
 
     const message = getErrorMessage(error);
+    if (message === 'HEIC_UNSUPPORTED' || (error instanceof Error && error.name === 'HEIC_UNSUPPORTED')) {
+        return t.errors?.HEIC_UNSUPPORTED || message;
+    }
     if (message.includes('fetch') || message.includes('network')) {
         return t.errors?.AI_CONNECTION_FAILED || '网络连接失败';
     }

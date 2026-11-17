@@ -14,6 +14,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { homeHrefForPersona, isMobileMoreActive, mobileMoreItemsForPersona, mobilePrimaryItemsForPersona, navItemsForPersona, type NavItem } from "@/lib/nav-items";
+import { useCurrentChild } from "@/lib/use-current-child";
 import type { Persona } from "@/lib/personas";
 import { useSetupRedirect } from "@/lib/use-setup-redirect";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ function navLabel(
 ): string {
     if (persona === "teacher" && key === "grading" && t.nav.gradingCollect) return t.nav.gradingCollect;
     if (compact && key === "learn" && t.nav.learnShort) return t.nav.learnShort;
+    if (compact && key === "papers" && t.nav.papersShort) return t.nav.papersShort;
     return t.nav[key];
 }
 
@@ -37,6 +39,7 @@ function NavLink({
     pathname,
     compact = false,
     persona,
+    href,
     onNavigate,
     className,
 }: {
@@ -44,6 +47,7 @@ function NavLink({
     pathname: string;
     compact?: boolean;
     persona?: Persona | null;
+    href?: string;
     onNavigate?: () => void;
     className?: string;
 }) {
@@ -53,7 +57,7 @@ function NavLink({
     const label = navLabel(t, item.key, compact, persona);
     return (
         <Link
-            href={item.href}
+            href={href || item.href}
             className={className}
             aria-current={active ? "page" : undefined}
             onClick={onNavigate}
@@ -75,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const mobilePrimaryItems = mobilePrimaryItemsForPersona(activePersona);
     const mobileMoreItems = mobileMoreItemsForPersona(activePersona);
     const homeHref = homeHrefForPersona(activePersona);
+    const { hrefWithChild } = useCurrentChild();
     const isBare = BARE_PATHS.some((pattern) => pattern.test(pathname));
     useSetupRedirect(isAdmin && !isBare);
     const [moreOpen, setMoreOpen] = useState(false);
@@ -130,6 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 <NavLink
                                     key={item.key}
                                     item={item}
+                                    href={hrefWithChild(item.href)}
                                     pathname={pathname}
                                     persona={activePersona}
                                     className={cn(
@@ -180,7 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
             </header>
 
-            <div className="pb-20 md:pb-0">
+            <div className="pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
 
@@ -197,7 +203,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         return (
                             <Link
                                 key={item.key}
-                                href={item.href}
+                                href={hrefWithChild(item.href)}
                                 className={cn(
                                     "flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                     active ? "text-primary" : "text-muted-foreground hover:text-foreground"
@@ -261,7 +267,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 return (
                                     <li key={item.key}>
                                         <Link
-                                            href={item.href}
+                                            href={hrefWithChild(item.href)}
                                             aria-current={active ? "page" : undefined}
                                             onClick={() => setMoreOpen(false)}
                                             className={cn(

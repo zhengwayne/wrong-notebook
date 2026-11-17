@@ -16,18 +16,20 @@ interface PageHeaderProps {
 /** 统一的页面标题区：返回按钮 + 标题/副标题 + 右侧操作 */
 export function PageHeader({ title, description, backHref, actions, titleAddon, className }: PageHeaderProps) {
     return (
-        <div className={cn("flex items-start gap-3", className)}>
-            {backHref && <BackButton fallbackUrl={backHref} className="-ml-2 shrink-0" />}
-            <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center gap-1">
-                    <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-                    {titleAddon}
+        <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-3", className)}>
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+                {backHref && <BackButton fallbackUrl={backHref} className="-ml-2 shrink-0" />}
+                <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-1">
+                        <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+                        {titleAddon}
+                    </div>
+                    {description && (
+                        <p className="text-sm text-muted-foreground sm:text-base">{description}</p>
+                    )}
                 </div>
-                {description && (
-                    <p className="text-sm text-muted-foreground sm:text-base">{description}</p>
-                )}
             </div>
-            {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+            {actions && <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>}
         </div>
     );
 }

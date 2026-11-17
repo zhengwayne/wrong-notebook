@@ -15,12 +15,14 @@ import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import type { Notebook } from "@/types/api";
 
 export default function NotebooksPage() {
     const { t } = useLanguage();
     usePageTitle(t.notebooks.title);
+    const { isParent, learnerId, childName, hrefWithChild } = useCurrentChild();
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -31,7 +33,8 @@ export default function NotebooksPage() {
         setLoading(true);
         setError(null);
         try {
-            const data = await apiClient.get<Notebook[]>("/api/notebooks");
+            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : "";
+            const data = await apiClient.get<Notebook[]>(`/api/notebooks${query}`);
             setNotebooks(data);
             setHasLoaded(true);
         } catch (err) {
@@ -40,7 +43,7 @@ export default function NotebooksPage() {
         } finally {
             setLoading(false);
         }
-    }, [t.common.loadErrorDesc]);
+    }, [t.common.loadErrorDesc, learnerId]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面时拉取错题本列表并更新加载与错误状态
@@ -62,7 +65,7 @@ export default function NotebooksPage() {
         <PageContainer className="space-y-6">
             <PageHeader
                 title={t.notebooks?.title || "My Notebooks"}
-                description={t.notebooks?.subtitle || "Manage your mistakes by subject"}
+                description={isParent && childName ? t.persona.parentHome.forChild.replace("{name}", childName) : (t.notebooks?.subtitle || "Manage your mistakes by subject")}
                 actions={
                     <Button onClick={() => setDialogOpen(true)} aria-label={t.notebooks?.create || "New Notebook"}>
                         <Plus className="h-4 w-4" aria-hidden="true" />
@@ -101,7 +104,7 @@ export default function NotebooksPage() {
                             stage={notebook.stage}
                             subjectKey={notebook.subjectKey}
                             errorCount={notebook._count?.errorItems || 0}
-                            href={`/notebooks/${notebook.id}`}
+                            href={hrefWithChild(`/notebooks/${notebook.id}`)}
                             itemLabel={t.notebooks.cardItems}
                         />
                     ))}

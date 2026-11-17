@@ -18,6 +18,7 @@ import { ApiError, apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import type { Notebook } from "@/types/api";
 
@@ -35,25 +36,27 @@ export default function NotebookDetailPage() {
     const [listVersion, setListVersion] = useState(0);
 
     const notebookId = typeof params.id === "string" ? params.id : "";
+    const { learnerId, hrefWithChild } = useCurrentChild();
 
     const fetchNotebook = useCallback(async (id: string) => {
         setLoading(true);
         setLoadError(null);
         try {
-            const data = await apiClient.get<Notebook>(`/api/notebooks/${id}`);
+            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : "";
+            const data = await apiClient.get<Notebook>(`/api/notebooks/${id}${query}`);
             setNotebook(data);
         } catch (error) {
             frontendLogger.error("[NotebookDetail]", "Failed to fetch notebook", { error });
             if (error instanceof ApiError && error.status === 404) {
                 toast.error(t.notebooks.notFound);
-                router.push("/notebooks");
+                router.push(hrefWithChild("/notebooks"));
                 return;
             }
             setLoadError(getApiErrorMessage(error) || t.common.loadErrorDesc);
         } finally {
             setLoading(false);
         }
-    }, [router, t.common.loadErrorDesc, t.notebooks.notFound]);
+    }, [router, t.common.loadErrorDesc, t.notebooks.notFound, learnerId, hrefWithChild]);
 
     useEffect(() => {
         if (notebookId) {
@@ -79,7 +82,7 @@ export default function NotebookDetailPage() {
             if (!(await confirmDialog((t.notebooks?.deleteConfirm || "Are you sure?").replace("{name}", notebook.name), { destructive: true }))) return;
             setDeleting(true);
             await apiClient.delete(`/api/notebooks/${notebook.id}`);
-            router.replace("/notebooks");
+            router.replace(hrefWithChild("/notebooks"));
         } catch (error) {
             frontendLogger.error("[NotebookDetail]", "Failed to delete notebook", { error });
             toast.error(getApiErrorMessage(error) || t.notebooks?.deleteError || "Failed to delete");
@@ -111,7 +114,7 @@ export default function NotebookDetailPage() {
     return (
         <PageContainer className="space-y-6">
             <PageHeader
-                backHref="/notebooks"
+                backHref={hrefWithChild("/notebooks")}
                 title={notebook.name}
                 titleAddon={
                     <Button
@@ -152,7 +155,7 @@ export default function NotebookDetailPage() {
                         </Button>
                         <RetagNotebookButton notebookId={notebook.id} onFinished={() => setListVersion((v) => v + 1)} />
                         <Button asChild aria-label={t.notebooks?.addError || "Add Error"}>
-                            <Link href={`/notebooks/${notebook.id}/add`}>
+                            <Link href={hrefWithChild(`/notebooks/${notebook.id}/add`)}>
                                 <Plus className="h-4 w-4" aria-hidden="true" />
                                 <span className="hidden sm:inline">{t.notebooks?.addError || "Add Error"}</span>
                             </Link>
@@ -161,7 +164,7 @@ export default function NotebookDetailPage() {
                 }
             />
 
-            <ErrorList key={listVersion} subjectId={notebook.id} subjectName={notebook.name} />
+            <ErrorList key={`${listVersion}-${learnerId || "all"}`} subjectId={notebook.id} subjectName={notebook.name} learnerId={learnerId} />
 
             <RenameNotebookDialog
                 open={renameDialogOpen}

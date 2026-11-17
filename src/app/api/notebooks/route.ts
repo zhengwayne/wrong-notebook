@@ -8,12 +8,23 @@ import { isValidNotebookScope, stageFromEducationStage, STAGE_SUBJECTS, type Not
 
 const logger = createLogger('api:notebooks');
 
+function notebookListInclude(learnerId: string | null) {
+    return {
+        _count: {
+            select: {
+                errorItems: learnerId ? { where: { learnerId } } : true,
+            },
+        },
+    } as const;
+}
+
 /**
- * GET /api/notebooks
- * 获取用户所有错题本（Subjects）
+ * GET /api/notebooks?learnerId=
+ * 获取用户所有错题本（Subjects）；传入 learnerId 时只统计该孩子的错题数
  */
-export async function GET() {
+export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
+    const learnerId = new URL(req.url).searchParams.get("learnerId");
 
     try {
         let user;
@@ -31,13 +42,7 @@ export async function GET() {
             where: {
                 userId: user.id,
             },
-            include: {
-                _count: {
-                    select: {
-                        errorItems: true,
-                    },
-                },
-            },
+            include: notebookListInclude(learnerId),
             orderBy: {
                 createdAt: 'desc',
             },
@@ -68,13 +73,7 @@ export async function GET() {
                 where: {
                     userId: user.id,
                 },
-                include: {
-                    _count: {
-                        select: {
-                            errorItems: true,
-                        },
-                    },
-                },
+                include: notebookListInclude(learnerId),
                 orderBy: {
                     createdAt: 'desc',
                 },

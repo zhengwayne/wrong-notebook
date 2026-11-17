@@ -17,6 +17,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { useQuestionImport } from "@/lib/use-question-import";
 import type { Notebook } from "@/types/api";
 
@@ -24,6 +25,7 @@ export default function AddErrorPage() {
     const params = useParams();
     const router = useRouter();
     const notebookId = params.id as string;
+    const { learnerId, hrefWithChild } = useCurrentChild();
     const { t } = useLanguage();
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     usePageTitle(t.notebooks.title, notebook?.name, t.pageTitle.addError);
@@ -37,6 +39,7 @@ export default function AddErrorPage() {
         importSubjectId: notebookId,
         textNotebook: { id: notebookId, name: notebook?.name || "" },
         fixedSubjectId: notebookId,
+        learnerId,
     });
 
     useEffect(() => {
@@ -62,7 +65,7 @@ export default function AddErrorPage() {
 
             <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" || flow.step === "confirm" ? "max-w-6xl" : "max-w-4xl"}`}>
                 <PageHeader
-                    backHref={`/notebooks/${notebookId}`}
+                    backHref={hrefWithChild(`/notebooks/${notebookId}`)}
                     title={t.app.addError}
                     description={notebook.name}
                 />

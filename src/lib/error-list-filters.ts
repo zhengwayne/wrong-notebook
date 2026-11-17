@@ -13,6 +13,7 @@ export interface ErrorListFilters {
     gradeSemester: string;
     chapter: string;
     paperLevel: PaperLevelFilter;
+    learnerId?: string;
 }
 
 /** 转成 /api/error-items/list 与打印预览使用的查询参数，未筛选的条件不出现 */
@@ -26,5 +27,6 @@ export function buildErrorListParams(filters: ErrorListFilters): URLSearchParams
     if (filters.gradeSemester) params.append("gradeSemester", filters.gradeSemester);
     if (filters.chapter) params.append("chapter", filters.chapter);
     if (filters.paperLevel !== "all") params.append("paperLevel", filters.paperLevel);
+    if (filters.learnerId) params.append("learnerId", filters.learnerId);
     return params;
 }

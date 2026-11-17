@@ -18,6 +18,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { formatDateTime, getDayRange } from "@/lib/date-time";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import { REVIEW_INTERVALS } from "@/lib/review-schedule";
 import type { DueReviewItem, PaginatedResponse } from "@/types/api";
@@ -27,6 +28,7 @@ export default function ReviewPage() {
     const { t } = useLanguage();
     const { timeZone } = useTimeZone();
     usePageTitle(t.review.title);
+    const { isParent, learnerId, childName } = useCurrentChild();
     const [data, setData] = useState<PaginatedResponse<DueReviewItem> | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -38,8 +40,10 @@ export default function ReviewPage() {
         setLoading(true);
         setError(null);
         try {
+            const query = new URLSearchParams({ page: String(targetPage), pageSize: String(DEFAULT_PAGE_SIZE) });
+            if (learnerId) query.set("learnerId", learnerId);
             const response = await apiClient.get<PaginatedResponse<DueReviewItem>>(
-                `/api/review/due?page=${targetPage}&pageSize=${DEFAULT_PAGE_SIZE}`
+                `/api/review/due?${query}`
             );
             if (seq !== requestSeqRef.current) return;
             setData(response);
@@ -52,7 +56,7 @@ export default function ReviewPage() {
                 setLoading(false);
             }
         }
-    }, [t.common.loadErrorDesc]);
+    }, [t.common.loadErrorDesc, learnerId]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或翻页时拉取待复习题目并更新加载状态
@@ -73,7 +77,7 @@ export default function ReviewPage() {
         <PageContainer className="space-y-6">
             <PageHeader
                 title={t.review.title}
-                description={t.review.desc}
+                description={isParent && childName ? t.review.forChild.replace("{name}", childName) : t.review.desc}
                 actions={
                     data && data.total > 0 && (
                         <span className="rounded-full border border-warning/35 bg-warning/15 px-3 py-1 text-sm font-semibold tabular-nums text-amber-800 dark:text-warning">

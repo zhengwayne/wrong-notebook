@@ -18,6 +18,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import { cn } from "@/lib/utils";
 import type { StepType } from "@/lib/learning-path/types";
@@ -89,9 +90,11 @@ function LearnPage() {
     const router = useRouter();
     const params = useSearchParams();
     usePageTitle(t.learn.title);
+    const { isParent, learnerId, setLearner, hrefWithChild } = useCurrentChild();
 
-    const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "today");
-    const [studentKey, setStudentKey] = useState(params.get("studentKey") || "self");
+    const initialTab = (params.get("tab") as Tab) || "today";
+    const [tab, setTab] = useState<Tab>(initialTab === "class" && isParent ? "today" : initialTab);
+    const [studentKey, setStudentKey] = useState(params.get("studentKey") || (isParent && learnerId) || "self");
     const [classId, setClassId] = useState(params.get("classId") || "");
     const [path, setPath] = useState<PathView | null>(null);
     const [classView, setClassView] = useState<ClassView | null>(null);
@@ -114,6 +117,9 @@ function LearnPage() {
             if (seq !== requestSeq.current) return;
             setPath(data);
             setStudentKey(data.studentKey);
+            if (isParent && data.studentKey && data.studentKey !== "self") {
+                setLearner({ id: data.studentKey, name: data.studentName });
+            }
         } catch (err) {
             if (seq !== requestSeq.current) return;
             frontendLogger.error("[Learn]", "Failed to load path", { error: err });
@@ -121,7 +127,7 @@ function LearnPage() {
         } finally {
             if (seq === requestSeq.current) setLoading(false);
         }
-    }, [langQuery, t.learn.loadError]);
+    }, [langQuery, t.learn.loadError, isParent, setLearner]);
 
     const loadClass = useCallback(async (id?: string) => {
         setError(null);
@@ -137,16 +143,19 @@ function LearnPage() {
         }
     }, [langQuery, t.learn.loadError]);
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换学生时拉取路径
-        loadPath(studentKey);
-    }, [studentKey, loadPath]);
+    const effectiveTab: Tab = isParent && tab === "class" ? "today" : tab;
+    const effectiveStudentKey = isParent && learnerId ? learnerId : studentKey;
 
     useEffect(() => {
-        if (tab !== "class") return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换学生时拉取路径
+        loadPath(effectiveStudentKey);
+    }, [effectiveStudentKey, loadPath]);
+
+    useEffect(() => {
+        if (effectiveTab !== "class") return;
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换到班级页或更换班级时拉取总览
         void loadClass(classId || undefined);
-    }, [tab, classId, loadClass]);
+    }, [effectiveTab, classId, loadClass]);
 
     const patch = async (stepId: string, body: Record<string, unknown>) => {
         setBusy(true);
@@ -165,7 +174,7 @@ function LearnPage() {
         setBusy(true);
         setMessage(null);
         try {
-            const next = await apiClient.post<PathView>("/api/learning-path", { action: "replan", studentKey, language: langQuery });
+            const next = await apiClient.post<PathView>("/api/learning-path", { action: "replan", studentKey: effectiveStudentKey, language: langQuery });
             setPath(next);
             setMessage(t.learn.replanned);
         } catch (err) {
@@ -180,7 +189,7 @@ function LearnPage() {
         setMessage(null);
         try {
             const result = await apiClient.post<{ suggestion: { order: string[]; usedAi: boolean }; path: PathView }>("/api/learning-path", {
-                action: "suggest-order", studentKey, language: langQuery,
+                action: "suggest-order", studentKey: effectiveStudentKey, language: langQuery,
             });
             setMessage(`${t.learn.suggestUsed} ${result.suggestion.order.join(language === "en" ? ", " : "、")}`);
         } catch (err) {
@@ -195,12 +204,12 @@ function LearnPage() {
         const options: Array<{ value: Tab; label: string }> = [
             { value: "today", label: t.learn.tabToday },
             { value: "path", label: t.learn.tabPath },
-            { value: "class", label: t.learn.tabClass },
         ];
+        if (!isParent) options.push({ value: "class", label: t.learn.tabClass });
         return options;
-    }, [t.learn.tabToday, t.learn.tabPath, t.learn.tabClass]);
+    }, [t.learn.tabToday, t.learn.tabPath, t.learn.tabClass, isParent]);
 
-    const visibleSteps = tab === "today" ? (path?.today ?? []) : (path?.steps ?? []);
+    const visibleSteps = effectiveTab === "today" ? (path?.today ?? []) : (path?.steps ?? []);
     const openCount = path?.today.length ?? 0;
 
     const ctaFor = (step: PathStep) => {
@@ -212,54 +221,58 @@ function LearnPage() {
             const href = step.href || (step.errorItemIds[0] ? `/practice?itemId=${step.errorItemIds[0]}` : "/variants");
             return { href, label: t.learn.generateVariant };
         }
-        if (step.type === "spaced_review") return { href: "/review", label: t.learn.openReview };
-        return { href: "/practice", label: t.learn.openPractice };
+        if (step.type === "spaced_review") return { href: hrefWithChild("/review"), label: t.learn.openReview };
+        return { href: hrefWithChild("/practice"), label: t.learn.openPractice };
     };
 
     return (
         <PageContainer className="space-y-6 pb-24 md:pb-8">
             <PageHeader
-                title={tab === "class" ? t.learn.classTitle : t.learn.title}
-                description={tab === "class" ? t.learn.classSubtitle : t.learn.subtitle}
+                title={effectiveTab === "class" ? t.learn.classTitle : t.learn.title}
+                description={effectiveTab === "class" ? t.learn.classSubtitle : t.learn.subtitle}
             />
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 {path && (
-                    <Badge variant="outline" className="tabular-nums">
+                    <Badge variant="outline" className="self-start tabular-nums">
                         {t.learn.version.replace("{version}", String(path.version))}
                     </Badge>
                 )}
-                <Button type="button" variant="outline" size="sm" onClick={handleSuggest} loading={busy} loadingText={t.common.pleaseWait}>
-                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                    {t.learn.suggestOrder}
-                </Button>
-                <Button type="button" size="sm" onClick={handleReplan} loading={busy} loadingText={t.common.pleaseWait}>
-                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                    {t.learn.replan}
-                </Button>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                    <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={handleSuggest} loading={busy} loadingText={t.common.pleaseWait}>
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                        {t.learn.suggestOrder}
+                    </Button>
+                    <Button type="button" size="sm" className="w-full sm:w-auto" onClick={handleReplan} loading={busy} loadingText={t.common.pleaseWait}>
+                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        {t.learn.replan}
+                    </Button>
+                </div>
             </div>
 
             <SegmentedControl
                 ariaLabel={t.learn.title}
-                value={tab}
+                value={effectiveTab}
                 onChange={setTab}
                 options={tabs}
             />
 
-            {studentKey !== "self" && path && tab !== "class" && (
+            {effectiveStudentKey !== "self" && path && effectiveTab !== "class" && (
                 <p className="text-sm text-muted-foreground">
                     {path.studentName}
-                    <Button type="button" variant="link" className="ml-2 h-auto p-0" onClick={() => { setStudentKey("self"); setTab("today"); }}>
-                        {t.learn.me}
-                    </Button>
+                    {!isParent && (
+                        <Button type="button" variant="link" className="ml-2 h-auto p-0" onClick={() => { setStudentKey("self"); setTab("today"); }}>
+                            {t.learn.me}
+                        </Button>
+                    )}
                 </p>
             )}
 
             {message && <p className="text-sm text-primary" role="status">{message}</p>}
-            {path?.planReason && tab !== "class" && (
+            {path?.planReason && effectiveTab !== "class" && (
                 <p className="text-sm text-muted-foreground">{t.learn.planReason}：{path.planReason}</p>
             )}
 
-            {tab !== "class" ? (
+            {effectiveTab !== "class" ? (
                 <AsyncBoundary
                     loading={loading && !path}
                     error={error}

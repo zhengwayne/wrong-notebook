@@ -88,6 +88,14 @@ export class LearnerNotFoundError extends Error {
     }
 }
 
+/** 当前用户名下的孩子档案；找不到时返回 null */
+export async function getOwnedChildLearner(db: Db, userId: string, learnerId: string): Promise<LearnerRow | null> {
+    return db.learner.findFirst({
+        where: { id: learnerId, userId, kind: LEARNER_KIND.child },
+    });
+}
+
+
 export async function updateChildLearner(db: Db, userId: string, learnerId: string, name: string): Promise<LearnerRow> {
     const trimmed = name.trim();
     if (!trimmed) throw new Error('LEARNER_NAME_REQUIRED');

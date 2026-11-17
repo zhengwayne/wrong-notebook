@@ -55,7 +55,9 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
         accept: {
-            "image/*": [".jpeg", ".jpg", ".png"],
+            "image/*": [".jpeg", ".jpg", ".png", ".heic", ".heif"],
+            "image/heic": [".heic"],
+            "image/heif": [".heif"],
         },
         maxFiles: 1,
         disabled: isAnalyzing,

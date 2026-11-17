@@ -30,12 +30,13 @@ export async function GET(
             return unauthorized("Authentication required");
         }
 
+        const learnerId = new URL(req.url).searchParams.get("learnerId");
         const notebook = await prisma.subject.findUnique({
             where: { id },
             include: {
                 _count: {
                     select: {
-                        errorItems: true,
+                        errorItems: learnerId ? { where: { learnerId } } : true,
                     },
                 },
             },

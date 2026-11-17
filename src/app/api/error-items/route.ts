@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
-import { unauthorized, internalError, validationError } from "@/lib/api-errors";
+import { unauthorized, badRequest, internalError, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -18,6 +18,7 @@ import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { deriveErrorType } from "@/lib/error-type";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
+import { getOwnedChildLearner } from "@/lib/learners";
 
 const logger = createLogger('api:error-items');
 
@@ -34,6 +35,7 @@ const importSchema = z.object({
     ),
     originalImageUrl: z.string().max(20 * 1024 * 1024).default(''),
     subjectId: z.string().nullish(),
+    learnerId: z.string().min(1).max(64).nullish(),
     subjectName: z.string().max(100).nullish(),
     gradeSemester: z.string().max(100).nullish(),
     recognizedGradeSemester: z.string().max(100).nullish(),
@@ -64,6 +66,7 @@ export async function POST(req: Request) {
             originalImageUrl,
             subjectId: requestedSubjectId,
             subjectName,
+            learnerId: requestedLearnerId,
             gradeSemester,
             paperLevel,
             difficultyStars,
@@ -106,6 +109,13 @@ export async function POST(req: Request) {
         if (!user) {
             logger.warn({ sessionEmail: session?.user?.email }, 'User not found in DB');
             return unauthorized("No user found in DB");
+        }
+
+        let learnerId: string | undefined;
+        if (requestedLearnerId) {
+            const child = await getOwnedChildLearner(prisma, user.id, requestedLearnerId);
+            if (!child) return badRequest("Child not found");
+            learnerId = child.id;
         }
 
         const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, body)
@@ -181,6 +191,7 @@ export async function POST(req: Request) {
                         shortId: await generateUniqueShortId(tx),
                         userId: user.id,
                         subjectId: subjectId || undefined,
+                        learnerId: learnerId || undefined,
                         originalImageUrl,
                         questionText,
                         answerText,

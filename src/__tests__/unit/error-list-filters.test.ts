@@ -11,10 +11,10 @@ describe('错题列表筛选参数', () => {
 
     it('各筛选条件转成对应参数名', () => {
         const params = buildErrorListParams({
-            subjectId: 'nb', search: '方程', mastery: 'reviewing', timeRange: 'week', tag: '勾股定理', gradeSemester: '初二上', chapter: '第一章', paperLevel: 'b',
+            subjectId: 'nb', search: '方程', mastery: 'reviewing', timeRange: 'week', tag: '勾股定理', gradeSemester: '初二上', chapter: '第一章', paperLevel: 'b', learnerId: 'child-a',
         });
         expect(Object.fromEntries(params)).toEqual({
-            subjectId: 'nb', query: '方程', mastery: 'reviewing', timeRange: 'week', tag: '勾股定理', gradeSemester: '初二上', chapter: '第一章', paperLevel: 'b',
+            subjectId: 'nb', query: '方程', mastery: 'reviewing', timeRange: 'week', tag: '勾股定理', gradeSemester: '初二上', chapter: '第一章', paperLevel: 'b', learnerId: 'child-a',
         });
     });
 });

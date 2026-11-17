@@ -71,7 +71,7 @@ describe('/api/notebooks', () => {
             ];
             mocks.mockPrismaSubject.findMany.mockResolvedValue(notebooks);
 
-            const response = await GET();
+            const response = await GET(new Request("http://localhost/api/notebooks"));
             const data = await response.json();
 
             expect(response.status).toBe(200);
@@ -90,7 +90,7 @@ describe('/api/notebooks', () => {
                 ]);
             mocks.mockPrismaSubject.create.mockResolvedValue({});
 
-            const response = await GET();
+            const response = await GET(new Request("http://localhost/api/notebooks"));
             const data = await response.json();
 
             expect(response.status).toBe(200);

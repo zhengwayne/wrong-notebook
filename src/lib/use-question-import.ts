@@ -44,6 +44,8 @@ interface QuestionImportOptions {
     textNotebook?: { id: string; name: string };
     /** 校对后保存时固定放入的错题本，不传则使用校对页中选择的错题本 */
     fixedSubjectId?: string;
+    /** 家长身份下把题目挂到当前孩子 */
+    learnerId?: string | null;
     /** 图片识别完成、进入校对页之前调用（如按学科自动选择错题本） */
     onParsed?: (data: ParsedQuestion) => void;
 }
@@ -52,7 +54,7 @@ interface QuestionImportOptions {
  * 题目导入流程：裁剪图片 → 压缩 → AI 识别（或文字解题）→ 免确认直接入库，或进入校对页后保存。
  * 首页与错题本的添加错题页共用。
  */
-export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId, textNotebook, fixedSubjectId, onParsed }: QuestionImportOptions) {
+export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId, textNotebook, fixedSubjectId, learnerId, onParsed }: QuestionImportOptions) {
     const { t, language } = useLanguage();
     const router = useRouter();
     const [step, setStep] = useState<"upload" | "review" | "confirm">("upload");
@@ -126,7 +128,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         }
         if (!confirmBeforeImport) {
             setAnalysisStep('saving');
-            const imported = await saveParsedQuestion(items[0], { subjectId: importSubjectId, imageUrl });
+            const imported = await saveParsedQuestion(items[0], { subjectId: importSubjectId, imageUrl, learnerId });
             setLastImported(imported);
             setCurrentImage(null);
             frontendLogger.info(logPrefix, 'Imported without review', { id: imported.id });
@@ -153,7 +155,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         try {
             const imported: ImportedQuestion[] = [];
             for (const item of selected) {
-                imported.push(await saveParsedQuestion(item, { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl }));
+                imported.push(await saveParsedQuestion(item, { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl, learnerId }));
             }
             toast.success(t.importFlow.savedCount.replace("{count}", String(imported.length)));
             setLastImported(imported[imported.length - 1]);
@@ -247,7 +249,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
             if (result.duplicate) {
                 router.push(`/error-items/${result.id}`);
             } else if (payload.subjectId) {
-                router.push(`/notebooks/${payload.subjectId}`);
+                router.push(learnerId ? `/notebooks/${payload.subjectId}?learnerId=${encodeURIComponent(learnerId)}` : `/notebooks/${payload.subjectId}`);
             }
             return true;
         } catch (error) {
@@ -263,6 +265,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
             ...finalData,
             originalImageUrl: currentImage || "",
             ...(fixedSubjectId ? { subjectId: fixedSubjectId } : {}),
+            ...(learnerId ? { learnerId } : {}),
         });
         if (saved) {
             setStep("upload");

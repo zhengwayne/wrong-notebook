@@ -64,6 +64,11 @@ describe('GET /api/review/due', () => {
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['new']);
     });
 
+    it('按孩子筛选待复习错题', async () => {
+        await get('?learnerId=child-a');
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: 'child-a' } }));
+    });
+
     it('未登录时返回 401', async () => {
         mocks.session = null;
         const response = await get();

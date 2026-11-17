@@ -48,6 +48,11 @@ export async function GET(req: Request) {
             whereClause.subjectId = subjectId;
         }
 
+        const learnerId = searchParams.get("learnerId");
+        if (learnerId) {
+            whereClause.learnerId = learnerId;
+        }
+
         // 搜索条件需要使用 AND 包装，避免与其他 OR 条件冲突
         // 最终的 whereClause.AND 会包含所有需要同时满足的条件
         const andConditions: Prisma.ErrorItemWhereInput[] = [];

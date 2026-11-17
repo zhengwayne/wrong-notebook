@@ -33,6 +33,7 @@ import { groupErrorItems, type ErrorListGroupMode } from "@/lib/error-list-group
 export interface ErrorListProps {
     subjectId?: string;
     subjectName?: string;
+    learnerId?: string | null;
 }
 
 interface KnowledgeFilterChange {
@@ -41,7 +42,7 @@ interface KnowledgeFilterChange {
     tag?: string | null;
 }
 
-export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
+export function ErrorList({ subjectId, subjectName, learnerId }: ErrorListProps = {}) {
     const { t } = useLanguage();
     const router = useRouter();
     const [items, setItems] = useState<ErrorItemSummary[]>([]);
@@ -80,7 +81,8 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         gradeSemester: gradeFilter,
         chapter: chapterFilter,
         paperLevel: paperLevelFilter,
-    }), [subjectId, debouncedSearch, masteryFilter, timeFilter, selectedTag, gradeFilter, chapterFilter, paperLevelFilter]);
+        learnerId: learnerId || undefined,
+    }), [subjectId, debouncedSearch, masteryFilter, timeFilter, selectedTag, gradeFilter, chapterFilter, paperLevelFilter, learnerId]);
 
     const handleFilterChange = (change: KnowledgeFilterChange) => {
         const { gradeSemester, chapter, tag } = change;

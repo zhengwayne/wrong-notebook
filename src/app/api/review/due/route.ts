@@ -28,8 +28,9 @@ export async function GET(req: Request) {
         const timeZone = getAppTimeZone();
         const now = new Date();
         // 先只取计算计划所需的字段，到期的再查询完整内容
+        const learnerId = searchParams.get("learnerId");
         const candidates = await prisma.errorItem.findMany({
-            where: { userId: session.user.id, ...(subjectId ? { subjectId } : {}) },
+            where: { userId: session.user.id, ...(subjectId ? { subjectId } : {}), ...(learnerId ? { learnerId } : {}) },
             select: {
                 id: true,
                 createdAt: true,
