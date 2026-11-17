@@ -65,8 +65,8 @@ ENV NODE_ENV=production
 # Uncomment the following line in case you want to disable telemetry during runtime.
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install dependencies and create user
-RUN apk add --no-cache su-exec openssl \
+# libc6-compat：sharp 等 musl 原生库在 Alpine 上需要
+RUN apk add --no-cache su-exec openssl libc6-compat \
     && addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 
@@ -81,6 +81,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# sharp 带平台原生二进制，并被标为 serverExternalPackages。
+# standalone 一般会追踪到它，这里再显式复制，避免动态 import 漏掉 @img 平台包。
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
+
 # Copy Prisma schema and migrations for runtime usage if needed (e.g. for migrations)
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
@@ -91,8 +96,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/config ./config
 COPY --from=builder --chown=nextjs:nodejs /app/dist-scripts ./dist-scripts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/seed-admin.js ./dist-scripts/scripts/seed-admin.js
 
-# Create data directory for SQLite persistence
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+# SQLite 与上传文件的持久化目录（运行时由卷挂到 /app/data）
+RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs --chmod=755 docker-entrypoint.sh ./
