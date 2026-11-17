@@ -35,8 +35,8 @@ export function useImageZoom(fitStyle: CSSProperties) {
     }, []);
     const [zoom, setZoomState] = useState(MIN_ZOOM);
     const zoomRef = useRef(MIN_ZOOM);
-    // 未缩放时图片的显示宽度，作为缩放基准
-    const [baseWidth, setBaseWidth] = useState<number | null>(null);
+    // 未缩放时图片的显示尺寸，作为缩放基准；题框容器与图片共用同一组宽高
+    const [baseSize, setBaseSize] = useState<{ width: number; height: number } | null>(null);
     const anchorRef = useRef<ZoomAnchor | null>(null);
     // 双指捏合期间为 true，供外部阻止裁剪框跟随手指移动
     const pinchingRef = useRef(false);
@@ -50,7 +50,7 @@ export function useImageZoom(fitStyle: CSSProperties) {
         // 从 100% 开始缩放时重新测量适应尺寸（窗口大小可能已变化）
         if (current === MIN_ZOOM) {
             const image = container.querySelector("img");
-            if (image) setBaseWidth(image.clientWidth);
+            if (image) setBaseSize({ width: image.clientWidth, height: image.clientHeight });
         }
         const rect = container.getBoundingClientRect();
         const viewX = (clientX ?? rect.left + rect.width / 2) - rect.left;
@@ -134,7 +134,9 @@ export function useImageZoom(fitStyle: CSSProperties) {
 
     /** 图片加载完成或回到 100% 时记录适应尺寸 */
     const measureImage = useCallback((image: HTMLImageElement | null) => {
-        if (image && zoomRef.current === MIN_ZOOM) setBaseWidth(image.clientWidth);
+        if (image && zoomRef.current === MIN_ZOOM) {
+            setBaseSize({ width: image.clientWidth, height: image.clientHeight });
+        }
     }, []);
 
     const zoomIn = useCallback(() => zoomTo(zoomRef.current * BUTTON_STEP), [zoomTo]);
@@ -146,14 +148,20 @@ export function useImageZoom(fitStyle: CSSProperties) {
         setZoomState(MIN_ZOOM);
     }, []);
 
-    const imageStyle: CSSProperties = zoom === MIN_ZOOM || !baseWidth
-        ? fitStyle
-        : { ...fitStyle, width: baseWidth * zoom, height: "auto", maxWidth: "none", maxHeight: "none" };
+    const zoomed = zoom !== MIN_ZOOM && baseSize != null && baseSize.width > 0;
+    const imageStyle: CSSProperties = zoomed
+        ? { width: baseSize.width * zoom, height: baseSize.height * zoom, maxWidth: "none", maxHeight: "none", display: "block" }
+        : fitStyle;
+    /** 与图片同一宽高，给题框叠层当共同容器，避免放大后框留在 100% 尺寸上 */
+    const frameStyle: CSSProperties = zoomed
+        ? { width: baseSize.width * zoom, height: baseSize.height * zoom, maxWidth: "none", maxHeight: "none" }
+        : { maxWidth: fitStyle.maxWidth, maxHeight: fitStyle.maxHeight };
 
     return {
         containerRef,
         zoom,
         imageStyle,
+        frameStyle,
         measureImage,
         zoomIn,
         zoomOut,

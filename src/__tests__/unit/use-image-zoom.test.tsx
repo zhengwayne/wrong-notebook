@@ -21,7 +21,9 @@ function Probe({ onRender }: { onRender: (value: Zoom) => void }) {
     useEffect(() => onRender(value));
     return (
         <div ref={containerRef} data-testid="scroll">
-            <img alt="" style={imageStyle} />
+            <div data-testid="frame" style={value.frameStyle}>
+                <img alt="" style={imageStyle} />
+            </div>
         </div>
     );
 }
@@ -43,6 +45,7 @@ beforeEach(async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     // jsdom 不做布局，固定图片的适应宽度为 400px
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
@@ -65,7 +68,8 @@ describe('useImageZoom', () => {
     it('放大按钮按 1.25 倍放大并按适应宽度换算图片宽度，缩小不低于 100%', async () => {
         await act(async () => zoom.zoomIn());
         expect(zoom.zoom).toBe(1.25);
-        expect(zoom.imageStyle).toMatchObject({ width: 500, maxWidth: 'none', maxHeight: 'none' });
+        expect(zoom.imageStyle).toMatchObject({ width: 500, height: 750, maxWidth: 'none', maxHeight: 'none' });
+        expect(zoom.frameStyle).toMatchObject({ width: 500, height: 750, maxWidth: 'none', maxHeight: 'none' });
 
         await act(async () => zoom.zoomOut());
         await act(async () => zoom.zoomOut());
@@ -113,5 +117,15 @@ describe('useImageZoom', () => {
         await act(async () => zoom.reset());
         expect(zoom.zoom).toBe(1);
         expect(zoom.imageStyle).toEqual(FIT);
+    });
+
+    it('frameStyle 与图片在放大后保持同一宽高，100% 时不锁死容器', async () => {
+        expect(zoom.frameStyle).toMatchObject({ maxWidth: FIT.maxWidth, maxHeight: FIT.maxHeight });
+        expect(zoom.frameStyle.width).toBeUndefined();
+        await act(async () => zoom.zoomIn());
+        expect(zoom.frameStyle.width).toBe(zoom.imageStyle.width);
+        expect(zoom.frameStyle.height).toBe(zoom.imageStyle.height);
+        expect(zoom.frameStyle.maxWidth).toBe("none");
+        expect(zoom.frameStyle.maxHeight).toBe("none");
     });
 });

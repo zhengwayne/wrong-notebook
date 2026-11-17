@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { ZoomControls } from "@/components/zoom-controls";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -40,6 +40,30 @@ export interface ParentPaperOverlayProps {
     onSaveBbox: (questionId: string, bbox: QuestionBBox) => Promise<void>;
 }
 
+
+function badgeChromeStyle(
+    placement: { side: "left" | "above"; shift: number } | undefined,
+    box: { x: number },
+    zoom: number,
+    background: string,
+): CSSProperties {
+    const side = placement?.side ?? (box.x >= 0.07 ? "left" : "above");
+    const shift = placement?.shift ?? 0;
+    const scale = zoom > 1 ? 1 / zoom : 1;
+    const translate = side === "left"
+        ? (shift ? `translateY(${shift * 1.05}rem)` : "")
+        : (shift ? `translateX(${shift * 1.15}rem)` : "");
+    const transform = [translate, scale !== 1 ? `scale(${scale})` : ""].filter(Boolean).join(" ") || undefined;
+    return {
+        background,
+        transform,
+        transformOrigin: side === "left" ? "right top" : "left bottom",
+        ...(side === "left"
+            ? { right: "100%", top: 0, marginRight: 2 }
+            : { left: 0, bottom: "100%", marginBottom: 2 }),
+    };
+}
+
 export function ParentPaperOverlay({
     title,
     pages,
@@ -65,7 +89,7 @@ export function ParentPaperOverlay({
         height: "auto" as const,
         display: "block" as const,
     }), [fitBox]);
-    const { containerRef, zoom, imageStyle, measureImage, zoomIn, zoomOut, reset, pinchingRef } = useImageZoom(fitStyle);
+    const { containerRef, zoom, imageStyle, frameStyle, measureImage, zoomIn, zoomOut, reset, pinchingRef } = useImageZoom(fitStyle);
     const overlayRef = useRef<HTMLDivElement>(null);
     const setShell = (element: HTMLDivElement | null) => {
         shellRef.current = element;
@@ -238,11 +262,11 @@ export function ParentPaperOverlay({
                     className="flex h-[calc(100dvh-16rem-env(safe-area-inset-bottom,0px))] items-center justify-center overflow-auto overscroll-contain md:h-[min(85dvh,calc(100dvh-9rem))]"
                     style={{ touchAction: editing ? "none" : "pan-x pan-y" }}
                 >
-                    <div className="relative inline-block max-h-full max-w-full">
+                    <div key={page.id} className="relative inline-block" style={frameStyle}>
                         <img
                             src={page.imageUrl}
                             alt={copy.pageLabel.replace("{index}", String(safeIndex + 1))}
-                            className="block max-h-full max-w-full"
+                            className="block"
                             style={imageStyle}
                             draggable={false}
                             onLoad={(event) => measureImage(event.currentTarget)}
@@ -292,28 +316,18 @@ export function ParentPaperOverlay({
                                     >
                                         <span
                                             className="absolute z-[3] whitespace-nowrap rounded-sm px-1 py-px text-center text-[10px] font-semibold leading-4 text-white sm:px-1.5 sm:text-[11px]"
-                                            style={{
-                                                background: colors.stroke,
-                                                ...( (badges[question.id]?.side ?? (box.x >= 0.07 ? "left" : "above")) === "left"
-                                                    ? {
-                                                        right: "100%",
-                                                        top: 0,
-                                                        marginRight: 2,
-                                                        transform: badges[question.id]?.shift ? `translateY(${badges[question.id]!.shift * 1.05}rem)` : undefined,
-                                                    }
-                                                    : {
-                                                        left: 0,
-                                                        bottom: "100%",
-                                                        marginBottom: 2,
-                                                        transform: badges[question.id]?.shift ? `translateX(${badges[question.id]!.shift * 1.15}rem)` : undefined,
-                                                    }),
-                                            }}
+                                            style={badgeChromeStyle(badges[question.id], box, zoom, colors.stroke)}
                                         >
                                             {question.number}
                                         </span>
                                         <span
                                             className="absolute right-0.5 top-0.5 text-sm font-bold leading-none sm:text-base"
-                                            style={{ color: colors.stroke, textShadow: "0 0 2px #fff, 0 0 2px #fff" }}
+                                            style={{
+                                                color: colors.stroke,
+                                                textShadow: "0 0 2px #fff, 0 0 2px #fff",
+                                                transform: zoom > 1 ? `scale(${1 / zoom})` : undefined,
+                                                transformOrigin: "top right",
+                                            }}
                                             aria-hidden="true"
                                         >
                                             {colors.mark}
