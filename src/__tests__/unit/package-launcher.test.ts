@@ -25,9 +25,11 @@ const launcher = require('../../../packaging/runtime/launcher.js') as {
     }) => string | null;
     prepare: (opts?: {
         dataDir?: string;
+        _appDir?: string;
         _runPrisma?: (args: string[], env: NodeJS.ProcessEnv) => boolean;
         _checkpointRunner?: (dbFile: string, env: NodeJS.ProcessEnv) => void;
     }) => { dataDir: string; dbFile: string; env: NodeJS.ProcessEnv; version: string; backupPath: string | null };
+    installExternalAliasResolver: () => void;
 };
 
 const REPO_ROOT = path.resolve('.');
@@ -199,5 +201,78 @@ describe('package launcher', () => {
             errorSpy.mockRestore();
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    it('首次启动复制 seed.db 并在二次启动触发增量迁移前备份', () => {
+        const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-app-'));
+        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-data-'));
+        try {
+            fs.mkdirSync(path.join(appDir, 'prisma'), { recursive: true });
+            fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ version: '2026.11.18' }));
+            fs.writeFileSync(path.join(appDir, 'prisma', 'seed.db'), 'sqlite-seed-payload');
+
+            const migrateCalls: string[][] = [];
+            const first = launcher.prepare({
+                dataDir,
+                _appDir: appDir,
+                _runPrisma: (args) => {
+                    migrateCalls.push(args);
+                    return true;
+                },
+            });
+
+            expect(first.backupPath).toBeNull();
+            expect(fs.readFileSync(first.dbFile, 'utf8')).toBe('sqlite-seed-payload');
+            expect(migrateCalls).toHaveLength(1);
+            expect(migrateCalls[0]).toContain(path.join(appDir, 'prisma', 'schema.prisma'));
+
+            // 二次启动：已有非空 wrong-notebook.db，不覆盖原库并生成 pre-migrate-* 备份
+            fs.writeFileSync(first.dbFile, 'user-mutated-db');
+            const second = launcher.prepare({
+                dataDir,
+                _appDir: appDir,
+                _runPrisma: (args) => {
+                    migrateCalls.push(args);
+                    return true;
+                },
+            });
+            expect(second.backupPath).toBeTruthy();
+            expect(fs.readFileSync(second.backupPath!, 'utf8')).toBe('user-mutated-db');
+            expect(fs.readFileSync(first.dbFile, 'utf8')).toBe('user-mutated-db');
+            expect(migrateCalls).toHaveLength(2);
+        } finally {
+            fs.rmSync(appDir, { recursive: true, force: true });
+            fs.rmSync(dataDir, { recursive: true, force: true });
+        }
+    });
+
+    it('installExternalAliasResolver 支持 require 与 import 剥离 16 位哈希后缀并保留普通缺失错误', () => {
+        const script = `
+            const assert = require('node:assert/strict');
+            const launcher = require('./packaging/runtime/launcher.js');
+            launcher.installExternalAliasResolver();
+            const cjsAliased = require('bcryptjs-0123456789abcdef');
+            assert.equal(typeof cjsAliased.hash, 'function');
+            let missingError = null;
+            try {
+                require('nonexistent-plain-pkg');
+            } catch (e) {
+                missingError = e.code;
+            }
+            assert.equal(missingError, 'MODULE_NOT_FOUND');
+            Promise.resolve().then(async () => {
+                const esmAliased = await import('bcryptjs-fedcba9876543210');
+                assert.equal(typeof (esmAliased.default?.hash || esmAliased.hash), 'function');
+                console.log('ALIAS_OK');
+            }).catch((err) => {
+                console.error(err);
+                process.exit(1);
+            });
+        `;
+        const output = execFileSync(process.execPath, ['-e', script], {
+            cwd: REPO_ROOT,
+            encoding: 'utf8',
+        });
+        expect(output).toContain('ALIAS_OK');
     });
 });

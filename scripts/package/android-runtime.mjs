@@ -160,6 +160,100 @@ function copyLicense(src, licensesDir, name) {
     if (fs.existsSync(src)) fs.copyFileSync(src, path.join(licensesDir, name));
 }
 
+const WASM_IMAGE_KEEP_DIRS = new Set(['colour', 'sharp-wasm32']);
+const EXTRA_EMNP_PKGS = ['@emnapi/core', '@emnapi/wasi-threads'];
+
+function copyRuntimePackageTree(pkgName, destNodeModules, srcNodeModules, seen = new Set()) {
+    if (seen.has(pkgName)) return;
+    seen.add(pkgName);
+    const destPkgDir = path.join(destNodeModules, ...pkgName.split('/'));
+    const srcPkgDir = path.join(srcNodeModules, ...pkgName.split('/'));
+    const manifestPath = path.join(destPkgDir, 'package.json');
+    if (!fs.existsSync(manifestPath)) {
+        if (!fs.existsSync(path.join(srcPkgDir, 'package.json'))) {
+            throw new Error(`安卓运行时缺少依赖 ${pkgName}，请确认已完整安装 npm 依赖`);
+        }
+        fs.mkdirSync(path.dirname(destPkgDir), { recursive: true });
+        fs.cpSync(srcPkgDir, destPkgDir, { recursive: true, dereference: true });
+    }
+    const pkgJson = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    for (const dep of Object.keys({ ...pkgJson.dependencies })) {
+        copyRuntimePackageTree(dep, destNodeModules, srcNodeModules, seen);
+    }
+}
+
+/**
+ * 组装安卓单机版 server 目录：
+ * 1. 移除构建机原生 Prisma 引擎（运行期改用 jniLibs 中的安卓引擎）；
+ * 2. 移除 @img/* 下除 colour 与 sharp-wasm32 外的平台原生包（安卓 bionic 无法加载 glibc 二进制）；
+ * 3. 补齐 @img/sharp-wasm32 及其 @emnapi/runtime 等 WebAssembly 运行时依赖并导出许可证。
+ */
+export function prepareAndroidServerTree({
+    bundleDir,
+    serverDir,
+    rootNodeModulesDir = path.resolve(process.cwd(), 'node_modules'),
+    licensesDir,
+}) {
+    fs.rmSync(serverDir, { recursive: true, force: true });
+    fs.cpSync(bundleDir, serverDir, { recursive: true, verbatimSymlinks: true });
+
+    const enginePattern = /^((lib)?query_engine[-_.].*\.node|schema-engine-.*)$/;
+    for (const dir of [path.join('node_modules', '.prisma', 'client'), path.join('node_modules', '@prisma', 'engines')]) {
+        const full = path.join(serverDir, dir);
+        if (!fs.existsSync(full)) continue;
+        for (const name of fs.readdirSync(full)) {
+            if (enginePattern.test(name)) fs.rmSync(path.join(full, name));
+        }
+    }
+
+    const serverNodeModules = path.join(serverDir, 'node_modules');
+    const imgScopeDir = path.join(serverNodeModules, '@img');
+    if (fs.existsSync(imgScopeDir)) {
+        for (const entry of fs.readdirSync(imgScopeDir, { withFileTypes: true })) {
+            if (!WASM_IMAGE_KEEP_DIRS.has(entry.name)) {
+                fs.rmSync(path.join(imgScopeDir, entry.name), { recursive: true, force: true });
+            }
+        }
+    }
+
+    const seen = new Set();
+    copyRuntimePackageTree('@img/sharp-wasm32', serverNodeModules, rootNodeModulesDir, seen);
+    for (const extraPkg of EXTRA_EMNP_PKGS) {
+        const candidate = path.join(rootNodeModulesDir, ...extraPkg.split('/'), 'package.json');
+        const destCandidate = path.join(serverNodeModules, ...extraPkg.split('/'), 'package.json');
+        if (fs.existsSync(candidate) || fs.existsSync(destCandidate)) {
+            copyRuntimePackageTree(extraPkg, serverNodeModules, rootNodeModulesDir, seen);
+        }
+    }
+
+    for (const requiredPkg of ['@img/sharp-wasm32', '@emnapi/runtime']) {
+        const checkPath = path.join(serverNodeModules, ...requiredPkg.split('/'), 'package.json');
+        if (!fs.existsSync(checkPath)) {
+            throw new Error(`安卓运行时缺少必需 WASM 包：${requiredPkg}`);
+        }
+    }
+
+    if (licensesDir) {
+        fs.mkdirSync(licensesDir, { recursive: true });
+        const wasmDir = path.join(serverNodeModules, '@img', 'sharp-wasm32');
+        const pkgMeta = JSON.parse(fs.readFileSync(path.join(wasmDir, 'package.json'), 'utf8'));
+        const licenseFile = ['LICENSE', 'LICENSE.md', 'LICENSE.txt']
+            .map((name) => path.join(wasmDir, name))
+            .find((candidate) => fs.existsSync(candidate));
+        if (licenseFile) {
+            copyLicense(licenseFile, licensesDir, 'sharp-wasm32-LICENSE.txt');
+        } else {
+            const summary = [
+                `${pkgMeta.name}@${pkgMeta.version}`,
+                `License: ${pkgMeta.license || 'Apache-2.0 AND LGPL-3.0-or-later AND MIT'}`,
+                pkgMeta.homepage ? `Homepage: ${pkgMeta.homepage}` : '',
+                '',
+            ].filter(Boolean).join('\n');
+            fs.writeFileSync(path.join(licensesDir, 'sharp-wasm32-LICENSE.txt'), summary);
+        }
+    }
+}
+
 /**
  * 组装安卓单机版运行时目录：
  *   <outDir>/jniLibs/arm64-v8a/  libnode.so、依赖库、libquery_engine.so、libschema_engine.so
@@ -200,16 +294,9 @@ export async function buildAndroidRuntime({ bundleDir, enginesDir, outDir, workD
     }
     copyLicense(path.join(enginesDir, 'LICENSE'), licensesDir, 'prisma-engines-LICENSE.txt');
 
-    // 服务端：去掉构建机平台的 Prisma 引擎，安卓上改用 jniLibs 中的引擎
+    // 服务端：去掉构建机平台的 Prisma 引擎与原生 sharp 二进制，改用 jniLibs 与 sharp-wasm32
     const serverDir = path.join(workDir, 'server');
-    fs.rmSync(serverDir, { recursive: true, force: true });
-    fs.cpSync(bundleDir, serverDir, { recursive: true, verbatimSymlinks: true });
-    const enginePattern = /^((lib)?query_engine[-_.].*\.node|schema-engine-.*)$/;
-    for (const dir of [path.join('node_modules', '.prisma', 'client'), path.join('node_modules', '@prisma', 'engines')]) {
-        const full = path.join(serverDir, dir);
-        if (!fs.existsSync(full)) continue;
-        for (const name of fs.readdirSync(full)) if (enginePattern.test(name)) fs.rmSync(path.join(full, name));
-    }
+    prepareAndroidServerTree({ bundleDir, serverDir, licensesDir });
     const zip = path.join(assetsDir, 'server.zip');
     run('zip', ['-q', '-r', '-X', '-9', zip, '.'], { cwd: serverDir });
 

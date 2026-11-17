@@ -38,9 +38,9 @@ function defaultDataDir() {
     return path.join(os.homedir(), '.wrong-notebook');
 }
 
-function appVersion() {
+function appVersion(appDir = APP_DIR) {
     try {
-        return JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version || 'unknown';
+        return JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8')).version || 'unknown';
     } catch {
         return 'unknown';
     }
@@ -213,10 +213,10 @@ function backupBeforeMigrate({ dbFile, dataDir, version, env = process.env, chec
     return backupPath;
 }
 
-function runPrisma(args, env) {
-    const cli = require.resolve('prisma/build/index.js', { paths: [APP_DIR] });
+function runPrisma(args, env, appDir = APP_DIR) {
+    const cli = require.resolve('prisma/build/index.js', { paths: [appDir, APP_DIR] });
     const result = spawnSync(process.execPath, [cli, ...args], {
-        cwd: APP_DIR,
+        cwd: appDir,
         env,
         stdio: 'inherit',
         windowsHide: true,
@@ -226,16 +226,16 @@ function runPrisma(args, env) {
 }
 
 /** npm 安装时 Prisma Client 由 postinstall 生成；被 --ignore-scripts 跳过时在这里补生成 */
-function ensurePrismaClient(env) {
+function ensurePrismaClient(env, appDir = APP_DIR) {
     let clientDir;
     try {
-        clientDir = path.dirname(require.resolve('.prisma/client/index.js', { paths: [APP_DIR] }));
+        clientDir = path.dirname(require.resolve('.prisma/client/index.js', { paths: [appDir, APP_DIR] }));
     } catch {
         clientDir = null;
     }
     if (clientDir && fs.existsSync(path.join(clientDir, 'schema.prisma'))) return;
     console.log('[wrong-notebook] 正在生成 Prisma Client...');
-    if (!runPrisma(['generate', '--schema', path.join(APP_DIR, 'prisma', 'schema.prisma')], env)) {
+    if (!runPrisma(['generate', '--schema', path.join(appDir, 'prisma', 'schema.prisma')], env, appDir)) {
         throw new Error('Prisma Client 生成失败，请检查安装目录是否可写');
     }
 }
@@ -268,10 +268,10 @@ function installExternalAliasResolver() {
 /**
  * 安装包只保留 .prisma/client 里的一份查询引擎，让 Prisma CLI 也使用它，避免运行迁移时联网下载
  */
-function useBundledQueryEngine(env) {
+function useBundledQueryEngine(env, appDir = APP_DIR) {
     if (env.PRISMA_QUERY_ENGINE_LIBRARY) return;
     try {
-        const clientDir = path.dirname(require.resolve('.prisma/client/index.js', { paths: [APP_DIR] }));
+        const clientDir = path.dirname(require.resolve('.prisma/client/index.js', { paths: [appDir, APP_DIR] }));
         const engine = fs.readdirSync(clientDir).find((name) => /^(lib)?query_engine-.*\.node$/.test(name));
         if (engine) env.PRISMA_QUERY_ENGINE_LIBRARY = path.join(clientDir, engine);
     } catch {
@@ -280,12 +280,13 @@ function useBundledQueryEngine(env) {
 }
 
 function prepare(options = {}) {
+    const appDir = options._appDir ? path.resolve(options._appDir) : APP_DIR;
     const dataDir = path.resolve(options.dataDir || defaultDataDir());
     const configDir = path.join(dataDir, 'config');
     fs.mkdirSync(configDir, { recursive: true });
 
     const dbFile = path.join(dataDir, 'wrong-notebook.db');
-    const version = appVersion();
+    const version = appVersion(appDir);
     const env = {
         ...process.env,
         NODE_ENV: 'production',
@@ -300,8 +301,8 @@ function prepare(options = {}) {
         WRONG_NOTEBOOK_HOME: dataDir,
     };
 
-    ensurePrismaClient(env);
-    useBundledQueryEngine(env);
+    ensurePrismaClient(env, appDir);
+    useBundledQueryEngine(env, appDir);
 
     const versionFile = path.join(dataDir, '.app_version');
     const previousVersion = readTextIfExists(versionFile).trim();
@@ -309,7 +310,7 @@ function prepare(options = {}) {
     let backupPath = null;
 
     if (!dbAlreadyExists) {
-        const seed = path.join(APP_DIR, 'prisma', 'seed.db');
+        const seed = path.join(appDir, 'prisma', 'seed.db');
         if (fs.existsSync(seed)) {
             console.log('[wrong-notebook] 初始化数据库（首次访问需用启动日志中的初始化链接创建管理员）');
             fs.copyFileSync(seed, dbFile);
@@ -329,7 +330,7 @@ function prepare(options = {}) {
 
     const migrateRunner = options._runPrisma || runPrisma;
     console.log('[wrong-notebook] 正在执行数据库迁移...');
-    if (!migrateRunner(['migrate', 'deploy', '--schema', path.join(APP_DIR, 'prisma', 'schema.prisma')], env)) {
+    if (!migrateRunner(['migrate', 'deploy', '--schema', path.join(appDir, 'prisma', 'schema.prisma')], env, appDir)) {
         if (backupPath) {
             console.error(
                 `[wrong-notebook] 数据库迁移失败！请停止服务并使用迁移前备份恢复后降级回旧版本：\n` +
@@ -341,12 +342,12 @@ function prepare(options = {}) {
     }
 
     if (previousVersion !== version) {
-        const rebuildScript = path.join(APP_DIR, 'dist-scripts', 'scripts', 'rebuild-system-tags.js');
+        const rebuildScript = path.join(appDir, 'dist-scripts', 'scripts', 'rebuild-system-tags.js');
         if (dbAlreadyExists && env.PRESERVE_EXISTING_DATA === 'true') {
             console.log(`[wrong-notebook] 版本已更新（${previousVersion || '首次记录'} -> ${version}），保留现有系统标签与关联。`);
         } else if (fs.existsSync(rebuildScript)) {
             console.log(`[wrong-notebook] 版本已更新（${previousVersion || '首次记录'} -> ${version}），正在同步系统标签...`);
-            const res = spawnSync(process.execPath, [rebuildScript], { cwd: APP_DIR, env, stdio: 'inherit', windowsHide: true });
+            const res = spawnSync(process.execPath, [rebuildScript], { cwd: appDir, env, stdio: 'inherit', windowsHide: true });
             if (res.status !== 0) {
                 console.warn('[wrong-notebook] 系统标签同步脚本执行失败，但不影响主服务启动');
             }
@@ -379,6 +380,7 @@ module.exports = {
     ensureSecret,
     checkpointWalWithPrisma,
     backupBeforeMigrate,
+    installExternalAliasResolver,
 };
 
 if (require.main === module) {
