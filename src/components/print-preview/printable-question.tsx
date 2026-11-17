@@ -1,6 +1,7 @@
 "use client";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { FigureCompare } from "@/components/figure-compare";
 import { QuestionFigure } from "@/components/question-figure";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { PrintableErrorItem } from "@/types/api";
@@ -62,8 +63,11 @@ export function PrintableQuestion({ item, index, options, reserveAnswerSpace }: 
             {options.showQuestionText && item.questionText ? (
                 <div className="mb-4">
                     <MarkdownRenderer content={item.questionText} />
-                    {/* 有 SVG 配图时打印配图，不再打印拍照原图 */}
-                    <QuestionFigure svg={item.figureSvg} />
+                    {item.figureSvg && options.showOriginalImage && item.originalImageUrl ? (
+                        <FigureCompare svg={item.figureSvg} originalSrc={item.originalImageUrl} imageScale={options.imageScale} />
+                    ) : (
+                        <QuestionFigure svg={item.figureSvg} />
+                    )}
                 </div>
             ) : (
                 item.originalImageUrl && (

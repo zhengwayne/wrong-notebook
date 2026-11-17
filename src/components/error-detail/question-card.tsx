@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { FigureCompare } from "@/components/figure-compare";
 import { QuestionFigure } from "@/components/question-figure";
 import { RegenerateFigureButton } from "@/components/regenerate-figure-button";
 import { ReplaceQuestionImageButton } from "@/components/replace-question-image-button";
@@ -46,14 +47,23 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
                         <MarkdownEditor value={question.value} onChange={question.setValue} placeholder="Enter question text..." rows={8} className="w-full font-mono text-sm" />
                         <SaveCancelButtons onSave={question.submit} onCancel={question.cancel} />
                     </div>
-                ) : <><MarkdownRenderer content={item.questionText} /><QuestionFigure svg={item.figureSvg} /></>}
+                ) : (
+                    <>
+                        <MarkdownRenderer content={item.questionText} />
+                        {item.figureSvg && item.originalImageUrl ? (
+                            <FigureCompare svg={item.figureSvg} originalSrc={item.originalImageUrl} onEnlarge={onEnlarge} />
+                        ) : (
+                            <QuestionFigure svg={item.figureSvg} />
+                        )}
+                    </>
+                )}
 
                 <QuestionTags item={item} educationStage={educationStage} onChanged={reload} />
                 <QuestionMetadata item={item} onChanged={reload} />
 
                 <div className="pt-3">
                     <ToggleImage
-                        src={item.originalImageUrl}
+                        src={item.figureSvg && item.originalImageUrl ? null : item.originalImageUrl}
                         alt={t.detail.originalProblem || "Original Problem"}
                         showLabel={t.replaceImage?.view || "View original image"}
                         hideLabel={t.replaceImage?.hide || "Hide original image"}

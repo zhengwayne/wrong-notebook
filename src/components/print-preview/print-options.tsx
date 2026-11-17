@@ -7,6 +7,7 @@ export interface PrintDisplayOptions {
     showAnswers: boolean;
     showAnalysis: boolean;
     showTags: boolean;
+    showOriginalImage: boolean;
     imageScale: number;
 }
 
@@ -57,6 +58,7 @@ export function PrintOptions({ options, onChange }: PrintOptionsProps) {
                 <ToggleOption checked={options.showAnswers} onChange={(v) => onChange({ showAnswers: v })} label={t.printPreview?.showAnswers || 'Show Answers'} />
                 <ToggleOption checked={options.showAnalysis} onChange={(v) => onChange({ showAnalysis: v })} label={t.printPreview?.showAnalysis || 'Show Analysis'} />
                 <ToggleOption checked={options.showTags} onChange={(v) => onChange({ showTags: v })} label={t.printPreview?.showTags || 'Show Tags'} />
+                <ToggleOption checked={options.showOriginalImage} onChange={(v) => onChange({ showOriginalImage: v })} label={t.printPreview?.showOriginalImage || 'Original photo'} />
             </div>
         </div>
     );

@@ -1121,6 +1121,7 @@ export const translations = {
             analysis: "Analysis",
             noItems: "No matching error items",
             noSelection: "No items selected",
+            showOriginalImage: "Original photo",
         },
         modelSelector: {
             modelName: "Model Name",
@@ -1550,6 +1551,8 @@ export const translations = {
             noFigure: "AI found no figure in this question",
             failed: "Failed to generate the figure",
             noImage: "No original image to draw the figure from",
+            redrawnLabel: "Redrawn figure",
+            originalLabel: "Original photo",
         },
         svgAnimation: {
             title: "SVG Animated Explanation",
@@ -2850,6 +2853,7 @@ export const translations = {
             analysis: "解析",
             noItems: "没有符合条件的错题",
             noSelection: "当前未选择任何题目",
+            showOriginalImage: "原图对照",
         },
         modelSelector: {
             modelName: "模型名称",
@@ -3279,6 +3283,8 @@ export const translations = {
             noFigure: "AI 判断本题没有配图",
             failed: "生成配图失败",
             noImage: "没有原题图片，无法生成配图",
+            redrawnLabel: "AI 配图",
+            originalLabel: "原图",
         },
         svgAnimation: {
             title: "SVG 动画讲解",

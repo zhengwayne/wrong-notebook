@@ -31,6 +31,7 @@ function PrintPreviewContent() {
         showAnswers: false,
         showAnalysis: false,
         showTags: false,
+        showOriginalImage: true,
         imageScale: 70,
     });
     const updateOptions = (patch: Partial<PrintDisplayOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
