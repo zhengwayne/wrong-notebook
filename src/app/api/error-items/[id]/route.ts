@@ -114,13 +114,24 @@ export async function PUT(
         if (mistakeAnalysis !== undefined) updateData.mistakeAnalysis = mistakeAnalysis || null;
         let resolvedSubjectName = errorItem.subject?.name ?? null;
         if (subjectId !== undefined) {
-            // 验证目标错题本存在且属于该用户
-            const targetSubject = await prisma.subject.findUnique({ where: { id: subjectId } });
-            if (!targetSubject || targetSubject.userId !== user.id) {
-                return forbidden("Not authorized to move to this notebook");
+            if (subjectId === null || (typeof subjectId === 'string' && subjectId.trim() === '')) {
+                resolvedSubjectName = null;
+                updateData.subject = { disconnect: true };
+            } else if (typeof subjectId !== 'string') {
+                return badRequest("Invalid subjectId");
+            } else {
+                const targetSubjectId = subjectId.trim();
+                // 验证目标错题本存在且属于当前用户
+                const targetSubject = await prisma.subject.findUnique({
+                    where: { id: targetSubjectId },
+                    select: { id: true, userId: true, name: true },
+                });
+                if (!targetSubject || targetSubject.userId !== user.id) {
+                    return forbidden("Not authorized to move to this notebook");
+                }
+                resolvedSubjectName = targetSubject.name;
+                updateData.subject = { connect: { id: targetSubject.id } };
             }
-            resolvedSubjectName = targetSubject.name;
-            updateData.subject = subjectId === "" ? { disconnect: true } : { connect: { id: subjectId } };
         }
         if (mistakeStatus !== undefined || wrongAnswerText !== undefined || mistakeAnalysis !== undefined) {
             const nextWrongAnswerText = wrongAnswerText !== undefined ? wrongAnswerText : errorItem.wrongAnswerText;

@@ -2,7 +2,7 @@
  * /api/register API 集成测试
  * 测试用户注册接口
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -43,12 +43,17 @@ import { registerIpLimiter } from '@/lib/rate-limit';
 describe('/api/register', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubEnv('TRUST_PROXY', 'true');
         registerIpLimiter.reset('5.5.5.5');
         // Reset config mock to allow registration by default
         mocks.mockGetAppConfig.mockReturnValue({
             aiProvider: 'gemini',
             allowRegistration: true,
         });
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
     });
 
     describe('POST /api/register', () => {
@@ -117,6 +122,28 @@ describe('/api/register', () => {
 
             expect(response.status).toBe(409);
             expect(data.message).toBe('User with this email already exists');
+        });
+
+        it('注册时邮箱自动归一化为小写，并按小写查重防止同邮箱大小写重复注册', async () => {
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce(null);
+            mocks.mockPrismaUser.create.mockResolvedValue({
+                id: 'new-user-id',
+                email: 'mixedcase@example.com',
+                password: 'hashed_password123',
+                name: 'Mixed User',
+            });
+
+            const res = await POST(new Request('http://localhost/api/register', {
+                method: 'POST',
+                body: JSON.stringify({ ...validUserData, email: 'MixedCase@Example.COM' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(res.status).toBe(201);
+            expect(mocks.mockPrismaUser.findUnique).toHaveBeenCalledWith({
+                where: { email: 'mixedcase@example.com' },
+                select: { id: true },
+            });
+            expect(mocks.mockPrismaUser.create.mock.calls[0][0].data.email).toBe('mixedcase@example.com');
         });
 
         it('应该接受 user@localhost 邮箱格式', async () => {

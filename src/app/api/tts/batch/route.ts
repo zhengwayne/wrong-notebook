@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { badRequest, unauthorized } from "@/lib/api-errors";
+import { badRequest, notFound, tooManyRequests, unauthorized } from "@/lib/api-errors";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
+import { ttsUserLimiter } from "@/lib/rate-limit";
 import { getCachedSpeech, getTtsMode, synthesizeSpeech } from "@/lib/tts/speech-cache";
 import type { SpeechResult } from "@/lib/tts/speech-cache";
 import { speechErrorResponse, speechLanguageSchema, speechTextsSchema } from "@/lib/tts/request";
@@ -39,6 +40,10 @@ async function handlePost(req: Request) {
     if (!user) {
         return unauthorized("Authentication required");
     }
+    const retryAfter = ttsUserLimiter.retryAfter(user.id);
+    if (retryAfter > 0) {
+        return tooManyRequests(retryAfter, "TTS_RATE_LIMITED");
+    }
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
         return badRequest("INVALID_TTS_TEXT");
@@ -47,17 +52,22 @@ async function handlePost(req: Request) {
         return badRequest("TTS_DISABLED");
     }
     const { texts, language, regenerate = false, errorItemId } = parsed.data;
+    const targetMeta = errorItemId ? await taskTarget(errorItemId, user.id) : {};
+    if (errorItemId && !targetMeta.link) {
+        return notFound("Error item not found");
+    }
+    ttsUserLimiter.hit(user.id);
     try {
-        const cached = regenerate ? [] : await Promise.all(texts.map((text) => getCachedSpeech(text, language)));
+        const cached = regenerate ? [] : await Promise.all(texts.map((text) => getCachedSpeech(text, language, user.id)));
         if (!regenerate && cached.every((item) => item)) {
             return NextResponse.json({ items: cached });
         }
         const items = await trackBackgroundTask(
-            { userId: user.id, kind: 'tts_voice', total: texts.length, ...(await taskTarget(errorItemId, user.id)) },
+            { userId: user.id, kind: 'tts_voice', total: texts.length, ...targetMeta },
             async (task) => {
                 const results: SpeechResult[] = [];
                 for (const [index, text] of texts.entries()) {
-                    const result = cached[index] ?? await synthesizeSpeech(text, language, { regenerate });
+                    const result = cached[index] ?? await synthesizeSpeech(text, language, { regenerate, userId: user.id });
                     if (!result) throw new Error("TTS_DISABLED");
                     results.push(result);
                     task.setProgress(index + 1);

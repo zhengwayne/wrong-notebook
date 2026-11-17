@@ -1,15 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, Info, MessageSquareText, ScrollText } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Info, MessageSquareText, ScrollText, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { AndroidAppSetting } from "@/components/settings/android-app-setting";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { PROJECT_REPO_URL } from "@/lib/constants/project";
+import type { SecurityPosture } from "@/types/api";
 
-/** 关于：版本号、安卓 App 与项目链接 */
-export function AboutSettings() {
+interface AboutSettingsProps {
+    isAdmin?: boolean;
+    securityPosture?: SecurityPosture;
+}
+
+/** 关于：版本号、安卓 App、管理员安全态势提醒与项目链接 */
+export function AboutSettings({ isAdmin = false, securityPosture }: AboutSettingsProps) {
     const { t } = useLanguage();
     const [version, setVersion] = useState("");
 
@@ -26,6 +32,47 @@ export function AboutSettings() {
         { href: `${PROJECT_REPO_URL}/issues`, icon: MessageSquareText, label: t.settings?.about?.feedback || "Feedback" },
     ];
 
+    const postureCopy = t.settings?.about?.securityPosture;
+    const postureChecks = isAdmin && securityPosture
+        ? [
+            {
+                key: "secret",
+                warn: securityPosture.defaultNextAuthSecret,
+                label: securityPosture.defaultNextAuthSecret
+                    ? (postureCopy?.defaultSecretWarn || "NEXTAUTH_SECRET uses default or weak value; set a random secret >= 32 chars in production.")
+                    : (postureCopy?.secretOk || "NEXTAUTH_SECRET is configured."),
+            },
+            {
+                key: "https",
+                warn: !securityPosture.httpsConfigured,
+                label: securityPosture.httpsConfigured
+                    ? (postureCopy?.httpsOk || "HTTPS or HTTPS NEXTAUTH_URL is configured.")
+                    : (postureCopy?.httpsWarn || "HTTPS is not detected; enable TLS or a reverse proxy with HTTPS before public access."),
+            },
+            {
+                key: "proxy",
+                warn: securityPosture.trustProxyMode === "unset",
+                label: securityPosture.trustProxyMode === "unset"
+                    ? (postureCopy?.proxyUnset || "TRUST_PROXY is unset (proxy IP headers are ignored by default; set to true or cloudflare if behind a reverse proxy).")
+                    : `${postureCopy?.proxyModeLabel || "TRUST_PROXY"}: ${securityPosture.trustProxyMode}${securityPosture.trustProxyMode === "true" ? ` (hops=${securityPosture.trustedProxyHops})` : ""}`,
+            },
+            {
+                key: "registration",
+                warn: securityPosture.registrationOpen,
+                label: securityPosture.registrationOpen
+                    ? (postureCopy?.registrationOpen || "Public user registration is enabled.")
+                    : (postureCopy?.registrationClosed || "Public user registration is closed."),
+            },
+            {
+                key: "openclaw",
+                warn: securityPosture.openclawAuthMode === "apikey" && !securityPosture.openclawKeyConfigured,
+                label: securityPosture.openclawAuthMode === "apikey" && !securityPosture.openclawKeyConfigured
+                    ? (postureCopy?.openclawKeyMissing || "OPENCLAW_AUTH_MODE=apikey without OPENCLAW_INTEGRATION_API_KEY; batch upload is blocked.")
+                    : `${postureCopy?.openclawModeLabel || "Openclaw auth"}: ${securityPosture.openclawAuthMode}`,
+            },
+        ]
+        : [];
+
     return (
         <div className="flex flex-col items-center justify-center space-y-6 py-8 text-center bg-muted/30 rounded-lg border">
             <div className="space-y-2">
@@ -41,6 +88,29 @@ export function AboutSettings() {
             </div>
 
             <AndroidAppSetting />
+
+            {postureChecks.length > 0 && (
+                <div className="w-full max-w-xl mx-auto px-4 text-left">
+                    <div className="rounded-lg border bg-background p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0" />
+                            <span>{postureCopy?.title || "Admin Security Posture"}</span>
+                        </div>
+                        <ul className="space-y-1.5 text-xs text-muted-foreground">
+                            {postureChecks.map((item) => (
+                                <li key={item.key} className="flex items-start gap-2">
+                                    {item.warn ? (
+                                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+                                    ) : (
+                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                                    )}
+                                    <span>{item.label}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            )}
 
             <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-4 w-full sm:w-auto px-4 sm:px-0">
                 {links.map(({ href, icon: Icon, label }) => (

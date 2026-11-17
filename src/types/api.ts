@@ -196,6 +196,16 @@ export type TextAiConfig = VendorConfigs & {
     minimaxCode?: MiniMaxCodeConfig;
 };
 
+export interface SecurityPosture {
+    trustProxyMode: 'false' | 'true' | 'cloudflare' | 'unset';
+    trustedProxyHops: number;
+    defaultNextAuthSecret: boolean;
+    httpsConfigured: boolean;
+    registrationOpen: boolean;
+    openclawAuthMode: 'apikey' | 'credentials';
+    openclawKeyConfigured: boolean;
+}
+
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
     /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
@@ -243,6 +253,8 @@ export interface AppConfig extends VendorConfigs {
     };
     /** 动画语音讲解的朗读方式：浏览器本地语音或云端语音合成 */
     tts?: TtsConfig;
+    /** 仅向管理员返回的匿名安全态势摘要（不持久化，不含密钥） */
+    securityPosture?: SecurityPosture;
 }
 
 

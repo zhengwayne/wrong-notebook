@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
-import { unauthorized, badRequest, notFound, internalError, validationError } from "@/lib/api-errors";
+import { unauthorized, badRequest, forbidden, notFound, internalError, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -141,6 +141,19 @@ export async function POST(req: Request) {
         }
         const learnerId = scope.learnerId ?? undefined;
 
+        const trimmedSubjectId = typeof requestedSubjectId === 'string' ? requestedSubjectId.trim() : '';
+        let verifiedNotebook: { id: string; name: string } | null = null;
+        if (trimmedSubjectId) {
+            const notebook = await prisma.subject.findUnique({
+                where: { id: trimmedSubjectId },
+                select: { id: true, userId: true, name: true },
+            });
+            if (!notebook || notebook.userId !== user.id) {
+                return forbidden("Not authorized to access this notebook");
+            }
+            verifiedNotebook = { id: notebook.id, name: notebook.name };
+        }
+
         const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, normalizedBody)
             ? await findDuplicateQuestion(prisma, scope, normalizedBody) : null;
         const gradeResult = await prepareImportGrade(user, normalizedBody, duplicateBeforeRecognition !== null);
@@ -151,9 +164,12 @@ export async function POST(req: Request) {
             if (duplicate) return recordDuplicateQuestion(tx, scope, duplicate, normalizedBody);
 
             // 未指定错题本时，按学科名匹配或新建错题本
-            let subjectId: string | undefined = requestedSubjectId || undefined;
+            let subjectId: string | undefined = verifiedNotebook?.id;
+            let resolvedNotebookName: string | null = verifiedNotebook?.name ?? null;
             if (!subjectId && typeof subjectName === 'string' && subjectName.trim()) {
-                subjectId = (await resolveNotebookForSubject(user.id, subjectName, tx)).id;
+                const resolved = await resolveNotebookForSubject(user.id, subjectName, tx);
+                subjectId = resolved.id;
+                resolvedNotebookName = resolved.name;
             }
 
             const finalGradeSemester = gradeResult.gradeSemester;
@@ -163,9 +179,8 @@ export async function POST(req: Request) {
             const tagConnections: { id: string }[] = [];
 
             // 推断学科
-            const subject = await tx.subject.findUnique({ where: { id: subjectId || '' } });
-            const subjectKey = inferSubjectFromName(subject?.name ?? subjectName ?? null) || 'other';
-            logger.debug({ subjectId, subjectName: subject?.name, subjectKey }, 'Subject inferred');
+            const subjectKey = inferSubjectFromName(resolvedNotebookName ?? subjectName ?? null) || 'other';
+            logger.debug({ subjectId, subjectName: resolvedNotebookName, subjectKey }, 'Subject inferred');
 
             // 处理每个标签
             for (const tagName of tagNames) {

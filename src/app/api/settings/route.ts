@@ -12,6 +12,7 @@ import { isValidTimeZone } from "@/lib/date-time";
 import { VENDOR_PROVIDER_IDS } from "@/lib/ai/vendor-presets";
 import type { TextAiConfig } from "@/types/api";
 import { CLOUD_TTS_PROVIDERS, TTS_MODES } from "@/lib/tts/constants";
+import { getSecurityPosture } from "@/lib/security-posture";
 
 const logger = createLogger('api:settings');
 
@@ -80,11 +81,11 @@ export async function GET() {
     }
 
     const config = getAppConfig();
-    // 完整配置（含 API Key）只给管理员；普通用户只需要页面用到的非敏感字段
+    // 完整配置（含 API Key 与管理员安全态势提醒）只给管理员；普通用户只需要页面用到的非敏感字段
     if (!requireAdmin(session)) {
         return NextResponse.json({ aiProvider: config.aiProvider, timeouts: config.timeouts, timeZone: config.timeZone });
     }
-    return NextResponse.json(config);
+    return NextResponse.json({ ...config, securityPosture: getSecurityPosture(config) });
 }
 
 export async function POST(req: Request) {

@@ -54,6 +54,7 @@ beforeEach(async () => {
     configDir = mkdtempSync(join(directory, 'config-'));
     vi.stubEnv('CONFIG_DIR', configDir);
     vi.stubEnv('NEXTAUTH_URL', 'http://192.168.1.10:3000/');
+    vi.stubEnv('TRUST_PROXY', 'true');
 });
 
 afterAll(async () => {
@@ -203,6 +204,19 @@ describe('POST /api/initialize', () => {
         expect((await response.json()).code).toBe('ALREADY_EXISTS');
         expect(await database.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } })).toMatchObject({ role: 'user', password: 'keep' });
         expect(ensureSetupToken()).toBe(token);
+    });
+
+    it('初始化管理员邮箱自动归一化为小写，且兼容库内历史大写普通用户查重', async () => {
+        const token = ensureSetupToken();
+        await database.user.create({ data: { email: 'Admin@Example.com', password: 'keep', role: 'user' } });
+
+        const dupRes = await initialize({ ...valid(token), email: 'ADMIN@example.com' });
+        expect(dupRes.status).toBe(409);
+
+        const okRes = await initialize({ ...valid(token), email: 'OwnerAdmin@Example.COM' });
+        expect(okRes.status).toBe(201);
+        const created = await database.user.findUniqueOrThrow({ where: { email: 'owneradmin@example.com' } });
+        expect(created.role).toBe('admin');
     });
 });
 

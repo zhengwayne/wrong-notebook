@@ -169,12 +169,24 @@ describe('/api/error-items', () => {
 
         it('指定错题本时忽略学科名', async () => {
             mocks.mockPrismaErrorItem.findUnique.mockResolvedValue(null);
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-chosen', userId: 'user-123', name: '数学' });
             mocks.mockPrismaErrorItem.create.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ id: 'e1', ...args.data }));
 
             await post({ ...baseData, subjectId: 'nb-chosen', subjectName: '物理' });
 
             expect(mocks.mockPrismaSubject.findMany).not.toHaveBeenCalled();
             expect(mocks.mockPrismaErrorItem.create.mock.calls[0][0].data.subjectId).toBe('nb-chosen');
+        });
+
+        it('指定他人或不存在的错题本时拒绝导入（403）', async () => {
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-other', userId: 'other-user', name: '数学' });
+            const foreignRes = await post({ ...baseData, subjectId: 'nb-other' });
+            expect(foreignRes.status).toBe(403);
+
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce(null);
+            const missingRes = await post({ ...baseData, subjectId: 'nb-missing' });
+            expect(missingRes.status).toBe(403);
+            expect(mocks.mockPrismaErrorItem.create).not.toHaveBeenCalled();
         });
     });
 
@@ -317,6 +329,11 @@ describe('/api/error-items', () => {
                 subjectId: 'subject-math-id',
             };
 
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({
+                id: 'subject-math-id',
+                userId: 'user-123',
+                name: '数学',
+            });
             const createdItem = {
                 id: 'error-item-2',
                 ...errorItemData,
@@ -674,6 +691,37 @@ describe('/api/error-items', () => {
 
             expect(response.status).toBe(404);
             expect(data.message).toBe('Item not found');
+        });
+
+        it('支持传空字符串或 null 解绑所属错题本，跨账户移动返回 403', async () => {
+            mocks.mockPrismaErrorItem.findUnique.mockResolvedValue({
+                id: 'e1',
+                userId: 'user-123',
+                subject: { name: '数学' },
+            });
+            mocks.mockPrismaErrorItem.update.mockResolvedValue({ id: 'e1', subjectId: null });
+
+            const emptyRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: '' }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(emptyRes.status).toBe(200);
+            expect(mocks.mockPrismaErrorItem.update.mock.calls[0][0].data.subject).toEqual({ disconnect: true });
+
+            const nullRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: null }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(nullRes.status).toBe(200);
+            expect(mocks.mockPrismaErrorItem.update.mock.calls[1][0].data.subject).toEqual({ disconnect: true });
+            expect(mocks.mockPrismaSubject.findUnique).not.toHaveBeenCalled();
+
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-other', userId: 'other-user', name: '数学' });
+            const forbiddenRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: 'nb-other' }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(forbiddenRes.status).toBe(403);
         });
     });
 

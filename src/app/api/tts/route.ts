@@ -57,6 +57,7 @@ async function handlePost(req: Request) {
             voice: parsed.data.voice,
             rate: parsed.data.rate,
             pitch: parsed.data.pitch,
+            userId: user.id,
         });
         if (!result) return badRequest("TTS_DISABLED");
         return NextResponse.json(result);

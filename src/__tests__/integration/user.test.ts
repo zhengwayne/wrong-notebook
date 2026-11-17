@@ -423,6 +423,30 @@ describe('/api/user', () => {
             expect(response.status).toBe(400);
             expect(data.message).toBe('Invalid email format');
         });
+
+        it('修改邮箱时自动归一化为小写，已被他人占用时返回 409', async () => {
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce({ id: 'other-user', email: 'taken@example.com' });
+            const conflictRes = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ email: 'Taken@Example.COM' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(conflictRes.status).toBe(409);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
+
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce(null);
+            mocks.mockPrismaUser.update.mockResolvedValueOnce({
+                name: 'Test User',
+                email: 'fresh@example.com',
+            });
+            const okRes = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ email: ' Fresh@Example.COM ' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(okRes.status).toBe(200);
+            expect(mocks.mockPrismaUser.update.mock.calls[0][0].data.email).toBe('fresh@example.com');
+        });
     });
 
     describe('角色权限测试', () => {

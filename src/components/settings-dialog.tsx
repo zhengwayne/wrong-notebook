@@ -185,7 +185,7 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                         </TabsContent>
 
                         <TabsContent value="about" className="space-y-4 py-4">
-                            {activeTab === "about" && <LazyAboutSettings />}
+                            {activeTab === "about" && <LazyAboutSettings isAdmin={isAdmin} securityPosture={isAdmin ? config.securityPosture : undefined} />}
                         </TabsContent>
                     </Tabs>
                 </UserProfileProvider>

@@ -30,7 +30,7 @@ export async function GET(req: Request, { params }: RouteContext) {
     if (!user) {
         return unauthorized("Authentication required");
     }
-    const data = await readSpeech((await params).id);
+    const data = await readSpeech((await params).id, user.id);
     if (!data) {
         return notFound("Speech not found");
     }

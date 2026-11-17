@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { readInitialAdmin, removeInitialAdmin } from "@/lib/initial-admin";
 import { createLogger } from "@/lib/logger";
 import { ensureSetupToken, removeSetupToken } from "@/lib/setup-token";
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
 
 const logger = createLogger("initialization");
 
@@ -27,14 +28,15 @@ async function createPresetAdmin(): Promise<boolean> {
         return false;
     }
     if (!preset) return false;
+    const normalizedEmail = normalizeEmail(preset.email);
 
-    if (await prisma.user.findUnique({ where: { email: preset.email }, select: { id: true } })) {
-        logger.error({ email: preset.email }, "Preset admin email already exists; falling back to the setup link");
+    if (await findUserByEmailInsensitive(prisma, normalizedEmail, { id: true })) {
+        logger.error({ email: normalizedEmail }, "Preset admin email already exists; falling back to the setup link");
         removeInitialAdmin();
         return false;
     }
     const user = await prisma.user.create({
-        data: { email: preset.email, name: preset.name || "Admin", password: preset.passwordHash, role: "admin", isActive: true },
+        data: { email: normalizedEmail, name: preset.name || "Admin", password: preset.passwordHash, role: "admin", isActive: true },
         select: { id: true },
     });
     removeInitialAdmin();

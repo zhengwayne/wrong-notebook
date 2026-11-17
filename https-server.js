@@ -33,20 +33,54 @@ const options = {
 
 const port = parseInt(process.env.PORT || '3000', 10);
 
+function normalizeRemoteIp(addr) {
+    if (!addr) return '';
+    return addr.startsWith('::ffff:') ? addr.slice(7) : addr;
+}
+
 console.log(`[HTTPS] 启动 HTTPS 代理，端口 443 -> HTTP ${port}`);
 console.log(`[HTTPS] 代理超时设置: ${PROXY_TIMEOUT / 1000} 秒`);
 
 const httpsServer = https.createServer(options, (req, res) => {
+    const trustProxy = (process.env.TRUST_PROXY || '').trim().toLowerCase();
+    const isProxyTrusted = trustProxy === 'true' || trustProxy === 'cloudflare';
+    const remoteIp = normalizeRemoteIp(req.socket?.remoteAddress || '');
+    const proxyHeaders = {
+        ...req.headers,
+        // 确保 Host 头正确
+        host: req.headers.host || `127.0.0.1:${port}`,
+    };
+
+    if (trustProxy !== 'cloudflare') {
+        delete proxyHeaders['cf-connecting-ip'];
+    }
+
+    if (isProxyTrusted) {
+        const existingXff = typeof req.headers['x-forwarded-for'] === 'string'
+            ? req.headers['x-forwarded-for'].trim()
+            : '';
+        if (remoteIp) {
+            proxyHeaders['x-forwarded-for'] = existingXff ? `${existingXff}, ${remoteIp}` : remoteIp;
+        }
+        proxyHeaders['x-forwarded-proto'] = req.headers['x-forwarded-proto'] || 'https';
+    } else {
+        // 直连 HTTPS 终端模式：覆盖客户端伪造的转发头，仅写入真实对端地址与 HTTPS 协议头
+        if (remoteIp) {
+            proxyHeaders['x-forwarded-for'] = remoteIp;
+            proxyHeaders['x-real-ip'] = remoteIp;
+        } else {
+            delete proxyHeaders['x-forwarded-for'];
+            delete proxyHeaders['x-real-ip'];
+        }
+        proxyHeaders['x-forwarded-proto'] = 'https';
+    }
+
     const proxyReq = http.request({
         hostname: '127.0.0.1',
         port: port,
         path: req.url,
         method: req.method,
-        headers: {
-            ...req.headers,
-            // 确保 Host 头正确
-            host: req.headers.host || `127.0.0.1:${port}`,
-        },
+        headers: proxyHeaders,
         // 设置代理请求超时
         timeout: PROXY_TIMEOUT,
     }, (proxyRes) => {

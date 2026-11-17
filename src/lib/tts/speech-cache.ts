@@ -92,12 +92,76 @@ async function pruneCache(): Promise<void> {
 }
 
 /** 写入一段语音和描述文件；先写临时文件再改名，避免读到写了一半的音频 */
-async function writeSpeech(id: string, source: SpeechSource, audio: Buffer): Promise<void> {
+const metaLocks = new Map<string, Promise<void>>();
+
+async function withMetaLock<T>(id: string, task: () => Promise<T>): Promise<T> {
+    const previous = metaLocks.get(id) ?? Promise.resolve();
+    const run = previous.catch(() => {}).then(task);
+    const guard = run.then(() => undefined, () => undefined);
+    metaLocks.set(id, guard);
+    try {
+        return await run;
+    } finally {
+        if (metaLocks.get(id) === guard) {
+            metaLocks.delete(id);
+        }
+    }
+}
+
+function normalizeUserIds(input?: string | string[]): string[] {
+    if (!input) return [];
+    const list = Array.isArray(input) ? input : [input];
+    return [...new Set(list.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))];
+}
+
+async function readMetaRaw(id: string): Promise<Record<string, unknown> | null> {
+    try {
+        const raw = JSON.parse(await fs.readFile(metaPath(id), 'utf-8'));
+        return raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+    } catch {
+        return null;
+    }
+}
+
+async function writeMetaAtomic(id: string, meta: SpeechSource & { authorizedUserIds?: string[] }): Promise<void> {
     await fs.mkdir(cacheDir(), { recursive: true });
-    const tmp = `${audioPath(id)}.${process.pid}.tmp`;
-    await fs.writeFile(metaPath(id), JSON.stringify(source));
-    await fs.writeFile(tmp, audio);
-    await fs.rename(tmp, audioPath(id));
+    const tmp = `${metaPath(id)}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(meta));
+    await fs.rename(tmp, metaPath(id));
+}
+
+async function authorizeSpeechUsers(id: string, userIds?: string | string[]): Promise<void> {
+    const incoming = normalizeUserIds(userIds);
+    if (incoming.length === 0) return;
+    await withMetaLock(id, async () => {
+        const raw = await readMetaRaw(id);
+        const source = parseSpeechSource(raw);
+        if (!source) return;
+        const existing = normalizeUserIds(Array.isArray(raw?.authorizedUserIds) ? raw.authorizedUserIds as string[] : undefined);
+        const merged = [...new Set([...existing, ...incoming])];
+        if (merged.length === existing.length) return;
+        await writeMetaAtomic(id, { ...source, authorizedUserIds: merged });
+    });
+}
+
+async function isSpeechAuthorizedForUser(id: string, userId: string): Promise<boolean> {
+    const raw = await readMetaRaw(id);
+    if (!raw || !Array.isArray(raw.authorizedUserIds)) return false;
+    return raw.authorizedUserIds.includes(userId);
+}
+
+async function writeSpeech(id: string, source: SpeechSource, audio: Buffer, userIds?: string | string[]): Promise<void> {
+    await withMetaLock(id, async () => {
+        await fs.mkdir(cacheDir(), { recursive: true });
+        const existingRaw = await readMetaRaw(id);
+        const existingUsers = normalizeUserIds(Array.isArray(existingRaw?.authorizedUserIds) ? existingRaw.authorizedUserIds as string[] : undefined);
+        const mergedUsers = [...new Set([...existingUsers, ...normalizeUserIds(userIds)])];
+        const metaPayload = mergedUsers.length > 0 ? { ...source, authorizedUserIds: mergedUsers } : source;
+        const tmp = `${audioPath(id)}.${process.pid}.tmp`;
+        await writeMetaAtomic(id, metaPayload);
+        await fs.writeFile(tmp, audio);
+        await fs.rename(tmp, audioPath(id));
+    });
 }
 
 /** 语音文件的版本（修改时间），重新合成后变化，前端据此绕过浏览器缓存 */
@@ -106,14 +170,16 @@ async function speechVersion(id: string): Promise<number | null> {
     return stat ? Math.floor(stat.mtimeMs) : null;
 }
 
-/** 已合成的一段讲解（不触发合成）；没有缓存或当前为浏览器本地语音时返回 null */
-export async function getCachedSpeech(text: string, language: 'zh' | 'en'): Promise<SpeechResult | null> {
+/** 已合成的一段讲解（不触发合成）；传入 userId 时仅对该用户已授权的缓存返回命中 */
+export async function getCachedSpeech(text: string, language: 'zh' | 'en', userId?: string): Promise<SpeechResult | null> {
     const settings = currentSettings();
     if (!settings) return null;
     const voice = resolveVoiceForLanguage(settings, language);
     const id = speechId({ provider: settings.provider, model: settings.model, voice, language, text, rate: settings.rate, pitch: settings.pitch });
     const version = await speechVersion(id);
-    return version === null ? null : { id, version };
+    if (version === null) return null;
+    if (userId && !(await isSpeechAuthorizedForUser(id, userId))) return null;
+    return { id, version };
 }
 
 const pending = new Map<string, Promise<SpeechResult>>();
@@ -132,10 +198,12 @@ export interface SynthesizeSpeechOptions {
     voice?: string;
     rate?: number;
     pitch?: string;
+    /** 发起请求的已认证用户，写入音频授权清单 */
+    userId?: string;
 }
 
 export async function synthesizeSpeech(text: string, language: 'zh' | 'en', options: SynthesizeSpeechOptions = {}): Promise<SpeechResult | null> {
-    const { regenerate = false } = options;
+    const { regenerate = false, userId } = options;
     if (typeof text !== 'string' || !text.trim() || text.length > MAX_TTS_TEXT_LENGTH) return null;
     const settings = currentSettings();
     if (!settings) return null;
@@ -156,27 +224,37 @@ export async function synthesizeSpeech(text: string, language: 'zh' | 'en', opti
     };
     const id = speechId(source);
     const running = pending.get(id);
-    if (running) return running;
+    if (running) {
+        const result = await running;
+        if (userId) await authorizeSpeechUsers(id, userId);
+        return result;
+    }
     if (!regenerate) {
         const version = await speechVersion(id);
-        if (version !== null) return { id, version };
+        if (version !== null) {
+            if (userId) await authorizeSpeechUsers(id, userId);
+            return { id, version };
+        }
     }
     const task = (async () => {
         const started = Date.now();
         const synthesized = await synthesizeWithProvider(text, language, resolved);
         const audio = isEncodedMp3(synthesized) ? synthesized.data : encodeMp3(normalizeLoudness(synthesized));
-        await writeSpeech(id, source, audio);
+        await writeSpeech(id, source, audio, userId);
         logger.info({ provider: resolved.provider, model: resolved.model, voice: resolved.voice, chars: text.length, regenerate, ms: Date.now() - started }, 'Speech synthesized');
         pruneCache().catch((error) => logger.warn({ error }, 'Failed to prune TTS cache'));
         return { id, version: (await speechVersion(id)) ?? Date.now() };
     })().finally(() => pending.delete(id));
     pending.set(id, task);
-    return task;
+    const result = await task;
+    if (userId) await authorizeSpeechUsers(id, userId);
+    return result;
 }
 
-/** 读取已合成的语音（MP3）；编号无效或缓存已删除时返回 null */
-export async function readSpeech(id: string): Promise<Buffer | null> {
+/** 读取已合成的语音（MP3）；传入 userId 时未授权一律返回 null */
+export async function readSpeech(id: string, userId?: string): Promise<Buffer | null> {
     if (!SPEECH_ID_PATTERN.test(id)) return null;
+    if (userId && !(await isSpeechAuthorizedForUser(id, userId))) return null;
     try {
         return await fs.readFile(audioPath(id));
     } catch {
@@ -225,16 +303,24 @@ export async function exportSpeeches(animations: AnimationNarrationSource[]): Pr
 
 function parseSpeechSource(value: unknown): SpeechSource | null {
     if (!value || typeof value !== 'object') return null;
-    const { provider, model, voice, language, text } = value as Record<string, unknown>;
+    const { provider, model, voice, language, text, rate, pitch } = value as Record<string, unknown>;
     if (!isCloudTtsProvider(provider) || (language !== 'zh' && language !== 'en')) return null;
     if (typeof model !== 'string' || !model || model.length > 100) return null;
     if (typeof voice !== 'string' || !voice || voice.length > 200) return null;
     if (typeof text !== 'string' || !text || text.length > MAX_NARRATION_TEXT_LENGTH) return null;
-    return { provider, model, voice, language, text };
+    return {
+        provider,
+        model,
+        voice,
+        language,
+        text,
+        ...(typeof rate === 'number' && Number.isFinite(rate) ? { rate } : {}),
+        ...(typeof pitch === 'string' && pitch.trim() ? { pitch: pitch.trim() } : {}),
+    };
 }
 
-/** 备份导入：校验后写入缓存，已有的跳过；返回写入的段数 */
-export async function importSpeeches(entries: unknown): Promise<number> {
+/** 备份导入：校验后写入缓存，已有的补充写入当前用户的授权清单；返回新写入的段数 */
+export async function importSpeeches(entries: unknown, authorizedUserIds?: string | string[]): Promise<number> {
     if (!Array.isArray(entries)) return 0;
     let imported = 0;
     for (const entry of entries) {
@@ -244,8 +330,11 @@ export async function importSpeeches(entries: unknown): Promise<number> {
         const audio = Buffer.from(encoded, 'base64');
         if (!looksLikeMp3(audio)) continue;
         const id = speechId(source);
-        if (await speechVersion(id) !== null) continue;
-        await writeSpeech(id, source, audio);
+        if (await speechVersion(id) !== null) {
+            await authorizeSpeechUsers(id, authorizedUserIds);
+            continue;
+        }
+        await writeSpeech(id, source, audio, authorizedUserIds);
         imported++;
     }
     if (imported) pruneCache().catch((error) => logger.warn({ error }, 'Failed to prune TTS cache'));

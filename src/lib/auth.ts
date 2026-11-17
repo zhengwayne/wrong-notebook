@@ -8,6 +8,7 @@ import { DEFAULT_ADMIN_PASSWORD, isDefaultAdminPassword } from "@/lib/default-ad
 import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors"
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit"
 import { isPersona, parsePersonas } from "@/lib/personas"
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
 
 const logger = createLogger('auth');
 
@@ -67,7 +68,7 @@ export const authOptions: NextAuthOptions = {
 
                 // 防暴力破解：账号或来源 IP 失败次数过多时，在校验密码前直接拒绝
                 const ip = getClientIp(req?.headers);
-                const accountKey = credentials.email.trim().toLowerCase();
+                const accountKey = normalizeEmail(credentials.email);
                 if (loginAccountLimiter.retryAfter(accountKey) > 0 || (ip && loginIpLimiter.retryAfter(ip) > 0)) {
                     logger.warn({ email: accountKey, ip }, 'Login locked after too many failed attempts');
                     throw new Error(TOO_MANY_ATTEMPTS)
@@ -77,11 +78,7 @@ export const authOptions: NextAuthOptions = {
                     if (ip) loginIpLimiter.hit(ip);
                 };
 
-                const user = await prisma.user.findUnique({
-                    where: {
-                        email: credentials.email
-                    }
-                })
+                const user = await findUserByEmailInsensitive(prisma, credentials.email)
 
                 if (!user) {
                     logger.debug('User not found');

@@ -130,11 +130,19 @@ describe('/api/settings', () => {
             expect(data.gemini.model).toBe('gemini-2.5-flash');
         });
 
-        it('应该返回注册开关状态', async () => {
+        it('应该返回注册开关状态与管理员安全态势摘要', async () => {
             const response = await GET();
             const data = await response.json();
 
+            expect(response.status).toBe(200);
             expect(data.allowRegistration).toBe(true);
+            expect(data.securityPosture).toMatchObject({
+                trustProxyMode: expect.any(String),
+                defaultNextAuthSecret: expect.any(Boolean),
+                httpsConfigured: expect.any(Boolean),
+                registrationOpen: true,
+                openclawAuthMode: expect.stringMatching(/^(apikey|credentials)$/),
+            });
         });
     });
 

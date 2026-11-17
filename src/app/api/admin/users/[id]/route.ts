@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
+import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { requireAdmin } from "@/lib/auth-utils"
-import { forbidden, badRequest, internalError } from "@/lib/api-errors"
+import { forbidden, badRequest, internalError, validationError } from "@/lib/api-errors"
 import { createLogger } from "@/lib/logger"
+import { USER_SAFE_SELECT } from "@/lib/user-select"
 
 const logger = createLogger('api:admin:users:id');
+
+const updateUserStatusSchema = z.object({
+    isActive: z.boolean(),
+});
 
 export async function PATCH(
     req: Request,
@@ -19,10 +25,19 @@ export async function PATCH(
         return forbidden("Admin access required")
     }
 
+    let rawBody: unknown;
     try {
-        const body = await req.json()
-        const { isActive } = body
+        rawBody = await req.json();
+    } catch {
+        return badRequest("Invalid JSON body");
+    }
+    const parsed = updateUserStatusSchema.safeParse(rawBody);
+    if (!parsed.success) {
+        return validationError("Invalid user update payload", parsed.error.issues);
+    }
+    const { isActive } = parsed.data;
 
+    try {
         // Prevent disabling self
         if (id === session?.user.id) {
             return badRequest("Cannot disable your own account")
@@ -30,7 +45,8 @@ export async function PATCH(
 
         // Prevent disabling super admin
         const targetUser = await prisma.user.findUnique({
-            where: { id }
+            where: { id },
+            select: { id: true, email: true, role: true },
         })
 
         if (targetUser?.email === 'admin@localhost') {
@@ -43,7 +59,8 @@ export async function PATCH(
             },
             data: {
                 isActive
-            }
+            },
+            select: USER_SAFE_SELECT,
         })
 
         return NextResponse.json(user)
@@ -72,7 +89,8 @@ export async function DELETE(
 
         // Prevent deleting super admin
         const targetUser = await prisma.user.findUnique({
-            where: { id }
+            where: { id },
+            select: { id: true, email: true, role: true },
         })
 
         if (targetUser?.role === 'admin') {
@@ -84,7 +102,8 @@ export async function DELETE(
         const user = await prisma.user.delete({
             where: {
                 id
-            }
+            },
+            select: USER_SAFE_SELECT,
         })
 
         return NextResponse.json(user)

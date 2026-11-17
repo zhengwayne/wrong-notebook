@@ -1128,6 +1128,7 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
         };
         const masteryIds = new Set<string>();
         const evaluatedIds = new Set<string>();
+        const importedUserIds = new Set<string>([options.currentUser.id]);
         const loadMedia = (hash: string) => archive.readBinary(`media/${hash}`);
 
         await options.db.$transaction(async (tx) => {
@@ -1181,6 +1182,9 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
             if (typeof preferences.masteryThreshold === 'number') {
                 await syncMasteryLevels(tx, options.currentUser.id, preferences.masteryThreshold);
             }
+            for (const targetUserId of ctx.userIdMap.values()) {
+                if (targetUserId) importedUserIds.add(targetUserId);
+            }
         }, { timeout: 120000 });
 
         if (masteryIds.size > 0) {
@@ -1205,7 +1209,7 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
             });
         });
         if (speeches.length > 0) {
-            stats.ttsSpeechesImported = await importSpeeches(speeches).catch(() => 0);
+            stats.ttsSpeechesImported = await importSpeeches(speeches, [...importedUserIds]).catch(() => 0);
         }
 
         return { stats, warnings: [...warnings] };

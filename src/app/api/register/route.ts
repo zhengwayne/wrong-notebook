@@ -7,10 +7,11 @@ import { getAppConfig } from "@/lib/config"
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit"
 import { defaultActivePersona, serializePersonas, uniquePersonas } from "@/lib/personas"
 import { ChildLearnerLimitError, createChildLearner, MAX_CHILD_LEARNERS } from "@/lib/learners"
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
 
 const userSchema = z.object({
-    // 支持标准邮箱和本地邮箱（如 user@localhost）
-    email: z.string().regex(/^[^\s@]+@[^\s@]+$/, "Invalid email format"),
+    // 支持标准邮箱和本地邮箱（如 user@localhost），统一归一化为小写
+    email: z.string().trim().toLowerCase().regex(/^[^\s@]+@[^\s@]+$/, "Invalid email format"),
     password: z.string().min(6),
     name: z.string().min(1),
     educationStage: z.string().optional(),
@@ -41,11 +42,10 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json()
-        const { email, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = userSchema.parse(body)
+        const { email: rawEmail, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = userSchema.parse(body)
+        const email = normalizeEmail(rawEmail)
 
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        })
+        const existingUser = await findUserByEmailInsensitive(prisma, email, { id: true })
 
         if (existingUser) {
             return NextResponse.json(

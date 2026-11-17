@@ -570,7 +570,7 @@ export async function importLegacyJsonBackup(options: {
     }, { timeout: 60000 });
 
     if (masteryIds.size) scheduleMasteryEvaluation([...masteryIds]);
-    stats.ttsSpeechesImported = await importSpeeches(body.ttsSpeeches).catch(() => 0);
+    stats.ttsSpeechesImported = await importSpeeches(body.ttsSpeeches, currentUser.id).catch(() => 0);
 
     return { stats, warnings };
 }

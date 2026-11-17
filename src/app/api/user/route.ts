@@ -4,11 +4,12 @@ import { z } from "zod";
 import { hash } from "bcryptjs";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { unauthorized, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
+import { conflict, unauthorized, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { syncMasteryLevels } from "@/lib/mastery";
 import { userUpdateSchema } from "@/lib/user-profile-schema";
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
 import type { Prisma } from "@prisma/client";
 
 const logger = createLogger('api:user');
@@ -21,25 +22,22 @@ export async function GET() {
     }
 
     try {
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-            select: {
-                name: true,
-                email: true,
-                educationStage: true,
-                enrollmentYear: true,
-                gradeRecognitionMode: true,
-                fixedGradeSemester: true,
-                confirmBeforeImport: true,
-                enableGeogebra: true,
-                enableSvgAnimation: true,
-                variantPipelineEnabled: true,
-                themePreference: true,
-                questionDuplicateThreshold: true,
-                masteryThreshold: true,
-                reviewAlgorithmVersion: true,
-                // Do not return password
-            }
+        const user = await findUserByEmailInsensitive(prisma, session.user.email, {
+            name: true,
+            email: true,
+            educationStage: true,
+            enrollmentYear: true,
+            gradeRecognitionMode: true,
+            fixedGradeSemester: true,
+            confirmBeforeImport: true,
+            enableGeogebra: true,
+            enableSvgAnimation: true,
+            variantPipelineEnabled: true,
+            themePreference: true,
+            questionDuplicateThreshold: true,
+            masteryThreshold: true,
+            reviewAlgorithmVersion: true,
+            // Do not return password
         });
 
         if (!user) {
@@ -101,14 +99,21 @@ export async function PATCH(req: Request) {
             updateData.reviewAlgorithmVersion = reviewAlgorithmVersion;
         }
 
-        // 验证邮箱格式（如果提供了邮箱）
+        // 验证邮箱格式（如果提供了邮箱），归一化为小写并检查是否已被他人占用
         // 支持标准邮箱和本地邮箱（如 admin@localhost）
         if (email && email.trim()) {
+            const normalizedEmail = normalizeEmail(email);
             const emailRegex = /^[^\s@]+@[^\s@]+$/;
-            if (!emailRegex.test(email.trim())) {
+            if (!emailRegex.test(normalizedEmail)) {
                 return badRequest("Invalid email format");
             }
-            updateData.email = email.trim();
+            if (normalizedEmail !== normalizeEmail(session.user.email)) {
+                const occupied = await findUserByEmailInsensitive(prisma, normalizedEmail, { id: true, email: true });
+                if (occupied && normalizeEmail(occupied.email) !== normalizeEmail(session.user.email)) {
+                    return conflict("Email already in use");
+                }
+            }
+            updateData.email = normalizedEmail;
         }
 
         // 验证密码长度（如果提供了密码）

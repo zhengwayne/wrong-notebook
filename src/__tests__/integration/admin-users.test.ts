@@ -44,6 +44,7 @@ vi.mock('@/lib/auth', () => ({
 import { GET } from '@/app/api/admin/users/route';
 import { PATCH, DELETE } from '@/app/api/admin/users/[id]/route';
 import { getServerSession } from 'next-auth';
+import { USER_SAFE_SELECT } from '@/lib/user-select';
 
 describe('/api/admin/users', () => {
     beforeEach(() => {
@@ -209,6 +210,27 @@ describe('/api/admin/users', () => {
 
             expect(response.status).toBe(403);
         });
+
+        it('应该校验 isActive 必须为布尔值并在返回中排除敏感字段', async () => {
+            const invalidReq = new Request('http://localhost/api/admin/users/target-user-id', {
+                method: 'PATCH',
+                body: JSON.stringify({ isActive: 'false' }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const invalidRes = await PATCH(invalidReq, { params: Promise.resolve({ id: 'target-user-id' }) });
+            expect(invalidRes.status).toBe(400);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
+
+            mocks.mockPrismaUser.findUnique.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com', role: 'user' });
+            mocks.mockPrismaUser.update.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com', isActive: false });
+            await PATCH(new Request('http://localhost/api/admin/users/target-user-id', {
+                method: 'PATCH',
+                body: JSON.stringify({ isActive: false }),
+                headers: { 'Content-Type': 'application/json' },
+            }), { params: Promise.resolve({ id: 'target-user-id' }) });
+            expect(mocks.mockPrismaUser.update.mock.calls[0][0].select).toEqual(USER_SAFE_SELECT);
+            expect('password' in USER_SAFE_SELECT).toBe(false);
+        });
     });
 
     describe('DELETE /api/admin/users/[id]', () => {
@@ -300,6 +322,17 @@ describe('/api/admin/users', () => {
             const response = await DELETE(request, { params: Promise.resolve({ id: 'target-id' }) });
 
             expect(response.status).toBe(403);
+        });
+
+        it('删除用户时应只查询并返回安全字段清单', async () => {
+            mocks.mockPrismaUser.findUnique.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com', role: 'user' });
+            mocks.mockPrismaUser.delete.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com' });
+
+            const res = await DELETE(new Request('http://localhost/api/admin/users/target-user-id', { method: 'DELETE' }), {
+                params: Promise.resolve({ id: 'target-user-id' }),
+            });
+            expect(res.status).toBe(200);
+            expect(mocks.mockPrismaUser.delete.mock.calls[0][0].select).toEqual(USER_SAFE_SELECT);
         });
     });
 });
