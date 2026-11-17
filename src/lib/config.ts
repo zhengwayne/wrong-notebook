@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { createLogger } from './logger';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from './date-time';
 import { parseConcurrencyLimit } from './ai-concurrency-limit';
@@ -94,11 +95,7 @@ function isLegacyOpenAIConfig(config: unknown): config is LegacyOpenAIConfig {
 
 // 生成唯一 ID
 function generateId(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    return randomUUID();
 }
 
 // 迁移旧版 OpenAI 配置到新版多实例格式
@@ -215,11 +212,27 @@ function readConfigFile(): string | null {
     }
 }
 
-/** 先写临时文件再改名替换，避免其他请求读到写了一半的配置 */
+let tmpSeq = 0;
+
+/** 先写临时文件（0o600 权限）再改名替换，避免其他请求读到写了一半的配置或暴露凭据 */
 function writeConfigFile(config: unknown): void {
-    const tmp = `${CONFIG_FILE_PATH}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
-    fs.renameSync(tmp, CONFIG_FILE_PATH);
+    if (typeof fs.mkdirSync === 'function') {
+        fs.mkdirSync(path.dirname(CONFIG_FILE_PATH), { recursive: true });
+    }
+    const tmp = `${CONFIG_FILE_PATH}.${process.pid}.${Date.now()}.${++tmpSeq}.tmp`;
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+        fs.renameSync(tmp, CONFIG_FILE_PATH);
+    } catch (error) {
+        if (typeof fs.unlinkSync === 'function') {
+            try {
+                fs.unlinkSync(tmp);
+            } catch {
+                // 忽略临时文件清理失败，保留原始写入错误
+            }
+        }
+        throw error;
+    }
 }
 
 

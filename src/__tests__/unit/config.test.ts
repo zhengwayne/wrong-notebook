@@ -114,7 +114,7 @@ describe('config module', () => {
             const config = updateAppConfig({ timeZone: 'America/New_York' });
             vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(config));
             expect(getAppTimeZone()).toBe('America/New_York');
-            expect(fs.writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('"timeZone": "America/New_York"'));
+            expect(fs.writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('"timeZone": "America/New_York"'), { mode: 0o600 });
         });
 
         it('直接写配置也拒绝无效时区', async () => {
@@ -322,8 +322,29 @@ describe('config module', () => {
             updateAppConfig({ aiProvider: 'openai' });
 
             const tmp = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string;
-            expect(tmp).toMatch(/app-config\.json\.\d+\.tmp$/);
+            expect(tmp).toMatch(/app-config\.json\.\d+\.\d+\.\d+\.tmp$/);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(tmp, expect.any(String), { mode: 0o600 });
             expect(fs.renameSync).toHaveBeenCalledWith(tmp, expect.stringMatching(/app-config\.json$/));
+        });
+
+        it('迁移旧版 OpenAI 配置时使用标准 UUID 且以 0o600 落盘', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'openai',
+                openai: { apiKey: 'sk-legacy', model: 'gpt-4o' },
+            }));
+            vi.mocked(fs.writeFileSync).mockImplementation(() => { });
+            vi.mocked(fs.renameSync).mockImplementation(() => { });
+
+            const { getAppConfig } = await import('@/lib/config');
+            const config = getAppConfig();
+            const instanceId = config.openai?.instances?.[0]?.id;
+
+            expect(instanceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(
+                expect.stringMatching(/app-config\.json\.\d+\.\d+\.\d+\.tmp$/),
+                expect.any(String),
+                { mode: 0o600 }
+            );
         });
 
         it('配置文件无法读取（非不存在）时记录错误并返回默认配置', async () => {

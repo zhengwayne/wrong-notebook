@@ -122,8 +122,8 @@ export const authOptions: NextAuthOptions = {
             }
         })
     ],
-    // Enable debug messages in the console
-    debug: true,
+    // 仅在显式开启 NEXTAUTH_DEBUG=true 时输出 NextAuth 调试日志
+    debug: process.env.NEXTAUTH_DEBUG === 'true',
     logger: {
         error(code, metadata) {
             logger.error({ code, metadata }, 'NextAuth error');
