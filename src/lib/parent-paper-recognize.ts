@@ -13,8 +13,10 @@ import {
     applyAnswerKeyToReview,
     effectiveVerdict,
     shouldImportVerdict,
+    normalizeQuestionBBox,
     validateQuestionBBox,
     type ParentReviewQuestion,
+    type QuestionBBox,
 } from "@/lib/parent-paper-review";
 import {
     getParentPaper,
@@ -26,6 +28,7 @@ import {
     ParentPaperValidationError,
     type ParentPaperDetail,
 } from "@/lib/parent-papers";
+import { cropDataUrlRegion } from "@/lib/parent-paper-crop";
 import { generateUniqueShortId } from "@/lib/short-id";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -51,6 +54,15 @@ const SUBJECT_NAMES: Record<string, string> = {
     geography: "地理",
     politics: "政治",
 };
+
+function parseStoredBbox(value: string | null): QuestionBBox | null {
+    if (!value) return null;
+    try {
+        return validateQuestionBBox(JSON.parse(value), Number.MAX_SAFE_INTEGER);
+    } catch {
+        return null;
+    }
+}
 
 function errorMessage(error: unknown): string {
     return error instanceof Error && error.message ? error.message.slice(0, 300) : "RECOGNITION_FAILED";
@@ -174,7 +186,7 @@ async function runParentPaperRecognition(
 
         let questions: ParentReviewQuestion[] = (review.reviewQuestions ?? []).map((question) => ({
             ...question,
-            bbox: validateQuestionBBox(question.bbox, pages.length),
+            bbox: normalizeQuestionBBox(question.bbox, pages.length),
         }));
         if (keyQuestions.length) questions = applyAnswerKeyToReview(questions, keyQuestions);
 
@@ -258,22 +270,36 @@ export async function updateParentPaperQuestion(
     userId: string,
     paperId: string,
     questionId: string,
-    patch: { overrideVerdict?: "correct" | "wrong" | "partial" | null; selected?: boolean },
+    patch: { overrideVerdict?: "correct" | "wrong" | "partial" | null; selected?: boolean; bbox?: QuestionBBox | null },
 ): Promise<ParentPaperDetail | null> {
     const paper = await db.parentPaper.findFirst({
         where: { id: paperId, userId },
-        include: { questions: { where: { id: questionId }, select: { id: true } } },
+        include: {
+            questions: { where: { id: questionId }, select: { id: true } },
+            pages: { select: { id: true } },
+        },
     });
     if (!paper) return null;
     if (paper.status === PARENT_PAPER_STATUS.confirmed) throw new ParentPaperStateError("ALREADY_CONFIRMED");
     if (paper.status !== PARENT_PAPER_STATUS.pendingConfirmation) throw new ParentPaperStateError("NOT_READY");
     if (!paper.questions.length) throw new ParentPaperValidationError("QUESTION_NOT_FOUND");
 
+    let nextBbox: string | null | undefined;
+    if (patch.bbox !== undefined) {
+        if (patch.bbox === null) nextBbox = null;
+        else {
+            const validated = validateQuestionBBox({ ...patch.bbox, pageIndex: patch.bbox.pageIndex }, paper.pages.length);
+            if (!validated) throw new ParentPaperValidationError("INVALID_BBOX");
+            nextBbox = JSON.stringify(validated);
+        }
+    }
+
     await db.parentPaperQuestion.update({
         where: { id: questionId },
         data: {
             ...(patch.overrideVerdict !== undefined ? { overrideVerdict: patch.overrideVerdict } : {}),
             ...(patch.selected !== undefined ? { selected: patch.selected } : {}),
+            ...(nextBbox !== undefined ? { bbox: nextBbox } : {}),
         },
     });
     return getParentPaper(db, userId, paperId);
@@ -303,6 +329,19 @@ export async function confirmParentPaper(
         return question.selected;
     }).filter((question) => shouldImportVerdict(effectiveVerdict(question.verdict, question.overrideVerdict)));
 
+    const crops = new Map<string, string>();
+    for (const question of toImport) {
+        const bbox = parseStoredBbox(question.bbox);
+        const page = paper.pages[bbox?.pageIndex ?? 0] || paper.pages[0] || null;
+        if (!page) continue;
+        if (bbox) {
+            const cropped = await cropDataUrlRegion(page.imageUrl, bbox);
+            crops.set(question.id, cropped.imageUrl);
+        } else {
+            crops.set(question.id, page.imageUrl);
+        }
+    }
+
     const importedCount = await db.$transaction(async (tx) => {
         let count = 0;
         for (const question of toImport) {
@@ -318,10 +357,6 @@ export async function confirmParentPaper(
                 }
             })();
             const tags = await resolveTags(tx, userId, knowledgePoints, subjectKey);
-            const bbox = question.bbox ? (() => {
-                try { return JSON.parse(question.bbox!) as { pageIndex?: number }; } catch { return null; }
-            })() : null;
-            const page = paper.pages[bbox?.pageIndex ?? 0] || paper.pages[0] || null;
             const title = paper.title || "家长上传卷子";
             const item = await tx.errorItem.create({
                 data: {
@@ -329,7 +364,7 @@ export async function confirmParentPaper(
                     userId,
                     learnerId: paper.learnerId,
                     subjectId: notebook.id,
-                    originalImageUrl: page?.imageUrl || "",
+                    originalImageUrl: crops.get(question.id) || "",
                     questionText: question.questionText || `${title} 第 ${question.number} 题`,
                     answerText: question.correctAnswer || null,
                     wrongAnswerText: question.studentAnswer || null,

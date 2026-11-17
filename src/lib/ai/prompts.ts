@@ -1339,7 +1339,7 @@ Rules:
 - errorCause: one or two sentences on why it is wrong or partial; empty when correct.
 - knowledgePoints: 1-3 knowledge point names.
 - type: "objective" when there is a unique definite answer, otherwise "subjective".
-- bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to that page. Use null if the location is unclear. Do not use pixel coordinates.
+- bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to that page. The box must cover the whole question: the stem, choices or student work, and a small margin. Do not box only the question number or a short formula. For a full-width question, width is typically close to 0.8–0.9. Use null if the location is unclear. Do not use pixel coordinates.
 - If data.questions is provided as an answer key, judge objective items against it; still assess subjective items yourself.
 - Output JSON only. Do not output a total score.
 
@@ -1358,7 +1358,7 @@ Output format:
 - errorCause：判为 wrong 或 partial 时，用一两句话说明错因；正确时可为空。
 - knowledgePoints：1~3 个知识点名称。
 - type：有唯一确定答案的为 objective，否则 subjective。
-- bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例（相对该页宽高）。若无法确定位置，bbox 为 null。不要使用像素坐标。
+- bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例（相对该页宽高）。框必须罩住整道题：题干、选项或学生作答，并留少量边距。不要只框题号或一行算式。通栏题的宽度通常接近 0.8～0.9。若无法确定位置，bbox 为 null。不要使用像素坐标。
 - 如果输入中提供了标准答案清单 data.questions，客观题必须对照标准答案判断；主观题仍由你评估。
 - 只输出 JSON，不要其他文字。不要输出整卷分数。
 

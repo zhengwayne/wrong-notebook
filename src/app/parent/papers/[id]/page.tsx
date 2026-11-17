@@ -14,7 +14,8 @@ import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
-import { isLowConfidence, type ParentReviewVerdict } from "@/lib/parent-paper-review";
+import { ParentPaperOverlay } from "@/components/parent/parent-paper-overlay";
+import { isLowConfidence, type ParentReviewVerdict, type QuestionBBox } from "@/lib/parent-paper-review";
 import { PARENT_PAPER_STATUS, type ParentPaperQuestionView } from "@/lib/parent-papers";
 import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
 import { useCurrentChild } from "@/lib/use-current-child";
@@ -29,6 +30,7 @@ interface PaperDetail {
     hasAnswerKey: boolean;
     correctCount: number | null;
     errorMessage: string | null;
+    pages: Array<{ id: string; position: number; imageUrl: string }>;
     questions: ParentPaperQuestionView[];
 }
 
@@ -44,6 +46,8 @@ export default function ParentPaperReviewPage() {
     const [paper, setPaper] = useState<PaperDetail | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<"recognize" | "confirm" | string | null>(null);
+    const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+    const [revealToken, setRevealToken] = useState(0);
 
     const load = useCallback(async (silent = false) => {
         if (!silent) setError(null);
@@ -94,6 +98,21 @@ export default function ParentPaperReviewPage() {
         } finally {
             setBusy(null);
         }
+    };
+
+
+    const selectQuestion = (questionId: string, from: "card" | "overlay") => {
+        setActiveQuestionId(questionId);
+        if (from === "card") setRevealToken((token) => token + 1);
+        const target = from === "overlay" ? `parent-paper-q-${questionId}` : "parent-paper-overlay";
+        window.requestAnimationFrame(() => {
+            document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+    };
+
+    const saveBbox = async (questionId: string, bbox: QuestionBBox) => {
+        const updated = await apiClient.patch<PaperDetail>(`/api/parent/papers/${paperId}/questions/${questionId}`, { bbox });
+        setPaper(updated);
     };
 
     const confirm = async () => {
@@ -179,11 +198,30 @@ export default function ParentPaperReviewPage() {
                     <EmptyState icon={FileText} title={copy.noQuestions} />
                 )}
 
+                {paper.pages.length > 0 && (paper.status === PARENT_PAPER_STATUS.pendingConfirmation || paper.status === PARENT_PAPER_STATUS.confirmed) ? (
+                    <ParentPaperOverlay
+                        title={paper.title || copy.untitled}
+                        pages={paper.pages}
+                        questions={paper.questions}
+                        activeQuestionId={activeQuestionId}
+                        revealToken={revealToken}
+                        onSelectQuestion={(id) => selectQuestion(id, "overlay")}
+                        canEdit={canEdit}
+                        onSaveBbox={saveBbox}
+                    />
+                ) : null}
+
                 <ul className="space-y-4">
                     {paper.questions.map((question) => {
                         const low = isLowConfidence(question.confidence);
+                        const selected = question.id === activeQuestionId;
                         return (
-                            <li key={question.id} className="space-y-3 rounded-2xl border border-border bg-card p-4">
+                            <li
+                                key={question.id}
+                                id={`parent-paper-q-${question.id}`}
+                                className={`space-y-3 rounded-2xl border bg-card p-4 ${selected ? "border-[#7c6bb5] ring-2 ring-[#c4b5fd]" : "border-border"}`}
+                                onClick={() => selectQuestion(question.id, "card")}
+                            >
                                 <div className="flex flex-wrap items-start justify-between gap-2">
                                     <h2 className="font-semibold">{copy.questionN.replace("{number}", question.number)}</h2>
                                     <div className="flex flex-wrap items-center gap-2">
@@ -195,6 +233,19 @@ export default function ParentPaperReviewPage() {
                                         <span className="text-xs text-muted-foreground">
                                             {copy.confidence.replace("{value}", `${Math.round(question.confidence * 100)}%`)}
                                         </span>
+                                        {question.bbox && (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    selectQuestion(question.id, "card");
+                                                }}
+                                            >
+                                                {copy.locateOnPhoto}
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
 

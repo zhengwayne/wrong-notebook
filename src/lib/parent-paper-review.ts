@@ -127,12 +127,21 @@ export function validateQuestionBBox(raw: unknown, pageCount: number): QuestionB
     if (width < 0) { x += width; width = Math.abs(width); }
     if (height < 0) { y += height; height = Math.abs(height); }
 
+    return clampNormalizedBBox({ pageIndex, x, y, width, height });
+}
+
+/** 把矩形限制在页面内；过小的框丢弃为 null */
+export function clampNormalizedBBox(bbox: QuestionBBox): QuestionBBox | null {
+    const pageIndex = bbox.pageIndex;
+    let { x, y, width, height } = bbox;
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
+    if (width < 0) { x += width; width = Math.abs(width); }
+    if (height < 0) { y += height; height = Math.abs(height); }
     x = Math.min(1, Math.max(0, x));
     y = Math.min(1, Math.max(0, y));
     width = Math.min(1 - x, Math.max(0, width));
     height = Math.min(1 - y, Math.max(0, height));
     if (width < 0.01 || height < 0.01) return null;
-
     return {
         pageIndex,
         x: Number(x.toFixed(4)),
@@ -140,6 +149,57 @@ export function validateQuestionBBox(raw: unknown, pageCount: number): QuestionB
         width: Number(width.toFixed(4)),
         height: Number(height.toFixed(4)),
     };
+}
+
+/** 模型常把框画得过紧，入库前按页边距外扩并夹紧 */
+export const BBOX_PAD_X = 0.04;
+export const BBOX_PAD_Y = 0.03;
+export const BBOX_MIN_WIDTH = 0.36;
+export const BBOX_MIN_HEIGHT = 0.08;
+const TIGHT_WIDTH = 0.32;
+const PAGE_MARGIN = 0.04;
+const PAGE_RIGHT = 0.96;
+
+export function expandQuestionBBox(bbox: QuestionBBox): QuestionBBox {
+    const pageIndex = bbox.pageIndex;
+    let { x, y, width, height } = bbox;
+    const padX = Math.max(BBOX_PAD_X, width * 0.12);
+    const padY = Math.max(BBOX_PAD_Y, height * 0.18);
+    x -= padX;
+    y -= padY;
+    width += padX * 2;
+    height += padY * 2;
+
+    // 过窄且靠左/靠右的框多半只框了题号或一行算式，向书写区展开
+    if (width < TIGHT_WIDTH) {
+        const right = x + width;
+        if (x <= 0.25) {
+            width = Math.max(width, Math.min(PAGE_RIGHT, x + Math.max(BBOX_MIN_WIDTH, width * 3)) - x);
+            if (width < 0.55 && x < 0.2) width = PAGE_RIGHT - Math.max(x, PAGE_MARGIN);
+        } else if (right >= 0.75) {
+            const target = Math.max(BBOX_MIN_WIDTH, width * 3);
+            x = Math.max(PAGE_MARGIN, right - target);
+            width = right - x;
+        }
+    }
+    if (width < BBOX_MIN_WIDTH) {
+        const extra = BBOX_MIN_WIDTH - width;
+        x -= extra / 2;
+        width = BBOX_MIN_WIDTH;
+    }
+    if (height < BBOX_MIN_HEIGHT) {
+        const extra = BBOX_MIN_HEIGHT - height;
+        y -= extra / 2;
+        height = BBOX_MIN_HEIGHT;
+    }
+
+    return clampNormalizedBBox({ pageIndex, x, y, width, height }) ?? bbox;
+}
+
+/** 校验后再外扩；家长手动画的框请只用 validateQuestionBBox，不要再次外扩 */
+export function normalizeQuestionBBox(raw: unknown, pageCount: number): QuestionBBox | null {
+    const validated = validateQuestionBBox(raw, pageCount);
+    return validated ? expandQuestionBBox(validated) : null;
 }
 
 export function parseParentPaperReview(text: string, pageCount: number): ParentPaperReviewResult {
@@ -159,7 +219,7 @@ export function parseParentPaperReview(text: string, pageCount: number): ParentP
             errorCause: item.errorCause,
             knowledgePoints: (item.knowledgePoints || []).map((point) => String(point).trim()).filter(Boolean).slice(0, 5),
             subjectHint: item.subjectHint || item.subject,
-            bbox: validateQuestionBBox(item.bbox, pageCount),
+            bbox: normalizeQuestionBBox(item.bbox, pageCount),
         });
     }
     return { questions };

@@ -232,10 +232,10 @@ function buildBundle() {
 
 
 /**
- * serverExternalPackages（Prisma、bcryptjs、node-edge-tts、ws）不会打进 Next 的服务端 bundle，
+ * serverExternalPackages（Prisma、bcryptjs、node-edge-tts、ws、sharp）不会打进 Next 的服务端 bundle，
  * standalone 追踪也可能漏掉新增的外部包。Prisma 已在上方单独复制；这里补齐其余包及其生产依赖。
  */
-const EXTRA_RUNTIME_PACKAGES = ['node-edge-tts', 'ws', 'bcryptjs'];
+const EXTRA_RUNTIME_PACKAGES = ['node-edge-tts', 'ws', 'bcryptjs', 'sharp'];
 
 function copyPackageAndDeps(name, seen = new Set()) {
     if (seen.has(name)) return;

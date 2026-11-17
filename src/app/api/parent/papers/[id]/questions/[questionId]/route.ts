@@ -11,10 +11,19 @@ import { prisma } from "@/lib/prisma";
 
 const logger = createLogger("api:parent:papers:question");
 
+const bboxSchema = z.object({
+    pageIndex: z.number().int().min(0),
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+});
+
 const patchSchema = z.object({
     overrideVerdict: z.enum(PARENT_REVIEW_VERDICTS).nullable().optional(),
     selected: z.boolean().optional(),
-}).refine((value) => value.overrideVerdict !== undefined || value.selected !== undefined, {
+    bbox: bboxSchema.nullable().optional(),
+}).refine((value) => value.overrideVerdict !== undefined || value.selected !== undefined || value.bbox !== undefined, {
     message: "Nothing to update",
 });
 
@@ -31,7 +40,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; q
         return NextResponse.json(paper);
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid question update", error.issues);
-        if (error instanceof ParentPaperValidationError) return notFound("Question not found");
+        if (error instanceof ParentPaperValidationError) {
+            if (error.message === "INVALID_BBOX") return badRequest("Invalid question box");
+            return notFound("Question not found");
+        }
         if (error instanceof ParentPaperStateError) {
             if (error.message === "ALREADY_CONFIRMED") return badRequest("Paper already confirmed");
             return badRequest("Paper is not ready to edit");

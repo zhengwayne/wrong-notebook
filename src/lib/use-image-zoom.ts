@@ -158,5 +158,6 @@ export function useImageZoom(fitStyle: CSSProperties) {
         zoomIn,
         zoomOut,
         reset,
+        pinchingRef,
     };
 }

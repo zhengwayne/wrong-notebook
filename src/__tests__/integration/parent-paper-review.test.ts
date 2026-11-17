@@ -126,7 +126,9 @@ describe("parent paper recognition and confirm", () => {
         expect(detail.status).toBe(PARENT_PAPER_STATUS.pendingConfirmation);
         expect(detail.hasAnswerKey).toBe(false);
         expect(detail.correctCount).toBeNull();
-        expect(detail.questions[0].bbox).toEqual({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.2 });
+        expect(detail.questions[0].bbox).toMatchObject({ pageIndex: 0 });
+        expect(detail.questions[0].bbox.x).toBeLessThanOrEqual(0.1);
+        expect(detail.questions[0].bbox.x + detail.questions[0].bbox.width).toBeGreaterThanOrEqual(0.9);
         expect(detail.questions[1].bbox).toBeNull();
         expect(detail.questions[0].selected).toBe(true);
         expect(detail.questions[1].selected).toBe(false);
@@ -257,6 +259,36 @@ describe("parent paper recognition and confirm", () => {
         const row = await db.parentPaper.findUniqueOrThrow({ where: { id: paper.id } });
         expect(row.status).toBe(PARENT_PAPER_STATUS.failed);
         expect(row.errorMessage).toBe("SERVER_RESTARTED");
+    });
+
+    it("lets the parent persist a corrected question box", async () => {
+        mocks.readExamPaper.mockResolvedValue({
+            studentName: null, className: null, studentNo: null, questions: [],
+            reviewQuestions: [{
+                number: "1", type: "objective", questionText: "计算", studentAnswer: "3", correctAnswer: "2",
+                verdict: "wrong", confidence: 0.9, errorCause: "算错", knowledgePoints: ["加法"], subjectHint: "数学",
+                bbox: { pageIndex: 0, x: 0.06, y: 0.12, width: 0.15, height: 0.08 },
+            }],
+        });
+        const paper = await createPaper();
+        await recognize(paper.id);
+        const loaded = await (await GET_PAPER(new Request(`http://localhost/api/parent/papers/${paper.id}`), { params: Promise.resolve({ id: paper.id }) })).json();
+        const questionId = loaded.questions[0].id;
+        const patched = await PATCH_QUESTION(new Request(`http://localhost/api/parent/papers/${paper.id}/questions/${questionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bbox: { pageIndex: 0, x: 0.08, y: 0.1, width: 0.84, height: 0.22 } }),
+        }), { params: Promise.resolve({ id: paper.id, questionId }) });
+        expect(patched.status).toBe(200);
+        const body = await patched.json();
+        expect(body.questions[0].bbox).toEqual({ pageIndex: 0, x: 0.08, y: 0.1, width: 0.84, height: 0.22 });
+
+        const invalid = await PATCH_QUESTION(new Request(`http://localhost/api/parent/papers/${paper.id}/questions/${questionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bbox: { pageIndex: 3, x: 0.1, y: 0.1, width: 0.2, height: 0.2 } }),
+        }), { params: Promise.resolve({ id: paper.id, questionId }) });
+        expect(invalid.status).toBe(400);
     });
 
     it("lists status for the current child", async () => {

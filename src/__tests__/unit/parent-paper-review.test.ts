@@ -3,7 +3,9 @@ import { parseExamPaperByMode } from "@/lib/ai/exam-paper-read";
 import {
     applyAnswerKeyToReview,
     effectiveVerdict,
+    expandQuestionBBox,
     isLowConfidence,
+    normalizeQuestionBBox,
     parseParentPaperReview,
     shouldImportVerdict,
     validateQuestionBBox,
@@ -63,7 +65,12 @@ describe("parseParentPaperReview", () => {
             ],
         }), pageCount);
         expect(result.questions).toHaveLength(2);
-        expect(result.questions[0].bbox).toEqual({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.2 });
+        const box = result.questions[0].bbox!;
+        expect(box.pageIndex).toBe(0);
+        expect(box.x).toBeLessThanOrEqual(0.1);
+        expect(box.y).toBeLessThanOrEqual(0.1);
+        expect(box.x + box.width).toBeGreaterThanOrEqual(0.9);
+        expect(box.y + box.height).toBeGreaterThanOrEqual(0.3);
         expect(result.questions[0].questionText).toBe("计算 $1+1$");
         expect(result.questions[1].confidence).toBe(0.8);
         expect(result.questions[1].bbox).toBeNull();
@@ -88,7 +95,10 @@ describe("parseExamPaperByMode", () => {
         const result = parseExamPaperByMode("parent_review", '{"questions":[{"number":"1","verdict":"correct","bbox":{"pageIndex":0,"x":0.1,"y":0.1,"width":0.4,"height":0.2}}]}', 1);
         expect(result.questions).toEqual([]);
         expect(result.reviewQuestions?.[0]).toMatchObject({ number: "1", verdict: "correct" });
-        expect(result.reviewQuestions?.[0].bbox).toEqual({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.4, height: 0.2 });
+        const box = result.reviewQuestions?.[0].bbox;
+        expect(box?.pageIndex).toBe(0);
+        expect(box!.x).toBeLessThanOrEqual(0.1);
+        expect(box!.width).toBeGreaterThan(0.4);
     });
 });
 
@@ -114,5 +124,51 @@ describe("verdict helpers", () => {
         expect(shouldImportVerdict("correct")).toBe(false);
         expect(isLowConfidence(0.69)).toBe(true);
         expect(isLowConfidence(0.7)).toBe(false);
+    });
+});
+
+describe("expandQuestionBBox", () => {
+    it("pads a normal box and keeps it on the page", () => {
+        const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.2, y: 0.2, width: 0.6, height: 0.2 });
+        expect(expanded.x).toBeLessThan(0.2);
+        expect(expanded.y).toBeLessThan(0.2);
+        expect(expanded.x + expanded.width).toBeGreaterThan(0.8);
+        expect(expanded.y + expanded.height).toBeGreaterThan(0.4);
+        expect(expanded.x).toBeGreaterThanOrEqual(0);
+        expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
+    });
+
+    it("widens a tight left-aligned box toward the writing area", () => {
+        const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.06, y: 0.12, width: 0.15, height: 0.08 });
+        expect(expanded.width).toBeGreaterThan(0.5);
+        expect(expanded.x).toBeLessThanOrEqual(0.06);
+        expect(expanded.x + expanded.width).toBeGreaterThan(0.7);
+        expect(expanded.height).toBeGreaterThanOrEqual(0.08);
+        expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
+        expect(expanded.y + expanded.height).toBeLessThanOrEqual(1);
+    });
+
+    it("widens a tight right-column box leftward", () => {
+        const expanded = expandQuestionBBox({ pageIndex: 1, x: 0.8, y: 0.3, width: 0.14, height: 0.1 });
+        expect(expanded.pageIndex).toBe(1);
+        expect(expanded.width).toBeGreaterThan(0.35);
+        expect(expanded.x).toBeLessThan(0.8);
+        expect(expanded.x + expanded.width).toBeGreaterThanOrEqual(0.9);
+        expect(expanded.x).toBeGreaterThanOrEqual(0);
+    });
+
+    it("clamps a box near the page edge", () => {
+        const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.9, y: 0.92, width: 0.09, height: 0.07 });
+        expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
+        expect(expanded.y + expanded.height).toBeLessThanOrEqual(1);
+        expect(expanded.width).toBeGreaterThanOrEqual(0.08);
+    });
+});
+
+describe("normalizeQuestionBBox", () => {
+    it("validates then expands, and still drops pixel coordinates", () => {
+        const normalized = normalizeQuestionBBox({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.1 }, 1);
+        expect(normalized?.width).toBeGreaterThan(0.2);
+        expect(normalizeQuestionBBox({ pageIndex: 0, x: 12, y: 40, width: 300, height: 80 }, 1)).toBeNull();
     });
 });
