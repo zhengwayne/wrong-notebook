@@ -6,6 +6,11 @@ import { isPersona, landingPath } from "@/lib/personas";
 
 const logger = createLogger('proxy');
 
+/** 旧会话没有该字段时也要进确认页；确认后 token 会带上 false */
+function needsPersonaConfirm(token: { needsPersonaConfirmation?: boolean } | null): boolean {
+    return token?.needsPersonaConfirmation !== false;
+}
+
 export async function proxy(req: NextRequest) {
     // 页面请求的登录保护（Next.js 16 起由 middleware 更名为 proxy，运行在 Node.js 运行时）
     logger.debug({ method: req.method, path: req.nextUrl.pathname }, 'Processing request');
@@ -36,7 +41,7 @@ export async function proxy(req: NextRequest) {
                     logger.debug('Redirecting authenticated user with default password to /setup');
                     return NextResponse.redirect(new URL("/setup", req.url));
                 }
-                if (token?.needsPersonaConfirmation) {
+                if (needsPersonaConfirm(token)) {
                     logger.debug('Redirecting authenticated user to persona onboarding');
                     return NextResponse.redirect(new URL("/onboarding/persona", req.url));
                 }
@@ -67,17 +72,17 @@ export async function proxy(req: NextRequest) {
         }
 
         const isPersonaOnboarding = req.nextUrl.pathname.startsWith("/onboarding");
-        if (token?.needsPersonaConfirmation && !isPersonaOnboarding) {
+        if (needsPersonaConfirm(token) && !isPersonaOnboarding && !isSetupPage) {
             logger.info({ userId: token.id, path: req.nextUrl.pathname }, 'Redirecting user to persona confirmation');
             return NextResponse.redirect(new URL("/onboarding/persona", req.url));
         }
-        if (!token?.needsPersonaConfirmation && isPersonaOnboarding) {
+        if (!needsPersonaConfirm(token) && isPersonaOnboarding) {
             const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
             return NextResponse.redirect(new URL(home, req.url));
         }
 
         // 已确认身份时，按当前身份进入对应首页
-        if (req.nextUrl.pathname === "/" && !token?.needsPersonaConfirmation) {
+        if (req.nextUrl.pathname === "/" && !needsPersonaConfirm(token) && token?.activePersona) {
             const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
             if (home !== "/") {
                 return NextResponse.redirect(new URL(home, req.url));

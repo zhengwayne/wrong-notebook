@@ -78,6 +78,7 @@ describe('proxy', () => {
             sub: 'user-123',
             email: 'test@example.com',
             name: 'Test User',
+            needsPersonaConfirmation: false,
         };
 
         it('应该允许已认证用户访问受保护页面', async () => {
@@ -144,7 +145,7 @@ describe('proxy', () => {
         });
 
         it('已改密码的管理员正常访问页面', async () => {
-            vi.mocked(getToken).mockResolvedValue({ ...flaggedToken, mustChangePassword: false } as unknown as JWT);
+            vi.mocked(getToken).mockResolvedValue({ ...flaggedToken, mustChangePassword: false, needsPersonaConfirmation: false } as unknown as JWT);
 
             const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
 
@@ -235,6 +236,14 @@ describe('proxy', () => {
     });
 
     describe('身份确认与按身份落地', () => {
+        it('旧会话缺少身份字段时也应进入确认页', async () => {
+            vi.mocked(getToken).mockResolvedValue({ id: 'user-1' } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/onboarding/persona');
+        });
+
         it('未确认身份的已登录用户应跳到确认页，且不自动写入选择', async () => {
             vi.mocked(getToken).mockResolvedValue({ id: 'user-1', needsPersonaConfirmation: true } as unknown as JWT);
 
