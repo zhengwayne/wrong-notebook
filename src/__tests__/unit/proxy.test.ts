@@ -15,6 +15,13 @@ vi.mock('@/lib/logger', () => ({
     })),
 }));
 
+const prismaMocks = vi.hoisted(() => ({
+    findUnique: vi.fn(async (): Promise<{ personasConfirmedAt: Date | null }> => ({ personasConfirmedAt: null })),
+}));
+vi.mock('@/lib/prisma', () => ({
+    prisma: { user: { findUnique: prismaMocks.findUnique } },
+}));
+
 import { proxy } from '@/proxy';
 import { getToken } from 'next-auth/jwt';
 import type { JWT } from 'next-auth/jwt';
@@ -22,6 +29,7 @@ import type { JWT } from 'next-auth/jwt';
 describe('proxy', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        prismaMocks.findUnique.mockResolvedValue({ personasConfirmedAt: null });
     });
 
     afterEach(() => {
@@ -242,6 +250,19 @@ describe('proxy', () => {
             const response = await proxy(new NextRequest('http://localhost:3000/'));
 
             expect(response?.headers.get('location')).toBe('http://localhost:3000/onboarding/persona');
+        });
+
+        it('数据库已确认但 JWT 尚未刷新时不再挡在确认页', async () => {
+            prismaMocks.findUnique.mockResolvedValue({ personasConfirmedAt: new Date('2026-11-17T05:00:00Z') });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: true,
+                activePersona: 'teacher',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/teacher'));
+
+            expect(response).toBeUndefined();
         });
 
         it('未确认身份的已登录用户应跳到确认页，且不自动写入选择', async () => {

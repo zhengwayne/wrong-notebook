@@ -11,6 +11,20 @@ function needsPersonaConfirm(token: { needsPersonaConfirmation?: boolean } | nul
     return token?.needsPersonaConfirmation !== false;
 }
 
+async function isPersonaConfirmedInDb(userId: string | undefined): Promise<boolean | null> {
+    if (!userId) return null;
+    try {
+        const { prisma } = await import("@/lib/prisma");
+        const row = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { personasConfirmedAt: true },
+        });
+        return Boolean(row?.personasConfirmedAt);
+    } catch {
+        return null;
+    }
+}
+
 export async function proxy(req: NextRequest) {
     // 页面请求的登录保护（Next.js 16 起由 middleware 更名为 proxy，运行在 Node.js 运行时）
     logger.debug({ method: req.method, path: req.nextUrl.pathname }, 'Processing request');
@@ -72,17 +86,22 @@ export async function proxy(req: NextRequest) {
         }
 
         const isPersonaOnboarding = req.nextUrl.pathname.startsWith("/onboarding");
-        if (needsPersonaConfirm(token) && !isPersonaOnboarding && !isSetupPage) {
+        let personaConfirmed = !needsPersonaConfirm(token);
+        if (!personaConfirmed && !isSetupPage) {
+            const confirmedInDb = await isPersonaConfirmedInDb(typeof token?.id === "string" ? token.id : undefined);
+            if (confirmedInDb) personaConfirmed = true;
+        }
+        if (!personaConfirmed && !isPersonaOnboarding && !isSetupPage) {
             logger.info({ userId: token.id, path: req.nextUrl.pathname }, 'Redirecting user to persona confirmation');
             return NextResponse.redirect(new URL("/onboarding/persona", req.url));
         }
-        if (!needsPersonaConfirm(token) && isPersonaOnboarding) {
+        if (personaConfirmed && isPersonaOnboarding) {
             const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
             return NextResponse.redirect(new URL(home, req.url));
         }
 
         // 已确认身份时，按当前身份进入对应首页
-        if (req.nextUrl.pathname === "/" && !needsPersonaConfirm(token) && token?.activePersona) {
+        if (req.nextUrl.pathname === "/" && personaConfirmed && token?.activePersona) {
             const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
             if (home !== "/") {
                 return NextResponse.redirect(new URL(home, req.url));
