@@ -44,6 +44,7 @@ export function isPaperPageImage(value: string): boolean {
 
 export interface ParentPaperPageInput {
     imageUrl: string;
+    originalImageUrl?: string | null;
 }
 
 export interface ParentPaperQuestionView {
@@ -292,6 +293,7 @@ export async function createParentPaper(
                 create: params.pages.map((page, index) => ({
                     position: index,
                     imageUrl: page.imageUrl,
+                    originalImageUrl: page.originalImageUrl || null,
                 })),
             },
         },

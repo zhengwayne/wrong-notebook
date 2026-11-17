@@ -151,49 +151,19 @@ export function clampNormalizedBBox(bbox: QuestionBBox): QuestionBBox | null {
     };
 }
 
-/** 模型常把框画得过紧，入库前按页边距外扩并夹紧 */
-export const BBOX_PAD_X = 0.04;
-export const BBOX_PAD_Y = 0.03;
-export const BBOX_MIN_WIDTH = 0.36;
-export const BBOX_MIN_HEIGHT = 0.08;
-const TIGHT_WIDTH = 0.32;
-const PAGE_MARGIN = 0.04;
-const PAGE_RIGHT = 0.96;
+/** 模型框只做很小的外扩，不再拉满整行或抬高最小宽高，以免相邻题重叠。 */
+export const BBOX_PAD_X = 0.012;
+export const BBOX_PAD_Y = 0.01;
 
 export function expandQuestionBBox(bbox: QuestionBBox): QuestionBBox {
-    const pageIndex = bbox.pageIndex;
-    let { x, y, width, height } = bbox;
-    const padX = Math.max(BBOX_PAD_X, width * 0.12);
-    const padY = Math.max(BBOX_PAD_Y, height * 0.18);
-    x -= padX;
-    y -= padY;
-    width += padX * 2;
-    height += padY * 2;
-
-    // 过窄且靠左/靠右的框多半只框了题号或一行算式，向书写区展开
-    if (width < TIGHT_WIDTH) {
-        const right = x + width;
-        if (x <= 0.25) {
-            width = Math.max(width, Math.min(PAGE_RIGHT, x + Math.max(BBOX_MIN_WIDTH, width * 3)) - x);
-            if (width < 0.55 && x < 0.2) width = PAGE_RIGHT - Math.max(x, PAGE_MARGIN);
-        } else if (right >= 0.75) {
-            const target = Math.max(BBOX_MIN_WIDTH, width * 3);
-            x = Math.max(PAGE_MARGIN, right - target);
-            width = right - x;
-        }
-    }
-    if (width < BBOX_MIN_WIDTH) {
-        const extra = BBOX_MIN_WIDTH - width;
-        x -= extra / 2;
-        width = BBOX_MIN_WIDTH;
-    }
-    if (height < BBOX_MIN_HEIGHT) {
-        const extra = BBOX_MIN_HEIGHT - height;
-        y -= extra / 2;
-        height = BBOX_MIN_HEIGHT;
-    }
-
-    return clampNormalizedBBox({ pageIndex, x, y, width, height }) ?? bbox;
+    const padded = clampNormalizedBBox({
+        pageIndex: bbox.pageIndex,
+        x: bbox.x - BBOX_PAD_X,
+        y: bbox.y - BBOX_PAD_Y,
+        width: bbox.width + BBOX_PAD_X * 2,
+        height: bbox.height + BBOX_PAD_Y * 2,
+    });
+    return padded ?? bbox;
 }
 
 /** 校验后再外扩；家长手动画的框请只用 validateQuestionBBox，不要再次外扩 */

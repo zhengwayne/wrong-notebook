@@ -200,6 +200,7 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
                 </Button>
             </div>
             <p className="text-sm text-muted-foreground">{copy.continueHint}</p>
+            <p className="text-sm text-muted-foreground">{copy.autoCropHint}</p>
 
             {pages.length > 0 && (
                 <ol className="space-y-3">
@@ -229,8 +230,9 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
                                     <Button type="button" variant="outline" size="icon-sm" aria-label={copy.rotate} onClick={() => void rotate(index)}>
                                         <RotateCw className="h-4 w-4" />
                                     </Button>
-                                    <Button type="button" variant="outline" size="icon-sm" aria-label={copy.crop} onClick={() => setCropIndex(index)}>
-                                        <Crop className="h-4 w-4" />
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setCropIndex(index)}>
+                                        <Crop className="h-4 w-4" aria-hidden="true" />
+                                        {copy.cropPage}
                                     </Button>
                                     <Button type="button" variant="ghost" size="icon-sm" className="text-destructive" aria-label={copy.remove} onClick={() => setPages((prev) => prev.filter((item) => item.id !== page.id))}>
                                         <Trash2 className="h-4 w-4" />

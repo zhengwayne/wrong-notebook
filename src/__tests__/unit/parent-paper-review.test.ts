@@ -128,40 +128,37 @@ describe("verdict helpers", () => {
 });
 
 describe("expandQuestionBBox", () => {
-    it("pads a normal box and keeps it on the page", () => {
-        const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.2, y: 0.2, width: 0.6, height: 0.2 });
+    it("adds only a small pad and does not stretch a tight box to full width", () => {
+        const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.2, y: 0.2, width: 0.3, height: 0.1 });
         expect(expanded.x).toBeLessThan(0.2);
         expect(expanded.y).toBeLessThan(0.2);
-        expect(expanded.x + expanded.width).toBeGreaterThan(0.8);
-        expect(expanded.y + expanded.height).toBeGreaterThan(0.4);
+        expect(expanded.x + expanded.width).toBeGreaterThan(0.5);
+        expect(expanded.width).toBeLessThan(0.4);
+        expect(expanded.height).toBeLessThan(0.14);
         expect(expanded.x).toBeGreaterThanOrEqual(0);
         expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
     });
 
-    it("widens a tight left-aligned box toward the writing area", () => {
+    it("does not grow a tight left-aligned box across the page", () => {
         const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.06, y: 0.12, width: 0.15, height: 0.08 });
-        expect(expanded.width).toBeGreaterThan(0.5);
+        expect(expanded.width).toBeLessThan(0.22);
+        expect(expanded.height).toBeLessThan(0.12);
         expect(expanded.x).toBeLessThanOrEqual(0.06);
-        expect(expanded.x + expanded.width).toBeGreaterThan(0.7);
-        expect(expanded.height).toBeGreaterThanOrEqual(0.08);
-        expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
-        expect(expanded.y + expanded.height).toBeLessThanOrEqual(1);
+        expect(expanded.x + expanded.width).toBeLessThan(0.25);
     });
 
-    it("widens a tight right-column box leftward", () => {
+    it("keeps a tight right-column box in the right column", () => {
         const expanded = expandQuestionBBox({ pageIndex: 1, x: 0.8, y: 0.3, width: 0.14, height: 0.1 });
         expect(expanded.pageIndex).toBe(1);
-        expect(expanded.width).toBeGreaterThan(0.35);
-        expect(expanded.x).toBeLessThan(0.8);
-        expect(expanded.x + expanded.width).toBeGreaterThanOrEqual(0.9);
-        expect(expanded.x).toBeGreaterThanOrEqual(0);
+        expect(expanded.width).toBeLessThan(0.2);
+        expect(expanded.x).toBeGreaterThan(0.75);
+        expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
     });
 
     it("clamps a box near the page edge", () => {
         const expanded = expandQuestionBBox({ pageIndex: 0, x: 0.9, y: 0.92, width: 0.09, height: 0.07 });
         expect(expanded.x + expanded.width).toBeLessThanOrEqual(1);
         expect(expanded.y + expanded.height).toBeLessThanOrEqual(1);
-        expect(expanded.width).toBeGreaterThanOrEqual(0.08);
     });
 });
 

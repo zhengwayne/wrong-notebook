@@ -6,6 +6,7 @@ import { createLogger } from "@/lib/logger";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
+import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
 import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError } from "@/lib/parent-papers";
 
 const logger = createLogger("api:parent:papers");
@@ -49,7 +50,12 @@ export async function POST(req: Request) {
     if (!requireParent(user)) return forbidden("Parent persona required");
     try {
         const body = createSchema.parse(await req.json());
-        const paper = await createParentPaper(prisma, user.id, body);
+        const pages = await Promise.all(body.pages.map(async (page) => {
+            const cropped = await autoCropPaperImage(page.imageUrl);
+            if (!cropped.cropped) return page;
+            return { imageUrl: cropped.imageUrl, originalImageUrl: page.imageUrl };
+        }));
+        const paper = await createParentPaper(prisma, user.id, { ...body, pages });
         return NextResponse.json(paper, { status: 201 });
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid paper", error.issues);

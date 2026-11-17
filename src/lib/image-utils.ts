@@ -11,7 +11,7 @@ interface DecodedImage {
 async function decodeImageFile(file: File): Promise<DecodedImage> {
     if (typeof createImageBitmap === "function") {
         try {
-            const bitmap = await createImageBitmap(file);
+            const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
             return {
                 source: bitmap,
                 width: bitmap.width,

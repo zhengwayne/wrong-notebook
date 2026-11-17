@@ -559,12 +559,13 @@ model ParentPaper {
 }
 
 model ParentPaperPage {
-  id        String   @id @default(cuid())
-  paperId   String
-  paper     ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  position  Int
-  imageUrl  String
-  createdAt DateTime @default(now())
+  id               String   @id @default(cuid())
+  paperId          String
+  paper            ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  position         Int
+  imageUrl         String
+  originalImageUrl String?
+  createdAt        DateTime @default(now())
 
   @@index([paperId, position])
 }

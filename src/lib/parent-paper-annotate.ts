@@ -5,9 +5,9 @@
 import type { ParentReviewVerdict, QuestionBBox } from "@/lib/parent-paper-review";
 
 export const OVERLAY_COLORS: Record<ParentReviewVerdict, { stroke: string; fill: string; text: string; mark: string }> = {
-    correct: { stroke: "#3f8f76", fill: "rgba(63, 143, 118, 0.14)", text: "#ffffff", mark: "✓" },
-    wrong: { stroke: "#c45c6a", fill: "rgba(196, 92, 106, 0.14)", text: "#ffffff", mark: "✗" },
-    partial: { stroke: "#c4923a", fill: "rgba(196, 146, 58, 0.16)", text: "#ffffff", mark: "△" },
+    correct: { stroke: "#3f8f76", fill: "rgba(63, 143, 118, 0.04)", text: "#ffffff", mark: "✓" },
+    wrong: { stroke: "#c45c6a", fill: "rgba(196, 92, 106, 0.04)", text: "#ffffff", mark: "✗" },
+    partial: { stroke: "#c4923a", fill: "rgba(196, 146, 58, 0.05)", text: "#ffffff", mark: "△" },
 };
 
 export interface AnnotateBox {

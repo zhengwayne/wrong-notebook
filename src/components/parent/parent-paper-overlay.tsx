@@ -9,13 +9,14 @@ import { regionFromPoints } from "@/lib/image-crop";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { OVERLAY_COLORS, renderAnnotatedPagePng, shareOrDownloadPng } from "@/lib/parent-paper-annotate";
 import { regionToBBox, resizeNormalizedBox, type BoxHandle } from "@/lib/parent-paper-box-edit";
+import { badgeOffsets, layoutParentPaperBBoxes } from "@/lib/parent-paper-box-layout";
 import type { ParentPaperQuestionView } from "@/lib/parent-papers";
 import type { QuestionBBox } from "@/lib/parent-paper-review";
 import { toast } from "@/lib/feedback";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { useImageZoom } from "@/lib/use-image-zoom";
 
-const FIT_STYLE = { maxWidth: "100%", height: "auto", display: "block" as const };
+const FIT_STYLE = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", display: "block" as const };
 const HANDLES: Array<Exclude<BoxHandle, "move">> = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 const HANDLE_STYLE: Record<Exclude<BoxHandle, "move">, string> = {
@@ -61,14 +62,16 @@ export function ParentPaperOverlay({
     const dragRef = useRef<{ handle: BoxHandle | "draw"; start: { x: number; y: number }; box: { x: number; y: number; width: number; height: number } } | null>(null);
 
     const orderedPages = useMemo(() => [...pages].sort((a, b) => a.position - b.position), [pages]);
-    const active = questions.find((question) => question.id === activeQuestionId) ?? null;
+    const laidOutQuestions = useMemo(() => layoutParentPaperBBoxes(questions), [questions]);
+    const active = laidOutQuestions.find((question) => question.id === activeQuestionId) ?? null;
     const followActive = !manualPage || manualPage.reveal !== revealToken;
     const rawIndex = followActive && active?.bbox
         ? active.bbox.pageIndex
         : (manualPage?.page ?? 0);
     const safeIndex = Math.min(Math.max(0, rawIndex), Math.max(0, orderedPages.length - 1));
     const page = orderedPages[safeIndex];
-    const questionsOnPage = questions.filter((question) => question.bbox?.pageIndex === safeIndex);
+    const questionsOnPage = laidOutQuestions.filter((question) => question.bbox?.pageIndex === safeIndex);
+    const badgeShift = badgeOffsets(questionsOnPage.filter((question) => question.bbox).map((question) => ({ id: question.id, bbox: question.bbox! })));
 
     const goToPage = (index: number) => {
         setManualPage({ page: index, reveal: revealToken });
@@ -204,17 +207,17 @@ export function ParentPaperOverlay({
                 <ZoomControls variant="toolbar" zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={reset} />
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
+            <div className="relative overflow-hidden rounded-2xl border border-border bg-[#f5f3ff]">
                 <div
                     ref={containerRef}
-                    className="max-h-[min(52dvh,calc(100dvh-18rem-env(safe-area-inset-bottom,0px)))] overflow-auto overscroll-contain"
+                    className="flex h-[calc(100dvh-16rem-env(safe-area-inset-bottom,0px))] items-center justify-center overflow-auto overscroll-contain md:h-[min(85dvh,calc(100dvh-9rem))]"
                     style={{ touchAction: editing ? "none" : "pan-x pan-y" }}
                 >
-                    <div className="relative inline-block min-w-full">
+                    <div className="relative inline-block max-h-full max-w-full">
                         <img
                             src={page.imageUrl}
                             alt={copy.pageLabel.replace("{index}", String(safeIndex + 1))}
-                            className="block w-full"
+                            className="block max-h-full max-w-full"
                             style={imageStyle}
                             draggable={false}
                             onLoad={(event) => measureImage(event.currentTarget)}
@@ -232,7 +235,7 @@ export function ParentPaperOverlay({
                                 }
                             }}
                         >
-                            {questions.filter((question) => displayBox(question)?.pageIndex === safeIndex).map((question) => {
+                            {laidOutQuestions.filter((question) => displayBox(question)?.pageIndex === safeIndex).map((question) => {
                                 const box = displayBox(question);
                                 if (!box) return null;
                                 const colors = OVERLAY_COLORS[question.effectiveVerdict];
@@ -263,13 +266,13 @@ export function ParentPaperOverlay({
                                         }}
                                     >
                                         <span
-                                            className="absolute left-0 top-0 z-[1] min-w-6 -translate-y-full rounded-t-md px-1.5 py-0.5 text-center text-[11px] font-semibold leading-4 text-white"
-                                            style={{ background: colors.stroke }}
+                                            className="absolute left-0.5 z-[1] min-w-5 rounded-sm px-1 py-px text-center text-[10px] font-semibold leading-4 text-white sm:min-w-6 sm:px-1.5 sm:text-[11px]"
+                                            style={{ background: colors.stroke, top: `calc(0.15rem + ${(badgeShift[question.id] || 0) * 1.05}rem)` }}
                                         >
                                             {question.number}
                                         </span>
                                         <span
-                                            className="absolute right-0.5 top-0.5 text-lg font-bold leading-none"
+                                            className="absolute right-0.5 top-0.5 text-sm font-bold leading-none sm:text-base"
                                             style={{ color: colors.stroke, textShadow: "0 0 2px #fff, 0 0 2px #fff" }}
                                             aria-hidden="true"
                                         >

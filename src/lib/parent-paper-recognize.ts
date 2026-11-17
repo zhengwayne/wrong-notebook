@@ -30,6 +30,8 @@ import {
     ParentPaperValidationError,
     type ParentPaperDetail,
 } from "@/lib/parent-papers";
+import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
+import { layoutParentPaperBBoxes } from "@/lib/parent-paper-box-layout";
 import { cropDataUrlRegion } from "@/lib/parent-paper-crop";
 import { generateUniqueShortId } from "@/lib/short-id";
 
@@ -85,6 +87,31 @@ function normalizeAnswerKeyImages(images: string[] | undefined): string[] {
         if (!isPaperPageImage(image)) throw new ParentPaperValidationError("INVALID_ANSWER_KEY_IMAGE");
     }
     return list;
+}
+
+
+async function ensurePagesAutoCropped(
+    db: PrismaClient,
+    pages: Array<{ id: string; position: number; imageUrl: string; originalImageUrl?: string | null }>,
+): Promise<Array<{ id: string; position: number; imageUrl: string }>> {
+    const prepared = [];
+    for (const page of pages) {
+        if (page.originalImageUrl) {
+            prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
+            continue;
+        }
+        const result = await autoCropPaperImage(page.imageUrl);
+        if (result.cropped && result.imageUrl !== page.imageUrl) {
+            await db.parentPaperPage.update({
+                where: { id: page.id },
+                data: { originalImageUrl: page.imageUrl, imageUrl: result.imageUrl },
+            });
+            prepared.push({ id: page.id, position: page.position, imageUrl: result.imageUrl });
+        } else {
+            prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
+        }
+    }
+    return prepared;
 }
 
 export async function startParentPaperRecognition(
@@ -153,7 +180,8 @@ async function runParentPaperRecognition(
         });
         if (!paper) throw new Error("PAPER_NOT_FOUND");
 
-        const pages = paper.pages.map((page) => splitDataUrl(page.imageUrl));
+        const preparedPages = await ensurePagesAutoCropped(db, paper.pages);
+        const pages = preparedPages.map((page) => splitDataUrl(page.imageUrl));
         const answerKeyImages = parseAnswerKeyImages(paper.answerKeyImages).map((image) => splitDataUrl(image));
         const ai = getAIService("vision");
 
@@ -191,6 +219,7 @@ async function runParentPaperRecognition(
             bbox: normalizeQuestionBBox(question.bbox, pages.length),
         }));
         if (keyQuestions.length) questions = applyAnswerKeyToReview(questions, keyQuestions);
+        questions = layoutParentPaperBBoxes(questions);
         try {
             questions = await verifyParentPaperQuestions(questions, { language });
         } catch (error) {
