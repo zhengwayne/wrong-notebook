@@ -76,4 +76,9 @@ describe('checkMigrationDrift', () => {
         });
         expect(driftCode).toBe(2);
     }, 20000);
+
+    it('仓库真实的 schema.prisma 与 migrations 目录不存在任何漂移', () => {
+        const code = checkMigrationDrift({ stdio: 'pipe' });
+        expect(code).toBe(0);
+    }, 30000);
 });

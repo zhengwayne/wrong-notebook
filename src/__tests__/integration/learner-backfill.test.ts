@@ -42,7 +42,7 @@ function makePrismaTree(directory: string, includeNewMigration: boolean): string
     copy(join(REPO, 'prisma', 'migrations', 'migration_lock.toml'), join(root, 'migrations', 'migration_lock.toml'));
     for (const name of readdirSync(join(REPO, 'prisma', 'migrations'))) {
         if (name === 'migration_lock.toml') continue;
-        if (!includeNewMigration && name === NEW_MIGRATION) continue;
+        if (!includeNewMigration && name >= NEW_MIGRATION) continue;
         copy(join(REPO, 'prisma', 'migrations', name), join(root, 'migrations', name), { recursive: true });
     }
     return root;
