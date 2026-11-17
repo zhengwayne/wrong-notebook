@@ -143,7 +143,9 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 
 **Acceptance**: tag filtering returns non-empty results for all 9 subjects; `\frac{1}{2}`, `\times 2`, `\begin{aligned}`, `\binom{4}{2}`, `\neq 0`, `\right)` and `\sqrt{2}` parse losslessly, an already doubled `\\frac` is left alone, and `解：\n第一步` keeps a real newline; when one of several questions is broken, the rest are returned with `failedCount=1`. These cases also go into OPT-19's datasets.
 
-### OPT-05 · Test isolation and release gates (P1, Batch A)
+### OPT-05 · Test isolation and release gates (P1, Batch A, Done: `5d9e4e6`)
+
+> Note: `scripts/check-migration-drift.mjs` is now wired into CI and `scripts/ci.sh`; the pre-existing `ErrorItem`/`PracticeRecord` foreign-key drift will reach zero after Batch C's OPT-08 foreign-key migration.
 
 - Vitest 5 removed `environmentMatchGlobs`; use `test.projects` instead: a `dom` project (29 `.test.tsx` files plus 6 DOM-dependent `.test.ts` files) and a `node` project (all other unit and integration tests). The assessment plan measured jsdom setups dropping from 186 to 35. Guard the `localStorage` mock in `src/__tests__/setup.ts` with `typeof window`.
 - Remove the runtime `prisma generate` call in `persona.test.ts` (or write to a separate temporary directory) to stop the Prisma Client initialization errors caused by concurrent regeneration.
@@ -153,7 +155,7 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 
 **Acceptance**: `tsc --noEmit` passes; `npm run test:unit` exits 0 five times in a row; full concurrent runs no longer hit Prisma initialization errors; when only a skipped run exists and no green one, all three release paths refuse to publish; schema changes without a migration are caught by CI.
 
-### OPT-06 · SQLite engine settings and transaction discipline (P1, Batch A)
+### OPT-06 · SQLite engine settings and transaction discipline (P1, Batch A, Done: `150ac2f`)
 
 Implement in order, to avoid deadlocks from a missing `tx` under a single-connection pool:
 
@@ -172,7 +174,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 ### OPT-08 · Pre-migration backup and foreign-key migration (P1, Batch A + Batch C)
 
-- **Batch A: automatic pre-migration backup and startup protection.** In `launcher.js`'s `prepare()`, before `migrate deploy` and before the server starts: if the `-wal` file is non-empty, open a temporary connection with the bundled `@prisma/client` and run `wal_checkpoint(TRUNCATE)` (first copy `PRISMA_QUERY_ENGINE_LIBRARY` into `process.env`, pass the database URL explicitly, disconnect in `finally`). Then atomically copy the `.db` to `backups/pre-migrate-<version>-<ts>.db`, keeping the latest 3. If `-wal` could not be emptied, copy `.db`, `-wal` and `-shm` together into a separate directory with recovery notes. If the migration fails, print recovery instructions and refuse to start. Give `applyLearnerBackfill` in `instrumentation.ts` an idempotent completion marker so it no longer runs on every cold start. Fix the fnOS install callback swallowing errors, and add a backup to the upgrade callback.
+- **Batch A: automatic pre-migration backup and startup protection (Done: `d45ccda`).** In `launcher.js`'s `prepare()`, before `migrate deploy` and before the server starts: if the `-wal` file is non-empty, open a temporary connection with the bundled `@prisma/client` and run `wal_checkpoint(TRUNCATE)` (first copy `PRISMA_QUERY_ENGINE_LIBRARY` into `process.env`, pass the database URL explicitly, disconnect in `finally`). Then atomically copy the `.db` to `backups/pre-migrate-<version>-<ts>.db`, keeping the latest 3. If `-wal` could not be emptied, copy `.db`, `-wal` and `-shm` together into a separate directory with recovery notes. If the migration fails, print recovery instructions and refuse to start. Give `applyLearnerBackfill` in `instrumentation.ts` an idempotent completion marker so it no longer runs on every cold start. Fix the fnOS install callback swallowing errors, and add a backup to the upgrade callback.
 - **Batch C: foreign-key migration.** Run the read-only legacy database audit first and handle orphaned `learnerId` values. **After the user confirms the audit results**, rebuild `ErrorItem` and `PracticeRecord` with `PRAGMA defer_foreign_keys=ON`, keeping all columns and indexes and adding `ON DELETE SET NULL` foreign keys (R06).
 
 **Acceptance**: on a legacy sample database with 10,000 items and a non-empty `-wal`, a complete backup is produced automatically (including committed transactions in `-wal`); after migrating, `prisma migrate diff` exits 0 and `PRAGMA foreign_key_check` is empty; `/api/health` is ready within 15 seconds of a cold start. Roll back with the pre-migration backup plus the previous installer, never with a column-dropping down migration.
@@ -335,7 +337,7 @@ Each guardrail goes into the same commit as the problem it prevents.
 | --- | --- | --- | --- |
 | Log assertion test | Production-mode logs contain no `data:image`, test student names or prompt fragments | Log leak regressions | 0 (Done: `1f2edc1`) |
 | Preference round-trip test | Generate PATCH→GET round-trip cases from the keys of `userUpdateSchema` | Bugs like R08 | 0 (Done: `3ecc30f`) |
-| ESLint transaction rule | Forbid referencing the global `prisma` inside a `$transaction` callback | Missing `tx` from OPT-06 | A |
+| ESLint transaction rule | Forbid referencing the global `prisma` inside a `$transaction` callback | Missing `tx` from OPT-06 | A (Done: `150ac2f`) |
 | Two-tenant test helper | `withTwoTenants()` creates two accounts, two children and same-name students, and asserts that cross-scope access returns 404 | R03, R07, IDOR | C |
 | Backup coverage test | Enumerate every model through Prisma DMMF; each must appear on either the "exported" or the "deliberately not exported" list | R05 regressions | C |
 | system-reset coverage test | Also DMMF-based: assert that all business tables are empty after a reset | Missed new tables | D |
@@ -344,7 +346,7 @@ Each guardrail goes into the same commit as the problem it prevents.
 
 The backup coverage, preference round-trip and system-reset coverage tests are cheap, and they turn the AGENTS.md rule "new fields must be added to export and import" from a convention into a machine check.
 
-### OPT-22 · Daily snapshots (P1, Batch A; from E6)
+### OPT-22 · Daily snapshots (P1, Batch A; from E6, Done: `1c0ab8b`)
 
 OPT-08 backs up only once, before migrating. In addition:
 
@@ -363,7 +365,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | Batch | Goal | Contents | Estimate (person-days) | Rationale |
 | --- | --- | --- | --- | --- |
 | **Batch 0 Stop the bleeding** (Done: `ec8ee57`, `3ecc30f`, `b2b6226`, `1f2edc1`) | Restore the public history check, plug the log leak | The Batch 0 part of OPT-01 (test path, R08, `config.ts`, `debug`); OPT-03 log silencing; OPT-18 workspace hygiene; OPT-21 log assertion and preference round-trip tests | 1.5–2 | Cheap with certain payoff, independent of deployment form; without the public history check, every later push is blocked |
-| **Batch A Never lose data** | Families have no ops skills, so recovery comes first | OPT-22 daily snapshots; OPT-08 pre-migration backup and startup protection; OPT-06; OPT-05 | 4–6 | Every later migration relies on this layer |
+| **Batch A Never lose data** (Done: `150ac2f`, `d45ccda`, `1c0ab8b`, `5d9e4e6`) | Families have no ops skills, so recovery comes first | OPT-22 daily snapshots; OPT-08 pre-migration backup and startup protection; OPT-06; OPT-05 | 4–6 | Every later migration relies on this layer |
 | **Batch B AI quality** | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
 | **Batch C Isolation between children** | Correctness for families with several children | OPT-08 foreign-key migration (audit first, user confirms); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
 | **Batch D Portable backup** | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm first); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |

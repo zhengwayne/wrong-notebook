@@ -143,7 +143,9 @@
 
 **验收**：9 科标签过滤结果都不为空；`\frac{1}{2}`、`\times 2`、`\begin{aligned}`、`\binom{4}{2}`、`\neq 0`、`\right)`、`\sqrt{2}` 解析无损，已双写的 `\\frac` 不被重复处理，`解：\n第一步` 保持真实换行；多题中坏掉一题时返回其余题目且 `failedCount=1`。以上用例同时进入 OPT-19 的评测集。
 
-### OPT-05 · 测试隔离与发布门禁（P1，Batch A）
+### OPT-05 · 测试隔离与发布门禁（P1，Batch A，已完成：`5d9e4e6`）
+
+> 说明：迁移漂移检查 `scripts/check-migration-drift.mjs` 已接入 CI 与 `scripts/ci.sh`，现存 `ErrorItem`/`PracticeRecord` 外键历史漂移将在 Batch C 的 OPT-08 外键迁移完成后归零。
 
 - Vitest 5 已移除 `environmentMatchGlobs`，改用 `test.projects`：`dom` 项目（29 个 `.test.tsx` 加 6 个依赖 DOM 的 `.test.ts`）与 `node` 项目（其余单元测试和集成测试）。评估方案实测 jsdom 创建次数从 186 次降到 35 次。`src/__tests__/setup.ts` 中的 `localStorage` 模拟加上 `typeof window` 守卫。
 - 移除 `persona.test.ts` 在运行时调用的 `prisma generate`（或改为输出到独立的临时目录），消除并发重建 Prisma Client 引发的初始化错误。
@@ -153,7 +155,7 @@
 
 **验收**：`tsc --noEmit` 通过；`npm run test:unit` 连续 5 次退出码为 0；全量并发运行不再出现 Prisma 初始化错误；只有被跳过的运行而没有全绿运行时，三条发布通路都拒绝发布；漏建迁移的 schema 变更被 CI 拦截。
 
-### OPT-06 · SQLite 引擎配置与事务规范（P1，Batch A）
+### OPT-06 · SQLite 引擎配置与事务规范（P1，Batch A，已完成：`150ac2f`）
 
 按顺序实施，避免在单连接池下因漏传 `tx` 而死锁：
 
@@ -172,7 +174,7 @@
 
 ### OPT-08 · 迁移前备份与外键迁移（P1，Batch A + Batch C）
 
-- **Batch A：迁移前自动备份与启动保护**。在 `launcher.js` 的 `prepare()` 中，`migrate deploy` 之前、服务启动之前：如果 `-wal` 文件非空，用随包的 `@prisma/client` 临时连接执行 `wal_checkpoint(TRUNCATE)`（先把 `PRISMA_QUERY_ENGINE_LIBRARY` 同步到 `process.env`，显式传入数据库 URL，`finally` 中断开连接），然后把 `.db` 原子复制为 `backups/pre-migrate-<version>-<ts>.db`，保留最近 3 份；如果没能清空 `-wal`，就把 `.db`、`-wal`、`-shm` 三个文件一起复制到单独目录，并写恢复说明。迁移失败时打印恢复指引并拒绝启动。`instrumentation.ts` 中的 `applyLearnerBackfill` 加幂等完成标记，不再每次冷启动都执行；修复 fnOS 安装回调吞掉错误的问题，升级回调补上备份。
+- **Batch A：迁移前自动备份与启动保护（已完成：`d45ccda`）**。在 `launcher.js` 的 `prepare()` 中，`migrate deploy` 之前、服务启动之前：如果 `-wal` 文件非空，用随包的 `@prisma/client` 临时连接执行 `wal_checkpoint(TRUNCATE)`（先把 `PRISMA_QUERY_ENGINE_LIBRARY` 同步到 `process.env`，显式传入数据库 URL，`finally` 中断开连接），然后把 `.db` 原子复制为 `backups/pre-migrate-<version>-<ts>.db`，保留最近 3 份；如果没能清空 `-wal`，就把 `.db`、`-wal`、`-shm` 三个文件一起复制到单独目录，并写恢复说明。迁移失败时打印恢复指引并拒绝启动。`instrumentation.ts` 中的 `applyLearnerBackfill` 加幂等完成标记，不再每次冷启动都执行；修复 fnOS 安装回调吞掉错误的问题，升级回调补上备份。
 - **Batch C：外键迁移**。先运行只读的旧库审计脚本，处理孤儿 `learnerId`，**用户确认审计结果后**，用 `PRAGMA defer_foreign_keys=ON` 重建 `ErrorItem` 和 `PracticeRecord`，保留全部列和索引，补上 `ON DELETE SET NULL` 外键（R06）。
 
 **验收**：在包含 1 万道错题和非空 `-wal` 的旧版样本库上，自动生成完整的备份（包含 `-wal` 中已提交的事务）；迁移后 `prisma migrate diff` 退出码为 0，`PRAGMA foreign_key_check` 为空；`/api/health` 冷启动就绪时间少于 15 秒。回滚使用事前备份加旧版本安装包，不做会丢列的 down 迁移。
@@ -335,7 +337,7 @@ eval/
 | --- | --- | --- | --- |
 | 日志断言测试 | 生产模式下日志不含 `data:image`、测试学生姓名、提示词片段 | 日志泄露回退 | 0（已完成：`1f2edc1`） |
 | 偏好往返测试 | 根据 `userUpdateSchema` 的键自动生成 PATCH→GET 往返用例 | R08 同类问题 | 0（已完成：`3ecc30f`） |
-| ESLint 事务规则 | 禁止在 `$transaction` 回调中引用全局 `prisma` | OPT-06 漏传 `tx` | A |
+| ESLint 事务规则 | 禁止在 `$transaction` 回调中引用全局 `prisma` | OPT-06 漏传 `tx` | A（已完成：`150ac2f`） |
 | 双租户测试工具 | `withTwoTenants()` 自动创建两个账户、两个孩子和同名学生，断言跨作用域访问返回 404 | R03、R07、越权 | C |
 | 备份覆盖测试 | 通过 Prisma DMMF 枚举全部模型，每个模型必须出现在“导出”或“明确不导出”清单中 | R05 回退 | C |
 | system-reset 覆盖测试 | 同样基于 DMMF，断言重置后所有业务表为空 | 漏删新表 | D |
@@ -344,7 +346,7 @@ eval/
 
 备份覆盖、偏好往返和 system-reset 覆盖三项成本很低，把 AGENTS.md 中“新增字段要同步导出导入”从约定变成了机器检查。
 
-### OPT-22 · 每日快照（P1，Batch A；来自 E6）
+### OPT-22 · 每日快照（P1，Batch A；来自 E6，已完成：`1c0ab8b`）
 
 OPT-08 只在迁移前备份一次。补充：
 
@@ -363,7 +365,7 @@ OPT-08 只在迁移前备份一次。补充：
 | 批次 | 目标 | 内容 | 预估（人日） | 排序理由 |
 | --- | --- | --- | --- | --- |
 | **Batch 0 止血**（已完成：`ec8ee57`、`3ecc30f`、`b2b6226`、`1f2edc1`） | 恢复公开历史检查，堵住日志泄露 | OPT-01 的 Batch 0 部分（测试路径、R08、`config.ts`、`debug`）；OPT-03 日志静默；OPT-18 工作区卫生；OPT-21 日志断言和偏好往返测试 | 1.5–2 | 成本低、收益确定，与部署形态无关；不恢复公开历史检查，后续所有推送都会被阻止 |
-| **Batch A 数据不丢** | 家庭用户没有运维能力，先保证可恢复 | OPT-22 每日快照；OPT-08 迁移前备份与启动保护；OPT-06；OPT-05 | 4–6 | 后续所有迁移都依赖这层保障 |
+| **Batch A 数据不丢**（已完成：`150ac2f`、`d45ccda`、`1c0ab8b`、`5d9e4e6`） | 家庭用户没有运维能力，先保证可恢复 | OPT-22 每日快照；OPT-08 迁移前备份与启动保护；OPT-06；OPT-05 | 4–6 | 后续所有迁移都依赖这层保障 |
 | **Batch B AI 质量** | 识别、标签、判题准确 | OPT-04；OPT-03 提供商一致性；OPT-19 溯源与评测；OPT-09（含 E7）；OPT-20 `normalizeImage()` | 7–9 | 家庭用户每天直接感受到的就是准确率 |
 | **Batch C 孩子之间隔离** | 多孩子家庭的正确性 | OPT-08 外键迁移（先审计、经用户确认）；OPT-07 孩子部分；OPT-21 双租户工具和备份覆盖测试 | 5–7 | 单账户下最容易发生的串数据 |
 | **Batch D 可迁移备份** | 换设备、迁移 NAS | OPT-11a（含 `ReviewSchedule` 处理和 system-reset）；OPT-20 备份加密；OPT-13（先验证 wasm）；OPT-21 system-reset 覆盖测试 | 5–7 | 家庭用户的主要恢复场景 |
