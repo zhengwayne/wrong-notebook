@@ -18,10 +18,13 @@
  */
 
 import { recordDebugLog, sanitizeForDebug } from './debug-log';
-import { getRequestContext } from './server/request-context';
+
+type RequestContextGlobal = typeof globalThis & {
+  __wnGetRequestContext?: () => { requestId: string; userId?: string } | undefined;
+};
 
 function getActiveRequestMeta(): Record<string, string> {
-  const ctx = getRequestContext();
+  const ctx = (globalThis as RequestContextGlobal).__wnGetRequestContext?.();
   if (!ctx) return {};
   return ctx.userId
     ? { requestId: ctx.requestId, userId: ctx.userId }

@@ -32,3 +32,10 @@ export function setRequestContextUserId(userId: string): void {
         store.userId = userId;
     }
 }
+
+type RequestContextGlobal = typeof globalThis & {
+    __wnGetRequestContext?: () => RequestContext | undefined;
+};
+
+// 通过 globalThis 注册读取器，避免同构模块 logger.ts 静态导入 node:async_hooks 导致前端打包崩溃
+(globalThis as RequestContextGlobal).__wnGetRequestContext = getRequestContext;

@@ -1,6 +1,8 @@
 /**
  * defineApiRoute / resolveActor / RequestContext 单元测试 (OPT-02)
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -18,8 +20,9 @@ vi.mock('@/lib/prisma', () => ({
     },
 }));
 
+import { logger } from '@/lib/logger';
 import { defineApiRoute } from '@/lib/server/api-route';
-import { getRequestContext } from '@/lib/server/request-context';
+import { getRequestContext, runWithRequestContext } from '@/lib/server/request-context';
 
 describe('defineApiRoute 与请求上下文 (OPT-02)', () => {
     beforeEach(() => {
@@ -168,5 +171,31 @@ describe('defineApiRoute 与请求上下文 (OPT-02)', () => {
         }));
         expect(validRes.status).toBe(200);
         expect(await validRes.json()).toEqual({ doubled: 6 });
+    });
+
+    it('logger 通过 globalThis 桥接自动携带 requestId 与 userId，且源码不静态依赖服务端/node 模块', () => {
+        const loggerSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/logger.ts'), 'utf8');
+        expect(loggerSource).not.toMatch(/['"]node:/);
+        expect(loggerSource).not.toMatch(/from\s+['"]\.\/server\//);
+
+        const prevEnv = process.env.NODE_ENV;
+        const mutableEnv = process.env as Record<string, string | undefined>;
+        mutableEnv.NODE_ENV = 'production';
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        try {
+            runWithRequestContext({ requestId: 'req-bridge-99', userId: 'u-bridge-7' }, () => {
+                logger.info({ action: 'bridge-test' }, '携带上下文日志');
+            });
+
+            expect(logSpy).toHaveBeenCalledTimes(1);
+            const entry = JSON.parse(String(logSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+            expect(entry.requestId).toBe('req-bridge-99');
+            expect(entry.userId).toBe('u-bridge-7');
+            expect(entry.msg).toBe('携带上下文日志');
+        } finally {
+            logSpy.mockRestore();
+            mutableEnv.NODE_ENV = prevEnv;
+        }
     });
 });
