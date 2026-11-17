@@ -22,6 +22,11 @@ export async function register() {
                 if (result.learnersCreated || result.errorItemsLinked || result.practiceRecordsLinked) {
                     createLogger('learners').info({ result }, 'applied learner backfill');
                 }
+
+                // 进程中断后仍停在「识别中」的家长试卷标记为失败，便于家长重试
+                const { failStaleRecognizingPapers } = await import('./lib/parent-paper-recognize');
+                const stale = await failStaleRecognizingPapers(prisma);
+                if (stale) createLogger('parent-papers').info({ stale }, 'marked interrupted parent paper recognition as failed');
             } catch (error) {
                 const { createLogger } = await import('./lib/logger');
                 createLogger('learners').error({ error }, 'learner backfill failed');

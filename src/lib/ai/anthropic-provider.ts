@@ -11,7 +11,7 @@ import { getAppConfig } from '../config';
 import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, extractJsonObject, parseDifficultyStars, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { generateExamPaperReadRequest } from './prompt-requests';
-import { parseExamPaperRead } from './exam-paper-read';
+import { parseExamPaperByMode } from './exam-paper-read';
 import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { trimTrailingSlashes } from '../utils';
@@ -390,7 +390,7 @@ export class AnthropicProvider implements AIService {
                 { type: 'text', text: prompt.user },
             ], getInitialMaxTokens(this.model));
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
-            return parseExamPaperRead(text);
+            return parseExamPaperByMode(input.mode, text, input.images.length);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);

@@ -455,10 +455,10 @@ async function persistMastery(userId: string, studentKey: string, mastery: Retur
     }
 }
 
-export function scheduleLearningPathReplan(userId: string, language: "zh" | "en" = "zh") {
+export function scheduleLearningPathReplan(userId: string, language: "zh" | "en" = "zh", studentKey?: string | null) {
     setTimeout(() => {
-        void getOrReplanPath(userId, { language }).catch((error) => {
-            logger.debug({ error, userId }, "Failed to replan learning path in background");
+        void getOrReplanPath(userId, { language, studentKey, force: true }).catch((error) => {
+            logger.debug({ error, userId, studentKey }, "Failed to replan learning path in background");
         });
     }, 0);
 }

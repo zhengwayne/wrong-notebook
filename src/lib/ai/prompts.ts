@@ -1322,8 +1322,49 @@ export function generateTagSuggestPrompt(input: {
  * 读卷提示词：识别答案卷（answer_key）或学生答卷（student），输出 JSON。
  * 学生答卷模式下，客观题只转写作答，由程序比对；主观题给出建议分和理由，最终由老师复核。
  */
-export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify', language: 'zh' | 'en' = 'zh'): string {
+export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify' | 'parent_review', language: 'zh' | 'en' = 'zh'): string {
   const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
+
+  if (mode === 'parent_review') {
+    return language === 'en'
+      ? `You are helping a parent grade a child's exam paper. The images are the student's answers in page order (the first image is page 0). Split the paper into questions and judge each one. If no official answer key is provided, give the correct answer or a concise solution yourself, with a confidence score. Do not give a total score for the paper.
+
+Rules:
+- Keep question numbers as written on the paper; split sub-questions into separate items.
+- questionText: the stem in Markdown; write formulas in LaTeX ($...$ or $$...$$).
+- studentAnswer: transcribe the student's work faithfully; use an empty string if blank.
+- correctAnswer: the correct answer or a concise solution (Markdown/LaTeX).
+- verdict: "correct" (fully right), "wrong" (incorrect or blank), or "partial" (partly right).
+- confidence: a number from 0 to 1. Use a value below 0.7 when the photo is unclear or you are unsure.
+- errorCause: one or two sentences on why it is wrong or partial; empty when correct.
+- knowledgePoints: 1-3 knowledge point names.
+- type: "objective" when there is a unique definite answer, otherwise "subjective".
+- bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to that page. Use null if the location is unclear. Do not use pixel coordinates.
+- If data.questions is provided as an answer key, judge objective items against it; still assess subjective items yourself.
+- Output JSON only. Do not output a total score.
+
+Output format:
+{"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"Chose the wrong option","knowledgePoints":["linear equations"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`
+      : `【角色与任务】
+你在帮助家长批改孩子的试卷。图片是孩子的答卷，按页码顺序排列（第 1 张图是第 0 页）。请先把试卷拆成每一道题，再判断对错。没有标准答案时，请你独立给出正确答案或简明解答，并给出置信度。不要给整卷分数。
+
+【规则】
+- 题号保持卷面写法；小题拆成单独条目。
+- questionText：题干，使用 Markdown，公式用 LaTeX（$...$ 或 $$...$$）。
+- studentAnswer：如实转写学生作答；未作答写空字符串。
+- correctAnswer：你认为的正确答案或简明解答（Markdown/LaTeX）。
+- verdict：correct（完全正确）、wrong（错误或未作答）、partial（部分正确）。
+- confidence：0 到 1 的小数，表示你对该判定的把握。看不清或没有把握时低于 0.7。
+- errorCause：判为 wrong 或 partial 时，用一两句话说明错因；正确时可为空。
+- knowledgePoints：1~3 个知识点名称。
+- type：有唯一确定答案的为 objective，否则 subjective。
+- bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例（相对该页宽高）。若无法确定位置，bbox 为 null。不要使用像素坐标。
+- 如果输入中提供了标准答案清单 data.questions，客观题必须对照标准答案判断；主观题仍由你评估。
+- 只输出 JSON，不要其他文字。不要输出整卷分数。
+
+【输出格式】
+{"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"选错了选项","knowledgePoints":["一元一次方程"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`;
+  }
   if (mode === 'answer_key') {
     return `【角色与任务】
 你是一位细心的阅卷老师。图片是一份试卷的标准答案（或带答案的试卷），可能有多页。请逐题提取题号、题型、分值、标准答案、题干和考查的知识点。

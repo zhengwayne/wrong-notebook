@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { extractJsonObject } from "./schema";
+import { parseParentPaperReview, type ParentReviewQuestion } from "@/lib/parent-paper-review";
 
-export type ExamPaperReadMode = 'answer_key' | 'student' | 'identify';
+export type ExamPaperReadMode = 'answer_key' | 'student' | 'identify' | 'parent_review';
 
 /** 读卷输入：答案卷识别或学生答卷识别，多页图片按顺序传入 */
 export interface ExamPaperReadInput {
@@ -49,6 +50,8 @@ export interface ExamPaperReadResult {
     /** 卷头手写的学号 */
     studentNo: string | null;
     questions: ExamPaperReadQuestion[];
+    /** parent_review 模式下的拆题批改结果 */
+    reviewQuestions?: ParentReviewQuestion[];
 }
 
 /** 去掉 AI 用来表示"没写"的占位值 */
@@ -72,4 +75,14 @@ export function parseExamPaperRead(text: string): ExamPaperReadResult {
 export function splitDataUrl(value: string, fallbackMime = 'image/jpeg'): { base64: string; mimeType: string } {
     const match = value.match(/^data:([^;]+);base64,([\s\S]*)$/);
     return match ? { mimeType: match[1], base64: match[2] } : { mimeType: fallbackMime, base64: value };
+}
+
+
+/** 按读卷模式解析模型输出。parent_review 走家长批改结构，并按页数校验 bbox。 */
+export function parseExamPaperByMode(mode: ExamPaperReadMode, text: string, pageCount = 1): ExamPaperReadResult {
+    if (mode === 'parent_review') {
+        const review = parseParentPaperReview(text, pageCount);
+        return { studentName: null, className: null, studentNo: null, questions: [], reviewQuestions: review.questions };
+    }
+    return { ...parseExamPaperRead(text), reviewQuestions: [] };
 }

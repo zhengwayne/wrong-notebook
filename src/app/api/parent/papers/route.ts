@@ -6,7 +6,7 @@ import { createLogger } from "@/lib/logger";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
-import { createParentPaper, listParentPapers, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError } from "@/lib/parent-papers";
+import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError } from "@/lib/parent-papers";
 
 const logger = createLogger("api:parent:papers");
 
@@ -18,6 +18,7 @@ const createSchema = z.object({
     learnerId: z.string().min(1),
     title: z.string().max(120).nullish(),
     pages: z.array(pageSchema).min(1).max(MAX_PARENT_PAPER_PAGES),
+    answerKeyImages: z.array(z.string().min(1).max(MAX_PARENT_PAGE_IMAGE_CHARS)).max(MAX_PARENT_ANSWER_KEY_IMAGES).optional(),
 });
 
 function requireParent(user: { personas: string }) {
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
         if (error instanceof ParentPaperValidationError) {
             if (error.message === "PAGES_REQUIRED") return badRequest("At least one page is required");
             if (error.message === "TOO_MANY_PAGES") return badRequest(`At most ${MAX_PARENT_PAPER_PAGES} pages`);
+            if (error.message === "TOO_MANY_ANSWER_KEY_IMAGES") return badRequest(`At most ${MAX_PARENT_ANSWER_KEY_IMAGES} answer-key images`);
             return badRequest("Invalid page image");
         }
         logger.error({ error }, "Failed to create parent paper");

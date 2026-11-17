@@ -26,7 +26,8 @@ export type BackgroundTaskKind =
     | 'retag'            // 重新生成知识点（单题）
     | 'retag_notebook'   // 错题本批量重新生成知识点
     | 'practice'         // 生成举一反三题目
-    | 'exam';            // 生成试卷
+    | 'exam'             // 生成试卷
+    | 'parent_paper';    // 家长试卷识别批改
 
 export type BackgroundTaskStatus = 'running' | 'succeeded' | 'failed';
 

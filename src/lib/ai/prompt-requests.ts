@@ -133,7 +133,9 @@ export function generateExamPaperReadRequest(input: ExamPaperReadInput): PromptR
         generateExamPaperReadPrompt(input.mode, input.language),
         { mode: input.mode, questions: input.questions || [] },
         input.mode === 'answer_key' ? '请识别图片中的标准答案。'
-            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。' : '请识别图片中学生的作答并按规则评分。',
+            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。'
+            : input.mode === 'parent_review' ? (input.language === 'en' ? 'Please split the exam paper and judge each question. Output JSON only.' : '请拆分试卷并逐题判断对错，只输出 JSON。')
+            : '请识别图片中学生的作答并按规则评分。',
     );
 }
 

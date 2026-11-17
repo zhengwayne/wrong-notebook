@@ -11,7 +11,7 @@ import { getAppConfig } from '../config';
 import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { generateExamPaperReadRequest } from './prompt-requests';
-import { parseExamPaperRead } from './exam-paper-read';
+import { parseExamPaperByMode } from './exam-paper-read';
 import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
 import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
@@ -548,7 +548,7 @@ export class AzureOpenAIProvider implements AIService {
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
 
             if (!text) throw new Error("Empty response from AI");
-            return parseExamPaperRead(text);
+            return parseExamPaperByMode(input.mode, text, input.images.length);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);

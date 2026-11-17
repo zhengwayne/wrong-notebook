@@ -541,13 +541,21 @@ model ParentPaper {
   learnerId String
   learner   Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
   title     String?
-  /// pending_recognition（识别与确认在后续阶段）
+  /// pending_recognition | recognizing | pending_confirmation | confirmed | failed
   status    String   @default("pending_recognition")
+  /// 可选答案卷照片，JSON 数组（data URL）
+  answerKeyImages String?
+  hasAnswerKey    Boolean  @default(false)
+  errorMessage    String?
+  recognizedAt    DateTime?
+  confirmedAt     DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   pages     ParentPaperPage[]
+  questions ParentPaperQuestion[]
 
   @@index([userId, learnerId, createdAt])
+  @@index([userId, status])
 }
 
 model ParentPaperPage {
@@ -557,6 +565,36 @@ model ParentPaperPage {
   position  Int
   imageUrl  String
   createdAt DateTime @default(now())
+
+  @@index([paperId, position])
+}
+
+
+/// 家长试卷识别出的题目：确认前不写入错题本
+model ParentPaperQuestion {
+  id                  String   @id @default(cuid())
+  paperId             String
+  paper               ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  position            Int
+  number              String
+  /// objective | subjective
+  type                String   @default("objective")
+  questionText        String   @default("")
+  studentAnswer       String   @default("")
+  correctAnswer       String   @default("")
+  /// correct | wrong | partial
+  verdict             String
+  overrideVerdict     String?
+  confidence          Float    @default(0)
+  errorCause          String?
+  knowledgePoints     String   @default("[]")
+  /// 归一化 bbox JSON：{ pageIndex, x, y, width, height }，无效时为空
+  bbox                String?
+  subjectHint         String?
+  importedErrorItemId String?
+  selected            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([paperId, position])
 }
