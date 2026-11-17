@@ -17,7 +17,7 @@
  *   logger.debug({ data }, 'Debug information');
  */
 
-import { recordDebugLog } from './debug-log';
+import { recordDebugLog, sanitizeForDebug } from './debug-log';
 
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -64,7 +64,47 @@ function getLogLevel(): number {
   return process.env.NODE_ENV === 'production' ? LOG_LEVELS.info : LOG_LEVELS.debug;
 }
 
-const isPrettyMode = process.env.NODE_ENV !== 'production';
+/** 每次输出时动态读取，确保测试或运行时切换环境变量能立即生效 */
+function isPrettyMode(): boolean {
+  return process.env.NODE_ENV !== 'production';
+}
+
+function isAiPayloadLogEnabled(): boolean {
+  return process.env.LOG_AI_PAYLOADS === 'true';
+}
+
+const MAX_AI_PAYLOAD_LOG_CHARS = 2000;
+
+/** 对已脱敏的值进一步缩短字符串长度，防止生产排查日志刷屏 */
+function truncateSanitized(value: unknown, maxLen: number): unknown {
+  if (typeof value === 'string') {
+    if (value.length <= maxLen) return value;
+    return `${value.slice(0, maxLen)}…[truncated ${value.length - maxLen} chars]`;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => truncateSanitized(item, maxLen));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = truncateSanitized(item, maxLen);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** 安全计算 box 载荷估算长度，避免循环引用抛错 */
+function measureBoxContent(content: string | LogContext | undefined): { contentLength: number; contentKeys?: string[] } {
+  if (content === undefined) return { contentLength: 0 };
+  if (typeof content === 'string') return { contentLength: content.length };
+  const contentKeys = Object.keys(content);
+  try {
+    return { contentLength: JSON.stringify(content).length, contentKeys };
+  } catch {
+    return { contentLength: 0, contentKeys };
+  }
+}
 
 interface LogContext {
   [key: string]: unknown;
@@ -152,9 +192,9 @@ function formatPrettyLog(
 
 function createLogFunction(level: LogLevel, baseContext: LogContext = {}): (ctx: LogContext | string, msg?: string) => void {
   const levelNum = LOG_LEVELS[level];
-  const currentLevel = getLogLevel();
 
   return (ctx: LogContext | string, msg?: string) => {
+    const currentLevel = getLogLevel();
     const timestamp = new Date();
     let context: LogContext;
     let message: string;
@@ -172,7 +212,7 @@ function createLogFunction(level: LogLevel, baseContext: LogContext = {}): (ctx:
 
     if (levelNum < currentLevel) return;
 
-    if (isPrettyMode) {
+    if (isPrettyMode()) {
       // Pretty formatted output for development
       const output = formatPrettyLog(level, timestamp, baseContext, context, message);
 
@@ -188,13 +228,14 @@ function createLogFunction(level: LogLevel, baseContext: LogContext = {}): (ctx:
           console.log(output);
       }
     } else {
-      // JSON output for production
-      const logEntry = {
+      // 生产环境 JSON 日志：先脱敏上下文与消息，防止泄露密钥、Base64 图片或内部 Error 空对象
+      const sanitizedContext = sanitizeForDebug({ ...baseContext, ...context });
+      const logEntry: LogContext = {
+        ...(sanitizedContext && typeof sanitizedContext === 'object' ? (sanitizedContext as LogContext) : {}),
         level,
         time: timestamp.toISOString(),
-        ...baseContext,
-        ...context,
-        msg: message,
+        env: process.env.NODE_ENV,
+        msg: sanitizeForDebug(message),
       };
 
       const output = JSON.stringify(logEntry);
@@ -231,10 +272,46 @@ function createLoggerInstance(baseContext: LogContext = {}): Logger {
     box: (title: string, content?: string | LogContext, emoji: string = '📋') => {
       recordDebugLog('info', { ...baseContext, ...(typeof content === 'string' ? { content } : content) }, title);
 
-      if (!isPrettyMode) {
-        // In production, just log as JSON
-        const ctx = typeof content === 'string' ? { content } : (content || {});
-        console.log(JSON.stringify({ level: 'info', time: new Date().toISOString(), ...baseContext, title, ...ctx, msg: title }));
+      if (!isPrettyMode()) {
+        // 生产环境默认不向 stdout 输出提示词、学生答案或响应正文，只输出溯源与长度
+        const sanitizedBase = sanitizeForDebug(baseContext);
+        const baseObj = sanitizedBase && typeof sanitizedBase === 'object' ? (sanitizedBase as LogContext) : {};
+        const { contentLength, contentKeys } = measureBoxContent(content);
+        const safeTitle = sanitizeForDebug(title);
+
+        if (!isAiPayloadLogEnabled()) {
+          console.log(JSON.stringify({
+            ...baseObj,
+            level: 'info',
+            time: new Date().toISOString(),
+            env: process.env.NODE_ENV,
+            title: safeTitle,
+            contentLength,
+            ...(contentKeys ? { contentKeys } : {}),
+            msg: safeTitle,
+          }));
+          return;
+        }
+
+        // 显式开启 LOG_AI_PAYLOADS=true 时先脱敏再按 2000 字符截断
+        const truncatedPayload = content !== undefined
+          ? truncateSanitized(sanitizeForDebug(content), MAX_AI_PAYLOAD_LOG_CHARS)
+          : undefined;
+        const payloadFields: LogContext = typeof truncatedPayload === 'string'
+          ? { content: truncatedPayload }
+          : (truncatedPayload && typeof truncatedPayload === 'object' ? (truncatedPayload as LogContext) : {});
+
+        console.log(JSON.stringify({
+          ...baseObj,
+          ...payloadFields,
+          level: 'info',
+          time: new Date().toISOString(),
+          env: process.env.NODE_ENV,
+          title: safeTitle,
+          contentLength,
+          ...(contentKeys ? { contentKeys } : {}),
+          msg: safeTitle,
+        }));
         return;
       }
 
@@ -266,13 +343,13 @@ function createLoggerInstance(baseContext: LogContext = {}): Logger {
 
     // Print a divider line
     divider: (char: string = '-') => {
-      if (!isPrettyMode) return;
+      if (!isPrettyMode()) return;
       console.log(`${COLORS.dim}${char.repeat(80)}${COLORS.reset}`);
     },
   };
 }
 
-export const logger = createLoggerInstance({ env: process.env.NODE_ENV });
+export const logger = createLoggerInstance({});
 
 /**
  * Create a child logger with additional context
