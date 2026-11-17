@@ -6,7 +6,6 @@ import { CheckCircle2, Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DailySnapshotStatus } from "@/components/settings/daily-snapshot-status";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { apiClient } from "@/lib/api-client";
 import { downloadFile } from "@/lib/download-file";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
@@ -20,17 +19,17 @@ interface DataBackupSettingsProps {
 
 function formatImportResult(stats: ImportStats, t: Translations): string {
     return (t.settings?.importResultDesc || "Imported {subjects} notebooks, {tags} tags, {items} error items, {schedules} review schedules, {records} practice records, {papers} exam papers and {voices} cloud voice clips.")
-        .replace('{subjects}', String(stats.subjectsCreated))
-        .replace('{tags}', String(stats.tagsCreated))
-        .replace('{items}', String(stats.errorItemsCreated))
-        .replace('{schedules}', String(stats.reviewSchedulesCreated))
-        .replace('{records}', String(stats.practiceRecordsCreated))
+        .replace('{subjects}', String(stats.subjectsCreated ?? 0))
+        .replace('{tags}', String(stats.tagsCreated ?? 0))
+        .replace('{items}', String(stats.errorItemsCreated ?? 0))
+        .replace('{schedules}', String(stats.reviewSchedulesCreated ?? 0))
+        .replace('{records}', String(stats.practiceRecordsCreated ?? 0))
         .replace('{papers}', String(stats.examPapersCreated ?? 0))
         .replace('{voices}', String(stats.ttsSpeechesImported ?? 0))
         .replace('{duplicates}', String(stats.duplicateErrorItems ?? 0));
 }
 
-/** 数据备份：导出、导入 JSON；管理员可导出、导入全部用户的数据 */
+/** 数据备份：默认导出流式 ZIP v3，兼容导入 v3 ZIP 与 v1/v2 JSON；管理员可导出、导入全部用户数据 */
 export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
     const { t } = useLanguage();
     const [exporting, setExporting] = useState(false);
@@ -43,7 +42,7 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
         }
         setExporting(true);
         try {
-            await downloadFile(all ? '/api/export?all=true' : '/api/export', all ? 'XueJi-export-all.json' : 'XueJi-export.json');
+            await downloadFile(all ? '/api/export?all=true' : '/api/export', all ? 'XueJi-backup-all.zip' : 'XueJi-backup.zip');
             toast.success(t.settings?.exportSuccess || "Export successful");
         } catch (error) {
             frontendLogger.error('[DataBackupSettings]', all ? 'Export all failed' : 'Export failed', { error });
@@ -64,9 +63,17 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
 
         setImporting(true);
         try {
-            const data = JSON.parse(await selectedFile.text());
-            const { stats } = await apiClient.post<{ stats: ImportStats }>(all ? '/api/import?all=true' : '/api/import', data);
-            toast.success(formatImportResult(stats, t));
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            const res = await fetch(all ? '/api/import?all=true' : '/api/import', {
+                method: 'POST',
+                body: formData,
+            });
+            const payload = await res.json().catch(() => ({})) as { stats?: ImportStats; message?: string };
+            if (!res.ok || !payload.stats) {
+                throw new Error(payload.message || 'Import failed');
+            }
+            toast.success(formatImportResult(payload.stats, t));
             setSelectedFile(null);
             window.location.reload();
         } catch (error) {
@@ -117,7 +124,7 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
                     </div>
                 </div>
                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                    {t.settings?.exportDataDesc || "Export all data as JSON file."}
+                    {t.settings?.exportDataDesc || "Export your learning data and images as a ZIP backup archive."}
                 </p>
             </div>
 
@@ -130,7 +137,7 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
                     <div className="flex items-center gap-2">
                         <input
                             type="file"
-                            accept=".json"
+                            accept=".zip,.json"
                             onChange={(e) => setSelectedFile(e.target.files?.[0] ?? selectedFile)}
                             className="hidden"
                             id="import-file-input"
@@ -173,7 +180,7 @@ export function DataBackupSettings({ isAdmin }: DataBackupSettingsProps) {
                     </div>
                 </div>
                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                    {t.settings?.importDataDesc || "Import data from JSON file. Existing data will be skipped."}
+                    {t.settings?.importDataDesc || "Import from a v3 ZIP backup or legacy JSON file. Existing duplicate questions stay intact."}
                 </p>
             </div>
 

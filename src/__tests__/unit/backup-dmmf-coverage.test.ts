@@ -1,6 +1,6 @@
 /**
  * OPT-21 基于 Prisma DMMF 的备份模型与核心字段覆盖护栏测试：
- * 新增模型或向 ErrorItem / PracticeRecord 添加标量列时，若未登记并同步导入导出将直接失败。
+ * 新增模型或向 ErrorItem / PracticeRecord 添加标量列时，若未同步到 v3 导出导入与清单将直接失败。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,8 +15,8 @@ import {
     type FieldCoverageSpec,
 } from '@/lib/backup-model-registry';
 
-const exportRouteSource = fs.readFileSync(path.resolve('src/app/api/export/route.ts'), 'utf8');
-const importRouteSource = fs.readFileSync(path.resolve('src/app/api/import/route.ts'), 'utf8');
+const exportV3Source = fs.readFileSync(path.resolve('src/lib/backup/export-v3.ts'), 'utf8');
+const importV3Source = fs.readFileSync(path.resolve('src/lib/backup/import-v3.ts'), 'utf8');
 
 function scalarFieldsOf(modelName: string): string[] {
     const model = Prisma.dmmf.datamodel.models.find((m) => m.name === modelName);
@@ -41,31 +41,31 @@ function assertFieldCoverage(modelName: string, spec: FieldCoverageSpec) {
 
     for (const field of spec.mapped) {
         expect(
-            importRouteSource.includes(`${field}:`) || importRouteSource.includes(`${field},`),
-            `src/app/api/import/route.ts 缺少 ${modelName}.${field} 的导入写入`,
+            importV3Source.includes(`${field}:`) || importV3Source.includes(`${field},`),
+            `src/lib/backup/import-v3.ts 缺少 ${modelName}.${field} 的导入写入`,
         ).toBe(true);
     }
 }
 
 describe('Prisma DMMF 数据备份覆盖护栏', () => {
-    it('全部 Prisma 模型均已在 exported / excluded / pending_v3 三类清单中互斥且完整分类', () => {
+    it('全部 Prisma 模型均已完成导出或明确排除（待迁移清单为空）', () => {
         const exported = Object.keys(BACKUP_EXPORTED_MODELS);
         const excluded = Object.keys(BACKUP_EXCLUDED_MODELS);
         const pendingV3 = Object.keys(BACKUP_PENDING_V3_MODELS);
 
-        const allSets = [new Set(exported), new Set(excluded), new Set(pendingV3)];
-        expect(allSets[0].size + allSets[1].size + allSets[2].size).toBe(
-            new Set([...exported, ...excluded, ...pendingV3]).size,
+        expect(pendingV3).toEqual([]);
+        expect(new Set(exported).size + new Set(excluded).size).toBe(
+            new Set([...exported, ...excluded]).size,
         );
 
         const dmmfModels = Prisma.dmmf.datamodel.models.map((m) => m.name).sort();
-        const registeredModels = [...exported, ...excluded, ...pendingV3].sort();
+        const registeredModels = [...exported, ...excluded].sort();
         expect(registeredModels).toEqual(dmmfModels);
 
         for (const [model, marker] of Object.entries(BACKUP_EXPORTED_MODELS)) {
             expect(
-                exportRouteSource.includes(marker),
-                `src/app/api/export/route.ts 未引用导出模型 ${model}（标记 ${marker}）`,
+                exportV3Source.includes(marker),
+                `src/lib/backup/export-v3.ts 未导出模型 ${model}（标记 ${marker}）`,
             ).toBe(true);
         }
     });

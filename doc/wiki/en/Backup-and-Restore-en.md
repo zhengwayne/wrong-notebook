@@ -1,27 +1,26 @@
 # Backup and Restore
 
-Web export is for moving personal learning data; restoring a whole site requires backing up the database, server configuration and deployment parameters.
+Web export now defaults to a **v3 streaming ZIP archive** (`XueJi-backup-*.zip`), suitable for moving complete personal and multi-learner study data. Restoring an entire site still requires backing up the SQLite database, server configuration, and deployment files.
 
 ## What each backup covers
 
 | Method | Contents | Use |
 | --- | --- | --- |
-| Web JSON export | Notebooks, custom tags, questions, review schedules, practice records, random exam papers and some profile data | Keeping personal data, importing supported fields |
-| Full-site file backup | The complete SQLite database, `config/`, deployment configuration and any certificates | Disaster recovery, moving the site, preparing a rollback before upgrades |
+| Web v3 ZIP backup | `manifest.json`, notebooks, custom tags, learner profiles (children/students), questions, practice records, random exam papers, parent papers/pages/questions, teacher classes/rosters/grading tasks/results, variant runs and stage logs, mastery snapshots, learning paths, AI provenance, deduplicated `media/<sha256>` images, and cloud TTS audio (`tts/*.mp3`) | Moving personal or multi-learner study records across devices or hosts |
+| Legacy JSON (v1/v2) | Notebooks, custom tags, questions, practice records, exam papers, variant runs, cloud voices, and user preferences; **excludes** `Learner`, parent papers, teacher grading, mastery snapshots, and learning paths | Importing historical `.json` backups (can also be exported via `GET /api/export?format=json`) |
+| Full-site file backup | The complete SQLite database, `config/`, deployment configuration, password hashes, and TLS certificates | Disaster recovery, moving the entire site, preparing a rollback before upgrades |
 
-The JSON export does not include full user accounts with passwords or the server AI configuration. Even when an admin exports all data, it does not replace a full-site backup.
+Web exports **never** include user password hashes or server-side AI credentials, and do not replace a full-site backup. Transient `AiUsage` logs and local `LearnerBackfillAudit` records are excluded from portable backups.
 
-## Web export and import
+## Web export and import (ZIP v3 and legacy compatibility)
 
-Export JSON from the data management section in the settings and keep it safe. When a regular user imports, the email in the export file must match the current account; admins can import and export data for all users.
-
-Question figures, GeoGebra demos, Chinese and English SVG animations with their synthesized cloud voice (MP3), the latest similar question and mastery probability are all restored from the export file; SVG is sanitized again on import, and questions without a mastery probability are re-evaluated after import. Exam papers are restored together with their questions and every recorded result; questions still being generated at export time show as failed after import and can be regenerated on the exam page. Importing your own export file also restores preferences such as the question grade rule and fixed grade, review before import, the duplicate threshold, GeoGebra demos, SVG animations and the interface theme.
-
-Import merges existing notebooks and tags and handles duplicates by question similarity. A duplicate may add another wrong attempt under the existing question, so importing the same file repeatedly can change the practice history.
-
-Keep the original backup before importing, and afterwards check the new questions, tags, duplicate count and answer history. To restore to an exact point in time, use a file backup.
-
-Restoring a backup keeps each question's original grade and does not apply the current entry rule. Old backups without a grade rule leave your current account settings unchanged.
+1. Trigger export in **Settings → Data Management**. The server streams cursor-paged database records into `data/*.ndjson`, splits `data:` images into SHA-256 deduplicated `media/<sha256>` entries and cloud audio into `tts/<id>.mp3`, and appends `manifest.json` with counts and per-entry digests.
+2. Regular users can only import backups matching their own account email; admins using **Export All / Import All** preserve per-user ownership mappings across accounts.
+3. On import, the server verifies the manifest format version, every entry's byte size and SHA-256 digest, and remaps IDs across learners, parents' papers, teacher grading, variant stage logs, mastery states, and learning paths.
+4. **Legacy notes**:
+   - v1/v2 `.json` files remain accepted on `/api/import`, with warnings noting that newer multi-learner/grading/path tables are absent from legacy files;
+   - The legacy `ReviewSchedule` table is no longer used by application logic (review due dates are computed from `PracticeRecord`). v3 import ignores legacy `ReviewSchedule` rows and returns a notice.
+5. Duplicate question matching on import runs within each learner's scope (`{ userId, learnerId }`), recording duplicate hits against that learner without mixing children's histories.
 
 ## Docker full-site backup
 
@@ -63,4 +62,4 @@ Do not switch an old database back and forth between incompatible versions. When
 
 The default SQLite file is `prisma/dev.db`; the actual location is decided by `DATABASE_URL`. Stop the service, then back up the directory holding the actual database, `config/`, `.env` and the version information. When restoring, use the matching code and dependencies, and run the formal migrations if needed.
 
-Sources: [export](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/export/route.ts) · [import](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/import/route.ts) · [data model](https://github.com/margrop/wrong-notebook/blob/main/prisma/schema.prisma).
+Sources: [export](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/export/route.ts) · [v3 backup engine](https://github.com/margrop/wrong-notebook/blob/main/src/lib/backup/export-v3.ts) · [import](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/import/route.ts) · [data model](https://github.com/margrop/wrong-notebook/blob/main/prisma/schema.prisma).

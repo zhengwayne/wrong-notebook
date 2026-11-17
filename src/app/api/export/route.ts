@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { unauthorized, internalError, forbidden } from "@/lib/api-errors";
-import { createLogger } from "@/lib/logger";
+import { authOptions } from "@/lib/auth";
+import { createBackupV3Stream } from "@/lib/backup/export-v3";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
+import { createLogger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { exportSpeeches } from "@/lib/tts/speech-cache";
 
 const logger = createLogger('api:export');
@@ -27,70 +28,81 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const exportAll = searchParams.get('all') === 'true';
+    const format = searchParams.get('format') === 'json' ? 'json' : 'zip';
 
     // 只有管理员可以导出全部数据
     if (exportAll && session.user.role !== 'admin') {
         return forbidden("Admin role required");
     }
 
+    const userProfile = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        educationStage: user.educationStage,
+        enrollmentYear: user.enrollmentYear,
+        gradeRecognitionMode: user.gradeRecognitionMode,
+        fixedGradeSemester: user.fixedGradeSemester,
+        role: user.role,
+        confirmBeforeImport: user.confirmBeforeImport,
+        questionDuplicateThreshold: user.questionDuplicateThreshold,
+        masteryThreshold: user.masteryThreshold,
+        enableGeogebra: user.enableGeogebra,
+        enableSvgAnimation: user.enableSvgAnimation,
+        variantPipelineEnabled: user.variantPipelineEnabled,
+        themePreference: user.themePreference,
+    };
+
     try {
+        const dateTag = formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone());
+
+        if (format === 'zip') {
+            const filename = exportAll
+                ? `XueJi-backup-all-${dateTag}.zip`
+                : `XueJi-backup-${dateTag}.zip`;
+            const stream = createBackupV3Stream({
+                db: prisma,
+                currentUser: userProfile,
+                exportAll,
+            });
+            logger.info({ userId: user.id, scope: exportAll ? 'all' : 'user', format: 'zip-v3' }, 'Streaming ZIP v3 export started');
+            return new NextResponse(stream, {
+                headers: {
+                    'Content-Type': 'application/zip',
+                    'Content-Disposition': `attachment; filename="${filename}"`,
+                    'X-Backup-Format-Version': '3',
+                    'X-Backup-Unencrypted-Warning': '1',
+                },
+            });
+        }
+
+        // 向后兼容：显式 ?format=json 时保留 v2 JSON 导出格式
         const userFilter = exportAll ? {} : { userId: user.id };
-
-        const subjects = await prisma.subject.findMany({
-            where: userFilter,
-        });
-
-        const customTags = await prisma.knowledgeTag.findMany({
-            where: {
-                ...userFilter,
-                isSystem: false,
-            },
-        });
-
-        const errorItems = await prisma.errorItem.findMany({
-            where: userFilter,
-            include: {
-                tags: true,
-            },
-        });
-
+        const subjects = await prisma.subject.findMany({ where: userFilter });
+        const customTags = await prisma.knowledgeTag.findMany({ where: { ...userFilter, isSystem: false } });
+        const errorItems = await prisma.errorItem.findMany({ where: userFilter, include: { tags: true } });
         const reviewSchedules = await prisma.reviewSchedule.findMany({
-            where: exportAll
-                ? { errorItem: { userId: { not: undefined } } }
-                : { errorItem: { userId: user.id } },
+            where: exportAll ? { errorItem: { userId: { not: undefined } } } : { errorItem: { userId: user.id } },
         });
-
-        const practiceRecords = await prisma.practiceRecord.findMany({
-            where: userFilter,
-        });
-
+        const practiceRecords = await prisma.practiceRecord.findMany({ where: userFilter });
         const examPapers = await prisma.examPaper.findMany({
             where: userFilter,
-            include: {
-                questions: { orderBy: { order: 'asc' } },
-            },
+            include: { questions: { orderBy: { order: 'asc' } } },
         });
-
-        // 与动画讲解文字一致的云端语音（MP3），导入后无需重新合成
         const variantRuns = await prisma.variantRun.findMany({
             where: exportAll ? {} : { userId: user.id },
             include: { items: { orderBy: { index: 'asc' } }, stages: { orderBy: { createdAt: 'asc' } } },
             orderBy: { startedAt: 'asc' },
         });
-
         const referencedProvenanceIds = [...new Set([
             ...errorItems.map((item) => item.provenanceId),
             ...variantRuns.flatMap((run) => run.items.map((item) => item.provenanceId)),
         ].filter((id): id is string => Boolean(id)))];
-
-        const aiProvenances = typeof (prisma as { aiProvenance?: { findMany?: unknown } }).aiProvenance?.findMany === 'function'
-            ? (exportAll
-                ? await prisma.aiProvenance.findMany({ orderBy: { createdAt: 'asc' } })
-                : (referencedProvenanceIds.length > 0
-                    ? await prisma.aiProvenance.findMany({ where: { id: { in: referencedProvenanceIds } } })
-                    : []))
-            : [];
-
+        const aiProvenances = exportAll
+            ? await prisma.aiProvenance.findMany({ orderBy: { createdAt: 'asc' } })
+            : (referencedProvenanceIds.length > 0
+                ? await prisma.aiProvenance.findMany({ where: { id: { in: referencedProvenanceIds } } })
+                : []);
         const ttsSpeeches = await exportSpeeches(errorItems.flatMap((item) => [
             ...(item.svgAnimation ? [{ language: 'zh' as const, svg: item.svgAnimation }] : []),
             ...(item.svgAnimationEn ? [{ language: 'en' as const, svg: item.svgAnimationEn }] : []),
@@ -100,23 +112,7 @@ export async function GET(req: Request) {
             version: 2,
             exportedAt: new Date().toISOString(),
             scope: exportAll ? 'all' : 'user',
-            user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                educationStage: user.educationStage,
-                enrollmentYear: user.enrollmentYear,
-                gradeRecognitionMode: user.gradeRecognitionMode,
-                fixedGradeSemester: user.fixedGradeSemester,
-                role: user.role,
-                confirmBeforeImport: user.confirmBeforeImport,
-                questionDuplicateThreshold: user.questionDuplicateThreshold,
-                masteryThreshold: user.masteryThreshold,
-                enableGeogebra: user.enableGeogebra,
-                enableSvgAnimation: user.enableSvgAnimation,
-                variantPipelineEnabled: user.variantPipelineEnabled,
-                themePreference: user.themePreference,
-            },
+            user: userProfile,
             subjects,
             customTags,
             errorItems,
@@ -128,25 +124,8 @@ export async function GET(req: Request) {
             ttsSpeeches,
         };
 
-        logger.info({
-            userId: user.id,
-            scope: exportAll ? 'all' : 'user',
-            subjectsCount: subjects.length,
-            customTagsCount: customTags.length,
-            errorItemsCount: errorItems.length,
-            reviewSchedulesCount: reviewSchedules.length,
-            practiceRecordsCount: practiceRecords.length,
-            examPapersCount: examPapers.length,
-            variantRunsCount: variantRuns.length,
-            ttsSpeechesCount: ttsSpeeches.length,
-        }, 'Data export completed');
-
-        const jsonString = JSON.stringify(exportData, null, 2);
-        const filename = exportAll
-            ? `XueJi-export-all-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`
-            : `XueJi-export-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`;
-
-        return new NextResponse(jsonString, {
+        const filename = exportAll ? `XueJi-export-all-${dateTag}.json` : `XueJi-export-${dateTag}.json`;
+        return new NextResponse(JSON.stringify(exportData, null, 2), {
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Content-Disposition': `attachment; filename="${filename}"`,
