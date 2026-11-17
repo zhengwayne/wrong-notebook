@@ -37,6 +37,7 @@ export const BACKUP_EXPORTED_MODELS = {
 export const BACKUP_EXCLUDED_MODELS = {
     AiUsage: '服务端额度与用量审计流水，不用于跨设备个人学习数据恢复',
     LearnerBackfillAudit: '本机数据库迁移与回填撤销审计日志，仅对当前 SQLite 实例有意义',
+    SourceImport: '批改确认与家长试卷导入的本地并发去重映射，不用于跨设备个人学习数据恢复',
 } as const;
 
 /** OPT-11a 已交付全部多人与派生表导出，本列表严格保持为空 */

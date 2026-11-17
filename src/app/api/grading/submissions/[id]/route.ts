@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { badRequest, notFound, unauthorized, validationError } from "@/lib/api-errors";
+import { badRequest, conflict, notFound, unauthorized, validationError } from "@/lib/api-errors";
 import { applyTeacherOverride, parseJsonStringArray, totalScore } from "@/lib/grading";
 import { taskClassIds, toKeyQuestion } from "@/lib/grading-service";
 import { resultOverrideSchema } from "@/lib/grading-api";
@@ -41,6 +41,7 @@ function serialize(submission: NonNullable<Awaited<ReturnType<typeof loadOwned>>
         matchReason: parseMatchReason(submission.matchReason),
         matchCandidates: parseCandidates(submission.matchCandidates),
         status: submission.status,
+        version: submission.version ?? 0,
         totalScore: submission.totalScore,
         error: submission.error,
         importedCount: submission.importedCount,
@@ -68,6 +69,9 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!parsed.success) return validationError("Invalid submission update", parsed.error.issues);
     const submission = await loadOwned(id, user.id);
     if (!submission) return notFound("Submission not found");
+    if (submission.status === 'confirmed' || submission.status === 'grading') {
+        return conflict("Submission is locked");
+    }
 
     if (parsed.data.studentId) {
         const student = await prisma.gradingStudent.findFirst({ where: { id: parsed.data.studentId, classId: { in: taskClassIds(submission.task) } }, select: { id: true } });
@@ -96,6 +100,7 @@ export async function PATCH(req: Request, { params }: Params) {
                     ...(parsed.data.studentId ? { matchReason: JSON.stringify({ code: 'manual' }) } : {}),
                 } : {}),
                 ...(updates.length ? { totalScore: totalScore([...scores.values()].map((score) => ({ score }))) } : {}),
+                version: { increment: 1 },
             },
         }),
     ]);

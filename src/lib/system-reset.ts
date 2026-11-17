@@ -61,8 +61,9 @@ export async function performSystemReset(
         await tx.examPaper.deleteMany({});
         await tx.errorItem.deleteMany({});
 
-        // 6. 学习者档案、回填审计、错题本、AI 用量与溯源
+        // 6. 学习者档案、回填审计、导入去重、错题本、AI 用量与溯源
         await tx.learnerBackfillAudit.deleteMany({});
+        await tx.sourceImport.deleteMany({});
         await tx.learner.deleteMany({});
         await tx.subject.deleteMany({});
         await tx.aiUsage.deleteMany({});

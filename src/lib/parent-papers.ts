@@ -76,6 +76,7 @@ export interface ParentPaperSummary {
     pageCount: number;
     questionCount: number;
     hasAnswerKey: boolean;
+    version?: number;
     errorMessage: string | null;
     /** 仅在有答案卷时给出答对题数；没有答案卷时为 null，界面不展示分数 */
     correctCount: number | null;
@@ -180,6 +181,7 @@ function toSummary(paper: {
     learnerId: string;
     title: string | null;
     status: string;
+    version?: number;
     hasAnswerKey?: boolean;
     errorMessage?: string | null;
     recognizedAt?: Date | null;
@@ -201,6 +203,7 @@ function toSummary(paper: {
         pageCount: paper.pages.length,
         questionCount: questions.length,
         hasAnswerKey: Boolean(paper.hasAnswerKey),
+        version: paper.version ?? 0,
         errorMessage: paper.errorMessage ?? null,
         correctCount: paper.hasAnswerKey ? correctCount : null,
         recognizedAt: paper.recognizedAt ?? null,

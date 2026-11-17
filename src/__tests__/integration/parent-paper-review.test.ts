@@ -84,6 +84,7 @@ beforeEach(async () => {
     mocks.completeJson.mockReset();
     mocks.completeJson.mockResolvedValue({ data: null, text: "" });
     mocks.replan.mockReset();
+    await db.sourceImport.deleteMany();
     await db.parentPaperQuestion.deleteMany();
     await db.parentPaperPage.deleteMany();
     await db.parentPaper.deleteMany();

@@ -58,6 +58,7 @@ model User {
   learners     Learner[]
   parentPapers ParentPaper[]
   itemMemories ItemMemory[]
+  sourceImports SourceImport[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -371,6 +372,7 @@ model GradingSubmission {
   matchCandidates String? // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
   images       String   // JSON 数组：压缩后的 data URL，每页一张
   status       String   @default("pending") // pending | grading | graded | failed | confirmed
+  version      Int      @default(0) // 乐观锁版本号：修改判分、指定学生或确认入库时递增
   totalScore   Float?
   error        String?
   confirmedAt  DateTime?
@@ -552,6 +554,8 @@ model ParentPaper {
   title     String?
   /// pending_recognition | recognizing | pending_confirmation | confirmed | failed
   status    String   @default("pending_recognition")
+  /// 乐观锁版本号：编辑单题判定/框选或确认入库时递增
+  version   Int      @default(0)
   /// 可选答案卷照片，JSON 数组（data URL）
   answerKeyImages String?
   hasAnswerKey    Boolean  @default(false)
@@ -708,5 +712,21 @@ model ItemMemory {
 
   @@unique([userId, scopeKey, errorItemId, algorithmVersion])
   @@index([userId, scopeKey, dueAt])
+  @@index([errorItemId])
+}
+
+/// 批量改卷与家长试卷确认入库去重索引：确保同一源题目在并发确认下至多生成一条错题
+model SourceImport {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKind       String   // parent_paper | grading_submission
+  sourceId         String
+  sourceQuestionId String
+  errorItemId      String
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, sourceKind, sourceQuestionId])
+  @@index([userId, sourceKind, sourceId])
   @@index([errorItemId])
 }

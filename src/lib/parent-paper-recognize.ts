@@ -347,14 +347,26 @@ export async function updateParentPaperQuestion(
         }
     }
 
-    await db.parentPaperQuestion.update({
-        where: { id: questionId },
-        data: {
-            ...(patch.overrideVerdict !== undefined ? { overrideVerdict: patch.overrideVerdict } : {}),
-            ...(patch.selected !== undefined ? { selected: patch.selected } : {}),
-            ...(nextBbox !== undefined ? { bbox: nextBbox } : {}),
-        },
-    });
+    const applyUpdate = async (tx: Prisma.TransactionClient | Db) => {
+        await tx.parentPaperQuestion.update({
+            where: { id: questionId },
+            data: {
+                ...(patch.overrideVerdict !== undefined ? { overrideVerdict: patch.overrideVerdict } : {}),
+                ...(patch.selected !== undefined ? { selected: patch.selected } : {}),
+                ...(nextBbox !== undefined ? { bbox: nextBbox } : {}),
+            },
+        });
+        await tx.parentPaper.update({
+            where: { id: paperId },
+            data: { version: { increment: 1 } },
+        });
+    };
+
+    if ("$transaction" in db && typeof db.$transaction === "function") {
+        await db.$transaction(async (tx) => applyUpdate(tx));
+    } else {
+        await applyUpdate(db);
+    }
     return getParentPaper(db, userId, paperId);
 }
 
@@ -362,7 +374,7 @@ export async function confirmParentPaper(
     db: PrismaClient,
     userId: string,
     paperId: string,
-    params: { questionIds?: string[]; language?: "zh" | "en" } = {},
+    params: { questionIds?: string[]; language?: "zh" | "en"; expectedVersion?: number } = {},
 ): Promise<{ importedCount: number; importedNotebooks: ImportedNotebookCount[]; replanned: boolean; paper: ParentPaperDetail } | null> {
     const paper = await db.parentPaper.findFirst({
         where: { id: paperId, userId },
@@ -375,6 +387,11 @@ export async function confirmParentPaper(
     if (paper.status === PARENT_PAPER_STATUS.confirmed) throw new ParentPaperStateError("ALREADY_CONFIRMED");
     if (paper.status !== PARENT_PAPER_STATUS.pendingConfirmation) throw new ParentPaperStateError("NOT_READY");
 
+    const snapshotVersion = paper.version;
+    if (params.expectedVersion !== undefined && params.expectedVersion !== snapshotVersion) {
+        throw new ParentPaperStateError("VERSION_CONFLICT");
+    }
+
     const requested = params.questionIds ? new Set(params.questionIds) : null;
     const toImport = paper.questions.filter((question) => {
         if (question.importedErrorItemId) return false;
@@ -382,6 +399,7 @@ export async function confirmParentPaper(
         return question.selected;
     }).filter((question) => shouldImportVerdict(effectiveVerdict(question.verdict, question.overrideVerdict)));
 
+    // 耗时的图片裁剪放在数据库事务外执行，避免阻塞 SQLite 写入事务
     const crops = new Map<string, string>();
     for (const question of toImport) {
         const bbox = parseStoredBbox(question.bbox);
@@ -395,9 +413,52 @@ export async function confirmParentPaper(
         }
     }
 
-    const importedCount = await db.$transaction(async (tx) => {
+    const txResult = await db.$transaction(async (tx) => {
+        // 先用 status + version CAS 条件更新抢占确认所有权，拒绝并发覆盖与过期快照
+        const claimed = await tx.parentPaper.updateMany({
+            where: {
+                id: paperId,
+                userId,
+                status: PARENT_PAPER_STATUS.pendingConfirmation,
+                version: snapshotVersion,
+            },
+            data: {
+                status: PARENT_PAPER_STATUS.confirmed,
+                confirmedAt: new Date(),
+                version: { increment: 1 },
+            },
+        });
+        if (claimed.count === 0) {
+            const latest = await tx.parentPaper.findFirst({
+                where: { id: paperId, userId },
+                select: { status: true },
+            });
+            if (!latest) return null;
+            if (latest.status === PARENT_PAPER_STATUS.confirmed) throw new ParentPaperStateError("ALREADY_CONFIRMED");
+            if (latest.status !== PARENT_PAPER_STATUS.pendingConfirmation) throw new ParentPaperStateError("NOT_READY");
+            throw new ParentPaperStateError("VERSION_CONFLICT");
+        }
+
         let count = 0;
         for (const question of toImport) {
+            const existingImport = await tx.sourceImport.findUnique({
+                where: {
+                    userId_sourceKind_sourceQuestionId: {
+                        userId,
+                        sourceKind: "parent_paper",
+                        sourceQuestionId: question.id,
+                    },
+                },
+                select: { errorItemId: true },
+            });
+            if (existingImport) {
+                await tx.parentPaperQuestion.update({
+                    where: { id: question.id },
+                    data: { importedErrorItemId: existingImport.errorItemId, selected: true },
+                });
+                continue;
+            }
+
             const subjectName = subjectNameForPaper(paper.title, question.subjectHint);
             const notebook = await resolveNotebookForSubject(userId, subjectName, tx);
             const subjectKey = inferSubjectFromName(subjectName) || "other";
@@ -431,18 +492,26 @@ export async function confirmParentPaper(
                 },
                 select: { id: true },
             });
+            await tx.sourceImport.create({
+                data: {
+                    userId,
+                    sourceKind: "parent_paper",
+                    sourceId: paperId,
+                    sourceQuestionId: question.id,
+                    errorItemId: item.id,
+                },
+            });
             await tx.parentPaperQuestion.update({
                 where: { id: question.id },
                 data: { importedErrorItemId: item.id, selected: true },
             });
             count += 1;
         }
-        await tx.parentPaper.update({
-            where: { id: paperId },
-            data: { status: PARENT_PAPER_STATUS.confirmed, confirmedAt: new Date() },
-        });
         return count;
     });
+
+    if (txResult === null) return null;
+    const importedCount = txResult;
 
     if (importedCount > 0) {
         scheduleLearningPathReplan(userId, params.language === "en" ? "en" : "zh", paper.learnerId);

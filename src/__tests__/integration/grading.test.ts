@@ -182,7 +182,15 @@ describe('PATCH /api/grading/submissions/:id', () => {
         const response = await patchSubmission(json({ results: [{ id: 'r1', verdict: 'correct' }] }, 'PATCH'), params('p1'));
         expect(response.status).toBe(200);
         expect(mocks.resultUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { verdict: 'correct', score: 2, source: 'teacher' } });
-        expect(mocks.submissionUpdate).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { totalScore: 5 } });
+        expect(mocks.submissionUpdate).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { totalScore: 5, version: { increment: 1 } } });
+    });
+
+    it('已确认或正在判分的答卷不允许修改，返回 409', async () => {
+        mocks.submissionFindFirst.mockResolvedValue({ ...submissionRow(), status: 'confirmed' });
+        expect((await patchSubmission(json({ studentId: 's1' }, 'PATCH'), params('p1'))).status).toBe(409);
+
+        mocks.submissionFindFirst.mockResolvedValue({ ...submissionRow(), status: 'grading' });
+        expect((await patchSubmission(json({ results: [{ id: 'r1', verdict: 'correct' }] }, 'PATCH'), params('p1'))).status).toBe(409);
     });
 
     it('指定不在班级的学生返回 400', async () => {

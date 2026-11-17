@@ -230,20 +230,58 @@ async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: 
  * 老师确认答卷：把未得满分的题导入该学生的错题本（老师账户下名为「学生名·学科」的错题本），
  * 复用错题的知识点标签；已导入的题不会重复导入。
  */
-export async function confirmSubmission(submissionId: string, userId: string): Promise<{ importedCount: number } | null> {
+export async function confirmSubmission(
+    submissionId: string,
+    userId: string,
+    options?: { expectedVersion?: number },
+): Promise<{ importedCount: number } | null> {
     const submission = await prisma.gradingSubmission.findFirst({
         where: { id: submissionId, task: { userId } },
         include: { task: true, student: true, results: { include: { keyQuestion: true } } },
     });
     if (!submission) return null;
     if (!submission.student) throw new Error('STUDENT_REQUIRED');
+    if (submission.status === 'grading' || submission.status === 'failed') {
+        throw new Error('SUBMISSION_LOCKED');
+    }
+    if (options?.expectedVersion !== undefined && options.expectedVersion !== submission.version) {
+        throw new Error('VERSION_CONFLICT');
+    }
+    if (submission.status === 'confirmed') {
+        return { importedCount: 0 };
+    }
 
+    const snapshotVersion = submission.version;
     const studentName = submission.student.name;
     const { task } = submission;
     const firstImage = parseJsonStringArray(submission.images)[0] || '';
     const subjectKey = inferSubjectFromName(task.subjectName) || 'other';
 
     const imported = await prisma.$transaction(async (tx) => {
+        // 先用 status + version CAS 条件更新抢占确认所有权
+        const claimed = await tx.gradingSubmission.updateMany({
+            where: {
+                id: submissionId,
+                status: { notIn: ['confirmed', 'grading', 'failed'] },
+                version: snapshotVersion,
+            },
+            data: {
+                status: 'confirmed',
+                confirmedAt: new Date(),
+                version: { increment: 1 },
+            },
+        });
+        if (claimed.count === 0) {
+            const latest = await tx.gradingSubmission.findUnique({
+                where: { id: submissionId },
+                select: { status: true },
+            });
+            if (!latest) return null;
+            if (latest.status === 'confirmed') return 0;
+            if (latest.status === 'grading' || latest.status === 'failed') throw new Error('SUBMISSION_LOCKED');
+            throw new Error('VERSION_CONFLICT');
+        }
+
         const notebook = await resolveStudentNotebook(tx, userId, `${studentName}·${task.subjectName}`, task.subjectName);
         const learner = await ensureLearnerForGradingStudent(tx, {
             userId,
@@ -253,6 +291,22 @@ export async function confirmSubmission(submissionId: string, userId: string): P
         let count = 0;
         for (const result of submission.results) {
             if (!isWrong(result.verdict) || result.errorItemId) continue;
+
+            const existingImport = await tx.sourceImport.findUnique({
+                where: {
+                    userId_sourceKind_sourceQuestionId: {
+                        userId,
+                        sourceKind: 'grading_submission',
+                        sourceQuestionId: result.id,
+                    },
+                },
+                select: { errorItemId: true },
+            });
+            if (existingImport) {
+                await tx.gradingResult.update({ where: { id: result.id }, data: { errorItemId: existingImport.errorItemId } });
+                continue;
+            }
+
             const question = toKeyQuestion(result.keyQuestion);
             const tags = await resolveTags(tx, userId, question.knowledgePoints || [], subjectKey);
             const item = await tx.errorItem.create({
@@ -276,14 +330,24 @@ export async function confirmSubmission(submissionId: string, userId: string): P
                 },
                 select: { id: true },
             });
+            await tx.sourceImport.create({
+                data: {
+                    userId,
+                    sourceKind: 'grading_submission',
+                    sourceId: submissionId,
+                    sourceQuestionId: result.id,
+                    errorItemId: item.id,
+                },
+            });
             await tx.gradingResult.update({ where: { id: result.id }, data: { errorItemId: item.id } });
             count += 1;
         }
         await tx.gradingSubmission.update({
             where: { id: submissionId },
-            data: { status: 'confirmed', confirmedAt: new Date(), importedCount: { increment: count } },
+            data: { importedCount: count },
         });
         return count;
     });
+    if (imported === null) return null;
     return { importedCount: imported };
 }
