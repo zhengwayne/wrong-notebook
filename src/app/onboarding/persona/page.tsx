@@ -39,6 +39,7 @@ export default function PersonaOnboardingPage() {
         try {
             const data = await apiClient.get<PersonaState>("/api/persona");
             if (data.confirmed) {
+                await update();
                 router.replace(landingPath(data.activePersona));
                 return;
             }
@@ -48,7 +49,7 @@ export default function PersonaOnboardingPage() {
         } finally {
             setLoading(false);
         }
-    }, [router]);
+    }, [router, update]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入确认页时加载预选项
