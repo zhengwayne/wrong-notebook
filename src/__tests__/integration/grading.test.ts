@@ -2,6 +2,7 @@
  * 收卷拍照改卷 API：新建任务、上传答卷、老师改判、确认导入错题
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_JPEG_DATA_URL } from '../helpers/sample-images';
 
 const mocks = vi.hoisted(() => ({
     getCurrentUser: vi.fn(),
@@ -50,7 +51,7 @@ import { POST as confirm } from '@/app/api/grading/submissions/[id]/confirm/rout
 
 const json = (body: unknown, method = 'POST') => new Request('http://localhost/api', { method, body: JSON.stringify(body) });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
-const IMAGE = 'data:image/jpeg;base64,/9j/AAAA';
+const IMAGE = SAMPLE_JPEG_DATA_URL;
 
 const keyRow = (id: string, number: string, maxScore: number) => ({
     id, number, maxScore, order: 0, type: 'objective', answer: 'A', acceptedAnswers: null, questionText: null, knowledgePoints: null,

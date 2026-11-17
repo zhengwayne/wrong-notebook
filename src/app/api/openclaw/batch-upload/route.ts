@@ -15,6 +15,7 @@ import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransa
 import { parseDifficultyStars } from "@/lib/ai/schema";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorMessage } from "@/lib/error-message";
+import { ImageValidationError, normalizeImageBuffer } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:openclaw:batch-upload');
 
@@ -389,7 +390,21 @@ export async function POST(req: Request) {
                 continue;
             }
 
-            const openclawResponse = await callOpenclawAgent(base64, mimeType, singleImageTimeout);
+            let normalizedImg: { base64: string; mimeType: string };
+            try {
+                normalizedImg = await normalizeImageBuffer(Buffer.from(base64, 'base64'), { allowedFormats: ['jpeg', 'png'] });
+            } catch (imgError) {
+                const errMsg = imgError instanceof ImageValidationError ? imgError.code : 'INVALID_IMAGE';
+                logger.warn({ index: i, filename, error: errMsg }, 'Image normalization failed');
+                results.push({
+                    success: false,
+                    index: i,
+                    error: `无效或损坏的图片数据: ${errMsg}`,
+                });
+                continue;
+            }
+
+            const openclawResponse = await callOpenclawAgent(normalizedImg.base64, normalizedImg.mimeType, singleImageTimeout);
 
             if (!openclawResponse.success || !openclawResponse.data) {
                 logger.error({ index: i, error: openclawResponse.error }, 'Openclaw recognition failed');
@@ -415,8 +430,8 @@ export async function POST(req: Request) {
                 }
                 const errorItem = await createErrorItem(
                     dbUser.id,
-                    base64,
-                    mimeType,
+                    normalizedImg.base64,
+                    normalizedImg.mimeType,
                     openclawResponse.data,
                     gradeResult.gradeSemester,
                     subjectId

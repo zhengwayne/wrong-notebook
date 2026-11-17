@@ -3,6 +3,7 @@
  * 测试重新回答问题接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -124,7 +125,7 @@ describe('/api/reanswer', () => {
             };
             mocks.mockAIService.reanswerQuestion.mockResolvedValue(aiResult);
 
-            const imageBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA...';
+            const imageBase64 = SAMPLE_PNG_DATA_URL;
 
             const request = new Request('http://localhost/api/reanswer', {
                 method: 'POST',
@@ -144,7 +145,7 @@ describe('/api/reanswer', () => {
                 expect.any(String),
                 'zh',
                 '数学',
-                imageBase64,
+                expect.stringMatching(/^data:image\/png;base64,/),
                 undefined,
                 undefined
             );

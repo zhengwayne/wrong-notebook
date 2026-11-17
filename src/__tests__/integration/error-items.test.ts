@@ -3,6 +3,7 @@
  * 测试错题创建、获取、更新等接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -223,7 +224,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 3',
                 analysis: '移项得 x = 5 - 2 = 3',
                 knowledgePoints: ['一元一次方程', '移项'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
             };
 
             const createdItem = {
@@ -312,7 +313,7 @@ describe('/api/error-items', () => {
                 answerText: '2',
                 analysis: '简单加法',
                 knowledgePoints: ['加法'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 subjectId: 'subject-math-id',
             };
 
@@ -343,7 +344,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 5',
                 analysis: '解析',
                 knowledgePoints: ['方程'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 gradeSemester: '初一上期',
                 paperLevel: 'A',
             };
@@ -396,7 +397,7 @@ describe('/api/error-items', () => {
                 answerText: '答案',
                 analysis: '解析',
                 knowledgePoints: ['知识点'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 // 不提供 gradeSemester，应该自动计算
             };
 
@@ -429,7 +430,7 @@ describe('/api/error-items', () => {
                 answerText: '答案',
                 analysis: '解析',
                 knowledgePoints: '一元一次方程, 移项',
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
             };
 
             mocks.mockPrismaErrorItem.create.mockResolvedValue({
@@ -449,6 +450,25 @@ describe('/api/error-items', () => {
 
             expect(response.status).toBe(201);
         });
+
+        it('拒绝非图片或 SVG Data URL 并返回 400', async () => {
+            for (const badUrl of [
+                'data:text/html;base64,PGh0bWw+',
+                'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                'javascript:alert(1)',
+                'https://evil.example/a.png',
+            ]) {
+                const response = await POST(new Request('http://localhost/api/error-items', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        questionText: '题目',
+                        originalImageUrl: badUrl,
+                    }),
+                }));
+                expect(response.status).toBe(400);
+            }
+            expect(mocks.mockPrismaErrorItem.create).not.toHaveBeenCalled();
+        });
     });
 
     describe('GET /api/error-items/[id] (获取单个错题)', () => {
@@ -460,7 +480,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 3',
                 analysis: '移项得 x = 5 - 2 = 3',
                 knowledgePoints: '["一元一次方程", "移项"]',
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 masteryLevel: 0,
                 subject: { id: 'math', name: '数学' },
             };

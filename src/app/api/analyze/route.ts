@@ -16,6 +16,7 @@ import { getErrorMessage } from "@/lib/error-message";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
+import { ImageValidationError, normalizeImageInput } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:analyze');
 
@@ -42,19 +43,23 @@ async function handlePost(req: Request) {
             subjectId
         }, 'Request received');
 
-        if (!imageBase64) {
+        if (!imageBase64 || typeof imageBase64 !== 'string') {
             logger.warn('Missing image data');
             return badRequest("Missing image data");
         }
 
-        // Parse Data URL if present
-        if (imageBase64.startsWith('data:')) {
-            const matches = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-                mimeType = matches[1];
-                imageBase64 = matches[2];
-                logger.debug({ mimeType, base64Length: imageBase64.length }, 'Parsed Data URL');
+        // 服务端校验真实图片格式、转正、限边并剥离 EXIF 等元数据
+        try {
+            const normalized = await normalizeImageInput(imageBase64);
+            imageBase64 = normalized.base64;
+            mimeType = normalized.mimeType;
+            logger.debug({ mimeType, base64Length: imageBase64.length }, 'Normalized analyze image');
+        } catch (imgError) {
+            if (imgError instanceof ImageValidationError) {
+                logger.warn({ code: imgError.code }, 'Invalid image payload for analyze');
+                return badRequest("INVALID_IMAGE");
             }
+            throw imgError;
         }
 
         // 先获取用户年级信息，用于动态生成 AI prompt 中的标签列表

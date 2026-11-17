@@ -2,6 +2,7 @@
  * 名册导入、卷头识别、答卷拆分与合并 API
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_JPEG_DATA_URL } from '../helpers/sample-images';
 
 const mocks = vi.hoisted(() => ({
     getCurrentUser: vi.fn(),
@@ -56,7 +57,7 @@ import { POST as merge } from '@/app/api/grading/submissions/[id]/merge/route';
 
 const json = (body: unknown) => new Request('http://localhost/api', { method: 'POST', body: JSON.stringify(body) });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
-const IMAGE = 'data:image/jpeg;base64,/9j/AAAA';
+const IMAGE = SAMPLE_JPEG_DATA_URL;
 
 const existingClasses = [
     { id: 'c1', name: '七年级1班', students: [

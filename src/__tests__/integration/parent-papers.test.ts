@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
+import { createJpegWithExif, SAMPLE_JPEG_DATA_URL } from "../helpers/sample-images";
 
-const IMAGE = "data:image/jpeg;base64,AAAA";
+const IMAGE = SAMPLE_JPEG_DATA_URL;
 
 const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
@@ -117,5 +119,24 @@ describe("parent papers API", () => {
             body: JSON.stringify({ learnerId: "child-other", pages: [{ imageUrl: IMAGE }] }),
         }));
         expect(stolen.status).toBe(404);
+    });
+
+    it("strips EXIF metadata including GPS from saved paper pages", async () => {
+        const withExif = await createJpegWithExif({ width: 32, height: 24, orientation: 6 });
+        const created = await POST(new Request("http://localhost/api/parent/papers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                learnerId: "child-a",
+                title: "含EXIF试卷",
+                pages: [{ imageUrl: withExif.dataUrl }],
+            }),
+        }));
+        expect(created.status).toBe(201);
+        const row = await db.parentPaperPage.findFirstOrThrow();
+        for (const stored of [row.imageUrl, row.originalImageUrl].filter(Boolean) as string[]) {
+            const meta = await sharp(Buffer.from(stored.split(",")[1], "base64")).metadata();
+            expect(meta.exif).toBeUndefined();
+        }
     });
 });

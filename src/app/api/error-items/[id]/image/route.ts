@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
+import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:error-items:image');
 
@@ -42,9 +43,20 @@ export async function PUT(
             return notFound("Item not found");
         }
 
-        await prisma.errorItem.update({ where: { id }, data: { originalImageUrl: parsed.data.imageDataUrl } });
-        logger.info({ errorItemId: id, imageLength: parsed.data.imageDataUrl.length }, 'Original image replaced');
-        return NextResponse.json({ originalImageUrl: parsed.data.imageDataUrl });
+        let normalizedImageUrl: string;
+        try {
+            normalizedImageUrl = (await normalizeImageDataUrl(parsed.data.imageDataUrl)).dataUrl;
+        } catch (error) {
+            if (error instanceof ImageValidationError) {
+                logger.warn({ errorItemId: id, code: error.code }, 'Rejected invalid replacement image');
+                return badRequest("INVALID_IMAGE");
+            }
+            throw error;
+        }
+
+        await prisma.errorItem.update({ where: { id }, data: { originalImageUrl: normalizedImageUrl } });
+        logger.info({ errorItemId: id, imageLength: normalizedImageUrl.length }, 'Original image replaced');
+        return NextResponse.json({ originalImageUrl: normalizedImageUrl });
     } catch (error) {
         logger.error({ error }, 'Error replacing original image');
         return internalError("Failed to replace image");

@@ -4,6 +4,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
+import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
@@ -80,13 +81,20 @@ export async function failStaleRecognizingPapers(db: PrismaClient): Promise<numb
     return result.count;
 }
 
-function normalizeAnswerKeyImages(images: string[] | undefined): string[] {
+async function normalizeAnswerKeyImages(images: string[] | undefined): Promise<string[]> {
     const list = images ?? [];
     if (list.length > MAX_PARENT_ANSWER_KEY_IMAGES) throw new ParentPaperValidationError("TOO_MANY_ANSWER_KEY_IMAGES");
+    const result: string[] = [];
     for (const image of list) {
         if (!isPaperPageImage(image)) throw new ParentPaperValidationError("INVALID_ANSWER_KEY_IMAGE");
+        try {
+            result.push((await normalizeImageDataUrl(image)).dataUrl);
+        } catch (err) {
+            if (err instanceof ImageValidationError) throw new ParentPaperValidationError("INVALID_ANSWER_KEY_IMAGE");
+            throw err;
+        }
     }
-    return list;
+    return result;
 }
 
 
@@ -100,15 +108,21 @@ async function ensurePagesAutoCropped(
             prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
             continue;
         }
-        const result = await autoCropPaperImage(page.imageUrl);
+        let cleanUrl = page.imageUrl;
+        try {
+            cleanUrl = (await normalizeImageDataUrl(page.imageUrl)).dataUrl;
+        } catch {
+            // 若是特殊 mock/内联历史数据，保留原样由后续裁切处理
+        }
+        const result = await autoCropPaperImage(cleanUrl);
         if (result.cropped && result.imageUrl !== page.imageUrl) {
             await db.parentPaperPage.update({
                 where: { id: page.id },
-                data: { originalImageUrl: page.imageUrl, imageUrl: result.imageUrl },
+                data: { originalImageUrl: cleanUrl, imageUrl: result.imageUrl },
             });
             prepared.push({ id: page.id, position: page.position, imageUrl: result.imageUrl });
         } else {
-            prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
+            prepared.push({ id: page.id, position: page.position, imageUrl: cleanUrl });
         }
     }
     return prepared;
@@ -129,7 +143,7 @@ export async function startParentPaperRecognition(
     if (existing.status === PARENT_PAPER_STATUS.recognizing) throw new ParentPaperStateError("ALREADY_RECOGNIZING");
     if (!existing.pages.length) throw new ParentPaperValidationError("PAGES_REQUIRED");
 
-    const incomingKeys = params.answerKeyImages != null ? normalizeAnswerKeyImages(params.answerKeyImages) : null;
+    const incomingKeys = params.answerKeyImages != null ? await normalizeAnswerKeyImages(params.answerKeyImages) : null;
     const answerKeyImages = incomingKeys ?? parseAnswerKeyImages(existing.answerKeyImages);
     const language = params.language === "en" ? "en" : "zh";
 

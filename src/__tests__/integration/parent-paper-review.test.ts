@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { SAMPLE_JPEG_DATA_URL } from "../helpers/sample-images";
 
-const IMAGE = "data:image/jpeg;base64,AAAA";
+const IMAGE = SAMPLE_JPEG_DATA_URL;
 
 const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
@@ -227,7 +228,7 @@ describe("parent paper recognition and confirm", () => {
             questionText: "错题",
             wrongAnswerText: "3",
             answerText: "2",
-            originalImageUrl: IMAGE,
+            originalImageUrl: expect.stringMatching(/^data:image\/jpeg;base64,/),
         });
         expect(items[0].userNotes).toBeNull();
         expect(mocks.replan).toHaveBeenCalledWith("parent-1", "zh", "child-a");

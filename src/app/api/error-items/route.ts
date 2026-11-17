@@ -19,6 +19,7 @@ import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { deriveErrorType } from "@/lib/error-type";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { getOwnedChildLearner } from "@/lib/learners";
+import { ImageValidationError, normalizeOptionalImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:error-items');
 
@@ -52,9 +53,39 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
 
     try {
+        // 先鉴权，避免未登录或无效会话提前解析并解码图片载荷
+        let user;
+        if (session?.user?.email) {
+            user = await prisma.user.findUnique({
+                where: { email: session.user.email },
+            });
+            logger.debug({ userId: user?.id, email: session.user.email }, 'User lookup result');
+        } else {
+            logger.warn('No session email found');
+        }
+
+        if (!user) {
+            logger.warn({ sessionEmail: session?.user?.email }, 'User not found in DB');
+            return unauthorized("No user found in DB");
+        }
+
         const parsed = importSchema.safeParse(await req.json());
         if (!parsed.success) return validationError('Invalid question import', parsed.error.issues);
         const body = parsed.data;
+
+        let normalizedImageUrl: string;
+        try {
+            normalizedImageUrl = await normalizeOptionalImageDataUrl(body.originalImageUrl);
+        } catch (error) {
+            if (error instanceof ImageValidationError) {
+                logger.warn({ code: error.code }, 'Rejected invalid error item image');
+                return badRequest('INVALID_IMAGE');
+            }
+            throw error;
+        }
+        const originalImageUrl = normalizedImageUrl;
+        const normalizedBody = { ...body, originalImageUrl };
+
         const {
             questionText,
             answerText,
@@ -63,7 +94,6 @@ export async function POST(req: Request) {
             mistakeAnalysis,
             mistakeStatus,
             knowledgePoints,
-            originalImageUrl,
             subjectId: requestedSubjectId,
             subjectName,
             learnerId: requestedLearnerId,
@@ -71,7 +101,7 @@ export async function POST(req: Request) {
             paperLevel,
             difficultyStars,
             geogebraCommands,
-        } = body;
+        } = normalizedBody;
         // 配图 SVG 入库前再净化一次，无效时丢弃
         const figureSvg = sanitizeFigureSvg(body.figureSvg);
         const hasFigure = !!body.hasFigure || figureSvg !== null;
@@ -95,22 +125,6 @@ export async function POST(req: Request) {
             hasGeogebraCommands: !!geogebraCommands,
         }, 'Request parameters received');
 
-        // 查找用户
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-            logger.debug({ userId: user?.id, email: session.user.email }, 'User lookup result');
-        } else {
-            logger.warn('No session email found');
-        }
-
-        if (!user) {
-            logger.warn({ sessionEmail: session?.user?.email }, 'User not found in DB');
-            return unauthorized("No user found in DB");
-        }
-
         let learnerId: string | undefined;
         if (requestedLearnerId) {
             const child = await getOwnedChildLearner(prisma, user.id, requestedLearnerId);
@@ -118,14 +132,14 @@ export async function POST(req: Request) {
             learnerId = child.id;
         }
 
-        const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, body)
-            ? await findDuplicateQuestion(prisma, user.id, body) : null;
-        const gradeResult = await prepareImportGrade(user, body, duplicateBeforeRecognition !== null);
+        const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, normalizedBody)
+            ? await findDuplicateQuestion(prisma, user.id, normalizedBody) : null;
+        const gradeResult = await prepareImportGrade(user, normalizedBody, duplicateBeforeRecognition !== null);
         if (gradeResult.response) return gradeResult.response;
 
         const result = await runQuestionImportTransaction(async (tx) => {
-            const duplicate = await findDuplicateQuestion(tx, user.id, body);
-            if (duplicate) return recordDuplicateQuestion(tx, user.id, duplicate, body);
+            const duplicate = await findDuplicateQuestion(tx, user.id, normalizedBody);
+            if (duplicate) return recordDuplicateQuestion(tx, user.id, duplicate, normalizedBody);
 
             // 未指定错题本时，按学科名匹配或新建错题本
             let subjectId: string | undefined = requestedSubjectId || undefined;

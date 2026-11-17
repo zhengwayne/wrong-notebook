@@ -6,6 +6,7 @@ import { badRequest, notFound, unauthorized, validationError } from "@/lib/api-e
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { loadTaskRoster, resolveMatch, scheduleGrading, takenStudentIds } from "@/lib/grading-service";
 import { identitySchema, imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER, MAX_PAPERS_PER_UPLOAD } from "@/lib/grading-api";
+import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { hasIdentity } from "@/lib/student-match";
 
 const schema = z.object({
@@ -39,9 +40,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return badRequest("Student not in class");
     }
 
+    let normalizedPapers: Array<typeof parsed.data.papers[number]>;
+    try {
+        normalizedPapers = await Promise.all(parsed.data.papers.map(async (paper) => ({
+            ...paper,
+            images: await Promise.all(paper.images.map(async (img) => (await normalizeImageDataUrl(img)).dataUrl)),
+        })));
+    } catch (error) {
+        if (error instanceof ImageValidationError) return badRequest("INVALID_IMAGE");
+        throw error;
+    }
+
     const taken = await takenStudentIds(id);
     const created: string[] = [];
-    for (const paper of parsed.data.papers) {
+    for (const paper of normalizedPapers) {
         // 每份答卷计一次 AI 调用，超出每日额度时停止（已上传的照常判分）
         const limited = await consumeAiQuota(user, 'grade');
         if (limited) {
