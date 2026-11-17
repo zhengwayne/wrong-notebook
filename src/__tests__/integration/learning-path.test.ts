@@ -8,6 +8,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { GET as GET_PATH, POST as POST_PATH } from "@/app/api/learning-path/route";
 import { GET as GET_CLASS } from "@/app/api/learning-path/class/route";
 import { PATCH as PATCH_STEP } from "@/app/api/learning-path/steps/[id]/route";
+import { getDueItems } from "@/lib/due-items";
+import { collectEvidence } from "@/lib/learning-path/service";
 
 const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
@@ -282,4 +284,63 @@ describe("学习路径接口（真实 SQLite）", () => {
         expect(capturedQueries.length).toBeLessThanOrEqual(15);
         expect(capturedQueries.filter((q) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(q))).toEqual([]);
     }, 30000);
+
+    it("ebbinghaus-v1 与 fsrs-v1 两种 algorithmVersion 下，学习路径 dueItemIds 与统一 getDueItems 结果完全一致且切换版本会触发重排", async () => {
+        const oldDue = new Date("2026-01-01T08:00:00+08:00");
+        await database.errorItem.create({
+            data: {
+                id: "sync-item-1", shortId: "SY0001", userId: "user-1", subjectId: "nb-self",
+                questionText: "一元一次方程", answerText: "2", knowledgePoints: '["方程"]', originalImageUrl: "",
+                createdAt: oldDue,
+            },
+        });
+        await database.errorItem.create({
+            data: {
+                id: "sync-item-2", shortId: "SY0002", userId: "user-1", subjectId: "nb-self",
+                questionText: "近期已练题", answerText: "5", knowledgePoints: '["方程"]', originalImageUrl: "",
+                createdAt: oldDue,
+            },
+        });
+        await database.practiceRecord.create({
+            data: {
+                userId: "user-1",
+                errorItemId: "sync-item-2",
+                result: "correct",
+                isCorrect: true,
+                source: "review",
+                createdAt: new Date(),
+            },
+        });
+
+        for (const version of ["ebbinghaus-v1", "fsrs-v1"] as const) {
+            await database.user.update({ where: { id: "user-1" }, data: { reviewAlgorithmVersion: version } });
+            const unified = await getDueItems(database, { userId: "user-1", learnerId: null }, {
+                timeZone: "Asia/Taipei",
+                subjectIds: ["nb-self"],
+            });
+            const collected = await collectEvidence("user-1", {
+                studentKey: "self",
+                studentName: "我",
+                classId: null,
+                subjectIds: ["nb-self"],
+                kind: "self",
+                learnerId: null,
+            });
+            expect(unified.algorithmVersion).toBe(version);
+            expect([...collected.dueItemIds].sort()).toEqual(unified.items.map((item) => item.id).sort());
+            expect(unified.items.map((item) => item.id)).toEqual(["sync-item-1"]);
+        }
+
+        // 先在 ebbinghaus-v1 生成路径，再切换 fsrs-v1，应识别哈希变化并重排版本 +1
+        await database.user.update({ where: { id: "user-1" }, data: { reviewAlgorithmVersion: "ebbinghaus-v1" } });
+        const ebRes = await GET_PATH(new Request("http://localhost/api/learning-path?language=zh"));
+        expect(ebRes.status).toBe(200);
+        const ebData = await ebRes.json();
+        await database.user.update({ where: { id: "user-1" }, data: { reviewAlgorithmVersion: "fsrs-v1" } });
+        const fsrsRes = await GET_PATH(new Request("http://localhost/api/learning-path?language=zh"));
+        expect(fsrsRes.status).toBe(200);
+        const fsrsData = await fsrsRes.json();
+
+        expect(fsrsData.version).toBe(ebData.version + 1);
+    });
 });

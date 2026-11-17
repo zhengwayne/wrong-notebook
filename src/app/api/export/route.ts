@@ -58,6 +58,7 @@ async function executeExport({ exportAll, format, passphrase }: ExportParams) {
         enableSvgAnimation: user.enableSvgAnimation,
         variantPipelineEnabled: user.variantPipelineEnabled,
         themePreference: user.themePreference,
+        reviewAlgorithmVersion: user.reviewAlgorithmVersion,
     };
 
     try {

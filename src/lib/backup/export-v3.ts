@@ -34,6 +34,7 @@ const USER_BACKUP_SELECT = {
     enableGeogebra: true,
     enableSvgAnimation: true,
     themePreference: true,
+    reviewAlgorithmVersion: true,
 } satisfies Prisma.UserSelect;
 
 export interface ExportV3Options {
@@ -477,6 +478,18 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
             async (row) => lpsEntry.writeLine(row),
         );
         derivedCounts.learningPathSteps = await lpsEntry.close();
+
+        const imEntry = zipWriter.openNdjsonEntry('data/itemMemories.ndjson');
+        await streamPaged(
+            (cursor, take) => db.itemMemory.findMany({
+                where: userFilter,
+                orderBy: { id: 'asc' },
+                take,
+                ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            }),
+            async (row) => imEntry.writeLine(row),
+        );
+        derivedCounts.itemMemories = await imEntry.close();
 
         // 14. 动画云端语音缓存（MP3 单独写入 tts/<id>.mp3）
         const speeches = await exportSpeeches(narrationSources);

@@ -37,6 +37,7 @@ export async function GET() {
                 themePreference: true,
                 questionDuplicateThreshold: true,
                 masteryThreshold: true,
+                reviewAlgorithmVersion: true,
                 // Do not return password
             }
         });
@@ -63,7 +64,7 @@ export async function PATCH(req: Request) {
 
     try {
         const body = await req.json();
-        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, variantPipelineEnabled, themePreference, questionDuplicateThreshold, masteryThreshold } = userUpdateSchema.parse(body);
+        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, variantPipelineEnabled, themePreference, questionDuplicateThreshold, masteryThreshold, reviewAlgorithmVersion } = userUpdateSchema.parse(body);
 
         const updateData: Prisma.UserUpdateInput = {};
         if (gradeRecognitionMode !== undefined) updateData.gradeRecognitionMode = gradeRecognitionMode;
@@ -95,6 +96,9 @@ export async function PATCH(req: Request) {
         }
         if (typeof masteryThreshold === 'number') {
             updateData.masteryThreshold = masteryThreshold;
+        }
+        if (reviewAlgorithmVersion) {
+            updateData.reviewAlgorithmVersion = reviewAlgorithmVersion;
         }
 
         // 验证邮箱格式（如果提供了邮箱）
@@ -138,6 +142,7 @@ export async function PATCH(req: Request) {
                     themePreference: true,
                     questionDuplicateThreshold: true,
                     masteryThreshold: true,
+                    reviewAlgorithmVersion: true,
                 }
             });
             // 阈值变化后同步已存的 masteryLevel，与按阈值推导的复习状态保持一致

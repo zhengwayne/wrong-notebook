@@ -143,6 +143,7 @@ export interface UserProfile {
     themePreference?: string;
     questionDuplicateThreshold?: number;
     masteryThreshold?: number;
+    reviewAlgorithmVersion?: 'ebbinghaus-v1' | 'fsrs-v1';
 }
 
 export interface UpdateUserProfileRequest {
@@ -150,6 +151,7 @@ export interface UpdateUserProfileRequest {
     fixedGradeSemester?: string | null;
     questionDuplicateThreshold?: number;
     masteryThreshold?: number;
+    reviewAlgorithmVersion?: 'ebbinghaus-v1' | 'fsrs-v1';
     name?: string;
     email?: string;
     educationStage?: string;

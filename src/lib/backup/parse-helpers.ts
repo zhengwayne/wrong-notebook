@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { GRADE_SEMESTERS } from '@/lib/grade-options';
 import { parseLastPractice } from '@/lib/last-practice';
 import { MAX_MASTERY_THRESHOLD, MIN_MASTERY_THRESHOLD } from '@/lib/mastery-status';
+import { REVIEW_ALGORITHM_VERSIONS } from '@/lib/memory-model';
 import { GRADE_RECOGNITION_MODES } from '@/lib/question-grade';
 import { THEME_PREFERENCES } from '@/lib/theme';
 
@@ -16,6 +17,7 @@ const PREFERENCE_SCHEMAS = {
     enableSvgAnimation: z.boolean(),
     themePreference: z.enum(THEME_PREFERENCES),
     variantPipelineEnabled: z.boolean(),
+    reviewAlgorithmVersion: z.enum(REVIEW_ALGORITHM_VERSIONS),
 };
 
 export function parseUserPreferences(source: Record<string, unknown> | undefined | null): Prisma.UserUpdateInput {

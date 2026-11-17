@@ -705,6 +705,7 @@ describe('/api/user', () => {
             themePreference: ['light', 'dark'],
             questionDuplicateThreshold: [85, 92.5],
             masteryThreshold: [60, 75],
+            reviewAlgorithmVersion: ['fsrs-v1', 'ebbinghaus-v1'],
         };
 
         it('schema 除 password 外的所有字段都必须在往返样本表中登记并保持 PATCH → GET 一致', async () => {
@@ -727,6 +728,7 @@ describe('/api/user', () => {
                 themePreference: 'system',
                 questionDuplicateThreshold: 90,
                 masteryThreshold: 50,
+                reviewAlgorithmVersion: 'ebbinghaus-v1',
             };
 
             const project = (row: Record<string, unknown>, select?: Record<string, boolean>) => {

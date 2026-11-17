@@ -41,6 +41,7 @@ model User {
   enableGeogebra Boolean @default(false) // 是否显示 GeoGebra 动态演示
   enableSvgAnimation Boolean @default(true) // 是否显示 SVG 动画讲解
   themePreference String @default("system") // 界面主题：system 跟随系统、light 浅色、dark 深色
+  reviewAlgorithmVersion String @default("ebbinghaus-v1") // 逐题复习算法：ebbinghaus-v1 | fsrs-v1
 
   errorItems ErrorItem[]
   subjects   Subject[]
@@ -55,6 +56,7 @@ model User {
   learningPaths LearningPath[]
   learners     Learner[]
   parentPapers ParentPaper[]
+  itemMemories ItemMemory[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -164,6 +166,7 @@ model ErrorItem {
   practiceRecords PracticeRecord[]
   examQuestions   ExamQuestion[]
   variantRuns     VariantRun[]
+  itemMemories    ItemMemory[]
 
   // 列表、统计都按用户取错题并按时间排序；SQLite 不会自动给外键建索引
   @@index([userId, createdAt])
@@ -516,6 +519,7 @@ model Learner {
   errorItems      ErrorItem[]
   practiceRecords PracticeRecord[]
   parentPapers    ParentPaper[]
+  itemMemories    ItemMemory[]
 
   @@index([userId, kind])
 }
@@ -680,4 +684,28 @@ model AiProvenance {
   createdAt     DateTime @default(now())
 
   @@unique([task, provider, model, promptVersion, parserVersion])
+}
+
+/// 逐题记忆模型状态（FSRS 风格参数，可完全由 PracticeRecord 重算）
+model ItemMemory {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId        String?
+  learner          Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+  scopeKey         String    @default("self")
+  errorItemId      String
+  errorItem        ErrorItem @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
+  stability        Float     @default(1)
+  difficulty       Float     @default(5)
+  lastReviewAt     DateTime?
+  dueAt            DateTime
+  reps             Int       @default(0)
+  lapses           Int       @default(0)
+  algorithmVersion String    @default("fsrs-v1")
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([userId, scopeKey, errorItemId, algorithmVersion])
+  @@index([userId, scopeKey, dueAt])
+  @@index([errorItemId])
 }

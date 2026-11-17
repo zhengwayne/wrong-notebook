@@ -76,6 +76,7 @@ async function importBackup(body: object, query = '') {
 
 /** 清空当前用户的学习数据（保留账户），模拟换机后导入 */
 async function clearUserData() {
+    await database.itemMemory.deleteMany({});
     await database.learningPathStep.deleteMany({});
     await database.learningPath.deleteMany({});
     await database.knowledgeMastery.deleteMany({});
@@ -454,6 +455,22 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         await database.knowledgeMastery.create({
             data: { userId: 'user-1', studentKey: stu.id, knowledgePoint: '方程', pKnown: 0.4, evidenceCount: 1 },
         });
+        await database.user.update({ where: { id: 'user-1' }, data: { reviewAlgorithmVersion: 'fsrs-v1' } });
+        await database.itemMemory.create({
+            data: {
+                userId: 'user-1',
+                learnerId: childActive.id,
+                scopeKey: childActive.id,
+                errorItemId: 'item-1',
+                stability: 4.5,
+                difficulty: 4.2,
+                lastReviewAt: new Date('2026-10-20T08:00:00.000Z'),
+                dueAt: new Date('2026-10-24T16:00:00.000Z'),
+                reps: 2,
+                lapses: 0,
+                algorithmVersion: 'fsrs-v1',
+            },
+        });
         await database.learningPath.create({
             data: {
                 userId: 'user-1', studentKey: childActive.id, studentName: '小明', evidenceHash: 'eh1',
@@ -473,21 +490,22 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         expect(manifest.counts).toMatchObject({
             learners: 3, errorItems: 2, parentPapers: 1, gradingTasks: 1, variantRuns: 1, variantStageLogs: 1,
         });
-        expect(manifest.derivedCounts).toMatchObject({ knowledgeMasteries: 2, learningPaths: 1, learningPathSteps: 1 });
+        expect(manifest.derivedCounts).toMatchObject({ knowledgeMasteries: 2, itemMemories: 1, learningPaths: 1, learningPathSteps: 1 });
         expect(manifest.files[`media/${hashA}`]).toBeDefined();
         expect(manifest.files[`media/${hashB}`]).toBeDefined();
         expect(crypto.createHash('sha256').update(unpacked[`media/${hashA}`]).digest('hex')).toBe(hashA);
         expect(crypto.createHash('sha256').update(unpacked[`media/${hashB}`]).digest('hex')).toBe(hashB);
 
-        // 清空除 User 外的全部业务数据，再导入 ZIP
+        // 清空除 User 外的全部业务数据并重置偏好，再导入 ZIP
         await clearUserData();
+        await database.user.update({ where: { id: 'user-1' }, data: { reviewAlgorithmVersion: 'ebbinghaus-v1' } });
         const { response, data } = await importZipBackup(zipBytes);
         expect(response.status).toBe(200);
         expect(data.warnings).toContain('LEGACY_REVIEW_SCHEDULE_IGNORED');
         expect(data.stats).toMatchObject({
             learnersCreated: 3, errorItemsCreated: 2, reviewSchedulesCreated: 0,
             parentPapersCreated: 1, gradingTasksCreated: 1, variantRunsCreated: 1,
-            knowledgeMasteriesImported: 2, learningPathsCreated: 1,
+            knowledgeMasteriesImported: 2, itemMemoriesImported: 1, learningPathsCreated: 1,
         });
 
         // 遗留 ReviewSchedule 在 v3 导入中被忽略，不写回已弃用表
@@ -515,6 +533,20 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         expect(restoredPath.studentKey).toBe(restoredActive.id);
         expect(restoredPath.steps[0].teacherNote).toBe('周末重练');
         expect(JSON.parse(restoredPath.steps[0].errorItemIds!)).toEqual([activeItems[0].id]);
+
+        const restoredUser = await database.user.findUniqueOrThrow({ where: { id: 'user-1' } });
+        expect(restoredUser.reviewAlgorithmVersion).toBe('fsrs-v1');
+        const restoredMemory = await database.itemMemory.findFirstOrThrow();
+        expect(restoredMemory).toMatchObject({
+            learnerId: restoredActive.id,
+            scopeKey: restoredActive.id,
+            errorItemId: activeItems[0].id,
+            stability: 4.5,
+            difficulty: 4.2,
+            reps: 2,
+            lapses: 0,
+            algorithmVersion: 'fsrs-v1',
+        });
     });
 
     it('exportAll / importAll 多用户恢复时，VariantRun.userId 正确映射回各自用户而非硬编码管理员（R05）', async () => {

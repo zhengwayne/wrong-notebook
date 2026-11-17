@@ -2,7 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { getAppTimeZone } from "@/lib/config";
 import { getItemTags } from "@/lib/item-tags";
 import { SELF_STUDENT_KEY } from "@/lib/learning-path/types";
-import { getReviewPlan, isReviewDue } from "@/lib/review-schedule";
+import {
+    DEFAULT_REVIEW_ALGORITHM,
+    computeItemDuePlan,
+    isItemPlanDue,
+    isReviewAlgorithmVersion,
+} from "@/lib/memory-model";
 
 export interface ErrorItemPathStepSummary {
     id: string;
@@ -19,12 +24,26 @@ export async function getErrorItemLearningContext(userId: string, item: {
     knowledgePoints?: string | null;
 }) {
     const timeZone = getAppTimeZone();
-    const records = await prisma.practiceRecord?.findMany?.({
-        where: { errorItemId: item.id, result: { not: null } },
-        select: { result: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-    }) ?? [];
-    const plan = getReviewPlan(item.createdAt ? new Date(item.createdAt) : new Date(), records, timeZone);
+    const [records, userRow] = await Promise.all([
+        prisma.practiceRecord?.findMany?.({
+            where: { errorItemId: item.id, result: { not: null } },
+            select: { result: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+        }) ?? Promise.resolve([]),
+        prisma.user?.findUnique?.({
+            where: { id: userId },
+            select: { reviewAlgorithmVersion: true },
+        }) ?? Promise.resolve(null),
+    ]);
+    const algorithmVersion = isReviewAlgorithmVersion(userRow?.reviewAlgorithmVersion)
+        ? userRow.reviewAlgorithmVersion
+        : DEFAULT_REVIEW_ALGORITHM;
+    const plan = computeItemDuePlan(
+        item.createdAt ? new Date(item.createdAt) : new Date(),
+        records,
+        timeZone,
+        algorithmVersion,
+    );
 
     const path = await prisma.learningPath?.findUnique?.({
         where: { userId_studentKey: { userId, studentKey: SELF_STUDENT_KEY } },
@@ -64,7 +83,8 @@ export async function getErrorItemLearningContext(userId: string, item: {
     return {
         nextReviewAt: plan.nextReviewAt?.toISOString() ?? null,
         reviewStage: plan.stage,
-        reviewDue: isReviewDue(plan, timeZone),
+        reviewDue: isItemPlanDue(plan.nextReviewAt, timeZone),
+        algorithmVersion,
         pathSteps,
         knowledgeMastery: knowledgeMastery.map((row) => ({
             knowledgePoint: row.knowledgePoint,

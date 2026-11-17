@@ -32,6 +32,7 @@ export interface BackupUserMeta {
     enableSvgAnimation: boolean;
     variantPipelineEnabled: boolean;
     themePreference: string;
+    reviewAlgorithmVersion?: string;
 }
 
 export interface BackupManifestV3 {
@@ -65,6 +66,7 @@ export interface ImportStatsV3 {
     gradingTasksCreated: number;
     variantRunsCreated: number;
     knowledgeMasteriesImported: number;
+    itemMemoriesImported: number;
     learningPathsCreated: number;
     tagsLinked: number;
     duplicateErrorItems: number;

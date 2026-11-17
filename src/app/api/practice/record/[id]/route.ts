@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
+import { syncItemMemory } from "@/lib/due-items";
 import { scheduleMasteryEvaluation } from "@/lib/mastery";
 
 const logger = createLogger('api:practice:record:id');
@@ -30,6 +31,7 @@ export async function DELETE(
 
         await prisma.practiceRecord.delete({ where: { id } });
         if (record.errorItemId) {
+            await syncItemMemory(prisma, record.errorItemId);
             scheduleMasteryEvaluation([record.errorItemId]);
         }
 

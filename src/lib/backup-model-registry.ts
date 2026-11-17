@@ -28,6 +28,7 @@ export const BACKUP_EXPORTED_MODELS = {
     VariantItem: 'db.variantItem.findMany',
     VariantStageLog: 'db.variantStageLog.findMany',
     KnowledgeMastery: 'db.knowledgeMastery.findMany',
+    ItemMemory: 'db.itemMemory.findMany',
     LearningPath: 'db.learningPath.findMany',
     LearningPathStep: 'db.learningPathStep.findMany',
 } as const;

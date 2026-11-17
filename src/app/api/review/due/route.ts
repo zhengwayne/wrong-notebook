@@ -4,13 +4,13 @@ import { internalError, notFound, unauthorized } from "@/lib/api-errors";
 import { authOptions } from "@/lib/auth";
 import { getAppTimeZone } from "@/lib/config";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants/pagination";
+import { getDueItems } from "@/lib/due-items";
 import { LearnerNotFoundError } from "@/lib/learners";
-import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
+import { readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { getMasteryThreshold } from "@/lib/mastery";
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { prisma } from "@/lib/prisma";
-import { getReviewPlan, isReviewDue } from "@/lib/review-schedule";
 
 const logger = createLogger('api:review:due');
 
@@ -36,30 +36,16 @@ export async function GET(req: Request) {
             }
             throw error;
         }
-        const scopeWhere = learningScopeWhere(scope);
-
         const timeZone = getAppTimeZone();
         const now = new Date();
-        // 先只取计算计划所需的字段，到期的再查询完整内容
-        const candidates = await prisma.errorItem.findMany({
-            where: { ...scopeWhere, ...(subjectId ? { subjectId } : {}) },
-            select: {
-                id: true,
-                createdAt: true,
-                practiceRecords: {
-                    where: { result: { not: null }, learnerId: scope.learnerId },
-                    select: { result: true, createdAt: true },
-                },
-            },
+        const { items: dueEntries, algorithmVersion } = await getDueItems(prisma, scope, {
+            subjectId,
+            timeZone,
+            date: now,
         });
 
         const masteryThreshold = await getMasteryThreshold(session.user.id);
-        const due = candidates
-            .map((item) => ({ id: item.id, plan: getReviewPlan(item.createdAt, item.practiceRecords, timeZone) }))
-            .filter(({ plan }) => isReviewDue(plan, timeZone, now))
-            .sort((a, b) => a.plan.nextReviewAt!.getTime() - b.plan.nextReviewAt!.getTime());
-
-        const pageEntries = due.slice((page - 1) * pageSize, page * pageSize);
+        const pageEntries = dueEntries.slice((page - 1) * pageSize, page * pageSize);
         const items = await prisma.errorItem.findMany({
             where: { id: { in: pageEntries.map(({ id }) => id) } },
             include: {
@@ -71,21 +57,22 @@ export async function GET(req: Request) {
         const itemById = new Map(items.map((item) => [item.id, item]));
 
         return NextResponse.json({
-            items: pageEntries.flatMap(({ id, plan }) => {
-                const found = itemById.get(id);
+            items: pageEntries.flatMap((entry) => {
+                const found = itemById.get(entry.id);
                 if (!found) return [];
                 const { _count, ...item } = found;
                 return [{
                     ...item,
                     masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability, masteryThreshold),
-                    reviewStage: plan.stage,
-                    nextReviewAt: plan.nextReviewAt,
+                    reviewStage: entry.reviewStage,
+                    nextReviewAt: entry.nextReviewAt,
                 }];
             }),
-            total: due.length,
+            total: dueEntries.length,
             page,
             pageSize,
-            totalPages: Math.ceil(due.length / pageSize),
+            totalPages: Math.ceil(dueEntries.length / pageSize),
+            algorithmVersion,
         });
     } catch (error) {
         logger.error({ error }, 'Failed to list due reviews');

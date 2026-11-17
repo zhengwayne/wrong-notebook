@@ -9,6 +9,7 @@ import { GeogebraPreferenceSetting } from "@/components/settings/geogebra-prefer
 import { ImportPreferenceSetting } from "@/components/settings/import-preference-setting";
 import { MasteryThresholdSetting } from "@/components/settings/mastery-threshold-setting";
 import { QuestionGradeSetting } from "@/components/settings/question-grade-setting";
+import { ReviewAlgorithmSetting } from "@/components/settings/review-algorithm-setting";
 import { SvgAnimationPreferenceSetting } from "@/components/settings/svg-animation-preference-setting";
 import { TimeZoneSetting } from "@/components/settings/time-zone-setting";
 import { UserPreferenceSwitch } from "@/components/settings/user-preference-switch";
@@ -83,6 +84,7 @@ export function GeneralSettings({ config, setConfig, isAdmin, disabled }: Genera
             <GeogebraPreferenceSetting />
             <DuplicateThresholdSetting />
             <MasteryThresholdSetting />
+            <ReviewAlgorithmSetting />
             <UserPreferenceSwitch field="variantPipelineEnabled" label={t.variants.setting} description={t.variants.settingDesc} />
         </div>
     );

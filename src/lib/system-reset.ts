@@ -53,9 +53,10 @@ export async function performSystemReset(
         await tx.variantItem.deleteMany({});
         await tx.variantRun.deleteMany({});
 
-        // 5. 练习记录、复习计划、随机试卷与错题
+        // 5. 练习记录、复习计划、逐题记忆、随机试卷与错题
         await tx.practiceRecord.deleteMany({});
         await tx.reviewSchedule.deleteMany({});
+        await tx.itemMemory.deleteMany({});
         await tx.examQuestion.deleteMany({});
         await tx.examPaper.deleteMany({});
         await tx.errorItem.deleteMany({});

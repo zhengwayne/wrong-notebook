@@ -87,21 +87,23 @@ describe('learnerId foreign key migration (10k rows + WAL + orphan audit)', () =
             await setupClient.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
             await setupClient.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
 
-            await setupClient.user.create({
-                data: { id: 'u1', email: 'fk-10k@example.com', password: 'hash', name: '测试家长' },
-            });
-            await setupClient.subject.create({
-                data: { id: 'sub1', userId: 'u1', name: '数学', stage: 'junior_high', subjectKey: 'math' },
-            });
-            await setupClient.learner.createMany({
-                data: [
-                    { id: 'ln-keep', userId: 'u1', kind: 'child', name: '大宝', order: 0 },
-                    { id: 'ln-del', userId: 'u1', kind: 'child', name: '二宝', order: 1 },
-                ],
-            });
-            await setupClient.knowledgeTag.create({
-                data: { id: 'tag-1', name: '一次函数', subject: 'math', isSystem: true, order: 1 },
-            });
+            await setupClient.$executeRawUnsafe(`
+                INSERT INTO "User" ("id", "email", "password", "name", "updatedAt")
+                VALUES ('u1', 'fk-10k@example.com', 'hash', '测试家长', CURRENT_TIMESTAMP);
+            `);
+            await setupClient.$executeRawUnsafe(`
+                INSERT INTO "Subject" ("id", "userId", "name", "stage", "subjectKey", "updatedAt")
+                VALUES ('sub1', 'u1', '数学', 'junior_high', 'math', CURRENT_TIMESTAMP);
+            `);
+            await setupClient.$executeRawUnsafe(`
+                INSERT INTO "Learner" ("id", "userId", "kind", "name", "order", "updatedAt")
+                VALUES ('ln-keep', 'u1', 'child', '大宝', 0, CURRENT_TIMESTAMP),
+                       ('ln-del', 'u1', 'child', '二宝', 1, CURRENT_TIMESTAMP);
+            `);
+            await setupClient.$executeRawUnsafe(`
+                INSERT INTO "KnowledgeTag" ("id", "name", "subject", "isSystem", "order", "updatedAt")
+                VALUES ('tag-1', '一次函数', 'math', 1, 1, CURRENT_TIMESTAMP);
+            `);
 
             const TOTAL_ITEMS = 10000;
             const BATCH_SIZE = 500;
@@ -144,7 +146,7 @@ describe('learnerId foreign key migration (10k rows + WAL + orphan audit)', () =
         const walWriter = new PrismaClient({ datasources: { db: { url: dbUrl } } });
         await walWriter.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
         await walWriter.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
-        await walWriter.user.update({ where: { id: 'u1' }, data: { name: '在WAL中更新的名字' } });
+        await walWriter.$executeRawUnsafe(`UPDATE "User" SET "name" = '在WAL中更新的名字' WHERE "id" = 'u1';`);
         const walPath = `${dbFile}-wal`;
         expect(fs.existsSync(walPath)).toBe(true);
         expect(fs.statSync(walPath).size).toBeGreaterThan(0);
@@ -163,7 +165,7 @@ describe('learnerId foreign key migration (10k rows + WAL + orphan audit)', () =
         const backupWriter = new PrismaClient({ datasources: { db: { url: dbUrl } } });
         await backupWriter.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
         await backupWriter.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
-        await backupWriter.user.update({ where: { id: 'u1' }, data: { name: '备份前最终名字' } });
+        await backupWriter.$executeRawUnsafe(`UPDATE "User" SET "name" = '备份前最终名字' WHERE "id" = 'u1';`);
         const backupPath = launcher.backupBeforeMigrate({ dbFile, dataDir, version: '2026.11.18' });
         await backupWriter.$disconnect();
 
@@ -174,7 +176,7 @@ describe('learnerId foreign key migration (10k rows + WAL + orphan audit)', () =
                 datasources: { db: { url: launcher.sqliteDatasourceUrl(backupPath!) } },
             });
             try {
-                const userRow = await verifyBackup.user.findUnique({ where: { id: 'u1' } });
+                const userRow = await verifyBackup.user.findUnique({ where: { id: 'u1' }, select: { name: true } });
                 expect(userRow?.name).toBe('备份前最终名字');
                 expect(await verifyBackup.errorItem.count()).toBe(10000);
             } finally {

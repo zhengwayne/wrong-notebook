@@ -1016,6 +1016,58 @@ async function importPapersGradingVariantsPaths(
             },
         });
     });
+
+    await ctx.archive.readNdjson('data/itemMemories.ndjson', async (row) => {
+        const targetUserId = await resolveOwnerId(ctx, row.userId);
+        const oldErrorItemId = asOptionalString(row.errorItemId);
+        const mappedErrorItemId = oldErrorItemId ? (ctx.errorItemIdMap.get(oldErrorItemId) ?? null) : null;
+        if (!targetUserId || !mappedErrorItemId) return;
+
+        const oldLearnerId = asOptionalString(row.learnerId);
+        let mappedLearnerId: string | null = null;
+        if (oldLearnerId) {
+            mappedLearnerId = ctx.learnerIdMap.get(oldLearnerId) ?? null;
+            if (!mappedLearnerId) return;
+        }
+        const scopeKey = mappedLearnerId ?? 'self';
+        const algorithmVersion = asRequiredString(row.algorithmVersion, 'fsrs-v1');
+        const dueAt = safeParseDate(row.dueAt);
+        if (!dueAt) return;
+
+        await ctx.tx.itemMemory.upsert({
+            where: {
+                userId_scopeKey_errorItemId_algorithmVersion: {
+                    userId: targetUserId,
+                    scopeKey,
+                    errorItemId: mappedErrorItemId,
+                    algorithmVersion,
+                },
+            },
+            update: {
+                learnerId: mappedLearnerId,
+                stability: asOptionalNumber(row.stability) ?? 1,
+                difficulty: asOptionalNumber(row.difficulty) ?? 5,
+                lastReviewAt: safeParseDate(row.lastReviewAt) ?? null,
+                dueAt,
+                reps: asOptionalNumber(row.reps) ?? 0,
+                lapses: asOptionalNumber(row.lapses) ?? 0,
+            },
+            create: {
+                userId: targetUserId,
+                learnerId: mappedLearnerId,
+                scopeKey,
+                errorItemId: mappedErrorItemId,
+                stability: asOptionalNumber(row.stability) ?? 1,
+                difficulty: asOptionalNumber(row.difficulty) ?? 5,
+                lastReviewAt: safeParseDate(row.lastReviewAt) ?? null,
+                dueAt,
+                reps: asOptionalNumber(row.reps) ?? 0,
+                lapses: asOptionalNumber(row.lapses) ?? 0,
+                algorithmVersion,
+            },
+        });
+        ctx.stats.itemMemoriesImported++;
+    });
 }
 
 /** 从流式 ZIP v3 备份归档恢复学习数据 */
@@ -1068,6 +1120,7 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
             gradingTasksCreated: 0,
             variantRunsCreated: 0,
             knowledgeMasteriesImported: 0,
+            itemMemoriesImported: 0,
             learningPathsCreated: 0,
             tagsLinked: 0,
             duplicateErrorItems: 0,

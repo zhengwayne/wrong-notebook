@@ -5,13 +5,21 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { getAppTimeZone } from "@/lib/config";
+import { evaluateDueCandidates } from "@/lib/due-items";
 import { getItemTags } from "@/lib/item-tags";
 import { personalSubjectIds } from "@/lib/home-aggregates";
 import { LEARNER_KIND } from "@/lib/learners";
 import { createLogger } from "@/lib/logger";
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from "@/lib/mastery-status";
+import {
+    DEFAULT_REVIEW_ALGORITHM,
+    aggregateKnowledgeRetrievability,
+    isReviewAlgorithmVersion,
+    replayItemMemory,
+    type ItemMemorySnapshot,
+    type ReviewAlgorithmVersion,
+} from "@/lib/memory-model";
 import { prisma } from "@/lib/prisma";
-import { getReviewPlan, isReviewDue } from "@/lib/review-schedule";
 import { isStudentNotebook } from "@/lib/variant/notebooks";
 import { findStudentSubjectIds } from "@/lib/variant/service";
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief, type ProfileItem } from "@/lib/variant/weakness-profile";
@@ -132,7 +140,7 @@ const ITEM_WITH_EVIDENCE_INCLUDE = {
     tags: { select: { name: true, parentId: true } },
     practiceRecords: {
         where: { result: { not: null } },
-        select: { id: true, result: true, isCorrect: true, createdAt: true, source: true, questionText: true },
+        select: { id: true, result: true, isCorrect: true, createdAt: true, source: true, questionText: true, learnerId: true },
     },
 } as const;
 
@@ -217,14 +225,22 @@ function assembleStudentEvidence(
     threshold: number,
     timeZone: string,
     now: Date,
+    algorithmVersion: ReviewAlgorithmVersion = DEFAULT_REVIEW_ALGORITHM,
+    scopeLearnerId?: string | null,
 ): {
     evidence: MasteryEvidence[];
     items: LoadedErrorItem[];
     dueItemIds: string[];
     profileItems: ProfileItem[];
+    memoriesByPoint: Map<string, ItemMemorySnapshot[]>;
 } {
     const evidence: MasteryEvidence[] = [];
-    const dueItemIds: string[] = [];
+    const dueCandidates: Array<{
+        id: string;
+        createdAt: Date;
+        practiceRecords: { result: string | null; createdAt: Date }[];
+        points: string[];
+    }> = [];
 
     for (const item of items) {
         const points = getItemTags(item);
@@ -232,7 +248,10 @@ function assembleStudentEvidence(
         for (const point of names) {
             evidence.push({ knowledgePoint: point, correct: false, at: item.createdAt, source: "error", itemId: item.id });
         }
-        for (const record of item.practiceRecords) {
+        const scopedRecords = scopeLearnerId === undefined
+            ? item.practiceRecords
+            : item.practiceRecords.filter((r) => (r.learnerId ?? null) === scopeLearnerId);
+        for (const record of scopedRecords) {
             const ok = isCorrectResult(record.result, record.isCorrect);
             if (ok === null) continue;
             const source: EvidenceSource = record.source === "practice" || record.source === "exam" ? "variant_practice" : "review";
@@ -240,16 +259,69 @@ function assembleStudentEvidence(
                 evidence.push({ knowledgePoint: point, correct: ok, at: record.createdAt, source, itemId: record.id });
             }
         }
-        const plan = getReviewPlan(item.createdAt, item.practiceRecords, timeZone);
-        if (isReviewDue(plan, timeZone, now)) dueItemIds.push(item.id);
+        dueCandidates.push({
+            id: item.id,
+            createdAt: item.createdAt,
+            practiceRecords: scopedRecords,
+            points: names,
+        });
+    }
+
+    const dueItemIds = evaluateDueCandidates(dueCandidates, { timeZone, date: now, algorithmVersion }).map((entry) => entry.id);
+    const memoriesByPoint = new Map<string, ItemMemorySnapshot[]>();
+    if (algorithmVersion === "fsrs-v1") {
+        for (const candidate of dueCandidates) {
+            const snapshot = replayItemMemory(candidate.createdAt, candidate.practiceRecords, timeZone);
+            for (const point of candidate.points) {
+                const list = memoriesByPoint.get(point) ?? [];
+                list.push(snapshot);
+                memoriesByPoint.set(point, list);
+            }
+        }
     }
 
     evidence.push(...gradingSubmissionsToEvidence(gradingSubmissions));
-    return { evidence, items, dueItemIds, profileItems: toProfileItems(items, threshold) };
+    return { evidence, items, dueItemIds, profileItems: toProfileItems(items, threshold), memoriesByPoint };
+}
+
+function buildMasteryWithMemory(
+    evidence: MasteryEvidence[],
+    memoriesByPoint: Map<string, ItemMemorySnapshot[]>,
+    algorithmVersion: ReviewAlgorithmVersion,
+    timeZone: string,
+    now: Date,
+) {
+    const mastery = buildMasteryMap(evidence, { timeZone, now });
+    if (algorithmVersion !== "fsrs-v1") return mastery;
+    for (const [point, state] of mastery.entries()) {
+        const pointMemories = memoriesByPoint.get(point);
+        if (!pointMemories || pointMemories.length === 0) continue;
+        state.retrievability = aggregateKnowledgeRetrievability(pointMemories, now);
+        state.score = Math.min(1, Math.max(0, state.pKnown * state.retrievability));
+    }
+    return mastery;
+}
+
+function computeEvidenceHashValue(evidence: MasteryEvidence[], algorithmVersion: ReviewAlgorithmVersion): string {
+    const raw = evidenceHash(evidence);
+    const input = algorithmVersion === DEFAULT_REVIEW_ALGORITHM ? raw : `${algorithmVersion}:${raw}`;
+    return createHash("sha1").update(input).digest("hex");
 }
 
 export async function collectEvidence(userId: string, student: ResolvedStudent) {
-    const threshold = (await prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true } }))?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
+    const userRow = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { masteryThreshold: true, reviewAlgorithmVersion: true },
+    });
+    const threshold = userRow?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
+    const algorithmVersion = isReviewAlgorithmVersion(userRow?.reviewAlgorithmVersion)
+        ? userRow.reviewAlgorithmVersion
+        : DEFAULT_REVIEW_ALGORITHM;
+    const scopeLearnerId = student.kind === "self"
+        ? null
+        : student.kind === "child"
+            ? student.learnerId
+            : undefined;
     const [items, submissions] = await Promise.all([
         loadItems(userId, student),
         student.studentKey === SELF_STUDENT_KEY
@@ -259,7 +331,10 @@ export async function collectEvidence(userId: string, student: ResolvedStudent) 
                 select: GRADING_SUBMISSION_EVIDENCE_SELECT,
             }),
     ]);
-    return assembleStudentEvidence(items, submissions, threshold, getAppTimeZone(), new Date());
+    return {
+        ...assembleStudentEvidence(items, submissions, threshold, getAppTimeZone(), new Date(), algorithmVersion, scopeLearnerId),
+        algorithmVersion,
+    };
 }
 
 async function loadTagGraph(userId: string): Promise<PrerequisiteGraph> {
@@ -571,10 +646,10 @@ export async function getOrReplanPath(userId: string, options: {
         student.studentName = options.language === "en" ? "Me" : "我";
     }
 
-    const { evidence, items, dueItemIds, profileItems } = await collectEvidence(userId, student);
+    const { evidence, items, dueItemIds, profileItems, memoriesByPoint, algorithmVersion } = await collectEvidence(userId, student);
     const timeZone = getAppTimeZone();
-    const mastery = buildMasteryMap(evidence, { timeZone });
-    const evidenceHashValue = createHash("sha1").update(evidenceHash(evidence)).digest("hex");
+    const mastery = buildMasteryWithMemory(evidence, memoriesByPoint, algorithmVersion, timeZone, new Date());
+    const evidenceHashValue = computeEvidenceHashValue(evidence, algorithmVersion);
 
     const existing = await prisma.learningPath.findUnique({
         where: { userId_studentKey: { userId, studentKey: student.studentKey } },
@@ -697,7 +772,7 @@ export async function listClassPaths(userId: string, classId: string, language: 
 
     const studentIds = cls.students.map((s) => s.id);
     const [userRow, graph, allSubjects, studentLearners, allSubmissions, existingPaths] = await Promise.all([
-        prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true } }),
+        prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true, reviewAlgorithmVersion: true } }),
         loadTagGraph(userId),
         prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } }),
         prisma.learner.findMany({ where: { userId, gradingStudentId: { in: studentIds } }, select: { id: true, gradingStudentId: true } }),
@@ -712,6 +787,9 @@ export async function listClassPaths(userId: string, classId: string, language: 
     ]);
 
     const threshold = userRow?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
+    const algorithmVersion = isReviewAlgorithmVersion(userRow?.reviewAlgorithmVersion)
+        ? userRow.reviewAlgorithmVersion
+        : DEFAULT_REVIEW_ALGORITHM;
     const learnerByStudentId = new Map(studentLearners.map((l) => [l.gradingStudentId!, l.id]));
     const pathByStudentId = new Map(existingPaths.map((p) => [p.studentKey, p]));
     const submissionsByStudentId = new Map<string, LoadedGradingSubmission[]>();
@@ -811,9 +889,16 @@ export async function listClassPaths(userId: string, classId: string, language: 
         }
 
         const submissions = submissionsByStudentId.get(student.id) ?? [];
-        const { evidence, dueItemIds, profileItems } = assembleStudentEvidence(studentItems, submissions, threshold, timeZone, now);
-        const mastery = buildMasteryMap(evidence, { timeZone });
-        const evidenceHashValue = createHash("sha1").update(evidenceHash(evidence)).digest("hex");
+        const { evidence, dueItemIds, profileItems, memoriesByPoint } = assembleStudentEvidence(
+            studentItems,
+            submissions,
+            threshold,
+            timeZone,
+            now,
+            algorithmVersion,
+        );
+        const mastery = buildMasteryWithMemory(evidence, memoriesByPoint, algorithmVersion, timeZone, now);
+        const evidenceHashValue = computeEvidenceHashValue(evidence, algorithmVersion);
         const existing = pathByStudentId.get(student.id) ?? null;
         const profile = buildWeaknessProfile(profileItems);
 

@@ -9,6 +9,7 @@ import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { resolveLearningScope } from "@/lib/learning-scope";
+import { syncItemMemory } from "@/lib/due-items";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 
 const logger = createLogger('api:practice:record');
@@ -105,6 +106,7 @@ export async function POST(req: Request) {
         });
 
         if (errorItemId && result) {
+            await syncItemMemory(prisma, errorItemId);
             scheduleMasteryEvaluation([errorItemId]);
             scheduleLearningPathReplan(userId, 'zh', resolvedLearnerId);
         }

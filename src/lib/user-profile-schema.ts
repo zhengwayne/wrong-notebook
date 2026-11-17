@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_MASTERY_THRESHOLD, MIN_MASTERY_THRESHOLD } from "@/lib/mastery-status";
+import { REVIEW_ALGORITHM_VERSIONS } from "@/lib/memory-model";
 import { THEME_PREFERENCES } from "@/lib/theme";
 import { GRADE_RECOGNITION_MODES } from "@/lib/question-grade";
 import { GRADE_SEMESTERS } from "@/lib/grade-options";
@@ -20,6 +21,7 @@ export const userUpdateSchema = z.object({
     themePreference: z.enum(THEME_PREFERENCES).optional(),
     questionDuplicateThreshold: z.number().min(1).max(100).multipleOf(0.01).optional(),
     masteryThreshold: z.number().int().min(MIN_MASTERY_THRESHOLD).max(MAX_MASTERY_THRESHOLD).optional(),
+    reviewAlgorithmVersion: z.enum(REVIEW_ALGORITHM_VERSIONS).optional(),
 });
 
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;

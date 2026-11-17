@@ -165,6 +165,9 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         await db.knowledgeMastery.create({
             data: { id: 'km-1', userId: admin.id, studentKey: learner.id, knowledgePoint: '方程' },
         });
+        await db.itemMemory.create({
+            data: { id: 'im-1', userId: admin.id, learnerId: learner.id, scopeKey: learner.id, errorItemId: errItem.id, dueAt: new Date() },
+        });
         const lp = await db.learningPath.create({
             data: { id: 'lp-1', userId: admin.id, studentKey: learner.id, studentName: '小明', evidenceHash: 'h1' },
         });

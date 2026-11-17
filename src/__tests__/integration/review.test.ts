@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     errorItem: { findMany: vi.fn() },
     learner: { findFirst: vi.fn() },
+    user: { findUnique: vi.fn() },
     session: { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' } as { user: { id: string; email: string }; expires: string } | null,
 }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, learner: mocks.learner, user: { findUnique: vi.fn(async () => ({ masteryThreshold: 50 })) } } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, learner: mocks.learner, user: mocks.user } }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/config', () => ({ getAppTimeZone: () => 'Asia/Shanghai' }));
@@ -35,6 +36,7 @@ describe('GET /api/review/due', () => {
         vi.setSystemTime(new Date('2026-10-20T04:00:00Z'));
         mocks.session = { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' };
         mocks.learner.findFirst.mockResolvedValue({ id: 'child-a', kind: 'child' });
+        mocks.user.findUnique.mockResolvedValue({ masteryThreshold: 50, reviewAlgorithmVersion: 'ebbinghaus-v1' });
         mocks.errorItem.findMany.mockImplementation(async (args: { where: { id?: { in: string[] } } }) => {
             if (!args.where.id) return candidates;
             return args.where.id.in.map((id) => ({ id, masteryProbability: null, subject: null, tags: [], _count: { practiceRecords: id === 'new' ? 0 : 1 } }));
@@ -75,5 +77,40 @@ describe('GET /api/review/due', () => {
         mocks.session = null;
         const response = await get();
         expect(response.status).toBe(401);
+    });
+
+    it('切换 reviewAlgorithmVersion=fsrs-v1 时按逐题记忆模型调度并返回版本标识', async () => {
+        mocks.user.findUnique.mockResolvedValue({ masteryThreshold: 50, reviewAlgorithmVersion: 'fsrs-v1' });
+        mocks.errorItem.findMany.mockImplementation(async (args: { where: { id?: { in: string[] } } }) => {
+            if (!args.where.id) {
+                return [
+                    // 3 天前连续答对 1 次（初始 stability~3 天 -> 10 月 20 日已到期）
+                    {
+                        id: 'fsrs-due',
+                        createdAt: new Date('2026-10-10T02:00:00Z'),
+                        practiceRecords: [{ result: 'correct', createdAt: new Date('2026-10-16T02:00:00Z') }],
+                    },
+                    // 昨天刚答对两次（stability 较长，尚未到期）
+                    {
+                        id: 'fsrs-future',
+                        createdAt: new Date('2026-10-10T02:00:00Z'),
+                        practiceRecords: [
+                            { result: 'correct', createdAt: new Date('2026-10-11T02:00:00Z') },
+                            { result: 'correct', createdAt: new Date('2026-10-19T02:00:00Z') },
+                        ],
+                    },
+                ];
+            }
+            return args.where.id.in.map((id) => ({ id, masteryProbability: null, subject: null, tags: [], _count: { practiceRecords: 1 } }));
+        });
+
+        const response = await get();
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        expect(data.algorithmVersion).toBe('fsrs-v1');
+        expect(data.total).toBe(1);
+        expect(data.items.map((item: { id: string }) => item.id)).toEqual(['fsrs-due']);
+        expect(data.items[0].reviewStage).toBe(1);
     });
 });

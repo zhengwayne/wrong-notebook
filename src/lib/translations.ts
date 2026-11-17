@@ -1202,6 +1202,10 @@ export const translations = {
             dailySnapshotFailedToast: "Failed to create database snapshot",
             dailySnapshotFailedBanner: "Automatic database snapshot failed. Check permissions or disk space in Settings.",
             dailySnapshotOpenSettings: "Open Settings",
+            reviewAlgorithmLabel: "Review Scheduling Algorithm",
+            reviewAlgorithmDesc: "Controls how due items are scheduled on Today's Review and Learning Path.",
+            reviewAlgorithmEbbinghaus: "Classic Ebbinghaus Intervals (ebbinghaus-v1)",
+            reviewAlgorithmFsrs: "Adaptive Item Memory Model Beta (fsrs-v1)",
         },
         errors: {
             AI_CONNECTION_FAILED: "Network error. Please check your connection.",
@@ -3213,6 +3217,10 @@ export const translations = {
             dailySnapshotFailedToast: "创建数据库快照失败",
             dailySnapshotFailedBanner: "自动数据库快照失败，请打开设置检查备份目录权限或磁盘空间。",
             dailySnapshotOpenSettings: "查看设置",
+            reviewAlgorithmLabel: "复习调度算法",
+            reviewAlgorithmDesc: "控制“今日待复习”与学习路径中到期错题的调度策略，记忆状态可随时由作答记录重算。",
+            reviewAlgorithmEbbinghaus: "经典艾宾浩斯阶梯（ebbinghaus-v1）",
+            reviewAlgorithmFsrs: "逐题自适应记忆模型灰度（fsrs-v1）",
         },
         errors: {
             AI_CONNECTION_FAILED: "网络连接失败，请检查网络设置。",
