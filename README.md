@@ -420,10 +420,13 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | 环境变量 | 描述 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | 数据库连接地址 | 源码 `file:./dev.db`；Docker `file:/app/data/dev.db` | SQLite 数据库路径 |
+| `SQLITE_JOURNAL_MODE` | SQLite 日志模式 | `WAL` | 可选 `WAL`、`DELETE`、`TRUNCATE`、`PERSIST`、`MEMORY`、`OFF`；NAS NFS/CIFS 网络卷建议设为 `DELETE` 或 `TRUNCATE` |
 | `NEXTAUTH_SECRET` | Auth 密钥 | 无 | 用于加密 Session，生产环境必须设置，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 访问地址 | 无 | 部署后的访问地址，如 `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | 信任主机头 | Docker 镜像中为 `true` | 为 `true` 时根据请求自动推断访问地址，适合 Docker/反向代理 |
+| `NEXTAUTH_DEBUG` | NextAuth 调试日志 | `false` | 设为 `true` 时输出 NextAuth 详细调试日志 |
 | `LOG_LEVEL` | 日志级别 | 开发 `debug` / 生产 `info` | 可选 `trace`、`debug`、`info`、`warn`、`error`、`fatal`，详见 [日志指南](doc/LOGGING_GUIDE.md) |
+| `LOG_AI_PAYLOADS` | 生产输出 AI 调试载荷 | `false` | 生产环境默认不向 stdout 打印完整提示词与学生答案；设为 `true` 时输出脱敏并截断后的载荷 |
 | `DEBUG_DB` | SQL 日志 | `false` | 为 `true` 时输出数据库查询日志 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 代理 | 无 | 访问 AI 服务时使用的代理 |
 | `ALLOW_REGISTRATION` | 允许注册 | `false` | 为 `true` 时默认开放注册；管理员在「设置 → 用户管理」中保存的开关优先 |

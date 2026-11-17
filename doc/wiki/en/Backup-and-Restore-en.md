@@ -25,7 +25,9 @@ Restoring a backup keeps each question's original grade and does not apply the c
 
 ## Docker full-site backup
 
-This example uses the directory layout from the [deployment guide](Deployment-en). Stopping the app before archiving keeps the SQLite data file, its WAL/SHM files and the configuration consistent.
+This example uses the directory layout from the [deployment guide](Deployment-en). The application uses SQLite **WAL mode** by default (along with `busy_timeout=5000` and `foreign_keys=ON`). Stopping the app before archiving keeps the SQLite main file, its `-wal`/`-shm` files, and the configuration consistent. If you need a single-file copy without `-wal`, run `PRAGMA wal_checkpoint(TRUNCATE)` after stopping writes and then back up the `.db` file.
+
+If the data directory is mounted over NFS / CIFS on a NAS (where shared-memory locks do not work reliably), set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE` (which automatically switches `synchronous` to `FULL`).
 
 Run in the deployment directory:
 

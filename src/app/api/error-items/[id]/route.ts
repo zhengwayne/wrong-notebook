@@ -164,7 +164,7 @@ export async function PUT(
                     // Use the incoming gradeSemester (priority) or the existing one on the item
                     const contextGrade = gradeSemester !== undefined ? gradeSemester : errorItem.gradeSemester;
 
-                    const parentId = await findParentTagIdForGrade(contextGrade, subjectKey);
+                    const parentId = await findParentTagIdForGrade(contextGrade, subjectKey, prisma);
 
                     tag = await prisma.knowledgeTag.create({
                         data: {

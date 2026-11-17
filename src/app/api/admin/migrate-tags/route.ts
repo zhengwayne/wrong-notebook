@@ -182,7 +182,7 @@ export async function POST() {
                                     select: { gradeSemester: true }
                                 });
 
-                                const parentId = await findParentTagIdForGrade(errorItem?.gradeSemester, assoc.subject);
+                                const parentId = await findParentTagIdForGrade(errorItem?.gradeSemester, assoc.subject, tx);
 
                                 customTag = await tx.knowledgeTag.create({
                                     data: {

@@ -1,5 +1,4 @@
-import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
 
@@ -7,7 +6,7 @@ import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope
  * 按学科名为用户找到错题本：先做包含匹配（如「数学」匹配「初二数学」），
  * 找不到时新建同名错题本（学段取用户的教育阶段，学科由名称推断）。并发导入同一学科时用 upsert 避免重复创建。
  */
-export async function resolveNotebookForSubject(userId: string, subjectName: string, client: Prisma.TransactionClient = prisma): Promise<{ id: string; name: string }> {
+export async function resolveNotebookForSubject(userId: string, subjectName: string, client: PrismaClient | Prisma.TransactionClient): Promise<{ id: string; name: string }> {
     const name = subjectName.trim();
     const notebooks = await client.subject.findMany({
         where: { userId },

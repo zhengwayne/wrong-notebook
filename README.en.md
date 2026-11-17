@@ -422,10 +422,13 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | Variable | Description | Default | Notes |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | Database URL | Source: `file:./dev.db`; Docker: `file:/app/data/dev.db` | SQLite database path |
+| `SQLITE_JOURNAL_MODE` | SQLite journal mode | `WAL` | One of `WAL`, `DELETE`, `TRUNCATE`, `PERSIST`, `MEMORY`, `OFF`; use `DELETE` or `TRUNCATE` on NAS NFS/CIFS network mounts |
 | `NEXTAUTH_SECRET` | Auth secret | None | Encrypts sessions; required in production. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Public URL | None | The URL users visit, e.g. `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | Trust host header | `true` in the Docker image | When `true`, the URL is inferred from the request; suits Docker and reverse proxies |
+| `NEXTAUTH_DEBUG` | NextAuth debug logs | `false` | Set to `true` to enable verbose NextAuth debug logging |
 | `LOG_LEVEL` | Log level | `debug` in development / `info` in production | `trace`, `debug`, `info`, `warn`, `error` or `fatal`; see [LOGGING_GUIDE.md](doc/LOGGING_GUIDE.md) (Chinese) |
+| `LOG_AI_PAYLOADS` | Print AI payloads in production | `false` | By default production stdout omits prompts and student answers; set to `true` for redacted and truncated payload logs |
 | `DEBUG_DB` | SQL logs | `false` | When `true`, logs database queries |
 | `HTTP_PROXY` / `HTTPS_PROXY` | Proxy | None | Proxy for requests to AI services |
 | `ALLOW_REGISTRATION` | Allow sign-ups | `false` | When `true`, registration is open by default; the switch saved by an admin under **Settings → User Management** takes precedence |

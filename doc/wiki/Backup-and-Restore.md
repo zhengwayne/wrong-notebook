@@ -25,7 +25,9 @@
 
 ## Docker 整站备份
 
-下例适用于[部署指南](Deployment)中的目录布局。停止应用后再归档，可使 SQLite 数据文件、WAL/SHM 辅助文件及配置保持一致。
+下例适用于[部署指南](Deployment)中的目录布局。应用默认启用 SQLite **WAL 模式**（配合 `busy_timeout=5000` 和 `foreign_keys=ON`）。停止应用后再归档，可使 SQLite 主库文件、`-wal`/`-shm` 辅助文件及配置保持一致；若希望生成不依赖 `-wal` 的单文件副本，可在停机或无写入时对数据库执行 `PRAGMA wal_checkpoint(TRUNCATE)` 后再备份 `.db` 文件。
+
+如果数据目录挂载在 NAS 的 NFS / CIFS 网络卷上（不支持跨节点共享内存锁），可在环境变量中设置 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE`（此时会自动切换为 `synchronous=FULL`）。
 
 在部署目录执行：
 

@@ -79,6 +79,12 @@ function sqliteUrl(file) {
     return `file:${file.split(path.sep).join('/')}`;
 }
 
+/** 为 Prisma 数据源补充单连接池参数，减少 SQLite 并发写锁争用 */
+function sqliteDatasourceUrl(file) {
+    const base = sqliteUrl(file);
+    return base.includes('?') ? `${base}&connection_limit=1` : `${base}?connection_limit=1`;
+}
+
 function runPrisma(args, env) {
     const cli = require.resolve('prisma/build/index.js', { paths: [APP_DIR] });
     const result = spawnSync(process.execPath, [cli, ...args], {
@@ -156,7 +162,7 @@ function prepare(options = {}) {
         ...process.env,
         NODE_ENV: 'production',
         NEXT_TELEMETRY_DISABLED: '1',
-        DATABASE_URL: sqliteUrl(dbFile),
+        DATABASE_URL: sqliteDatasourceUrl(dbFile),
         CONFIG_DIR: configDir,
         NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || ensureSecret(dataDir),
         AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST || 'true',
@@ -197,7 +203,7 @@ function start(options = {}) {
     require(path.join(APP_DIR, 'server.js'));
 }
 
-module.exports = { prepare, start, parseArgs, defaultDataDir, sqliteUrl, ensureSecret };
+module.exports = { prepare, start, parseArgs, defaultDataDir, sqliteUrl, sqliteDatasourceUrl, ensureSecret };
 
 if (require.main === module) {
     try {
