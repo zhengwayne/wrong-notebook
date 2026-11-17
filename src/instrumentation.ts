@@ -26,10 +26,13 @@ export async function register() {
                     createLogger('learners').info({ result }, 'applied learner backfill');
                 }
 
-                // 进程中断后仍停在「识别中」的家长试卷标记为失败，便于家长重试
+                // 进程中断后仍停在「识别中」的家长试卷标记为失败，并把遗留 running 异步作业标记为中断
                 const { failStaleRecognizingPapers } = await import('./lib/parent-paper-recognize');
                 const stale = await failStaleRecognizingPapers(prisma);
                 if (stale) createLogger('parent-papers').info({ stale }, 'marked interrupted parent paper recognition as failed');
+
+                const { recoverInterruptedAsyncOperations } = await import('./lib/async-operations');
+                await recoverInterruptedAsyncOperations(prisma);
             } catch (error) {
                 const { createLogger } = await import('./lib/logger');
                 createLogger('learners').error({ error }, 'learner backfill failed');

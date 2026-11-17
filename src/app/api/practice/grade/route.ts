@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAIService } from "@/lib/ai";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { internalError, notFound, validationError } from "@/lib/api-errors";
 import { parseLastPractice } from "@/lib/last-practice";
 import { createLogger } from "@/lib/logger";
@@ -51,6 +52,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         });
         return NextResponse.json(result);
     } catch (error) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         logger.error({ error }, 'Error grading answer');
         return internalError(error instanceof Error ? error.message : "Failed to grade answer");
     }

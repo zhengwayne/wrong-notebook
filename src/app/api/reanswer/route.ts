@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAIService } from "@/lib/ai";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { badRequest, createErrorResponse, ErrorCode } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
@@ -82,6 +83,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
             gradeSemester: resolveQuestionGrade(gradeProfile, { gradeSemester, recognizedGradeSemester: result.gradeSemester }, getAppTimeZone()),
         } : result);
     } catch (error: unknown) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         const errorMessageFromError = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
         logger.error({ error: errorMessageFromError, stack }, 'Reanswer error occurred');

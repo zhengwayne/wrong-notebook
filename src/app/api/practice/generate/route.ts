@@ -7,6 +7,7 @@ import { parseLastPractice } from "@/lib/last-practice";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { startItemPipeline, startLegacyRun } from "@/lib/variant/service";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { serializeRun } from "@/lib/variant/serialize";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 
@@ -90,6 +91,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         );
         return NextResponse.json({ ...generated, pipeline: false });
     } catch (error) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         logger.error({ error }, 'Error generating practice');
         const errorMessage = error instanceof Error ? error.message : "Failed to generate practice question";
         return internalError(errorMessage);

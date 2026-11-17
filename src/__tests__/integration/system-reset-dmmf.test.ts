@@ -22,7 +22,7 @@ vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi
 
 import { POST as SYSTEM_RESET } from '@/app/api/admin/system-reset/route';
 import {
-    flushBackgroundTasksForTest,
+    flushBackgroundTasksToDb,
     resetBackgroundTasksForTest,
     startBackgroundTask,
 } from '@/lib/background-tasks';
@@ -128,6 +128,9 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         await db.aiUsage.create({
             data: { id: 'usage-1', userId: admin.id, kind: 'analyze' },
         });
+        await db.aiDailyQuota.create({
+            data: { id: 'adq-1', userId: admin.id, dayKey: '2026-11-18', count: 1 },
+        });
 
         const task = await db.gradingTask.create({
             data: { id: 'gt-1', userId: admin.id, classId: cls.id, title: '改卷' },
@@ -178,7 +181,7 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
             data: { id: 'lps-1', pathId: lp.id, position: 0, type: 'review_explanation', title: '步骤1', reason: '错题', knowledgePoints: '["方程"]' },
         });
 
-        // 准备磁盘 TTS 缓存、background-tasks.json 与 recoverable-response 内存缓存
+        // 准备磁盘 TTS 缓存、遗留 background-tasks.json、AsyncOperation 与 recoverable-response 缓存
         const configDir = process.env.CONFIG_DIR!;
         const ttsDir = path.join(configDir, 'tts-cache');
         fs.mkdirSync(ttsDir, { recursive: true });
@@ -186,10 +189,10 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         fs.writeFileSync(path.join(ttsDir, 'dummy.json'), '{}');
 
         const bgFile = path.join(configDir, 'background-tasks.json');
-        resetBackgroundTasksForTest({ file: bgFile });
+        fs.writeFileSync(bgFile, '[]');
+        resetBackgroundTasksForTest();
         startBackgroundTask({ userId: admin.id, kind: 'analyze', subject: '待清理任务' });
-        flushBackgroundTasksForTest();
-        expect(fs.existsSync(bgFile)).toBe(true);
+        await flushBackgroundTasksToDb();
 
         const reqId = '0123456789abcdef0123456789abcdef';
         const wrapped = withRecoverableResponse(async () => new Response(JSON.stringify({ ok: true }), {
@@ -197,7 +200,7 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
             headers: { 'content-type': 'application/json' },
         }));
         await wrapped(new Request('http://localhost/test', { headers: { [REQUEST_ID_HEADER]: reqId } }));
-        expect(getStoredResponse(reqId)).not.toBeNull();
+        expect(await getStoredResponse(reqId)).not.toBeNull();
 
         // 重置前：DMMF 枚举的每个模型均至少有 1 条记录，防止测试漏覆盖新表
         for (const model of Prisma.dmmf.datamodel.models) {
@@ -227,6 +230,6 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         expect(preservedUser?.email).toBe(admin.email);
         expect(fs.existsSync(ttsDir)).toBe(false);
         expect(fs.existsSync(bgFile)).toBe(false);
-        expect(getStoredResponse(reqId)).toBeNull();
+        expect(await getStoredResponse(reqId)).toBeNull();
     });
 });

@@ -28,7 +28,7 @@ describe('耗时请求响应暂存', () => {
         mocks.user.findUnique.mockResolvedValue({ id: 'user-1' });
     });
 
-    it('处理中返回 running，结束后返回原响应的状态码与内容，原响应不受影响', async () => {
+    it('带异步请求编号时暂存 running 与 done，跨用户访问不可见（对应 404）', async () => {
         let finish!: () => void;
         const pending = call(() => new Promise((resolve) => { finish = () => resolve(NextResponse.json({ svgAnimation: '<svg/>' })); }));
 
@@ -55,8 +55,17 @@ describe('耗时请求响应暂存', () => {
         expect((await lookup('../x')).status).toBe(404);
     });
 
-    it('未登录不能查询', async () => {
+    it('未登录不能查询，跨用户访问返回 404', async () => {
         await call(async () => NextResponse.json({ ok: true }));
+
+        // 另一位用户查询，应返回 404 不泄露响应存在性
+        mocks.user.findUnique.mockResolvedValueOnce({ id: 'user-2' });
+        expect((await lookup()).status).toBe(404);
+
+        // 本人可读取
+        mocks.user.findUnique.mockResolvedValueOnce({ id: 'user-1' });
+        expect((await lookup()).status).toBe(200);
+
         mocks.session = null;
         expect((await lookup()).status).toBe(401);
     });

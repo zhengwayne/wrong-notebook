@@ -41,8 +41,9 @@ export const ErrorCode = {
     OPERATION_NOT_ALLOWED: 'OPERATION_NOT_ALLOWED',
     PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
 
-    // 请求过多 (429)
+    // 请求过多 (429 / 503)
     AI_DAILY_LIMIT_EXCEEDED: 'AI_DAILY_LIMIT_EXCEEDED',
+    AI_QUEUE_BUSY: 'AI_QUEUE_BUSY',
     TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
 
     // 冲突 (409)
@@ -154,6 +155,19 @@ export function payloadTooLarge(message: string = "Payload too large"): NextResp
 export function tooManyRequests(retryAfterMs: number, message: string = "Too many requests"): NextResponse<ApiErrorResponse> {
     const response = createErrorResponse(message, 429, ErrorCode.TOO_MANY_REQUESTS);
     response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+    return response;
+}
+
+/**
+ * 503 Service Unavailable - 服务暂忙或排队超时，附带 Retry-After 秒数
+ */
+export function serviceUnavailable(
+    retryAfterSeconds: number,
+    message: string = "Service temporarily unavailable",
+    code: ErrorCodeType = ErrorCode.AI_QUEUE_BUSY
+): NextResponse<ApiErrorResponse> {
+    const response = createErrorResponse(message, 503, code);
+    response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterSeconds))));
     return response;
 }
 

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { clearAllBackgroundTasks } from '@/lib/background-tasks';
+import { clearAllBackgroundTasks, flushBackgroundTasksToDb } from '@/lib/background-tasks';
 import { createLogger } from '@/lib/logger';
 import { clearRecoverableResponses } from '@/lib/recoverable-response';
 import { clearSpeechCache } from '@/lib/tts/speech-cache';
@@ -28,6 +28,9 @@ export async function performSystemReset(
     if (!admin) {
         throw new Error('ADMIN_USER_NOT_FOUND');
     }
+
+    // 等待内存队列中待落库的后台任务写完，再在单一事务中清空全表
+    await flushBackgroundTasksToDb();
 
     await db.$transaction(async (tx) => {
         // 1. 学习路径与掌握度
@@ -61,11 +64,13 @@ export async function performSystemReset(
         await tx.examPaper.deleteMany({});
         await tx.errorItem.deleteMany({});
 
-        // 6. 学习者档案、回填审计、导入去重、错题本、AI 用量与溯源
+        // 6. 学习者档案、回填审计、导入去重、异步作业、错题本、AI 用量与溯源
         await tx.learnerBackfillAudit.deleteMany({});
         await tx.sourceImport.deleteMany({});
+        await tx.asyncOperation.deleteMany({});
         await tx.learner.deleteMany({});
         await tx.subject.deleteMany({});
+        await tx.aiDailyQuota.deleteMany({});
         await tx.aiUsage.deleteMany({});
         await tx.aiProvenance.deleteMany({});
 

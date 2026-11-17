@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { toConcurrencyErrorResponse } from '@/lib/ai/concurrency';
 import {
     accountDisabled,
     badRequest,
@@ -212,13 +213,19 @@ export function defineApiRoute<
                 }
             }
 
-            return invoke(effectiveReq, {
-                user,
-                session,
-                requestContext,
-                params,
-                body: parsedBody,
-            });
+            try {
+                return await invoke(effectiveReq, {
+                    user,
+                    session,
+                    requestContext,
+                    params,
+                    body: parsedBody,
+                });
+            } catch (error) {
+                const busy = toConcurrencyErrorResponse(error);
+                if (busy) return busy;
+                throw error;
+            }
         });
     };
 }

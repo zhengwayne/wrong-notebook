@@ -14,6 +14,7 @@ import { getErrorMessage } from "@/lib/error-message";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { recordAiProvenance } from "@/lib/ai/provenance";
 import { ImageValidationError, normalizeImageInput } from "@/lib/server/image-normalize";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
@@ -119,6 +120,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         ));
         return NextResponse.json(toAnalyzeImageResult(items, analysisResult.failedCount, provenanceId));
     } catch (error) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         const message = getErrorMessage(error);
         logger.error({
             error: message,

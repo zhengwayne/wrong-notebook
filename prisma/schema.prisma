@@ -59,6 +59,8 @@ model User {
   parentPapers ParentPaper[]
   itemMemories ItemMemory[]
   sourceImports SourceImport[]
+  asyncOperations AsyncOperation[]
+  aiDailyQuotas   AiDailyQuota[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -729,4 +731,44 @@ model SourceImport {
   @@unique([userId, sourceKind, sourceQuestionId])
   @@index([userId, sourceKind, sourceId])
   @@index([errorItemId])
+}
+
+/// 统一异步作业、幂等操作与断线可恢复请求状态表
+model AsyncOperation {
+  id             String    @id @default(cuid())
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopeKey       String    @default("") // 非空作用域键：避免 SQLite 唯一索引下 NULL 不互斥
+  category       String    // idempotent | recoverable | task
+  kind           String
+  idempotencyKey String
+  requestHash    String?
+  status         String    @default("running") // running | succeeded | failed | interrupted
+  statusCode     Int?
+  subject        String?
+  link           String?
+  progressJson   String?
+  responseJson   String?
+  error          String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  expiresAt      DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([scopeKey, category, kind, idempotencyKey])
+  @@index([userId, category, status, startedAt])
+  @@index([expiresAt])
+}
+
+/// 用户按应用时区自然日统计的 AI 调用原子计数表
+model AiDailyQuota {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayKey    String   // YYYY-MM-DD（应用时区）
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dayKey])
+  @@index([dayKey])
 }

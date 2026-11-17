@@ -1,4 +1,5 @@
 import { resolveActor } from '@/lib/server/actor';
+import { setRequestContextUserId } from '@/lib/server/request-context';
 
 /**
  * 获取当前已登录且处于激活状态（且会话未被撤销）的用户；
@@ -6,5 +7,9 @@ import { resolveActor } from '@/lib/server/actor';
  */
 export async function getCurrentUser() {
     const actor = await resolveActor();
-    return actor.kind === 'authenticated' ? actor.user : null;
+    if (actor.kind === 'authenticated') {
+        setRequestContextUserId(actor.user.id);
+        return actor.user;
+    }
+    return null;
 }

@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
         return unauthorized("Authentication required");
     }
     const id = parseRequestId((await params).id);
-    const stored = id ? getStoredResponse(id) : null;
+    const stored = id ? await getStoredResponse(id, user.id) : null;
     if (!stored) {
         return notFound("Request not found");
     }
