@@ -50,10 +50,91 @@ export interface ConcurrencyRunOptions {
     signal?: AbortSignal;
 }
 
+interface ConcurrencyTelemetry {
+    totalCalls: number;
+    succeededCalls: number;
+    provider429Count: number;
+    queueRejectedCount: number;
+    waitSamplesMs: number[];
+}
+
+export interface ModelQueueState {
+    provider: string;
+    model: string;
+    active: number;
+    waiting: number;
+}
+
+export interface AiConcurrencyTelemetrySnapshot {
+    totalCalls: number;
+    succeededCalls: number;
+    provider429Count: number;
+    provider429Rate: number;
+    queueRejectedCount: number;
+    queueSaturationRate: number;
+    waitSampleCount: number;
+    waitMs: {
+        p50: number;
+        p95: number;
+        p99: number;
+        max: number;
+    };
+    limit: number;
+    maxWaiting: number;
+    queues: ModelQueueState[];
+}
+
+const MAX_WAIT_SAMPLES = 1000;
+
 const store = globalThis as typeof globalThis & {
     __aiModelConcurrencyQueues?: Map<string, ModelQueue>;
+    __aiConcurrencyTelemetry?: ConcurrencyTelemetry;
 };
 const queues: Map<string, ModelQueue> = store.__aiModelConcurrencyQueues ??= new Map();
+const telemetry: ConcurrencyTelemetry = store.__aiConcurrencyTelemetry ??= {
+    totalCalls: 0,
+    succeededCalls: 0,
+    provider429Count: 0,
+    queueRejectedCount: 0,
+    waitSamplesMs: [],
+};
+
+function recordWaitSample(waitMs: number): void {
+    const normalized = Math.max(0, Math.round(waitMs));
+    if (telemetry.waitSamplesMs.length >= MAX_WAIT_SAMPLES) {
+        telemetry.waitSamplesMs.shift();
+    }
+    telemetry.waitSamplesMs.push(normalized);
+}
+
+function isProvider429Error(error: unknown): boolean {
+    let current: unknown = error;
+    for (let depth = 0; depth < 3 && current; depth += 1) {
+        if (current instanceof Error && (current.message === "AI_QUOTA_EXCEEDED" || current.message.startsWith("AI_QUOTA_EXCEEDED:"))) {
+            return true;
+        }
+        if (typeof current === "object" && current !== null) {
+            const record = current as { status?: unknown; statusCode?: unknown; cause?: unknown };
+            if (record.status === 429 || record.statusCode === 429) {
+                return true;
+            }
+            current = record.cause;
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
+function roundRatio(value: number): number {
+    return Math.round(value * 10000) / 10000;
+}
+
+function pickPercentile(sorted: number[], p: number): number {
+    if (sorted.length === 0) return 0;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1));
+    return sorted[idx];
+}
 
 function readConfigSafe() {
     try {
@@ -95,6 +176,14 @@ function cleanupQueueIfIdle(key: string, queue: ModelQueue): void {
     }
 }
 
+function formatSafeModelKey(key: string): string {
+    if (!key.includes("|")) return key;
+    const parts = key.split("|");
+    const provider = parts[0] || "unknown";
+    const model = parts.length >= 3 ? parts.slice(2).join("|") : "";
+    return model ? `${provider}|${model}` : provider;
+}
+
 /** 在空位允许时依次放行排队的调用 */
 function dispatch(key: string, queue: ModelQueue): void {
     const limit = getLimit();
@@ -130,14 +219,14 @@ function acquire(key: string, options?: ConcurrencyRunOptions): Promise<void> {
     const retryAfterSeconds = Math.max(1, Math.ceil(queueTimeoutMs / 1000));
 
     if (queue.waiting.length >= maxWaiting) {
-        logger.warn({ model: key, active: queue.active, waiting: queue.waiting.length, maxWaiting }, "AI queue is full");
+        logger.warn({ model: formatSafeModelKey(key), active: queue.active, waiting: queue.waiting.length, maxWaiting }, "AI queue is full");
         cleanupQueueIfIdle(key, queue);
         return Promise.reject(
             new AiConcurrencyError("QUEUE_FULL", 429, Math.max(1, Math.ceil(retryAfterSeconds / 2))),
         );
     }
 
-    logger.info({ model: key, active: queue.active, waiting: queue.waiting.length + 1 }, "AI call queued by concurrency limit");
+    logger.info({ model: formatSafeModelKey(key), active: queue.active, waiting: queue.waiting.length + 1 }, "AI call queued by concurrency limit");
     const current = queue;
 
     return new Promise<void>((resolve, reject) => {
@@ -185,7 +274,7 @@ function acquire(key: string, options?: ConcurrencyRunOptions): Promise<void> {
         }
 
         timer = setTimeout(() => {
-            logger.warn({ model: key, active: current.active, waiting: current.waiting.length, queueTimeoutMs }, "AI queue wait timed out");
+            logger.warn({ model: formatSafeModelKey(key), active: current.active, waiting: current.waiting.length, queueTimeoutMs }, "AI queue wait timed out");
             waiter.cancel(new AiConcurrencyError("QUEUE_TIMEOUT", 503, retryAfterSeconds));
         }, queueTimeoutMs);
         timer.unref?.();
@@ -207,9 +296,27 @@ export async function runWithModelConcurrency<T>(
     task: () => Promise<T>,
     options?: ConcurrencyRunOptions,
 ): Promise<T> {
-    await acquire(key, options);
+    telemetry.totalCalls += 1;
+    const waitStartedAt = Date.now();
     try {
-        return await task();
+        await acquire(key, options);
+    } catch (error) {
+        if (error instanceof AiConcurrencyError && (error.reason === "QUEUE_FULL" || error.reason === "QUEUE_TIMEOUT")) {
+            telemetry.queueRejectedCount += 1;
+        }
+        throw error;
+    }
+    recordWaitSample(Date.now() - waitStartedAt);
+
+    try {
+        const result = await task();
+        telemetry.succeededCalls += 1;
+        return result;
+    } catch (error) {
+        if (isProvider429Error(error)) {
+            telemetry.provider429Count += 1;
+        }
+        throw error;
     } finally {
         release(key);
     }
@@ -231,6 +338,58 @@ export function toConcurrencyErrorResponse(error: unknown): NextResponse<ApiErro
 export function getModelConcurrencyState(key: string): { active: number; waiting: number } {
     const queue = queues.get(key);
     return { active: queue?.active ?? 0, waiting: queue?.waiting.length ?? 0 };
+}
+
+/** 列出当前所有活跃或排队队列的脱敏状态（不暴露 baseUrl 等配置地址） */
+export function getAllModelConcurrencyStates(): ModelQueueState[] {
+    const result: ModelQueueState[] = [];
+    for (const [key, queue] of queues.entries()) {
+        const parts = key.split("|");
+        const provider = parts[0] || key;
+        const model = parts.length >= 3 ? parts.slice(2).join("|") : "";
+        result.push({
+            provider,
+            model,
+            active: queue.active,
+            waiting: queue.waiting.length,
+        });
+    }
+    return result;
+}
+
+/** 返回 AI 并发队列、429 限流与排队耗时遥测快照 */
+export function getAiConcurrencyTelemetry(): AiConcurrencyTelemetrySnapshot {
+    const limit = getLimit();
+    const maxWaiting = getMaxWaiting(limit);
+    const sorted = [...telemetry.waitSamplesMs].sort((a, b) => a - b);
+    const total = telemetry.totalCalls;
+    return {
+        totalCalls: total,
+        succeededCalls: telemetry.succeededCalls,
+        provider429Count: telemetry.provider429Count,
+        provider429Rate: total > 0 ? roundRatio(telemetry.provider429Count / total) : 0,
+        queueRejectedCount: telemetry.queueRejectedCount,
+        queueSaturationRate: total > 0 ? roundRatio(telemetry.queueRejectedCount / total) : 0,
+        waitSampleCount: sorted.length,
+        waitMs: {
+            p50: pickPercentile(sorted, 0.5),
+            p95: pickPercentile(sorted, 0.95),
+            p99: pickPercentile(sorted, 0.99),
+            max: sorted.length > 0 ? sorted[sorted.length - 1] : 0,
+        },
+        limit,
+        maxWaiting,
+        queues: getAllModelConcurrencyStates(),
+    };
+}
+
+/** 重置内存并发遥测计数器（仅用于测试） */
+export function resetConcurrencyTelemetryForTest(): void {
+    telemetry.totalCalls = 0;
+    telemetry.succeededCalls = 0;
+    telemetry.provider429Count = 0;
+    telemetry.queueRejectedCount = 0;
+    telemetry.waitSamplesMs.length = 0;
 }
 
 /**

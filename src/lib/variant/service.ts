@@ -43,20 +43,29 @@ function parseTags(item: { tags: { name: string }[]; knowledgePoints: string | n
 }
 
 async function loadItemsByWhere(where: Prisma.ErrorItemWhereInput, learnerFilterId?: string) {
-    return prisma.errorItem.findMany({
+    const items = await prisma.errorItem.findMany({
         where,
-        include: {
+        select: {
+            id: true,
+            subjectId: true,
+            learnerId: true,
+            questionText: true,
+            errorType: true,
+            knowledgePoints: true,
+            masteryProbability: true,
+            createdAt: true,
             tags: { select: { name: true } },
             practiceRecords: {
-                where: {
-                    result: { not: null },
-                    ...(learnerFilterId ? { learnerId: learnerFilterId } : {}),
-                },
+                ...(learnerFilterId ? { where: { learnerId: learnerFilterId } } : {}),
                 select: { result: true, isCorrect: true, createdAt: true, questionText: true },
             },
         },
         orderBy: { createdAt: 'desc' },
     });
+    return items.map((item) => ({
+        ...item,
+        practiceRecords: item.practiceRecords.filter((record) => record.result !== null),
+    }));
 }
 
 function toProfileItems(items: DbItem[], threshold: number): ProfileItem[] {

@@ -8,8 +8,11 @@ vi.mock('@/lib/config', () => ({ getAppConfig: () => mocks.config }));
 
 import {
     AiConcurrencyError,
+    getAiConcurrencyTelemetry,
+    getAllModelConcurrencyStates,
     getModelConcurrencyState,
     limitModelConcurrency,
+    resetConcurrencyTelemetryForTest,
     runWithModelConcurrency,
     toConcurrencyErrorResponse,
 } from '@/lib/ai/concurrency';
@@ -196,5 +199,43 @@ describe('limitModelConcurrency', () => {
 
         expect(await limited.outer()).toBe('done');
         expect(getModelConcurrencyState('svc')).toEqual({ active: 0, waiting: 0 });
+    });
+
+    it('采集并发遥测与脱敏队列状态且不泄露 baseUrl', async () => {
+        resetConcurrencyTelemetryForTest();
+        mocks.config = { aiConcurrencyLimit: 1 };
+        const block = deferred();
+        const key = 'deepseek|https://private.relay.example.invalid/v1|deepseek-chat';
+
+        const activeRun = runWithModelConcurrency(key, () => block.promise);
+        await flush();
+
+        const states = getAllModelConcurrencyStates();
+        expect(states).toEqual([
+            { provider: 'deepseek', model: 'deepseek-chat', active: 1, waiting: 0 },
+        ]);
+        expect(JSON.stringify(states)).not.toContain('private.relay.example.invalid');
+
+        await expect(
+            runWithModelConcurrency(key, async () => 'rejected', { maxWaiting: 0 }),
+        ).rejects.toMatchObject({ reason: 'QUEUE_FULL' });
+
+        block.resolve();
+        await activeRun;
+
+        await expect(
+            runWithModelConcurrency(key, async () => {
+                throw new Error('AI_QUOTA_EXCEEDED');
+            }),
+        ).rejects.toThrow('AI_QUOTA_EXCEEDED');
+
+        const snap = getAiConcurrencyTelemetry();
+        expect(snap.totalCalls).toBe(3);
+        expect(snap.succeededCalls).toBe(1);
+        expect(snap.provider429Count).toBe(1);
+        expect(snap.queueRejectedCount).toBe(1);
+        expect(snap.waitSampleCount).toBe(2);
+        expect(snap.waitMs.p95).toBeGreaterThanOrEqual(0);
+        expect(JSON.stringify(snap)).not.toContain('private.relay.example.invalid');
     });
 });

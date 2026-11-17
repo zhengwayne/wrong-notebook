@@ -128,15 +128,34 @@ function itemWhereForStudent(userId: string, student: ResolvedStudent) {
     };
 }
 
-const ITEM_WITH_EVIDENCE_INCLUDE = {
+const ITEM_WITH_EVIDENCE_SELECT = {
+    id: true,
+    shortId: true,
+    subjectId: true,
+    learnerId: true,
+    errorType: true,
+    createdAt: true,
+    masteryProbability: true,
+    knowledgePoints: true,
+    questionText: true,
+    analysis: true,
+    wrongAnswerText: true,
+    mistakeAnalysis: true,
     tags: { select: { name: true, parentId: true } },
     practiceRecords: {
-        where: { result: { not: null } },
+        // 不在嵌套 relation 上使用 result: { not: null } 否定条件，避免 SQLite 题目数超过拆批上限时触发 Prisma P2029
         select: { id: true, result: true, isCorrect: true, createdAt: true, source: true, questionText: true, learnerId: true },
     },
 } as const;
 
-type LoadedErrorItem = Prisma.ErrorItemGetPayload<{ include: typeof ITEM_WITH_EVIDENCE_INCLUDE }>;
+type LoadedErrorItem = Prisma.ErrorItemGetPayload<{ select: typeof ITEM_WITH_EVIDENCE_SELECT }>;
+
+function filterNonNullPracticeRecords(items: LoadedErrorItem[]): LoadedErrorItem[] {
+    return items.map((item) => ({
+        ...item,
+        practiceRecords: item.practiceRecords.filter((record) => record.result !== null),
+    }));
+}
 
 const GRADING_SUBMISSION_EVIDENCE_SELECT = {
     studentId: true,
@@ -157,11 +176,12 @@ type LoadedGradingSubmission = Prisma.GradingSubmissionGetPayload<{ select: type
 async function loadItems(userId: string, student: ResolvedStudent): Promise<LoadedErrorItem[]> {
     const where = itemWhereForStudent(userId, student);
     if (!where) return [];
-    return prisma.errorItem.findMany({
+    const items = await prisma.errorItem.findMany({
         where,
-        include: ITEM_WITH_EVIDENCE_INCLUDE,
+        select: ITEM_WITH_EVIDENCE_SELECT,
         orderBy: { createdAt: "desc" },
     });
+    return filterNonNullPracticeRecords(items);
 }
 
 function toProfileItems(items: LoadedErrorItem[], threshold: number): ProfileItem[] {
@@ -666,7 +686,15 @@ async function loadSourceItemsByIds(ids: string[]) {
     if (unique.length === 0) return [];
     return prisma.errorItem.findMany({
         where: { id: { in: unique } },
-        include: { tags: { select: { name: true, parentId: true } } },
+        select: {
+            id: true,
+            shortId: true,
+            questionText: true,
+            wrongAnswerText: true,
+            mistakeAnalysis: true,
+            knowledgePoints: true,
+            tags: { select: { name: true, parentId: true } },
+        },
     });
 }
 
@@ -794,14 +822,14 @@ export async function listClassPaths(userId: string, classId: string, language: 
     )];
     const allItems = allLearnerIds.length === 0
         ? []
-        : await prisma.errorItem.findMany({
+        : filterNonNullPracticeRecords(await prisma.errorItem.findMany({
             where: {
                 userId,
                 learnerId: { in: allLearnerIds },
             },
-            include: ITEM_WITH_EVIDENCE_INCLUDE,
+            select: ITEM_WITH_EVIDENCE_SELECT,
             orderBy: { createdAt: "desc" },
-        });
+        }));
 
     const itemsByLearnerId = new Map<string, LoadedErrorItem[]>();
     for (const item of allItems) {

@@ -97,17 +97,21 @@ export async function getDueItems(
             ? { subjectId: { in: options.subjectIds } }
             : {};
 
-    const candidates = await db.errorItem.findMany({
+    const rawCandidates = await db.errorItem.findMany({
         where: { ...scopeWhere, ...subjectFilter },
         select: {
             id: true,
             createdAt: true,
             practiceRecords: {
-                where: { result: { not: null }, learnerId: scope.learnerId },
+                where: { learnerId: scope.learnerId },
                 select: { result: true, createdAt: true },
             },
         },
     });
+    const candidates = rawCandidates.map((item) => ({
+        ...item,
+        practiceRecords: item.practiceRecords.filter((record) => record.result !== null),
+    }));
 
     const items = evaluateDueCandidates(candidates, { timeZone, date: now, algorithmVersion });
     return { items, algorithmVersion };

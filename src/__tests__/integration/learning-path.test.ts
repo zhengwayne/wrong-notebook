@@ -10,6 +10,7 @@ import { GET as GET_CLASS } from "@/app/api/learning-path/class/route";
 import { PATCH as PATCH_STEP } from "@/app/api/learning-path/steps/[id]/route";
 import { getDueItems } from "@/lib/due-items";
 import { collectEvidence } from "@/lib/learning-path/service";
+import { buildProfileForLearners } from "@/lib/variant/service";
 
 const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
@@ -350,5 +351,49 @@ describe("学习路径接口（真实 SQLite）", () => {
         const fsrsData = await fsrsRes.json();
 
         expect(fsrsData.version).toBe(ebData.version + 1);
+    });
+
+    it("单学习者超过 2,500 道错题时，学习路径、待复习与变式画像均不触发 Prisma P2029 且忽略未提交练习草稿", async () => {
+        const child = await database.learner.create({
+            data: { id: "bulk-child", userId: "user-1", kind: "child", name: "万题大宝" },
+        });
+        const total = 2600;
+        const oldDate = new Date(Date.now() - 3 * 86_400_000);
+        for (let offset = 0; offset < total; offset += 200) {
+            const size = Math.min(200, total - offset);
+            await database.errorItem.createMany({
+                data: Array.from({ length: size }, (_, i) => ({
+                    id: `bulk-ei-${offset + i}`,
+                    userId: "user-1",
+                    learnerId: child.id,
+                    originalImageUrl: "data:image/png;base64,X",
+                    questionText: `大库回归题 ${offset + i}`,
+                    knowledgePoints: JSON.stringify(["一元二次方程"]),
+                    createdAt: oldDate,
+                })),
+            });
+        }
+        // 第一题挂一条未提交草稿练习（result = null），其余路径与待复习均应将其忽略
+        await database.practiceRecord.create({
+            data: {
+                userId: "user-1",
+                learnerId: child.id,
+                errorItemId: "bulk-ei-0",
+                result: null,
+                source: "practice",
+            },
+        });
+
+        const pathRes = await GET_PATH(new Request(`http://localhost/api/learning-path?studentKey=${child.id}&language=zh`));
+        expect(pathRes.status).toBe(200);
+        const pathBody = await pathRes.json();
+        expect(pathBody.steps.length).toBeGreaterThan(0);
+
+        const due = await getDueItems(database, { userId: "user-1", learnerId: child.id }, { timeZone: "Asia/Taipei" });
+        expect(due.items.length).toBe(total);
+
+        const profileRes = await buildProfileForLearners("user-1", [child.id]);
+        expect(profileRes.items.length).toBe(total);
+        expect(profileRes.items[0].practiceRecords.length).toBe(0);
     });
 });
