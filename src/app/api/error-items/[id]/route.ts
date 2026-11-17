@@ -1,84 +1,58 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:error-items:id');
 
-export async function GET(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const GET = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (_req, { user, params }) => {
+        const { id } = await params;
 
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
+        try {
+            const errorItem = await prisma.errorItem.findUnique({
+                where: {
+                    id: id,
+                },
+                include: {
+                    subject: true,
+                    tags: true, // 包含标签关联
+                },
             });
+
+            if (!errorItem) {
+                return notFound("Item not found");
+            }
+
+            // Ensure the user owns this item
+            if (errorItem.userId !== user.id) {
+                return forbidden("Not authorized to access this item");
+            }
+
+            const learning = await getErrorItemLearningContext(user.id, errorItem);
+            return NextResponse.json({ ...errorItem, learning });
+        } catch (error) {
+            logger.error({ error }, 'Error fetching item');
+            return internalError("Failed to fetch error item");
         }
+    },
+);
 
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
+export const PUT = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (req, { user, params }) => {
+        const { id } = await params;
 
-        const errorItem = await prisma.errorItem.findUnique({
-            where: {
-                id: id,
-            },
-            include: {
-                subject: true,
-                tags: true, // 包含标签关联
-            },
-        });
-
-        if (!errorItem) {
-            return notFound("Item not found");
-        }
-
-        // Ensure the user owns this item
-        if (errorItem.userId !== user.id) {
-            return forbidden("Not authorized to access this item");
-        }
-
-        const learning = await getErrorItemLearningContext(user.id, errorItem);
-        return NextResponse.json({ ...errorItem, learning });
-    } catch (error) {
-        logger.error({ error }, 'Error fetching item');
-        return internalError("Failed to fetch error item");
-    }
-}
-
-export async function PUT(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const body = await req.json();
+        try {
+            const body = await req.json();
         const { knowledgePoints, gradeSemester, paperLevel, questionText, answerText, analysis, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, difficultyStars } = body;
         // 难度星级：1~5 的整数，null 表示清除
         if (difficultyStars !== undefined && difficultyStars !== null
@@ -211,4 +185,4 @@ export async function PUT(
         logger.error({ error }, 'Error updating item');
         return internalError("Failed to update error item");
     }
-}
+});

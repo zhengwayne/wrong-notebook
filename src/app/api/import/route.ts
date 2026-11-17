@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { unauthorized, internalError, badRequest, forbidden } from "@/lib/api-errors";
-import { authOptions } from "@/lib/auth";
+import { internalError, badRequest, forbidden } from "@/lib/api-errors";
 import { BackupError } from "@/lib/backup/errors";
 import { importLegacyJsonBackup, type LegacyImportData } from "@/lib/backup/import-json-legacy";
 import { importBackupV3 } from "@/lib/backup/import-v3";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:import');
 
@@ -15,26 +14,12 @@ function isZipMagic(bytes: Uint8Array): boolean {
     return bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
 }
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-        return unauthorized("Not authenticated");
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
-
-    if (!user) {
-        return unauthorized("User not found");
-    }
-
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const { searchParams } = new URL(req.url);
     const importAll = searchParams.get('all') === 'true';
 
     // 只有管理员可以导入全部数据
-    if (importAll && session.user.role !== 'admin') {
+    if (importAll && user.role !== 'admin') {
         return forbidden("Admin role required");
     }
 
@@ -136,4 +121,4 @@ export async function POST(req: Request) {
         logger.error({ error, userId: user.id }, 'Import failed');
         return internalError("Failed to import data");
     }
-}
+});

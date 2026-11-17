@@ -6,11 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     getServerSession: vi.fn(),
     getAppConfig: vi.fn(() => ({ aiProvider: 'gemini', gemini: { apiKey: 'AIza-real-key', model: 'gemini-2.5-flash' } })),
+    userFindUnique: vi.fn(),
 }));
 
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/config', () => ({ getAppConfig: mocks.getAppConfig }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 
 import { DELETE, GET, POST } from '@/app/api/admin/debug-logs/route';
 import { GET as EXPORT } from '@/app/api/admin/debug-logs/export/route';
@@ -28,6 +30,11 @@ describe('/api/admin/debug-logs', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getServerSession.mockResolvedValue(admin);
+        mocks.userFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+            if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+            if (where?.id === 'user-1') return { id: 'user-1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+            return null;
+        });
     });
 
     afterEach(() => {

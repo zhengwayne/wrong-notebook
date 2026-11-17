@@ -1,26 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime, getDayRange } from "@/lib/date-time";
-import { unauthorized, notFound, internalError } from "@/lib/api-errors";
+import { notFound, internalError } from "@/lib/api-errors";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { getMasteryThreshold } from "@/lib/mastery";
 import { masteryStatusWhere } from "@/lib/mastery-status";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:analytics');
 
-export async function GET(req?: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
-    const userId = session.user.id;
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    const userId = user.id;
 
     try {
         let scope;
@@ -104,4 +97,4 @@ export async function GET(req?: Request) {
         logger.error({ error }, 'Error fetching analytics');
         return internalError("Failed to fetch analytics");
     }
-}
+});

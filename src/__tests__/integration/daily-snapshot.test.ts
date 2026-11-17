@@ -9,7 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    session: null as { user: { email: string; role: string } } | null,
+    session: null as { user: { id?: string; email: string; role: string } } | null,
     db: undefined as PrismaClient | undefined,
 }));
 
@@ -167,6 +167,15 @@ describe('每日一致性快照 (OPT-22)', () => {
         const fakeDb = {
             $executeRawUnsafe: vi.fn(),
             $queryRawUnsafe: vi.fn(),
+            user: {
+                findUnique: vi.fn(async () => ({
+                    id: 'user-1',
+                    email: 'user@example.com',
+                    role: 'user',
+                    isActive: true,
+                    authVersion: 0,
+                })),
+            },
         };
 
         const failedStatus = await runDailySnapshot({
@@ -183,7 +192,8 @@ describe('每日一致性快照 (OPT-22)', () => {
         expect((await GET()).status).toBe(401);
 
         // 已登录用户 GET -> 200 含 lastError
-        mocks.session = { user: { email: 'user@example.com', role: 'user' } };
+        mocks.db = fakeDb as unknown as PrismaClient;
+        mocks.session = { user: { id: 'user-1', email: 'user@example.com', role: 'user' } };
         const getRes = await GET();
         expect(getRes.status).toBe(200);
         const getData = await getRes.json();

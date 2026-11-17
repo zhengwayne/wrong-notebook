@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { badRequest, forbidden, internalError, unauthorized } from "@/lib/api-errors";
-import { authOptions } from "@/lib/auth";
+import { badRequest, forbidden, internalError } from "@/lib/api-errors";
 import { prepareBackupEncryption } from "@/lib/backup/crypto";
 import { createBackupV3Stream } from "@/lib/backup/export-v3";
 import { getAppTimeZone } from "@/lib/config";
@@ -9,32 +7,21 @@ import { formatDateTime } from "@/lib/date-time";
 import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { exportSpeeches } from "@/lib/tts/speech-cache";
+import { defineApiRoute } from "@/lib/server/api-route";
+import type { ActorUser } from "@/lib/server/actor";
 
 const logger = createLogger('api:export');
 
 interface ExportParams {
+    user: ActorUser;
     exportAll: boolean;
     format: 'zip' | 'json';
     passphrase?: string;
 }
 
-async function executeExport({ exportAll, format, passphrase }: ExportParams) {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-        return unauthorized("Not authenticated");
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
-
-    if (!user) {
-        return unauthorized("User not found");
-    }
-
+async function executeExport({ user, exportAll, format, passphrase }: ExportParams) {
     // 只有管理员可以导出全部数据
-    if (exportAll && session.user.role !== 'admin') {
+    if (exportAll && user.role !== 'admin') {
         return forbidden("Admin role required");
     }
 
@@ -153,15 +140,16 @@ async function executeExport({ exportAll, format, passphrase }: ExportParams) {
     }
 }
 
-export async function GET(req: Request) {
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const { searchParams } = new URL(req.url);
     return executeExport({
+        user,
         exportAll: searchParams.get('all') === 'true',
         format: searchParams.get('format') === 'json' ? 'json' : 'zip',
     });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     let body: { all?: unknown; format?: unknown; passphrase?: unknown };
     try {
         body = (await req.json()) as { all?: unknown; format?: unknown; passphrase?: unknown };
@@ -172,8 +160,9 @@ export async function POST(req: Request) {
         ? body.passphrase
         : undefined;
     return executeExport({
+        user,
         exportAll: body?.all === true,
         format: body?.format === 'json' ? 'json' : 'zip',
         passphrase,
     });
-}
+});

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, internalError, notFound, validationError } from "@/lib/api-errors";
+import { internalError, notFound, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
@@ -11,6 +9,7 @@ import { LearnerNotFoundError } from "@/lib/learners";
 import { resolveLearningScope } from "@/lib/learning-scope";
 import { syncItemMemory } from "@/lib/due-items";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:practice:record');
 
@@ -30,13 +29,7 @@ const recordSchema = z.object({
     takenAt: z.string().datetime({ offset: true }).optional(),
 });
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
         const parsed = recordSchema.safeParse(await req.json());
         if (!parsed.success) {
@@ -50,7 +43,7 @@ export async function POST(req: Request) {
         const result = parsed.data.result
             ?? (parsed.data.isCorrect === true ? 'correct' : parsed.data.isCorrect === false ? 'wrong' : undefined);
 
-        const userId = session.user.id;
+        const userId = user.id;
 
         let requestedScope: { userId: string; learnerId: string | null } | undefined;
         if (parsed.data.learnerId !== undefined && parsed.data.learnerId !== null) {
@@ -116,4 +109,4 @@ export async function POST(req: Request) {
         logger.error({ error }, 'Error saving practice record');
         return internalError("Failed to save record");
     }
-}
+});

@@ -6,23 +6,57 @@ import { isPersona, landingPath } from "@/lib/personas";
 
 const logger = createLogger('proxy');
 
+const SESSION_COOKIE_NAME = "next-auth.session-token";
+
 /** 旧会话没有该字段时也要进确认页；确认后 token 会带上 false */
 function needsPersonaConfirm(token: { needsPersonaConfirmation?: boolean } | null): boolean {
     return token?.needsPersonaConfirmation !== false;
 }
 
-async function isPersonaConfirmedInDb(userId: string | undefined): Promise<boolean | null> {
+interface DbSessionState {
+    revoked: boolean;
+    disabled: boolean;
+    personaConfirmed: boolean | null;
+}
+
+async function fetchDbSessionState(
+    userId: string | undefined,
+    tokenAuthVersion: number | undefined,
+): Promise<DbSessionState | null> {
     if (!userId) return null;
     try {
         const { prisma } = await import("@/lib/prisma");
         const row = await prisma.user.findUnique({
             where: { id: userId },
-            select: { personasConfirmedAt: true },
+            select: { personasConfirmedAt: true, isActive: true, authVersion: true },
         });
-        return Boolean(row?.personasConfirmedAt);
+        if (row === null) {
+            return { revoked: true, disabled: false, personaConfirmed: null };
+        }
+        if (!row) return null;
+        const disabled = row.isActive === false;
+        const revoked = typeof row.authVersion === "number" && (
+            tokenAuthVersion !== undefined
+                ? row.authVersion !== tokenAuthVersion
+                : row.authVersion > 0
+        );
+        return {
+            revoked,
+            disabled,
+            personaConfirmed: Boolean(row.personasConfirmedAt),
+        };
     } catch {
         return null;
     }
+}
+
+function redirectToLoginClearingSession(req: NextRequest, callbackUrl?: string): NextResponse {
+    const loginUrl = callbackUrl
+        ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
+        : "/login";
+    const response = NextResponse.redirect(new URL(loginUrl, req.url));
+    response.cookies.delete(SESSION_COOKIE_NAME);
+    return response;
 }
 
 export async function proxy(req: NextRequest) {
@@ -33,7 +67,7 @@ export async function proxy(req: NextRequest) {
         const token = await getToken({
             req,
             secret: process.env.NEXTAUTH_SECRET,
-            cookieName: "next-auth.session-token", // Explicitly look for the standardized cookie
+            cookieName: SESSION_COOKIE_NAME, // Explicitly look for the standardized cookie
         });
 
         const isAuth = !!token;
@@ -49,13 +83,27 @@ export async function proxy(req: NextRequest) {
             cookies: req.cookies.getAll().map(c => c.name)
         }, 'Auth status');
 
+        const tokenInvalidByClaim = isAuth && (token?.revoked === true || token?.isActive === false);
+        const dbState = isAuth && !tokenInvalidByClaim
+            ? await fetchDbSessionState(
+                typeof token?.id === "string" ? token.id : undefined,
+                typeof token?.authVersion === "number" ? token.authVersion : undefined,
+            )
+            : null;
+        const sessionInvalidated = tokenInvalidByClaim || Boolean(dbState?.revoked || dbState?.disabled);
+
         if (isAuthPage) {
             if (isAuth) {
+                if (sessionInvalidated) {
+                    const res = NextResponse.next();
+                    res.cookies.delete(SESSION_COOKIE_NAME);
+                    return res;
+                }
                 if (token?.mustChangePassword) {
                     logger.debug('Redirecting authenticated user with default password to /setup');
                     return NextResponse.redirect(new URL("/setup", req.url));
                 }
-                if (needsPersonaConfirm(token)) {
+                if (needsPersonaConfirm(token) && !dbState?.personaConfirmed) {
                     logger.debug('Redirecting authenticated user to persona onboarding');
                     return NextResponse.redirect(new URL("/onboarding/persona", req.url));
                 }
@@ -66,10 +114,15 @@ export async function proxy(req: NextRequest) {
             return null;
         }
 
-        if (!isAuth) {
+        if (!isAuth || sessionInvalidated) {
             let from = req.nextUrl.pathname;
             if (req.nextUrl.search) {
                 from += req.nextUrl.search;
+            }
+
+            if (sessionInvalidated) {
+                logger.info({ userId: token?.id, path: req.nextUrl.pathname }, 'Clearing revoked or disabled session');
+                return redirectToLoginClearingSession(req, from);
             }
 
             logger.debug({ callbackUrl: from }, 'Redirecting unauthenticated user to login');
@@ -88,8 +141,7 @@ export async function proxy(req: NextRequest) {
         const isPersonaOnboarding = req.nextUrl.pathname.startsWith("/onboarding");
         let personaConfirmed = !needsPersonaConfirm(token);
         if (!personaConfirmed && !isSetupPage) {
-            const confirmedInDb = await isPersonaConfirmedInDb(typeof token?.id === "string" ? token.id : undefined);
-            if (confirmedInDb) personaConfirmed = true;
+            if (dbState?.personaConfirmed) personaConfirmed = true;
         }
         if (!personaConfirmed && !isPersonaOnboarding && !isSetupPage) {
             logger.info({ userId: token.id, path: req.nextUrl.pathname }, 'Redirecting user to persona confirmation');

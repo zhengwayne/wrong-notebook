@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { unauthorized, badRequest, validationError, internalError } from "@/lib/api-errors";
+import { badRequest, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { ChildLearnerLimitError } from "@/lib/learners";
 import {
@@ -14,6 +12,7 @@ import {
     type Persona,
 } from "@/lib/personas";
 import { applyPersonaSelection, hasGradingClass, PersonaSelectionError } from "@/lib/persona-service";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger("api:persona");
 
@@ -24,25 +23,8 @@ const bodySchema = z.object({
     confirm: z.boolean().optional(),
 });
 
-async function loadUser(email: string) {
-    return prisma.user.findUnique({
-        where: { email },
-        select: {
-            id: true,
-            personas: true,
-            activePersona: true,
-            personasConfirmedAt: true,
-        },
-    });
-}
-
-export async function GET() {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) return unauthorized();
-
+export const GET = defineApiRoute({ auth: 'user' }, async (_req, { user }) => {
     try {
-        const user = await loadUser(session.user.email);
-        if (!user) return unauthorized();
         const hasClass = await hasGradingClass(prisma, user.id);
         const suggestedPreselect = defaultPreselect(hasClass);
         const personas = parsePersonas(user.personas);
@@ -57,15 +39,10 @@ export async function GET() {
         logger.error({ error }, "Failed to load personas");
         return internalError("Failed to load personas");
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) return unauthorized();
-
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
-        const user = await loadUser(session.user.email);
-        if (!user) return unauthorized();
         const body = bodySchema.parse(await req.json());
         const confirmed = Boolean(user.personasConfirmedAt);
         const shouldConfirm = !confirmed;
@@ -99,15 +76,10 @@ export async function POST(req: Request) {
         logger.error({ error }, "Failed to update personas");
         return internalError("Failed to update personas");
     }
-}
+});
 
-export async function PATCH(req: Request) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) return unauthorized();
-
+export const PATCH = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
-        const user = await loadUser(session.user.email);
-        if (!user) return unauthorized();
         if (!user.personasConfirmedAt) return badRequest("Confirm personas first");
         const body = bodySchema.parse(await req.json());
         const personas = parsePersonas(user.personas);
@@ -129,4 +101,4 @@ export async function PATCH(req: Request) {
         logger.error({ error }, "Failed to switch persona");
         return internalError("Failed to switch persona");
     }
-}
+});

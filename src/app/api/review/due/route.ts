@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { internalError, notFound, unauthorized } from "@/lib/api-errors";
-import { authOptions } from "@/lib/auth";
+import { internalError, notFound } from "@/lib/api-errors";
 import { getAppTimeZone } from "@/lib/config";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants/pagination";
 import { getDueItems } from "@/lib/due-items";
@@ -11,16 +9,12 @@ import { createLogger } from "@/lib/logger";
 import { getMasteryThreshold } from "@/lib/mastery";
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { prisma } from "@/lib/prisma";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:review:due');
 
 /** 今日待复习：按作答历史推算到期的错题，最早到期的排在前面 */
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-        return unauthorized();
-    }
-
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const { searchParams } = new URL(req.url);
     const subjectId = searchParams.get("subjectId");
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
@@ -29,7 +23,7 @@ export async function GET(req: Request) {
     try {
         let scope;
         try {
-            scope = await resolveLearningScope(prisma, session.user.id, readRequestLearnerId(req));
+            scope = await resolveLearningScope(prisma, user.id, readRequestLearnerId(req));
         } catch (error) {
             if (error instanceof LearnerNotFoundError) {
                 return notFound("Learner not found");
@@ -44,7 +38,7 @@ export async function GET(req: Request) {
             date: now,
         });
 
-        const masteryThreshold = await getMasteryThreshold(session.user.id);
+        const masteryThreshold = await getMasteryThreshold(user.id);
         const pageEntries = dueEntries.slice((page - 1) * pageSize, page * pageSize);
         const items = await prisma.errorItem.findMany({
             where: { id: { in: pageEntries.map(({ id }) => id) } },
@@ -78,4 +72,4 @@ export async function GET(req: Request) {
         logger.error({ error }, 'Failed to list due reviews');
         return internalError("Failed to list due reviews");
     }
-}
+});

@@ -16,7 +16,11 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 const prismaMocks = vi.hoisted(() => ({
-    findUnique: vi.fn(async (): Promise<{ personasConfirmedAt: Date | null }> => ({ personasConfirmedAt: null })),
+    findUnique: vi.fn(
+        async (): Promise<{ personasConfirmedAt: Date | null; isActive?: boolean; authVersion?: number } | null> => ({
+            personasConfirmedAt: null,
+        }),
+    ),
 }));
 vi.mock('@/lib/prisma', () => ({
     prisma: { user: { findUnique: prismaMocks.findUnique } },
@@ -322,6 +326,80 @@ describe('proxy', () => {
             const response = await proxy(new NextRequest('http://localhost:3000/'));
 
             expect(response).toBeUndefined();
+        });
+    });
+
+    describe('会话实时撤销与账户禁用 (OPT-02)', () => {
+        it('authVersion 失配时访问受保护页面跳 /login 并清除 session cookie', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: true,
+                authVersion: 2,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 1,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login?callbackUrl=%2Fnotebooks');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('账户被禁用时访问受保护页面跳 /login 并清除 session cookie', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: false,
+                authVersion: 0,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/admin'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('数据库用户已删除（findUnique 返回 null）时撤销访问受保护页', async () => {
+            prismaMocks.findUnique.mockResolvedValue(null);
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'deleted-user',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('已撤销或禁用的会话访问 /login 时清除 cookie 并放行渲染，避免死循环', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: false,
+                authVersion: 1,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/login'));
+
+            expect(response?.status).toBe(200);
+            expect(response?.headers.get('location')).toBeNull();
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
         });
     });
 });

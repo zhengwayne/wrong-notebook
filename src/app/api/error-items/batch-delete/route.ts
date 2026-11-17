@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, badRequest, internalError } from "@/lib/api-errors";
+import { badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:error-items:batch-delete');
 
@@ -12,10 +11,8 @@ const logger = createLogger('api:error-items:batch-delete');
  * 批量删除错题
  * Body: { ids: string[] }
  */
-export async function POST(req: Request) {
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     logger.info('POST /api/error-items/batch-delete called');
-
-    const session = await getServerSession(authOptions);
 
     try {
         const body = await req.json();
@@ -28,18 +25,6 @@ export async function POST(req: Request) {
 
         if (ids.length > 100) {
             return badRequest("Cannot delete more than 100 items at once");
-        }
-
-        // 验证用户身份
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
         }
 
         logger.debug({ userId: user.id, idsCount: ids.length }, 'Batch delete request');
@@ -87,4 +72,4 @@ export async function POST(req: Request) {
         logger.error({ error }, 'Error in batch delete');
         return internalError("Failed to delete items");
     }
-}
+});

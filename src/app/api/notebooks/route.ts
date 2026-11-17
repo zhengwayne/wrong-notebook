@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, badRequest, notFound, conflict, internalError } from "@/lib/api-errors";
+import { badRequest, notFound, conflict, internalError } from "@/lib/api-errors";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { isValidNotebookScope, stageFromEducationStage, STAGE_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:notebooks');
 
@@ -24,22 +23,10 @@ function notebookListInclude(learnerId: string | null | undefined) {
  * GET /api/notebooks?learnerId=
  * 获取用户所有错题本（Subjects）；传入 learnerId 时只统计该学习者的错题数
  */
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const rawLearnerId = new URL(req.url).searchParams.get("learnerId")?.trim();
 
     try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
         let filterLearnerId: string | null | undefined;
         if (rawLearnerId) {
             try {
@@ -100,27 +87,14 @@ export async function GET(req: Request) {
         logger.error({ error }, 'Error fetching notebooks');
         return internalError("Failed to fetch notebooks");
     }
-}
+});
 
 /**
  * POST /api/notebooks
  * 创建新错题本
  */
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
         const body = await req.json();
         const { name, stage, subjectKey } = body;
 
@@ -167,4 +141,4 @@ export async function POST(req: Request) {
         logger.error({ error }, 'Error creating notebook');
         return internalError("Failed to create notebook");
     }
-}
+});

@@ -100,9 +100,42 @@ export const noPrismaInTransactionRule = {
   },
 };
 
+/** 禁止在 API 路由中直接导入或调用 getServerSession，统一使用 defineApiRoute 或 resolveActor */
+export const noDirectGetServerSessionRule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "禁止在 API 路由中直接调用 getServerSession，应通过 defineApiRoute / resolveActor 统一鉴权",
+    },
+    schema: [],
+    messages: {
+      forbidden: "禁止在 API 路由中直接导入或调用 getServerSession，请改用 defineApiRoute 或 getCurrentUser。",
+    },
+  },
+  create(context) {
+    return {
+      ImportDeclaration(node) {
+        if (node.source?.value !== "next-auth") return;
+        const hits = node.specifiers?.some(
+          (spec) => spec.type === "ImportSpecifier" && spec.imported?.name === "getServerSession",
+        );
+        if (hits) {
+          context.report({ node, messageId: "forbidden" });
+        }
+      },
+      CallExpression(node) {
+        if (node.callee?.type === "Identifier" && node.callee.name === "getServerSession") {
+          context.report({ node, messageId: "forbidden" });
+        }
+      },
+    };
+  },
+};
+
 const localPlugin = {
   rules: {
     "no-prisma-in-transaction": noPrismaInTransactionRule,
+    "no-direct-get-server-session": noDirectGetServerSessionRule,
   },
 };
 
@@ -125,6 +158,16 @@ const eslintConfig = defineConfig([
     },
     rules: {
       "local/no-prisma-in-transaction": "error",
+    },
+  },
+  {
+    files: ["src/app/api/**/*.{ts,tsx}"],
+    ignores: ["src/app/api/auth/**"],
+    plugins: {
+      local: localPlugin,
+    },
+    rules: {
+      "local/no-direct-get-server-session": "error",
     },
   },
   // Override default ignores of eslint-config-next.

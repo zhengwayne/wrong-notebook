@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, notFound, internalError } from "@/lib/api-errors";
+import { notFound, internalError } from "@/lib/api-errors";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:stats:practice:clear');
 
-export async function DELETE(req?: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
-    const userId = session.user.id;
+export const DELETE = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    const userId = user.id;
 
     try {
         let scope;
@@ -40,4 +33,4 @@ export async function DELETE(req?: Request) {
         logger.error({ error }, 'Error clearing practice stats');
         return internalError("Failed to clear stats");
     }
-}
+});

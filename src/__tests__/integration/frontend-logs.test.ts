@@ -5,11 +5,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getServerSession: vi.fn(),
+    userFindUnique: vi.fn(),
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), box: vi.fn(), divider: vi.fn() },
 }));
 
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 vi.mock('@/lib/logger', () => ({ createLogger: vi.fn(() => mocks.logger) }));
 
 import { NextRequest } from 'next/server';
@@ -29,6 +31,7 @@ describe('POST /api/logs/frontend', () => {
         vi.clearAllMocks();
         frontendLogLimiter.reset('user-1');
         mocks.getServerSession.mockResolvedValue({ user: { id: 'user-1', email: 'u@localhost' }, expires: '2099-01-01' });
+        mocks.userFindUnique.mockResolvedValue({ id: 'user-1', email: 'u@localhost', role: 'user', isActive: true, authVersion: 0 });
     });
 
     it('未登录时返回 401，不写日志', async () => {

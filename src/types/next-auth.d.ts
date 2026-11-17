@@ -6,6 +6,8 @@ declare module "next-auth" {
         user: {
             id: string
             role?: string
+            isActive?: boolean
+            authVersion?: number
             /** 管理员仍在使用默认密码，必须先修改 */
             mustChangePassword?: boolean
             personas?: Persona[]
@@ -17,6 +19,7 @@ declare module "next-auth" {
     interface User {
         role?: string
         isActive?: boolean
+        authVersion?: number
         mustChangePassword?: boolean
         personas?: Persona[]
         activePersona?: Persona | null
@@ -28,6 +31,9 @@ declare module "next-auth/jwt" {
     interface JWT {
         id: string
         role?: string
+        isActive?: boolean
+        authVersion?: number
+        revoked?: boolean
         mustChangePassword?: boolean
         personas?: Persona[]
         activePersona?: Persona | null

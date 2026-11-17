@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, notFound, internalError } from "@/lib/api-errors";
+import { notFound, internalError } from "@/lib/api-errors";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
@@ -13,12 +11,11 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants
 import { isShortId } from "@/lib/short-id";
 import { isMasteryStatus, masteryStatusOf, masteryStatusWhere } from "@/lib/mastery-status";
 import { ERROR_ITEM_LIST_SELECT, ERROR_ITEM_PRINT_SELECT } from "@/lib/error-list-select";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:error-items:list');
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
-
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const { searchParams } = new URL(req.url);
     const subjectId = searchParams.get("subjectId");
     const query = searchParams.get("query");
@@ -31,17 +28,6 @@ export async function GET(req: Request) {
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parseInt(searchParams.get("pageSize") || String(DEFAULT_PAGE_SIZE), 10)));
 
     try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
         const whereClause: Prisma.ErrorItemWhereInput = {
             userId: user.id,
         };
@@ -194,7 +180,7 @@ export async function GET(req: Request) {
         logger.error({ error }, 'Error fetching items');
         return internalError("Failed to fetch error items");
     }
-}
+});
 
 function buildGradeFilter(gradeSemester: string): Prisma.ErrorItemWhereInput {
     // 1. 恢复别名映射表 (Support aliases like 初一 for 七年级)

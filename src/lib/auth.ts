@@ -111,6 +111,8 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     name: user.name,
                     role: user.role,
+                    isActive: user.isActive,
+                    authVersion: user.authVersion ?? 0,
                     mustChangePassword: isDefaultAdminPassword(user.role, credentials.password),
                     personas,
                     activePersona,
@@ -141,6 +143,8 @@ export const authOptions: NextAuthOptions = {
                     ...session.user,
                     id: token.id,
                     role: token.role,
+                    isActive: token.isActive !== false,
+                    authVersion: token.authVersion,
                     mustChangePassword: token.mustChangePassword === true,
                     personas: token.personas ?? [],
                     activePersona: token.activePersona ?? null,
@@ -155,38 +159,78 @@ export const authOptions: NextAuthOptions = {
                     ...token,
                     id: user.id,
                     role: user.role,
+                    isActive: user.isActive !== false,
+                    authVersion: user.authVersion ?? 0,
+                    revoked: false,
                     mustChangePassword: user.mustChangePassword === true,
                     personas: user.personas ?? [],
                     activePersona: user.activePersona ?? null,
                     needsPersonaConfirmation: user.needsPersonaConfirmation === true,
                 }
             }
-            // 客户端改完密码后调用 update()，以数据库中的密码为准重新判断，不信任客户端传值
-            if (trigger === "update") {
-                const next = { ...token }
-                if (token.mustChangePassword) {
-                    const dbUser = await prisma.user.findUnique({ where: { id: token.id }, select: { password: true } })
-                    const stillDefault = !!dbUser && await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password)
-                    logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password')
-                    next.mustChangePassword = stillDefault
-                }
-                if (token.id) {
-                    const claims = await personaClaims(token.id)
-                    Object.assign(next, claims)
-                }
-                return next
-            }
-            // 升级后已登录的旧 token 还没有身份字段，补一次，让现有账户看到确认页
-            if (token.id && token.needsPersonaConfirmation === undefined) {
+
+            const next = { ...token };
+            if (token.id) {
                 try {
-                    const claims = await personaClaims(token.id)
-                    return { ...token, ...claims }
+                    const dbUser = await prisma.user.findUnique({
+                        where: { id: token.id },
+                        select: {
+                            isActive: true,
+                            authVersion: true,
+                            role: true,
+                            password: true,
+                            personas: true,
+                            activePersona: true,
+                            personasConfirmedAt: true,
+                        },
+                    });
+                    if (dbUser === null) {
+                        return { ...next, revoked: true };
+                    }
+                    if (dbUser) {
+                        if (dbUser.isActive === false) {
+                            next.isActive = false;
+                            next.revoked = true;
+                            return next;
+                        }
+                        if (typeof dbUser.authVersion === 'number') {
+                            const versionMismatch = token.authVersion !== undefined
+                                ? dbUser.authVersion !== token.authVersion
+                                : dbUser.authVersion > 0;
+                            if (versionMismatch) {
+                                next.revoked = true;
+                                return next;
+                            }
+                        }
+                        if (typeof dbUser.role === 'string') {
+                            next.role = dbUser.role;
+                        }
+                        // 客户端改完密码后调用 update()，以数据库中的密码为准重新判断，不信任客户端传值
+                        if (trigger === "update" && token.mustChangePassword && typeof dbUser.password === 'string') {
+                            const stillDefault = await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password);
+                            logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password');
+                            next.mustChangePassword = stillDefault;
+                        }
+                        if (trigger === "update" || token.needsPersonaConfirmation === undefined) {
+                            next.personas = parsePersonas(dbUser.personas);
+                            next.activePersona = isPersona(dbUser.activePersona) ? dbUser.activePersona : null;
+                            next.needsPersonaConfirmation = !dbUser.personasConfirmedAt;
+                        }
+                        return next;
+                    }
                 } catch (error) {
-                    logger.error({ error, userId: token.id }, 'JWT callback - Failed to load persona claims')
+                    logger.error({ error, userId: token.id }, 'JWT callback - Failed to sync user state');
                 }
+            }
+
+            // 回退兼容仅含 personaClaims 调用的场景
+            if (trigger === "update" && token.id) {
+                const claims = await personaClaims(token.id);
+                Object.assign(next, claims);
+                return next;
             }
             logger.debug('JWT callback - Subsequent call');
-            return token
+            return next;
         }
     }
 }

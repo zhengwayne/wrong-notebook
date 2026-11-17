@@ -18,6 +18,15 @@
  */
 
 import { recordDebugLog, sanitizeForDebug } from './debug-log';
+import { getRequestContext } from './server/request-context';
+
+function getActiveRequestMeta(): Record<string, string> {
+  const ctx = getRequestContext();
+  if (!ctx) return {};
+  return ctx.userId
+    ? { requestId: ctx.requestId, userId: ctx.userId }
+    : { requestId: ctx.requestId };
+}
 
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -208,13 +217,15 @@ function createLogFunction(level: LogLevel, baseContext: LogContext = {}): (ctx:
     }
 
     // 调试模式下不受 LOG_LEVEL 限制，debug、trace 级别也记录
-    recordDebugLog(level, { ...baseContext, ...context }, message, timestamp);
+    const requestMeta = getActiveRequestMeta();
+    const effectiveBase = Object.keys(requestMeta).length > 0 ? { ...requestMeta, ...baseContext } : baseContext;
+    recordDebugLog(level, { ...effectiveBase, ...context }, message, timestamp);
 
     if (levelNum < currentLevel) return;
 
     if (isPrettyMode()) {
       // Pretty formatted output for development
-      const output = formatPrettyLog(level, timestamp, baseContext, context, message);
+      const output = formatPrettyLog(level, timestamp, effectiveBase, context, message);
 
       switch (level) {
         case 'error':
@@ -229,7 +240,7 @@ function createLogFunction(level: LogLevel, baseContext: LogContext = {}): (ctx:
       }
     } else {
       // 生产环境 JSON 日志：先脱敏上下文与消息，防止泄露密钥、Base64 图片或内部 Error 空对象
-      const sanitizedContext = sanitizeForDebug({ ...baseContext, ...context });
+      const sanitizedContext = sanitizeForDebug({ ...effectiveBase, ...context });
       const logEntry: LogContext = {
         ...(sanitizedContext && typeof sanitizedContext === 'object' ? (sanitizedContext as LogContext) : {}),
         level,
@@ -270,11 +281,13 @@ function createLoggerInstance(baseContext: LogContext = {}): Logger {
 
     // Decorative box logging (only in development)
     box: (title: string, content?: string | LogContext, emoji: string = '📋') => {
-      recordDebugLog('info', { ...baseContext, ...(typeof content === 'string' ? { content } : content) }, title);
+      const requestMeta = getActiveRequestMeta();
+      const effectiveBase = Object.keys(requestMeta).length > 0 ? { ...requestMeta, ...baseContext } : baseContext;
+      recordDebugLog('info', { ...effectiveBase, ...(typeof content === 'string' ? { content } : content) }, title);
 
       if (!isPrettyMode()) {
         // 生产环境默认不向 stdout 输出提示词、学生答案或响应正文，只输出溯源与长度
-        const sanitizedBase = sanitizeForDebug(baseContext);
+        const sanitizedBase = sanitizeForDebug(effectiveBase);
         const baseObj = sanitizedBase && typeof sanitizedBase === 'object' ? (sanitizedBase as LogContext) : {};
         const { contentLength, contentKeys } = measureBoxContent(content);
         const safeTitle = sanitizeForDebug(title);

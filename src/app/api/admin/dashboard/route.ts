@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { requireAdmin } from "@/lib/auth-utils"
-import { forbidden, internalError } from "@/lib/api-errors"
+import { internalError } from "@/lib/api-errors"
 import { countByMasteryStatus } from "@/lib/mastery"
 import { createLogger } from "@/lib/logger"
 import { getAppTimeZone } from "@/lib/config"
 import { formatDateTime, getDayRange } from "@/lib/date-time"
+import { defineApiRoute } from "@/lib/server/api-route"
 
 const logger = createLogger('api:admin:dashboard')
 
@@ -20,13 +18,7 @@ function mergeSubjectsByName(subjects: { name: string; _count: { errorItems: num
     return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
 }
 
-export async function GET() {
-    const session = await getServerSession(authOptions)
-
-    if (!requireAdmin(session)) {
-        return forbidden("Admin access required")
-    }
-
+export const GET = defineApiRoute({ auth: 'admin', unauthenticatedStatus: 403 }, async () => {
     try {
         // 总用户数
         const totalUsers = await prisma.user.count()
@@ -142,4 +134,4 @@ export async function GET() {
         logger.error({ error }, 'Error fetching dashboard data');
         return internalError("Failed to fetch dashboard data")
     }
-}
+});

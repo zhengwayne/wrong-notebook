@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
-import { unauthorized, badRequest, forbidden, notFound, internalError, validationError } from "@/lib/api-errors";
+import { badRequest, forbidden, notFound, internalError, validationError } from "@/lib/api-errors";
+import { defineApiRoute } from "@/lib/server/api-route";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -49,28 +48,10 @@ const importSchema = z.object({
     provenanceId: z.string().min(1).max(64).nullish(),
 });
 
-export async function POST(req: Request) {
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     logger.info('POST /api/error-items called');
 
-    const session = await getServerSession(authOptions);
-
     try {
-        // 先鉴权，避免未登录或无效会话提前解析并解码图片载荷
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-            logger.debug({ userId: user?.id, email: session.user.email }, 'User lookup result');
-        } else {
-            logger.warn('No session email found');
-        }
-
-        if (!user) {
-            logger.warn({ sessionEmail: session?.user?.email }, 'User not found in DB');
-            return unauthorized("No user found in DB");
-        }
-
         const parsed = importSchema.safeParse(await req.json());
         if (!parsed.success) return validationError('Invalid question import', parsed.error.issues);
         const body = parsed.data;
@@ -286,4 +267,4 @@ export async function POST(req: Request) {
         }, 'Error saving item');
         return internalError("Failed to save error item");
     }
-}
+});

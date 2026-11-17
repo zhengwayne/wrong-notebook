@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     getAppConfig: vi.fn(),
     updateAppConfig: vi.fn(),
     subjectCount: vi.fn(),
+    userFindUnique: vi.fn(),
     getServerSession: vi.fn(),
 }));
 
@@ -14,7 +15,7 @@ vi.mock('@/lib/config', () => ({
     getAppConfig: mocks.getAppConfig,
     updateAppConfig: mocks.updateAppConfig,
 }));
-vi.mock('@/lib/prisma', () => ({ prisma: { subject: { count: mocks.subjectCount } } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { subject: { count: mocks.subjectCount }, user: { findUnique: mocks.userFindUnique } } }));
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 
@@ -27,6 +28,11 @@ describe('/api/setup', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getServerSession.mockResolvedValue(adminSession);
+        mocks.userFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+            if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+            if (where?.id === 'user-1') return { id: 'user-1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+            return null;
+        });
         mocks.getAppConfig.mockReturnValue({ aiProvider: 'minimax' });
         mocks.subjectCount.mockResolvedValue(0);
     });

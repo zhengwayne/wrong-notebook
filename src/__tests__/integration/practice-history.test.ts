@@ -38,6 +38,7 @@ const postRecord = (body: object) => RECORD_POST(new Request('http://localhost/a
 describe('POST /api/practice/record（关联原题）', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'user@example.com', role: 'user', isActive: true, authVersion: 0 });
         mocks.practiceRecord.create.mockImplementation(async (args: { data: object }) => ({ id: 'r1', ...args.data }));
     });
 

@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { requireAdmin } from '@/lib/auth-utils';
-import { forbidden } from '@/lib/api-errors';
 import { DEFAULT_ANTHROPIC_BASE_URL } from '@/lib/ai/anthropic-provider';
 import { isVendorProvider, VENDOR_PRESETS } from '@/lib/ai/vendor-presets';
 import { createLogger } from '@/lib/logger';
 import { normalizeHttpBaseUrl } from '@/lib/utils';
+import { defineApiRoute } from '@/lib/server/api-route';
 
 const logger = createLogger('api:ai:models');
 
@@ -98,12 +95,7 @@ async function fetchAnthropicModels(apiKey: string, baseUrl: string): Promise<Mo
  * 用填写的 API Key 拉取模型列表（仅管理员；服务端会请求调用方给出的地址，必须限制使用者）。
  * 用 POST 传参，避免 API Key 出现在 URL 和访问日志中。
  */
-export async function POST(req: NextRequest) {
-    const session = await getServerSession(authOptions);
-    if (!requireAdmin(session)) {
-        return forbidden('Admin access required');
-    }
-
+export const POST = defineApiRoute<NextRequest>({ auth: 'admin', unauthenticatedStatus: 403 }, async (req) => {
     try {
         const { provider, apiKey, baseUrl } = await req.json() as { provider?: string; apiKey?: string; baseUrl?: string };
 
@@ -138,4 +130,4 @@ export async function POST(req: NextRequest) {
             { status: 200 } // Return 200 with empty models to allow manual input
         );
     }
-}
+});

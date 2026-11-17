@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
-import { requireAdmin } from "@/lib/auth-utils";
+import { isAdmin } from "@/lib/auth-utils";
 import { getAppConfig, updateAppConfig } from "@/lib/config";
 import { isValidConcurrencyLimit } from "@/lib/ai-concurrency-limit";
-import { badRequest, forbidden, internalError, unauthorized } from "@/lib/api-errors";
+import { badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import type { OpenAIInstance } from "@/types/api";
 import { isValidTimeZone } from "@/lib/date-time";
@@ -13,6 +11,7 @@ import { VENDOR_PROVIDER_IDS } from "@/lib/ai/vendor-presets";
 import type { TextAiConfig } from "@/types/api";
 import { CLOUD_TTS_PROVIDERS, TTS_MODES } from "@/lib/tts/constants";
 import { getSecurityPosture } from "@/lib/security-posture";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:settings');
 
@@ -74,29 +73,16 @@ function unmaskTextAi(incoming: TextAiConfig | undefined, current: TextAiConfig 
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-        return unauthorized("Authentication required");
-    }
-
+export const GET = defineApiRoute({ auth: 'user' }, async (_req, { user }) => {
     const config = getAppConfig();
     // 完整配置（含 API Key 与管理员安全态势提醒）只给管理员；普通用户只需要页面用到的非敏感字段
-    if (!requireAdmin(session)) {
+    if (!isAdmin(user)) {
         return NextResponse.json({ aiProvider: config.aiProvider, timeouts: config.timeouts, timeZone: config.timeZone });
     }
     return NextResponse.json({ ...config, securityPosture: getSecurityPosture(config) });
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-        return unauthorized("Authentication required");
-    }
-    if (!requireAdmin(session)) {
-        return forbidden("Admin access required");
-    }
-
+export const POST = defineApiRoute({ auth: 'admin' }, async (req) => {
     try {
         const body = await req.json();
         if (body.timeZone !== undefined) {
@@ -144,6 +130,6 @@ export async function POST(req: Request) {
         logger.error({ error }, 'Failed to update settings');
         return internalError("Failed to update settings");
     }
-}
+});
 
 

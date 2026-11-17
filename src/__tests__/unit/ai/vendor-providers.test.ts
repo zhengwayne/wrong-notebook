@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     getAppConfig: vi.fn(),
     getServerSession: vi.fn(),
+    userFindUnique: vi.fn(),
     fetch: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/config', () => ({ getAppConfig: mocks.getAppConfig, getActiveOpenAIConfig: vi.fn() }));
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 vi.stubGlobal('fetch', mocks.fetch);
 
 import { getAIService } from '@/lib/ai';
@@ -80,6 +82,7 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
         vi.clearAllMocks();
         mocks.openaiOptions.length = 0;
         mocks.getServerSession.mockResolvedValue(adminSession);
+        mocks.userFindUnique.mockResolvedValue({ id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 });
     });
 
     it('默认使用官方地址与最新模型', () => {

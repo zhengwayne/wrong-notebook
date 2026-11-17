@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { z } from 'zod';
-import { authOptions } from '@/lib/auth';
-import { badRequest, createErrorResponse, ErrorCode, tooManyRequests, unauthorized, validationError } from '@/lib/api-errors';
+import { badRequest, payloadTooLarge, tooManyRequests, validationError } from '@/lib/api-errors';
 import { createLogger } from '@/lib/logger';
 import { frontendLogLimiter } from '@/lib/rate-limit';
+import { defineApiRoute, PayloadTooLargeError, readBodyWithinLimit } from '@/lib/server/api-route';
 
 const logger = createLogger('frontend-logs');
 
@@ -35,46 +34,6 @@ const payloadSchema = z.union([
 
 type FrontendLogEntry = z.infer<typeof logEntrySchema>;
 
-class PayloadTooLargeError extends Error {
-  constructor() {
-    super('Payload too large');
-  }
-}
-
-/** 流式读取请求体并在超过上限时立即中断 */
-async function readBodyWithinLimit(request: Request, maxBytes: number): Promise<string> {
-  if (!request.body) {
-    const text = await request.text();
-    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
-      throw new PayloadTooLargeError();
-    }
-    return text;
-  }
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        totalBytes += value.byteLength;
-        if (totalBytes > maxBytes) {
-          await reader.cancel().catch(() => {});
-          throw new PayloadTooLargeError();
-        }
-        chunks.push(value);
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return Buffer.concat(chunks, totalBytes).toString('utf8');
-}
-
 function sanitizeExtraContext(context: Record<string, unknown> | undefined): unknown {
   if (!context || Object.keys(context).length === 0) return undefined;
   let serialized: string;
@@ -99,13 +58,8 @@ function sanitizeExtraContext(context: Record<string, unknown> | undefined): unk
  * Receives frontend logs and writes them to backend logger
  * Supports both single log and batch log formats.
  */
-export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return unauthorized('Authentication required');
-  }
-
-  const rateKey = session.user.id || session.user.email || 'anonymous';
+export const POST = defineApiRoute<NextRequest>({ auth: 'user' }, async (request, { user }) => {
+  const rateKey = user.id || user.email || 'anonymous';
   const retryAfter = frontendLogLimiter.retryAfter(rateKey);
   if (retryAfter > 0) {
     return tooManyRequests(retryAfter);
@@ -117,7 +71,7 @@ export async function POST(request: NextRequest) {
     rawText = await readBodyWithinLimit(request, MAX_REQUEST_BYTES);
   } catch (error) {
     if (error instanceof PayloadTooLargeError) {
-      return createErrorResponse('Payload too large', 413, ErrorCode.BAD_REQUEST);
+      return payloadTooLarge();
     }
     logger.error({ error }, 'Failed to read frontend log body');
     return badRequest('Invalid request body');
@@ -150,7 +104,7 @@ export async function POST(request: NextRequest) {
       url: url || request.headers.get('referer')?.slice(0, 500) || undefined,
       userAgent: userAgent || request.headers.get('user-agent')?.slice(0, 300) || undefined,
       clientTime: timestamp,
-      userId: session.user.id,
+      userId: user.id,
       ...(extra !== undefined ? { extra } : {}),
     };
 
@@ -169,4 +123,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ success: true, count: logs.length });
-}
+});

@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { unauthorized } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { getAIService } from "@/lib/ai";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
+import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 
 const logger = createLogger('api:geogebra-analyze');
 
@@ -15,14 +13,8 @@ const logger = createLogger('api:geogebra-analyze');
  * Used by the correction editor where the error item hasn't been saved yet.
  * Does NOT require an item ID.
  */
-async function handlePost(req: Request) {
-    const session = await getServerSession(authOptions);
-
+async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
     try {
-        if (!session?.user?.email) {
-            return unauthorized("Authentication required");
-        }
-
         const body = await req.json();
         const { questionText, answerText, analysis } = body;
 
@@ -33,12 +25,12 @@ async function handlePost(req: Request) {
             );
         }
 
-        const limited = await consumeAiQuota(session.user, 'geogebra');
+        const limited = await consumeAiQuota(user, 'geogebra');
         if (limited) return limited;
 
         const aiService = getAIService('text');
         const result = await trackBackgroundTask(
-            { userId: session.user.id, kind: 'geogebra', subject: describeQuestion({ questionText }) },
+            { userId: user.id, kind: 'geogebra', subject: describeQuestion({ questionText }) },
             () => aiService.analyzeForGeogebra(questionText, answerText || "", analysis || "")
         );
 
@@ -65,4 +57,4 @@ async function handlePost(req: Request) {
 }
 
 /** 耗时 AI 请求：浏览器中断连接后，前端可通过 /api/requests/:id 取回响应 */
-export const POST = withRecoverableResponse(handlePost);
+export const POST = defineApiRoute({ auth: 'user' }, withRecoverableResponse(handlePost));

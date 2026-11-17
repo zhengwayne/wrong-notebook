@@ -22,8 +22,14 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 const mockGetServerSession = vi.hoisted(() => vi.fn());
+const mockUserFindUnique = vi.hoisted(() => vi.fn(async ({ where }: { where?: { id?: string } }) => {
+    if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+    if (where?.id === 'u1') return { id: 'u1', email: 'u@localhost', role: 'user', isActive: true, authVersion: 0 };
+    return null;
+}));
 vi.mock('next-auth', () => ({ getServerSession: mockGetServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mockUserFindUnique } } }));
 
 import { POST } from '@/app/api/ai/models/route';
 

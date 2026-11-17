@@ -20,6 +20,8 @@ export const ErrorCode = {
     // 认证相关 (401)
     UNAUTHORIZED: 'UNAUTHORIZED',
     SESSION_EXPIRED: 'SESSION_EXPIRED',
+    SESSION_REVOKED: 'SESSION_REVOKED',
+    ACCOUNT_DISABLED: 'ACCOUNT_DISABLED',
 
     // 权限相关 (403)
     FORBIDDEN: 'FORBIDDEN',
@@ -31,12 +33,13 @@ export const ErrorCode = {
     USER_NOT_FOUND: 'USER_NOT_FOUND',
     ITEM_NOT_FOUND: 'ITEM_NOT_FOUND',
 
-    // 请求相关 (400)
+    // 请求相关 (400 / 413)
     BAD_REQUEST: 'BAD_REQUEST',
     INVALID_INPUT: 'INVALID_INPUT',
     MISSING_REQUIRED_FIELD: 'MISSING_REQUIRED_FIELD',
     VALIDATION_ERROR: 'VALIDATION_ERROR',
     OPERATION_NOT_ALLOWED: 'OPERATION_NOT_ALLOWED',
+    PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
 
     // 请求过多 (429)
     AI_DAILY_LIMIT_EXCEEDED: 'AI_DAILY_LIMIT_EXCEEDED',
@@ -90,6 +93,20 @@ export function unauthorized(message: string = "Unauthorized"): NextResponse<Api
 }
 
 /**
+ * 401 Session Revoked - 密码修改或会话主动注销导致当前令牌失效
+ */
+export function sessionRevoked(message: string = "Session revoked"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 401, ErrorCode.SESSION_REVOKED);
+}
+
+/**
+ * 401 Account Disabled - 账户已被管理员禁用
+ */
+export function accountDisabled(message: string = "Account is disabled"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 401, ErrorCode.ACCOUNT_DISABLED);
+}
+
+/**
  * 403 Forbidden - 无权限
  */
 export function forbidden(message: string = "Forbidden"): NextResponse<ApiErrorResponse> {
@@ -122,6 +139,13 @@ export function validationError(message: string, errors?: unknown): NextResponse
  */
 export function conflict(message: string): NextResponse<ApiErrorResponse> {
     return createErrorResponse(message, 409, ErrorCode.CONFLICT);
+}
+
+/**
+ * 413 Payload Too Large - 请求体超过允许上限
+ */
+export function payloadTooLarge(message: string = "Payload too large"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 413, ErrorCode.PAYLOAD_TOO_LARGE);
 }
 
 /**

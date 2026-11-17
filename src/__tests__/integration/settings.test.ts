@@ -43,8 +43,10 @@ vi.mock('@/lib/config', () => ({
 }));
 
 const mockGetServerSession = vi.hoisted(() => vi.fn());
+const mockUserFindUnique = vi.hoisted(() => vi.fn());
 vi.mock('next-auth', () => ({ getServerSession: mockGetServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mockUserFindUnique } } }));
 
 // Import after mocks
 import { GET, POST } from '@/app/api/settings/route';
@@ -57,6 +59,11 @@ describe('/api/settings', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetServerSession.mockResolvedValue(adminSession);
+        mockUserFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+            if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+            if (where?.id === 'user-1') return { id: 'user-1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+            return null;
+        });
     });
 
     describe('访问控制', () => {

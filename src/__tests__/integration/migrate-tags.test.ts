@@ -68,6 +68,9 @@ describe('POST /api/admin/migrate-tags', () => {
         const unauthRes = await POST();
         expect(unauthRes.status).toBe(401);
 
+        await db.user.create({
+            data: { id: 'u1', email: 'u1@example.com', password: 'hash', role: 'user', name: 'User' },
+        });
         mocks.session = { user: { id: 'u1', email: 'u1@example.com', role: 'user' } };
         const forbidRes = await POST();
         expect(forbidRes.status).toBe(403);

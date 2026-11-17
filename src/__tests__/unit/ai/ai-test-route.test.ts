@@ -5,12 +5,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getServerSession: vi.fn(),
+    userFindUnique: vi.fn(),
     analyzeImage: vi.fn(),
     withAccessToken: vi.fn(),
 }));
 
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 vi.mock('@/lib/logger', () => ({
     createLogger: vi.fn(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), box: vi.fn(), divider: vi.fn() })),
 }));
@@ -36,6 +38,11 @@ function makeRequest(body: unknown): NextRequest {
 describe('POST /api/ai/test', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.userFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+            if (where?.id === 'a1') return { id: 'a1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+            if (where?.id === 'u1') return { id: 'u1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+            return null;
+        });
     });
 
     it('普通用户返回 403，且不调用 AI', async () => {

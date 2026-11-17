@@ -24,8 +24,9 @@ model User {
   gradeRecognitionMode String @default("fixed") // 录入年级规则：fixed 固定，ai 按题目识别
   fixedGradeSemester String? // 固定年级学期，未指定时沿用账户当前年级
 
-  role      String   @default("user") // "admin" or "user"
-  isActive  Boolean  @default(true)   // 用户是否启用
+  role        String   @default("user") // "admin" or "user"
+  isActive    Boolean  @default(true)   // 用户是否启用
+  authVersion Int      @default(0)      // 会话版本号：改密、禁用或权限变更后递增，令旧 JWT 立即失效
 
   /// JSON 数组：teacher / parent / self，未确认前为 []
   personas             String    @default("[]")
