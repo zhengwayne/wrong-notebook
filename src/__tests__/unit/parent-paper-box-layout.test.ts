@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { badgeOffsets, layoutParentPaperBBoxes, resolveOverlappingBBoxes } from "@/lib/parent-paper-box-layout";
+import { badgeOffsets, badgePlacements, layoutParentPaperBBoxes, resolveOverlappingBBoxes } from "@/lib/parent-paper-box-layout";
 
 describe("resolveOverlappingBBoxes", () => {
     it("clips a left-column box so it does not cover the right-column question", () => {
@@ -72,5 +72,26 @@ describe("badgeOffsets", () => {
         ]);
         expect(offsets.b).toBeGreaterThan(0);
         expect(offsets.a ?? 0).toBe(0);
+    });
+});
+
+describe("badgePlacements", () => {
+    it("hangs badges to the left of mid-page fill-in lines so they do not cover the text", () => {
+        const placements = badgePlacements([
+            { id: "1", bbox: { pageIndex: 0, x: 0.216, y: 0.555, width: 0.728, height: 0.039 } },
+            { id: "2", bbox: { pageIndex: 0, x: 0.216, y: 0.602, width: 0.728, height: 0.04 } },
+            { id: "3", bbox: { pageIndex: 0, x: 0.216, y: 0.65, width: 0.728, height: 0.024 } },
+        ]);
+        expect(placements["1"].side).toBe("left");
+        expect(placements["2"].side).toBe("left");
+        expect(placements["3"].side).toBe("left");
+        expect(placements["1"].shift).toBe(0);
+    });
+
+    it("moves a badge above the box when there is no left margin", () => {
+        const placements = badgePlacements([
+            { id: "edge", bbox: { pageIndex: 0, x: 0.01, y: 0.2, width: 0.4, height: 0.1 } },
+        ]);
+        expect(placements.edge.side).toBe("above");
     });
 });

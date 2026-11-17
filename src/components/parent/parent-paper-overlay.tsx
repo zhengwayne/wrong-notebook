@@ -9,7 +9,7 @@ import { regionFromPoints } from "@/lib/image-crop";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { OVERLAY_COLORS, renderAnnotatedPagePng, shareOrDownloadPng } from "@/lib/parent-paper-annotate";
 import { regionToBBox, resizeNormalizedBox, type BoxHandle } from "@/lib/parent-paper-box-edit";
-import { badgeOffsets, layoutParentPaperBBoxes } from "@/lib/parent-paper-box-layout";
+import { badgePlacements, layoutParentPaperBBoxes } from "@/lib/parent-paper-box-layout";
 import type { ParentPaperQuestionView } from "@/lib/parent-papers";
 import type { QuestionBBox } from "@/lib/parent-paper-review";
 import { toast } from "@/lib/feedback";
@@ -96,7 +96,7 @@ export function ParentPaperOverlay({
     const safeIndex = Math.min(Math.max(0, rawIndex), Math.max(0, orderedPages.length - 1));
     const page = orderedPages[safeIndex];
     const questionsOnPage = laidOutQuestions.filter((question) => question.bbox?.pageIndex === safeIndex);
-    const badgeShift = badgeOffsets(questionsOnPage.filter((question) => question.bbox).map((question) => ({ id: question.id, bbox: question.bbox! })));
+    const badges = badgePlacements(questionsOnPage.filter((question) => question.bbox).map((question) => ({ id: question.id, bbox: question.bbox! })));
 
     const goToPage = (index: number) => {
         setManualPage({ page: index, reveal: revealToken });
@@ -291,8 +291,23 @@ export function ParentPaperOverlay({
                                         }}
                                     >
                                         <span
-                                            className="absolute left-0.5 z-[1] min-w-5 rounded-sm px-1 py-px text-center text-[10px] font-semibold leading-4 text-white sm:min-w-6 sm:px-1.5 sm:text-[11px]"
-                                            style={{ background: colors.stroke, top: `calc(0.15rem + ${(badgeShift[question.id] || 0) * 1.05}rem)` }}
+                                            className="absolute z-[3] whitespace-nowrap rounded-sm px-1 py-px text-center text-[10px] font-semibold leading-4 text-white sm:px-1.5 sm:text-[11px]"
+                                            style={{
+                                                background: colors.stroke,
+                                                ...( (badges[question.id]?.side ?? (box.x >= 0.07 ? "left" : "above")) === "left"
+                                                    ? {
+                                                        right: "100%",
+                                                        top: 0,
+                                                        marginRight: 2,
+                                                        transform: badges[question.id]?.shift ? `translateY(${badges[question.id]!.shift * 1.05}rem)` : undefined,
+                                                    }
+                                                    : {
+                                                        left: 0,
+                                                        bottom: "100%",
+                                                        marginBottom: 2,
+                                                        transform: badges[question.id]?.shift ? `translateX(${badges[question.id]!.shift * 1.15}rem)` : undefined,
+                                                    }),
+                                            }}
                                         >
                                             {question.number}
                                         </span>
