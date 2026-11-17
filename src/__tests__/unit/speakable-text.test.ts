@@ -41,4 +41,12 @@ describe('可朗读文本', () => {
         expect(spoken).not.toContain('<u>');
         expect(spoken).not.toContain('</u>');
     });
+
+    it('把 smiles 代码块读成「结构式」，不把 SMILES 字符逐个念出', () => {
+        const input = '乙醇的结构如下：\n```smiles\nCCO\n```\n是常见有机物。';
+        expect(toSpeakableText(input, 'zh')).toContain('结构式');
+        expect(toSpeakableText(input, 'zh')).not.toContain('CCO');
+        expect(toSpeakableText(input, 'en')).toContain('structural formula');
+        expect(toSpeakableText(input, 'en')).not.toContain('CCO');
+    });
 });

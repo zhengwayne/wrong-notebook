@@ -1,12 +1,14 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { KATEX_RENDER_OPTIONS } from '@/lib/katex-options';
 import { prepareMarkdownMath } from '@/lib/markdown-math';
+import { remarkSafeSmiles } from '@/lib/markdown-smiles';
 import { protectUnderlineTags, remarkSafeUnderline } from '@/lib/markdown-underline';
+import { SmilesStructure } from '@/components/smiles-structure';
 import { cn } from '@/lib/utils';
 
 interface MarkdownRendererProps {
@@ -35,7 +37,7 @@ export function MarkdownRenderer({ content, className = '', variant = 'block', c
             style={clamp ? { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: clamp, overflow: 'hidden' } : undefined}
         >
             <ReactMarkdown
-                remarkPlugins={[remarkMath, remarkGfm, remarkSafeUnderline]}
+                remarkPlugins={[remarkMath, remarkGfm, remarkSafeUnderline, remarkSafeSmiles]}
                 rehypePlugins={[[rehypeKatex, KATEX_RENDER_OPTIONS]]}
                 components={{
                     h1: ({ node, ...props }) => <h1 className={compact ? 'text-base font-bold' : 'text-2xl font-bold mt-6 mb-4'} {...props} />,
@@ -70,7 +72,11 @@ export function MarkdownRenderer({ content, className = '', variant = 'block', c
                     strong: ({ node, ...props }) => <strong className="font-bold text-foreground" {...props} />,
                     em: ({ node, ...props }) => <em className="italic" {...props} />,
                     u: ({ node, ...props }) => <u className="underline decoration-foreground underline-offset-2 decoration-1" {...props} />,
-                }}
+                    // ```smiles 围栏：由 remarkSafeSmiles 转成自定义标签
+                    'smiles-structure': ({ node, ...props }: { node?: { properties?: { dataSmiles?: string } }; 'data-smiles'?: string; children?: React.ReactNode }) => (
+                        <SmilesStructure smiles={String(props['data-smiles'] ?? node?.properties?.dataSmiles ?? '')} />
+                    ),
+                } as Components}
             >
                 {processedContent}
             </ReactMarkdown>

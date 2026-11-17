@@ -55,6 +55,18 @@ $$
 ```
 页面已启用 KaTeX mhchem（`\ce`、`\pu`）。`\wideparen{AB}` / `\overparen{AB}` 会映射为 `\overset{\frown}{AB}`。
 
+### 有机结构式（SMILES）
+
+需要画出有机化合物结构式时，使用 `smiles` 围栏代码块（不要用行内代码或其它 HTML）。页面会在浏览器里用 [smiles-drawer](https://github.com/reymond-group/smilesDrawer)（MIT）惰性加载并画成 SVG；解析失败时显示 SMILES 原文。
+
+````markdown
+乙醇的结构式：
+
+```smiles
+CCO
+```
+````
+
 ### 文本格式
 
 ```markdown

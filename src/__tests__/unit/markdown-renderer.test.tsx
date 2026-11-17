@@ -230,3 +230,25 @@ describe('mhchem、单位与几何记号', () => {
         expect(findLatexIssues(content)).toEqual([]);
     });
 });
+
+
+describe('smiles 围栏结构式', () => {
+    it('把 ```smiles 渲染成结构式容器并保留 SMILES 原文作为回退', () => {
+        const content = '乙醇：\n\n```smiles\nCCO\n```\n';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(html).toContain('data-testid="smiles-structure"');
+        expect(html).toContain('data-smiles="CCO"');
+        expect(html).toContain('CCO');
+        expect(html).toContain('data-fallback');
+        expect(html).not.toContain('<code');
+    });
+
+    it('无法识别的 SMILES 也显示原文，其它代码块仍按代码渲染', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'```smiles\n%%%bad\n```\n\n```\nplain\n```'} />,
+        );
+        expect(html).toContain('data-smiles="%%%bad"');
+        expect(html).toContain('%%%bad');
+        expect(html).toMatch(/<pre[^>]*>[\s\S]*plain/);
+    });
+});

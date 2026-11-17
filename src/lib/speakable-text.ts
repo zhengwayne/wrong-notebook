@@ -155,6 +155,7 @@ function replaceSymbols(text: string, language: 'zh' | 'en'): string {
 export function toSpeakableText(input: string, language: 'zh' | 'en' = 'zh'): string {
     let text = input.replace(/\r\n/g, '\n');
     text = text.replace(/<\/?u\b[^>]*>/gi, '');
+    text = text.replace(/```smiles\s*\n?[\s\S]*?```/gi, language === 'zh' ? ' 结构式 ' : ' structural formula ');
     text = text.replace(/```[\s\S]*?```/g, ' ');
     text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
     text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');

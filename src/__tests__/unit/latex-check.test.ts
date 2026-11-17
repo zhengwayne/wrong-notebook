@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { countLatexIssues, findLatexIssues, findLatexIssuesByField, isAcceptableLatexFix } from '@/lib/latex-check';
 import { parseLatexFix } from '@/lib/ai/latex-fix';
-import { generateLatexFixPrompt, generateReanswerPrompt, LATEX_RULES } from '@/lib/ai/prompts';
+import { generateLatexFixPrompt, generateReanswerPrompt, LATEX_RULES, SMILES_RULES } from '@/lib/ai/prompts';
 
 describe('findLatexIssues', () => {
     it('正确的公式没有问题，包括 \\(…\\)、\\[…\\]、cases 和公式外的字面 \\n', () => {
@@ -76,6 +76,9 @@ describe('LaTeX 修复提示词与解析', () => {
         expect(LATEX_RULES).toContain('\\wideparen');
         const prompt = generateReanswerPrompt('zh', '求 1+1');
         expect(prompt).toContain(LATEX_RULES);
+        expect(prompt).toContain(SMILES_RULES);
+        expect(SMILES_RULES).toContain('```smiles');
+        expect(SMILES_RULES).toContain('\\ce{');
         expect(prompt).toContain('解答完整');
     });
 });

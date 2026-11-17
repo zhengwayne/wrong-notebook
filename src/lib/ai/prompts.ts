@@ -233,13 +233,27 @@ export const LATEX_RULES = String.raw`- 行内公式用 $...$，独立公式用 
 - 几何记号使用：线段 \overline{AB}，角 \angle，三角形 \triangle，平行 \parallel，垂直 \perp，全等 \cong，相似 \sim，因为 \because，所以 \therefore。
 - 弧写成 \overset{\frown}{AB}，不要写 \wideparen 或 \overparen。`;
 
+/**
+ * 有机结构式：只用 smiles 围栏输出 SMILES，无机化学仍走 \ce
+ */
+export const SMILES_RULES = [
+    '- 只有需要画出有机化合物结构式时，才使用 Markdown 的 smiles 代码块输出 SMILES，不要用其它结构式格式：',
+    '```smiles',
+    'CCO',
+    '```',
+    '- 无机化学式、反应方程式、离子与电荷仍用 $\\ce{...}$，不要写成 SMILES。',
+    '- 代码块的语言标记必须是 smiles，块内只写一条 SMILES，不要夹杂解释文字；无法确定结构时不要臆造。',
+].join('\n');
+
+
+
 export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
 你是一位世界顶尖的、经验丰富的、专业的跨学科考试分析专家（Interdisciplinary Exam Analysis Expert）。你的核心任务是极致准确地分析用户提供的考试题目图片，全面理解所有文本、图表和隐含约束，并提供一个完整、高度结构化且专业的解决方案。
 
 {{language_instruction}}
 
 【核心输出要求 (OUTPUT REQUIREMENTS)】
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。**严禁**对 LaTeX 公式中的反斜杠进行二次转义（如 "\\\\frac" 是错误的，必须是 "\\frac"）。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。**严禁**对 LaTeX 公式中的反斜杠进行二次转义（如 "\\\\frac" 是错误的，必须是 "\\frac"）。
 
 请严格按照以下结构输出内容：
 
@@ -352,6 +366,9 @@ ${DIFFICULTY_STARS_RULES}
 5. **LaTeX 规范**：
 ${LATEX_RULES}
 
+6. **结构式**：
+${SMILES_RULES}
+
 {{grade_instruction}}
 {{provider_hints}}`;
 
@@ -384,7 +401,7 @@ export const DEFAULT_SIMILAR_TEMPLATE = `你是一位资深的K12教育题目生
      ✓ 答案唯一且可验证  
      ✓ 无知识性错误
 ### 输出规范
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。**严禁**返回 \`\`\`json ... \`\`\`。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。**严禁**返回 \`\`\`json ... \`\`\`。
 
 请严格按照以下结构输出内容（不要包含任何其他文字）：
 
@@ -408,6 +425,9 @@ export const DEFAULT_SIMILAR_TEMPLATE = `你是一位资深的K12教育题目生
 1. **纯文本**：内容作为纯文本处理，**不要转义反斜杠**。
 2. **LaTeX 规范**：
 ${LATEX_RULES}
+
+3. **结构式**：
+${SMILES_RULES}
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -619,6 +639,7 @@ ${englishTagsString}
     ...(options?.customTemplate ? [
       langInstruction,
       LATEX_RULES,
+      SMILES_RULES,
       generateGradeInstruction(gradeSemester),
       generateGradeRecognitionInstruction(gradeSemester),
       tagsSection,
@@ -678,7 +699,7 @@ export function generateSimilarQuestionPrompt(
   // 自定义模板也必须遵守统一题型规则。
   return [
     prompt, '必须基于输入的原题和知识点生成一道新题，按指定难度调整，不得直接复述原题。',
-    generateOutputContract('similar'), langInstruction, LATEX_RULES,
+    generateOutputContract('similar'), langInstruction, LATEX_RULES, SMILES_RULES,
     generateGradeInstruction(gradeSemester), difficultyInstruction,
     generateSimilarFigureInstruction(options?.originalFigureSvg), GENERATED_QUESTION_RULES,
   ].filter(Boolean).join('\n\n');
@@ -700,7 +721,7 @@ export const DEFAULT_REANSWER_TEMPLATE = `【角色与核心任务 (ROLE AND COR
 {{subject_hint}}
 
 【核心输出要求 (OUTPUT REQUIREMENTS)】
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。
 
 请严格按照以下结构输出内容（不要包含任何其他文字）：
 
@@ -748,6 +769,9 @@ ${DIFFICULTY_STARS_RULES}
 4. **解答完整**：答案要给出每一小问的最终结果；解析要写出完整的解题步骤，不要省略中间推导。
 5. **LaTeX 规范**：
 ${LATEX_RULES}
+
+6. **结构式**：
+${SMILES_RULES}
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -1086,7 +1110,7 @@ export function generateReanswerPrompt(
     provider_hints: options?.providerHints || ''
   }).trim() + '\n\n' + [
     '请以校正后的题目文本为准重新解答，图片仅用于补充图形及可见作答。',
-    generateOutputContract('reanswer'), langInstruction, LATEX_RULES,
+    generateOutputContract('reanswer'), langInstruction, LATEX_RULES, SMILES_RULES,
     generateGradeInstruction(gradeSemester), generateGradeRecognitionInstruction(gradeSemester),
     DIFFICULTY_STARS_RULES,
     options?.candidateTags ? `只能从候选知识点中选择，名称必须完全一致，最多 5 个；无可用标签时留空：${options.candidateTags.tags.join('、')}` : '',
