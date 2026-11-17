@@ -8,7 +8,7 @@
 const MATH_SEGMENT = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?:\\.|[^$\\\n])+?\$/g;
 
 // AI 偶尔把命令的反斜杠转义成两个（如 \\\\frac），在公式内还原；只处理常见命令，避免误伤换行符 "\\\\"
-const DOUBLE_ESCAPED_COMMAND = /(?<!\\)\\\\(?=(?:frac|dfrac|tfrac|sqrt|times|div|cdot|pm|mp|leq?|geq?|neq?|approx|equiv|sim|cong|propto|infty|pi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|angle|triangle|perp|parallel|because|therefore|circ|degree|left|right|sum|prod|int|lim|log|ln|sin|cos|tan|text|mathrm|mathbf|overline|underline|vec|overrightarrow|hat|bar|begin|end|quad|qquad|in|notin|subset|subseteq|cup|cap|emptyset|forall|exists|to|rightarrow|Rightarrow|leftrightarrow|Leftrightarrow|ldots|cdots|dots)(?![a-zA-Z]))/g;
+const DOUBLE_ESCAPED_COMMAND = /(?<!\\)\\\\(?=(?:frac|dfrac|tfrac|sqrt|times|div|cdot|pm|mp|leq?|geq?|neq?|approx|equiv|sim|cong|propto|infty|pi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|angle|triangle|perp|parallel|because|therefore|circ|degree|ce|pu|overset|frown|wideparen|overparen|left|right|sum|prod|int|lim|log|ln|sin|cos|tan|text|mathrm|mathbf|overline|underline|vec|overrightarrow|hat|bar|begin|end|quad|qquad|in|notin|subset|subseteq|cup|cap|emptyset|forall|exists|to|rightarrow|Rightarrow|leftrightarrow|Leftrightarrow|ldots|cdots|dots)(?![a-zA-Z]))/g;
 
 const PLACEHOLDER = (index: number) => `@@MATH${index}@@`;
 const PLACEHOLDER_PATTERN = /@@MATH(\d+)@@/g;

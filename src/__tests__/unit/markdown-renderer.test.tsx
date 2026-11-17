@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
+import { findLatexIssues } from '@/lib/latex-check';
 
 describe('旧题缺少答案或解析时的详情渲染', () => {
     it.each([null, undefined, ''])('内容为 %s 时能正常显示空区域', (content) => {
@@ -186,5 +187,46 @@ describe('有序列表编号与正文同行', () => {
 
     it('中文句号后的换行仍拆成两个段落', () => {
         expect(renderToStaticMarkup(<MarkdownRenderer content={'第一步。\\n第二步'} />)).toMatch(/第一步。<\/p>\s*<p[^>]*>第二步/);
+    });
+});
+
+
+describe('mhchem、单位与几何记号', () => {
+    it('渲染 \\ce 化学式、反应和离子，不残留源码', () => {
+        const content = '硫酸 $\\ce{H2SO4}$，反应 $\\ce{2H2 + O2 -> 2H2O}$，离子 $\\ce{SO4^{2-}}$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        const visible = visibleMarkup(html);
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\ce');
+        expect(visible).toMatch(/H[\s\S]*SO/);
+    });
+
+    it('渲染 \\pu 与 \\mathrm 单位', () => {
+        const content = '重力加速度 $\\pu{9.8 m/s^2}$ 或 $9.8\\,\\mathrm{m/s^2}$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        const visible = visibleMarkup(html);
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\pu');
+        expect(visible).toContain('9.8');
+        expect(visible.replace(/<[^>]+>/g, '')).toMatch(/m\s*\/\s*s/);
+    });
+
+    it('把 \\wideparen 和 \\overparen 映射为 \\overset{\\frown}', () => {
+        for (const content of ['$\\wideparen{AB}$', '$\\overparen{AB}$', '$\\overset{\\frown}{AB}$']) {
+            const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+            const visible = visibleMarkup(html);
+            expect(html).not.toContain('katex-error');
+            expect(visible).not.toContain('\\wideparen');
+            expect(visible).not.toContain('\\overparen');
+            expect(visible.replace(/<[^>]+>/g, '')).toMatch(/A\s*B/);
+        }
+    });
+
+    it('渲染常用几何记号', () => {
+        const content = '线段 $\\overline{AB}$，$\\angle ABC$，$\\triangle ABC$，$AB \\parallel CD$，$EF \\perp GH$，$\\triangle ABC \\cong \\triangle DEF$，$\\because a=b,\\therefore a^2=b^2$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(html).not.toContain('katex-error');
+        expect(findLatexIssues(content)).toEqual([]);
     });
 });

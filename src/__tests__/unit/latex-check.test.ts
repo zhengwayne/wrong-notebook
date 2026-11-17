@@ -68,8 +68,24 @@ describe('LaTeX 修复提示词与解析', () => {
     it('规范中的反斜杠命令保持原样，重新解题提示词要求完整解答并包含规范', () => {
         expect(LATEX_RULES).toContain('\\frac');
         expect(LATEX_RULES).toContain('\\begin{cases}');
+        expect(LATEX_RULES).toContain('\\ce{');
+        expect(LATEX_RULES).toContain('\\pu{');
+        expect(LATEX_RULES).toContain('\\mathrm{');
+        expect(LATEX_RULES).toContain('\\overline{AB}');
+        expect(LATEX_RULES).toContain('\\overset{\\frown}{AB}');
+        expect(LATEX_RULES).toContain('\\wideparen');
         const prompt = generateReanswerPrompt('zh', '求 1+1');
         expect(prompt).toContain(LATEX_RULES);
         expect(prompt).toContain('解答完整');
     });
 });
+
+
+describe('mhchem 与宽弧宏', () => {
+    it('接受 \\ce、\\pu 和映射后的 \\wideparen / \\overparen', () => {
+        expect(findLatexIssues('$\\ce{H2SO4}$ $\\ce{2H2 + O2 -> 2H2O}$ $\\ce{SO4^{2-}}$')).toEqual([]);
+        expect(findLatexIssues('$\\pu{9.8 m/s^2}$ $9.8\\,\\mathrm{m/s^2}$')).toEqual([]);
+        expect(findLatexIssues('$\\wideparen{AB}$ $\\overparen{CD}$ $\\overset{\\frown}{EF}$')).toEqual([]);
+    });
+});
+

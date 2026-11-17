@@ -227,7 +227,11 @@ export const LATEX_RULES = String.raw`- 行内公式用 $...$，独立公式用 
 - 只使用 KaTeX 支持的命令和环境：方程组用 \begin{cases}...\end{cases}，多行推导用 \begin{aligned}...\end{aligned}（放在 $$...$$ 中），不要用 align、eqnarray、\newcommand、\usepackage、\label、\tag 等。
 - 大括号 {} 必须成对，\left 与 \right 必须成对，\begin{...} 与 \end{...} 必须对应。
 - 公式中的中文写在 \text{...} 里，或放到公式外；百分号写成 \%，美元符号写成 \$。
-- 反斜杠只写一个（\frac），不要写成 \\frac；换行符 \\ 只能用在 cases、aligned 等环境里。`;
+- 反斜杠只写一个（\frac），不要写成 \\frac；换行符 \\ 只能用在 cases、aligned 等环境里。
+- 化学式、反应方程式、离子与电荷用 \ce{...}，例如 \ce{H2SO4}、\ce{2H2 + O2 -> 2H2O}、\ce{SO4^{2-}}。
+- 物理量单位用 \pu{...} 或 \mathrm{...}，例如 \pu{9.8 m/s^2}、9.8\,\mathrm{m/s^2}。
+- 几何记号使用：线段 \overline{AB}，角 \angle，三角形 \triangle，平行 \parallel，垂直 \perp，全等 \cong，相似 \sim，因为 \because，所以 \therefore。
+- 弧写成 \overset{\frown}{AB}，不要写 \wideparen 或 \overparen。`;
 
 export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
 你是一位世界顶尖的、经验丰富的、专业的跨学科考试分析专家（Interdisciplinary Exam Analysis Expert）。你的核心任务是极致准确地分析用户提供的考试题目图片，全面理解所有文本、图表和隐含约束，并提供一个完整、高度结构化且专业的解决方案。

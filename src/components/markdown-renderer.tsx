@@ -4,6 +4,7 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { KATEX_RENDER_OPTIONS } from '@/lib/katex-options';
 import { prepareMarkdownMath } from '@/lib/markdown-math';
 import { protectUnderlineTags, remarkSafeUnderline } from '@/lib/markdown-underline';
 import { cn } from '@/lib/utils';
@@ -35,7 +36,7 @@ export function MarkdownRenderer({ content, className = '', variant = 'block', c
         >
             <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm, remarkSafeUnderline]}
-                rehypePlugins={[rehypeKatex]}
+                rehypePlugins={[[rehypeKatex, KATEX_RENDER_OPTIONS]]}
                 components={{
                     h1: ({ node, ...props }) => <h1 className={compact ? 'text-base font-bold' : 'text-2xl font-bold mt-6 mb-4'} {...props} />,
                     h2: ({ node, ...props }) => <h2 className={compact ? 'text-base font-bold' : 'text-xl font-bold mt-5 mb-3'} {...props} />,

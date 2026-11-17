@@ -47,6 +47,14 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 $$
 ```
 
+**化学、单位与几何：**
+```markdown
+硫酸 $\ce{H2SO4}$，反应 $\ce{2H2 + O2 -> 2H2O}$
+重力加速度 $\pu{9.8 m/s^2}$ 或 $9.8\,\mathrm{m/s^2}$
+线段 $\overline{AB}$，弧 $\overset{\frown}{AB}$
+```
+页面已启用 KaTeX mhchem（`\ce`、`\pu`）。`\wideparen{AB}` / `\overparen{AB}` 会映射为 `\overset{\frown}{AB}`。
+
 ### 文本格式
 
 ```markdown
