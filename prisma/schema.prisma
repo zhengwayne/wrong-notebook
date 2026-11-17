@@ -158,6 +158,7 @@ model ErrorItem {
 
   learnerId        String?
   learner          Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+  provenanceId     String?
 
   reviewSchedules ReviewSchedule[]
   practiceRecords PracticeRecord[]
@@ -392,6 +393,7 @@ model GradingResult {
   reason        String?
   source        String  @default("auto") // auto 本地比对 | ai | teacher 老师改判
   errorItemId   String? // 导入错题本后的错题 ID
+  provenanceId  String?
 
   @@unique([submissionId, keyQuestionId])
   @@index([keyQuestionId])
@@ -464,6 +466,7 @@ model VariantItem {
   examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
   reviewNote   String?
   reviewedAt   DateTime?
+  provenanceId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   stages       VariantStageLog[]
@@ -593,6 +596,7 @@ model ParentPaperQuestion {
   bbox                String?
   subjectHint         String?
   importedErrorItemId String?
+  provenanceId        String?
   selected            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -662,4 +666,17 @@ model LearningPathStep {
   updatedAt       DateTime  @updatedAt
 
   @@index([pathId, position])
+}
+
+/// AI 产出记录的提示词、模型与解析器溯源（相同组合复用同一行）
+model AiProvenance {
+  id            String   @id @default(cuid())
+  task          String   // analyze | grade | exam-read | variant | reanswer
+  provider      String   // gemini | openai | azure | anthropic | 渠道预设名
+  model         String
+  promptVersion String   // prompts.ts 中对应提示词规范化文本的 SHA-256 前 12 位
+  parserVersion String   // 解析与校验逻辑版本
+  createdAt     DateTime @default(now())
+
+  @@unique([task, provider, model, promptVersion, parserVersion])
 }

@@ -45,6 +45,7 @@ const importSchema = z.object({
     hasFigure: z.boolean().optional(),
     figureSvg: z.string().max(MAX_FIGURE_SVG_LENGTH).nullish(),
     geogebraCommands: z.string().nullish(),
+    provenanceId: z.string().min(1).max(64).nullish(),
 });
 
 export async function POST(req: Request) {
@@ -105,6 +106,11 @@ export async function POST(req: Request) {
         // 配图 SVG 入库前再净化一次，无效时丢弃
         const figureSvg = sanitizeFigureSvg(body.figureSvg);
         const hasFigure = !!body.hasFigure || figureSvg !== null;
+        let verifiedProvenanceId: string | undefined;
+        if (body.provenanceId && typeof (prisma as { aiProvenance?: { findUnique?: unknown } }).aiProvenance?.findUnique === 'function') {
+            const exists = await prisma.aiProvenance.findUnique({ where: { id: body.provenanceId }, select: { id: true } });
+            if (exists) verifiedProvenanceId = exists.id;
+        }
 
         // 记录请求参数（不记录完整图片数据）
         logger.debug({
@@ -221,6 +227,7 @@ export async function POST(req: Request) {
                         hasFigure,
                         figureSvg,
                         geogebraCommands: geogebraCommands || null,
+                        provenanceId: verifiedProvenanceId ?? null,
                         masteryLevel: 0,
                         errorType: deriveErrorType(mistakeAnalysis),
                         tags: {

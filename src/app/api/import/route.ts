@@ -101,6 +101,7 @@ interface ImportData {
         masteryReason?: string | null;
         masterySource?: string | null;
         masteryEvaluatedAt?: string | null;
+        provenanceId?: string | null;
         createdAt: string;
         updatedAt: string;
         tags: Array<{ id: string; name: string; subject: string }>;
@@ -160,6 +161,14 @@ interface ImportData {
     }>;
     /** 动画讲解的云端语音（服务商、模型、音色、文字与 Base64 编码的 MP3），写入语音缓存 */
     variantRuns?: Array<Record<string, unknown> & { items?: Array<Record<string, unknown>> }>;
+    aiProvenances?: Array<{
+        id: string;
+        task: string;
+        provider: string;
+        model: string;
+        promptVersion: string;
+        parserVersion: string;
+    }>;
     ttsSpeeches?: unknown;
 }
 
@@ -394,6 +403,30 @@ export async function POST(req: Request) {
                 }
             }
 
+            // 3.5 导入或复用 AI 溯源记录（建立 oldId -> newId 映射）
+            const provenanceIdMap = new Map<string, string>();
+            if (Array.isArray(body.aiProvenances) && typeof (tx as { aiProvenance?: { upsert?: unknown } }).aiProvenance?.upsert === 'function') {
+                for (const prov of body.aiProvenances) {
+                    if (!prov || typeof prov.id !== 'string' || typeof prov.task !== 'string' || typeof prov.provider !== 'string' || typeof prov.model !== 'string' || typeof prov.promptVersion !== 'string' || typeof prov.parserVersion !== 'string') {
+                        continue;
+                    }
+                    const key = {
+                        task: prov.task,
+                        provider: prov.provider,
+                        model: prov.model,
+                        promptVersion: prov.promptVersion,
+                        parserVersion: prov.parserVersion,
+                    };
+                    const row = await tx.aiProvenance.upsert({
+                        where: { task_provider_model_promptVersion_parserVersion: key },
+                        update: {},
+                        create: key,
+                        select: { id: true },
+                    });
+                    provenanceIdMap.set(prov.id, row.id);
+                }
+            }
+
             // 4. 导入 error items
             const errorItemIdMap = new Map<string, string>();
             const errorItemOwnerMap = new Map<string, string>();
@@ -446,6 +479,7 @@ export async function POST(req: Request) {
                         svgAnimation: sanitizeSvgAnimation(item.svgAnimation),
                         svgAnimationEn: sanitizeSvgAnimation(item.svgAnimationEn),
                         lastPractice: safeLastPractice(item.lastPractice),
+                        provenanceId: item.provenanceId ? (provenanceIdMap.get(item.provenanceId) ?? null) : null,
                         // 掌握概率与评估时间成对保留，缺任一项则导入后重新评估
                         ...(masteryProbability !== null && masteryEvaluatedAt ? {
                             masteryProbability,
@@ -656,6 +690,7 @@ export async function POST(req: Request) {
                             similarity: asOptionalNumber(item.similarity),
                             similarTo: asOptionalString(item.similarTo),
                             sourceItemId: typeof item.sourceItemId === 'string' ? errorItemIdMap.get(item.sourceItemId) ?? null : null,
+                            provenanceId: typeof item.provenanceId === 'string' ? (provenanceIdMap.get(item.provenanceId) ?? null) : null,
                             reviewNote: asOptionalString(item.reviewNote),
                             reviewedAt: safeParseDate(asOptionalString(item.reviewedAt)),
                         },

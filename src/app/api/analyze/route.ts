@@ -16,6 +16,7 @@ import { getErrorMessage } from "@/lib/error-message";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { ImageValidationError, normalizeImageInput } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:analyze');
@@ -131,12 +132,13 @@ async function handlePost(req: Request) {
 
         logger.info('AI analysis successful');
 
+        const provenanceId = await recordAiProvenance(prisma, { task: 'analyze', role: 'vision' });
         const items = (analysisResult.items?.length ? analysisResult.items : [analysisResult]).map((item) => (
             gradeProfile
                 ? { ...item, gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: item.gradeSemester }, getAppTimeZone()) }
                 : item
         ));
-        return NextResponse.json(toAnalyzeImageResult(items, analysisResult.failedCount));
+        return NextResponse.json(toAnalyzeImageResult(items, analysisResult.failedCount, provenanceId));
     } catch (error) {
         const message = getErrorMessage(error);
         logger.error({

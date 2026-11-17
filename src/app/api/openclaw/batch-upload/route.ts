@@ -13,6 +13,7 @@ import { generateUniqueShortId } from "@/lib/short-id";
 import { scheduleMasteryEvaluation } from "@/lib/mastery";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { parseDifficultyStars } from "@/lib/ai/schema";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorMessage } from "@/lib/error-message";
 import { ImageValidationError, normalizeImageBuffer } from "@/lib/server/image-normalize";
@@ -130,7 +131,8 @@ async function createErrorItem(
     mimeType: string,
     parsedData: OpenclawResponse['data'],
     finalGradeSemester: string | null,
-    subjectId?: string
+    subjectId?: string,
+    provenanceId?: string | null
 ) {
     const { questionText, answerText, analysis, knowledgePoints, errorType, source } = parsedData || {};
     const difficultyStars = parseDifficultyStars(parsedData?.difficultyStars);
@@ -204,6 +206,7 @@ async function createErrorItem(
                 difficultyStars,
                 errorType: errorType || null,
                 source: source || 'Openclaw',
+                provenanceId: provenanceId ?? null,
                 masteryLevel: 0,
                 tags: {
                     connect: tagConnections,
@@ -428,13 +431,20 @@ export async function POST(req: Request) {
                     results.push({ success: false, index: i, error: 'AI_DAILY_LIMIT_EXCEEDED' });
                     continue;
                 }
+                const provenanceId = await recordAiProvenance(prisma, {
+                    task: 'analyze',
+                    role: 'vision',
+                    providerOverride: 'openclaw',
+                    modelOverride: 'agent',
+                });
                 const errorItem = await createErrorItem(
                     dbUser.id,
                     normalizedImg.base64,
                     normalizedImg.mimeType,
                     openclawResponse.data,
                     gradeResult.gradeSemester,
-                    subjectId
+                    subjectId,
+                    provenanceId,
                 );
 
                 results.push({

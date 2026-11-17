@@ -51,8 +51,9 @@ export async function analyzeQuestionImage(
  */
 export async function saveParsedQuestion(
     parsed: ParsedQuestion,
-    options: { subjectId?: string | null; imageUrl?: string | null; learnerId?: string | null }
+    options: { subjectId?: string | null; imageUrl?: string | null; learnerId?: string | null; provenanceId?: string | null }
 ): Promise<ImportedQuestion> {
+    const provenanceId = options.provenanceId ?? (parsed as ParsedQuestion & { provenanceId?: string | null }).provenanceId;
     const created = await apiClient.post<CreatedErrorItem>("/api/error-items", {
         questionText: parsed.questionText,
         answerText: parsed.answerText,
@@ -69,6 +70,7 @@ export async function saveParsedQuestion(
         subjectName: options.subjectId ? undefined : parsed.subject,
         originalImageUrl: options.imageUrl || "",
         learnerId: options.learnerId || undefined,
+        ...(provenanceId ? { provenanceId } : {}),
     });
     return {
         id: created.id,

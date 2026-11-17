@@ -4,6 +4,7 @@
 import { prisma } from '@/lib/prisma';
 import { consumeAiQuota, type QuotaUser } from '@/lib/ai-quota';
 import { getAIService } from '@/lib/ai';
+import { recordAiProvenance } from '@/lib/ai/provenance';
 import type { DifficultyLevel } from '@/lib/ai/types';
 import { trackBackgroundTask } from '@/lib/background-tasks';
 import { sanitizeFigureSvg } from '@/lib/figure-svg';
@@ -119,6 +120,7 @@ async function persistLogs(runId: string, logs: StageLog[], itemId?: string) {
 
 async function persistPipeline(runId: string, result: PipelineResult, title?: string) {
     const started = Date.now();
+    const provenanceId = await recordAiProvenance(prisma, { task: 'variant', role: 'text' });
     for (const item of result.items) {
         const created = await prisma.variantItem.create({
             data: {
@@ -138,6 +140,7 @@ async function persistPipeline(runId: string, result: PipelineResult, title?: st
                 similarity: item.similarity ?? null,
                 similarTo: item.similarTo ?? null,
                 sourceItemId: item.sourceItemId ?? null,
+                provenanceId,
             },
         });
         await persistLogs(runId, item.logs, created.id);
@@ -247,6 +250,7 @@ export async function startLegacyRun(options: {
         options.question, options.knowledgePoints, options.language, options.difficulty, options.gradeSemester, options.figureSvg,
     );
     const cleanFigureSvg = sanitizeFigureSvg(generated.figureSvg);
+    const provenanceId = await recordAiProvenance(prisma, { task: 'variant', role: 'text' });
     const lastPractice = {
         questionText: generated.questionText,
         answerText: generated.answerText,
@@ -281,6 +285,7 @@ export async function startLegacyRun(options: {
                     plannedDifficulty: options.difficulty,
                     reviewedAt: new Date(),
                     sourceItemId: options.errorItemId,
+                    provenanceId,
                 },
             },
         },

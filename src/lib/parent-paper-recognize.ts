@@ -4,6 +4,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -239,6 +240,7 @@ async function runParentPaperRecognition(
         } catch (error) {
             logger.warn({ error, paperId }, "Parent paper verification skipped");
         }
+        const provenanceId = await recordAiProvenance(db, { task: "exam-read", role: "vision" });
 
         await db.$transaction(async (tx) => {
             await tx.parentPaperQuestion.deleteMany({ where: { paperId } });
@@ -258,6 +260,7 @@ async function runParentPaperRecognition(
                         knowledgePoints: JSON.stringify(question.knowledgePoints),
                         bbox: question.bbox ? JSON.stringify(question.bbox) : null,
                         subjectHint: question.subjectHint,
+                        provenanceId,
                         selected: shouldImportVerdict(question.verdict),
                     })),
                 });
@@ -422,6 +425,7 @@ export async function confirmParentPaper(
                     mistakeStatus: question.studentAnswer.trim() ? "wrong_attempt" : "not_attempted",
                     knowledgePoints: JSON.stringify(knowledgePoints),
                     source: title,
+                    provenanceId: question.provenanceId ?? null,
                     masteryLevel: 0,
                     tags: { connect: tags },
                 },

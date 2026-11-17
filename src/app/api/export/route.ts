@@ -78,6 +78,19 @@ export async function GET(req: Request) {
             orderBy: { startedAt: 'asc' },
         });
 
+        const referencedProvenanceIds = [...new Set([
+            ...errorItems.map((item) => item.provenanceId),
+            ...variantRuns.flatMap((run) => run.items.map((item) => item.provenanceId)),
+        ].filter((id): id is string => Boolean(id)))];
+
+        const aiProvenances = typeof (prisma as { aiProvenance?: { findMany?: unknown } }).aiProvenance?.findMany === 'function'
+            ? (exportAll
+                ? await prisma.aiProvenance.findMany({ orderBy: { createdAt: 'asc' } })
+                : (referencedProvenanceIds.length > 0
+                    ? await prisma.aiProvenance.findMany({ where: { id: { in: referencedProvenanceIds } } })
+                    : []))
+            : [];
+
         const ttsSpeeches = await exportSpeeches(errorItems.flatMap((item) => [
             ...(item.svgAnimation ? [{ language: 'zh' as const, svg: item.svgAnimation }] : []),
             ...(item.svgAnimationEn ? [{ language: 'en' as const, svg: item.svgAnimationEn }] : []),
@@ -111,6 +124,7 @@ export async function GET(req: Request) {
             practiceRecords,
             examPapers,
             variantRuns,
+            aiProvenances,
             ttsSpeeches,
         };
 

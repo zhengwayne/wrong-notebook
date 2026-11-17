@@ -68,7 +68,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     const [confirmBeforeImport, setConfirmBeforeImport] = useState(false);
     const [lastImported, setLastImported] = useState<ImportedQuestion | null>(null);
     const [batchBlobs, setBatchBlobs] = useState<Blob[] | null>(null);
-    const [pendingItems, setPendingItems] = useState<{ items: ParsedQuestion[]; imageUrl: string | null } | null>(null);
+    const [pendingItems, setPendingItems] = useState<{ items: ParsedQuestion[]; imageUrl: string | null; provenanceId?: string | null } | null>(null);
     const [savingItems, setSavingItems] = useState(false);
 
     const aiTimeout = config?.timeouts?.analyze || DEFAULT_AI_TIMEOUT;
@@ -124,23 +124,29 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
                 (t.importFlow?.partialParseFailed || '{count} question(s) could not be parsed completely and were skipped.').replace('{count}', String(data.failedCount))
             );
         }
+        const provenanceId = 'provenanceId' in data && data.provenanceId ? data.provenanceId : undefined;
         const items = itemsFromAnalyze(data);
         if (items.length > 1) {
             setCurrentImage(imageUrl);
-            setPendingItems({ items, imageUrl });
+            setPendingItems({ items, imageUrl, provenanceId });
             setStep("confirm");
             return;
         }
         if (!confirmBeforeImport) {
             setAnalysisStep('saving');
-            const imported = await saveParsedQuestion(items[0], { subjectId: importSubjectId, imageUrl, learnerId });
+            const imported = await saveParsedQuestion(
+                items[0],
+                provenanceId
+                    ? { subjectId: importSubjectId, imageUrl, learnerId, provenanceId }
+                    : { subjectId: importSubjectId, imageUrl, learnerId },
+            );
             setLastImported(imported);
             setCurrentImage(null);
             frontendLogger.info(logPrefix, 'Imported without review', { id: imported.id });
             return;
         }
         setCurrentImage(imageUrl);
-        setParsedData(items[0]);
+        setParsedData(provenanceId ? ({ ...items[0], provenanceId } as ParsedQuestion) : items[0]);
         setStep("review");
     };
 
@@ -160,7 +166,12 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         try {
             const imported: ImportedQuestion[] = [];
             for (const item of selected) {
-                imported.push(await saveParsedQuestion(item, { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl, learnerId }));
+                imported.push(await saveParsedQuestion(
+                    item,
+                    pendingItems.provenanceId
+                        ? { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl, learnerId, provenanceId: pendingItems.provenanceId }
+                        : { subjectId: importSubjectId, imageUrl: pendingItems.imageUrl, learnerId },
+                ));
             }
             toast.success(t.importFlow.savedCount.replace("{count}", String(imported.length)));
             setLastImported(imported[imported.length - 1]);
@@ -266,11 +277,15 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
 
     /** 校对页保存 */
     const saveReviewed = async (finalData: ReviewedQuestion) => {
+        const parsedProvenanceId = parsedData && 'provenanceId' in parsedData
+            ? (parsedData as ParsedQuestion & { provenanceId?: string | null }).provenanceId
+            : undefined;
         const saved = await saveQuestion({
             ...finalData,
             originalImageUrl: currentImage || "",
             ...(fixedSubjectId ? { subjectId: fixedSubjectId } : {}),
             ...(learnerId ? { learnerId } : {}),
+            ...(parsedProvenanceId ? { provenanceId: parsedProvenanceId } : {}),
         });
         if (saved) {
             setStep("upload");

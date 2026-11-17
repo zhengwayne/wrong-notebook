@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { createLogger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/error-message";
 import { generateUniqueShortId } from "@/lib/short-id";
@@ -170,9 +171,11 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             }
         }
 
+        const provenanceId = await recordAiProvenance(prisma, { task: 'grade', role: 'vision' });
+
         await prisma.$transaction([
             prisma.gradingResult.deleteMany({ where: { submissionId } }),
-            prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId })) }),
+            prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) }),
             prisma.gradingSubmission.update({
                 where: { id: submissionId },
                 data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData },
@@ -267,6 +270,7 @@ export async function confirmSubmission(submissionId: string, userId: string): P
                     knowledgePoints: JSON.stringify(question.knowledgePoints || []),
                     source: task.title,
                     userNotes: `${studentName}：${result.score}/${question.maxScore}`,
+                    provenanceId: result.provenanceId ?? null,
                     masteryLevel: 0,
                     tags: { connect: tags },
                 },

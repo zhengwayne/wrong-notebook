@@ -123,10 +123,23 @@ export function parseAnalyzeResponse(text: string): ParseAnalyzeResult {
     return { items, failedCount };
 }
 
-export type AnalyzeImageResult = ParsedQuestionFromSchema & { items: ParsedQuestionFromSchema[]; failedCount?: number };
+export type AnalyzeImageResult = ParsedQuestionFromSchema & {
+    items: ParsedQuestionFromSchema[];
+    failedCount?: number;
+    provenanceId?: string | null;
+};
 
-export function toAnalyzeImageResult(items: ParsedQuestionFromSchema[], failedCount = 0): AnalyzeImageResult {
-    return failedCount > 0 ? { ...items[0], items, failedCount } : { ...items[0], items };
+export function toAnalyzeImageResult(
+    items: ParsedQuestionFromSchema[],
+    failedCount = 0,
+    provenanceId?: string | null,
+): AnalyzeImageResult {
+    return {
+        ...items[0],
+        items,
+        ...(failedCount > 0 ? { failedCount } : {}),
+        ...(provenanceId ? { provenanceId } : {}),
+    };
 }
 
 /** 默认勾选：只保存 visibly 做错的题 */

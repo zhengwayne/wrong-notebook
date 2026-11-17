@@ -56,6 +56,7 @@ async function clearUserData() {
     await database.subject.deleteMany({ where: { userId: 'user-1' } });
     await database.knowledgeTag.deleteMany({ where: { userId: 'user-1' } });
     await database.practiceRecord.deleteMany({ where: { userId: 'user-1' } });
+    await database.aiProvenance.deleteMany();
 }
 
 beforeAll(() => {
@@ -75,10 +76,21 @@ beforeAll(() => {
 
 beforeEach(async () => {
     mocks.scheduleMasteryEvaluation.mockClear();
+    await database.aiProvenance.deleteMany();
     await database.user.deleteMany();
     await database.user.create({ data: { id: 'user-1', email: mocks.session.user.email, password: 'test-only' } });
     await database.subject.create({ data: { id: 'math', name: '数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' } });
     await database.knowledgeTag.create({ data: { id: 'tag-1', name: '自定义标签', subject: 'math', userId: 'user-1' } });
+    await database.aiProvenance.create({
+        data: {
+            id: 'prov-1',
+            task: 'analyze',
+            provider: 'gemini',
+            model: 'gemini-2.5-flash',
+            promptVersion: 'abc123def456',
+            parserVersion: 'v2-latex-sm',
+        },
+    });
     await database.errorItem.create({
         data: {
             id: 'item-1', shortId: 'AbC234', userId: 'user-1', subjectId: 'math', originalImageUrl: 'data:image/png;base64,dGVzdA==',
@@ -86,6 +98,7 @@ beforeEach(async () => {
             mistakeStatus: 'wrong_attempt', source: '期中考试', errorType: '计算', userNotes: '注意符号', gradeSemester: '初二上',
             paperLevel: 'b', difficultyStars: 3, hasFigure: true, figureSvg: figure,
             geogebraCommands: 'A=(0,0)\nB=(1,1)', svgAnimation: animation('中文'), svgAnimationEn: animation('English'), lastPractice,
+            provenanceId: 'prov-1',
             masteryLevel: 2, masteryProbability: 0.8, masteryReason: '连续答对', masterySource: 'ai', masteryEvaluatedAt: new Date('2026-10-21T00:00:00Z'),
             createdAt: new Date('2026-10-01T00:00:00Z'), updatedAt: new Date('2026-10-21T00:00:00Z'),
             tags: { connect: [{ id: 'tag-1' }] },
@@ -112,13 +125,17 @@ describe('数据导出后再导入（真实 SQLite）', () => {
         expect((await exportBackup()).version).toBe(2);
     });
 
-    it('错题与举一反三记录的全部字段完整保留', async () => {
+    it('错题与举一反三记录的全部字段完整保留（含 AiProvenance 溯源关联）', async () => {
         const backup = await exportBackup();
+        expect(backup.aiProvenances).toHaveLength(1);
         await clearUserData();
         const { stats } = await importBackup(backup);
         expect(stats).toMatchObject({ errorItemsCreated: 1, practiceRecordsCreated: 1, reviewSchedulesCreated: 1, tagsLinked: 1 });
 
         const item = await database.errorItem.findFirstOrThrow({ where: { userId: 'user-1' }, include: { tags: true, subject: true } });
+        expect(item.provenanceId).toBeTruthy();
+        const prov = await database.aiProvenance.findUniqueOrThrow({ where: { id: item.provenanceId! } });
+        expect(prov).toMatchObject({ task: 'analyze', provider: 'gemini', model: 'gemini-2.5-flash', promptVersion: 'abc123def456', parserVersion: 'v2-latex-sm' });
         expect(item).toMatchObject({
             shortId: 'AbC234', questionText: '求解 x + 2 = 5', difficultyStars: 3, hasFigure: true, figureSvg: figure,
             geogebraCommands: 'A=(0,0)\nB=(1,1)', svgAnimation: animation('中文'), svgAnimationEn: animation('English'), lastPractice,
