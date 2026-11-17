@@ -6,6 +6,7 @@ const DOM_UNIT_TESTS = [
     'src/__tests__/unit/cloud-speech.test.ts',
     'src/__tests__/unit/frontend-logger.test.ts',
     'src/__tests__/unit/image-utils.test.ts',
+    'src/__tests__/unit/parent-paper-annotate-and-summary.test.ts',
     'src/__tests__/unit/smiles-render.test.ts',
     'src/__tests__/unit/speak-text.test.ts',
     'src/__tests__/unit/svg-animation.test.ts',
@@ -44,12 +45,12 @@ export default defineConfig({
             reporter: ['text', 'json', 'json-summary', 'html'],
             include: ['src/lib/**/*.ts', 'src/app/api/**/*.ts'],
             exclude: ['src/__tests__/**', 'node_modules/**'],
-            // 略低于当前覆盖率，防止覆盖率下降；补充测试后可逐步提高
+            // 略低于当前实测覆盖率，防止覆盖率下降；补充测试后可逐步提高
             thresholds: {
-                statements: 70,
-                branches: 65,
-                functions: 75,
-                lines: 70,
+                statements: 80,
+                branches: 70,
+                functions: 82,
+                lines: 82,
             },
         },
     },

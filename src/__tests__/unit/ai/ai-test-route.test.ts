@@ -8,8 +8,13 @@ const mocks = vi.hoisted(() => ({
     userFindUnique: vi.fn(),
     getAppConfig: vi.fn(),
     analyzeImage: vi.fn(),
+    generateSimilarQuestion: vi.fn(),
     openaiAnalyzeImage: vi.fn(),
+    openaiGenerateSimilar: vi.fn(),
     geminiAnalyzeImage: vi.fn(),
+    geminiGenerateSimilar: vi.fn(),
+    azureAnalyzeImage: vi.fn(),
+    azureGenerateSimilar: vi.fn(),
     openaiConfigs: [] as Array<Record<string, unknown>>,
     geminiConfigs: [] as Array<Record<string, unknown>>,
     withAccessToken: vi.fn(),
@@ -30,6 +35,7 @@ vi.mock('@/lib/ai/openai-provider', () => ({
             mocks.openaiConfigs.push(config);
         }
         analyzeImage = mocks.openaiAnalyzeImage;
+        generateSimilarQuestion = mocks.openaiGenerateSimilar;
     },
 }));
 vi.mock('@/lib/ai/gemini-provider', () => ({
@@ -38,12 +44,20 @@ vi.mock('@/lib/ai/gemini-provider', () => ({
             mocks.geminiConfigs.push(config);
         }
         analyzeImage = mocks.geminiAnalyzeImage;
+        generateSimilarQuestion = mocks.geminiGenerateSimilar;
+    },
+}));
+vi.mock('@/lib/ai/azure-provider', () => ({
+    AzureOpenAIProvider: class {
+        analyzeImage = mocks.azureAnalyzeImage;
+        generateSimilarQuestion = mocks.azureGenerateSimilar;
     },
 }));
 vi.mock('@/lib/ai/anthropic-provider', () => ({
     DEFAULT_ANTHROPIC_MODEL: 'claude-sonnet-5-5',
     AnthropicProvider: class {
         analyzeImage = mocks.analyzeImage;
+        generateSimilarQuestion = mocks.generateSimilarQuestion;
     },
 }));
 
@@ -149,5 +163,44 @@ describe('POST /api/ai/test', () => {
         const lanRes = await POST(makeRequest({ provider: 'openai', apiKey: 'ollama', baseUrl: 'http://192.168.1.88:11434/v1' }));
         expect(lanRes.status).toBe(200);
         expect(mocks.openaiAnalyzeImage).toHaveBeenCalledTimes(1);
+    });
+
+    it('覆盖缺参 400、Azure/国产渠道、视觉不支持回退文本生成与标准错误码映射', async () => {
+        mocks.getServerSession.mockResolvedValue({ user: { id: 'a1', role: 'admin' }, expires: '2099-01-01' });
+
+        expect((await POST(makeRequest({ provider: 'openai' }))).status).toBe(400);
+        expect((await POST(makeRequest({ provider: 'azure', apiKey: 'az-key' }))).status).toBe(400);
+
+        mocks.azureAnalyzeImage.mockResolvedValueOnce({ questionText: '2+3=?', analysis: 'ok' });
+        const azOk = await POST(makeRequest({
+            provider: 'azure',
+            apiKey: 'az-key',
+            endpoint: 'https://example.openai.azure.com',
+            deploymentName: 'gpt-4o-deploy',
+        }));
+        expect(await azOk.json()).toMatchObject({ success: true, visionSupport: true, modelInfo: 'gpt-4o-deploy' });
+
+        // 国产渠道预设：视觉报错非配置错误时回退测试 generateSimilarQuestion
+        mocks.openaiAnalyzeImage.mockRejectedValueOnce(new Error('invalid json from vision'));
+        mocks.openaiGenerateSimilar.mockResolvedValueOnce({ questionText: '1+2=?' });
+        const dsRes = await (await POST(makeRequest({ provider: 'deepseek', apiKey: 'ds-key' }))).json();
+        expect(dsRes).toMatchObject({
+            success: true,
+            textSupport: true,
+            visionSupport: false,
+            visionError: 'VISION_NOT_SUPPORTED',
+        });
+
+        // 视觉失败且文本同样遭遇 429 限流
+        mocks.geminiAnalyzeImage.mockRejectedValueOnce(new Error('invalid json'));
+        mocks.geminiGenerateSimilar.mockRejectedValueOnce(new Error('429 rate limit exceeded'));
+        const bothFail = await (await POST(makeRequest({ provider: 'gemini', apiKey: 'g-key' }))).json();
+        expect(bothFail).toMatchObject({
+            success: false,
+            textSupport: false,
+            visionSupport: false,
+            visionError: 'VISION_NOT_SUPPORTED',
+            textError: 'AI_QUOTA_EXCEEDED',
+        });
     });
 });

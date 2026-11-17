@@ -232,4 +232,21 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         expect(fs.existsSync(bgFile)).toBe(false);
         expect(await getStoredResponse(reqId)).toBeNull();
     });
+
+    it('当系统重置管理员不存在时抛出 ADMIN_USER_NOT_FOUND，且 TTS 缓存清理异常时降级容错', async () => {
+        const { performSystemReset } = await import('@/lib/system-reset');
+        await expect(performSystemReset(db, { id: 'missing-admin', email: 'missing@example.com' })).rejects.toThrow(
+            'ADMIN_USER_NOT_FOUND',
+        );
+
+        const admin = await db.user.create({
+            data: { id: 'admin-fallback', email: 'admin-fallback@example.com', password: 'hash', role: 'admin' },
+        });
+        // 通过将 CONFIG_DIR 指向文件路径制造 clearSpeechCache 异常，验证重置仍成功完成
+        const blockingFile = path.join(testDb.directory, 'not-a-dir');
+        fs.writeFileSync(blockingFile, 'x', 'utf8');
+        process.env.CONFIG_DIR = blockingFile;
+        const result = await performSystemReset(db, { email: admin.email });
+        expect(result.preservedAdminId).toBe(admin.id);
+    });
 });
