@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     errorItem: { findMany: vi.fn() },
+    learner: { findFirst: vi.fn() },
     session: { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' } as { user: { id: string; email: string }; expires: string } | null,
 }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, user: { findUnique: vi.fn(async () => ({ masteryThreshold: 50 })) } } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, learner: mocks.learner, user: { findUnique: vi.fn(async () => ({ masteryThreshold: 50 })) } } }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/config', () => ({ getAppTimeZone: () => 'Asia/Shanghai' }));
@@ -33,6 +34,7 @@ describe('GET /api/review/due', () => {
         // 北京时间 2026-10-20 12:00
         vi.setSystemTime(new Date('2026-10-20T04:00:00Z'));
         mocks.session = { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' };
+        mocks.learner.findFirst.mockResolvedValue({ id: 'child-a', kind: 'child' });
         mocks.errorItem.findMany.mockImplementation(async (args: { where: { id?: { in: string[] } } }) => {
             if (!args.where.id) return candidates;
             return args.where.id.in.map((id) => ({ id, masteryProbability: null, subject: null, tags: [], _count: { practiceRecords: id === 'new' ? 0 : 1 } }));
@@ -52,14 +54,14 @@ describe('GET /api/review/due', () => {
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['old', 'new']);
         expect(data.items[0]).toMatchObject({ reviewStage: 0, masteryStatus: 'reviewing', nextReviewAt: '2026-09-09T16:00:00.000Z' });
         expect(data.items[1]).toMatchObject({ reviewStage: 0, masteryStatus: 'new' });
-        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1' } }));
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: null } }));
     });
 
     it('按错题本筛选并分页', async () => {
         const response = await get('?subjectId=math&page=2&pageSize=1');
         const data = await response.json();
 
-        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', subjectId: 'math' } }));
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: null, subjectId: 'math' } }));
         expect(data).toMatchObject({ total: 2, page: 2, pageSize: 1, totalPages: 2 });
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['new']);
     });

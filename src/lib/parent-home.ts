@@ -38,7 +38,7 @@ export async function getParentHome(
     language: 'zh' | 'en',
 ): Promise<ParentHomePayload> {
     const children = await prisma.learner.findMany({
-        where: { userId, kind: LEARNER_KIND.child },
+        where: { userId, kind: LEARNER_KIND.child, archivedAt: null },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         select: {
             id: true,

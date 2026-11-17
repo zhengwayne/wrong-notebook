@@ -7,7 +7,9 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGri
 import { Loader2, TrendingUp, CheckCircle, BookOpen } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { withChildParam } from "@/lib/current-child";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { AnalyticsData } from "@/types/api";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -39,17 +41,18 @@ export function WrongAnswerStats() {
     const [data, setData] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
     const { t } = useLanguage();
+    const { learnerId } = useCurrentChild();
 
     const fetchAnalytics = useCallback(async () => {
         try {
-            const data = await apiClient.get<AnalyticsData>("/api/analytics");
+            const data = await apiClient.get<AnalyticsData>(withChildParam("/api/analytics", learnerId));
             setData(data);
         } catch (error) {
             frontendLogger.error('[WrongAnswerStats]', 'Failed to fetch analytics', { error });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [learnerId]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或条件变化时加载，请求前后更新加载状态和结果

@@ -509,6 +509,7 @@ model Learner {
   gradingStudentId String?  @unique
   gradingStudent   GradingStudent? @relation(fields: [gradingStudentId], references: [id], onDelete: SetNull)
   order            Int      @default(0)
+  archivedAt       DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

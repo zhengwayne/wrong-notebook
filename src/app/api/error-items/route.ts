@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
-import { unauthorized, badRequest, internalError, validationError } from "@/lib/api-errors";
+import { unauthorized, badRequest, notFound, internalError, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -18,7 +18,8 @@ import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { deriveErrorType } from "@/lib/error-type";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
-import { getOwnedChildLearner } from "@/lib/learners";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveChildLearningScope } from "@/lib/learning-scope";
 import { ImageValidationError, normalizeOptionalImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:error-items');
@@ -131,21 +132,23 @@ export async function POST(req: Request) {
             hasGeogebraCommands: !!geogebraCommands,
         }, 'Request parameters received');
 
-        let learnerId: string | undefined;
-        if (requestedLearnerId) {
-            const child = await getOwnedChildLearner(prisma, user.id, requestedLearnerId);
-            if (!child) return badRequest("Child not found");
-            learnerId = child.id;
+        let scope;
+        try {
+            scope = await resolveChildLearningScope(prisma, user.id, requestedLearnerId);
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) return notFound("Child not found");
+            throw error;
         }
+        const learnerId = scope.learnerId ?? undefined;
 
         const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, normalizedBody)
-            ? await findDuplicateQuestion(prisma, user.id, normalizedBody) : null;
+            ? await findDuplicateQuestion(prisma, scope, normalizedBody) : null;
         const gradeResult = await prepareImportGrade(user, normalizedBody, duplicateBeforeRecognition !== null);
         if (gradeResult.response) return gradeResult.response;
 
         const result = await runQuestionImportTransaction(async (tx) => {
-            const duplicate = await findDuplicateQuestion(tx, user.id, normalizedBody);
-            if (duplicate) return recordDuplicateQuestion(tx, user.id, duplicate, normalizedBody);
+            const duplicate = await findDuplicateQuestion(tx, scope, normalizedBody);
+            if (duplicate) return recordDuplicateQuestion(tx, scope, duplicate, normalizedBody);
 
             // 未指定错题本时，按学科名匹配或新建错题本
             let subjectId: string | undefined = requestedSubjectId || undefined;
@@ -256,7 +259,7 @@ export async function POST(req: Request) {
         if (result && 'id' in result && result.id) {
             scheduleMasteryEvaluation([result.id]);
             if (!duplicate) {
-                scheduleLearningPathReplan(user.id);
+                scheduleLearningPathReplan(user.id, 'zh', scope.learnerId);
             }
         }
         return NextResponse.json(result, { status: duplicate ? 200 : 201 });

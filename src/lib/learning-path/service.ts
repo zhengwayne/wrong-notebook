@@ -90,7 +90,7 @@ export async function resolveStudent(userId: string, studentKey?: string | null,
     }
 
     // 兼容 Learner.id：家长的孩子用 Learner.id 作为 studentKey；老师学生若传入 Learner.id 则回落到花名册 id
-    const learner = await prisma.learner.findFirst({ where: { id: key, userId } });
+    const learner = await prisma.learner.findFirst({ where: { id: key, userId, archivedAt: null } });
     if (!learner) return null;
     if (learner.kind === 'student' && learner.gradingStudentId) {
         return resolveStudent(userId, learner.gradingStudentId, subjectId);

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { internalError, unauthorized } from "@/lib/api-errors";
+import { internalError, notFound, unauthorized } from "@/lib/api-errors";
 import { authOptions } from "@/lib/auth";
 import { getAppTimeZone } from "@/lib/config";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants/pagination";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { getMasteryThreshold } from "@/lib/mastery";
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
@@ -25,16 +27,29 @@ export async function GET(req: Request) {
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parseInt(searchParams.get("pageSize") || String(DEFAULT_PAGE_SIZE), 10) || DEFAULT_PAGE_SIZE));
 
     try {
+        let scope;
+        try {
+            scope = await resolveLearningScope(prisma, session.user.id, readRequestLearnerId(req));
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) {
+                return notFound("Learner not found");
+            }
+            throw error;
+        }
+        const scopeWhere = learningScopeWhere(scope);
+
         const timeZone = getAppTimeZone();
         const now = new Date();
         // 先只取计算计划所需的字段，到期的再查询完整内容
-        const learnerId = searchParams.get("learnerId");
         const candidates = await prisma.errorItem.findMany({
-            where: { userId: session.user.id, ...(subjectId ? { subjectId } : {}), ...(learnerId ? { learnerId } : {}) },
+            where: { ...scopeWhere, ...(subjectId ? { subjectId } : {}) },
             select: {
                 id: true,
                 createdAt: true,
-                practiceRecords: { where: { result: { not: null } }, select: { result: true, createdAt: true } },
+                practiceRecords: {
+                    where: { result: { not: null }, learnerId: scope.learnerId },
+                    select: { result: true, createdAt: true },
+                },
             },
         });
 

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { unauthorized, forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger('api:notebooks:id');
@@ -30,13 +32,25 @@ export async function GET(
             return unauthorized("Authentication required");
         }
 
-        const learnerId = new URL(req.url).searchParams.get("learnerId");
+        const rawLearnerId = new URL(req.url).searchParams.get("learnerId")?.trim();
+        let filterLearnerId: string | null | undefined;
+        if (rawLearnerId) {
+            try {
+                const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
+                filterLearnerId = scope.learnerId;
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
+        }
         const notebook = await prisma.subject.findUnique({
             where: { id },
             include: {
                 _count: {
                     select: {
-                        errorItems: learnerId ? { where: { learnerId } } : true,
+                        errorItems: filterLearnerId !== undefined ? { where: { learnerId: filterLearnerId } } : true,
                     },
                 },
             },

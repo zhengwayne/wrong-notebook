@@ -4,14 +4,16 @@ import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime, getDayRange } from "@/lib/date-time";
-import { unauthorized, internalError } from "@/lib/api-errors";
+import { unauthorized, notFound, internalError } from "@/lib/api-errors";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { getMasteryThreshold } from "@/lib/mastery";
 import { masteryStatusWhere } from "@/lib/mastery-status";
 
 const logger = createLogger('api:analytics');
 
-export async function GET() {
+export async function GET(req?: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session || !session.user) {
@@ -21,14 +23,25 @@ export async function GET() {
     const userId = session.user.id;
 
     try {
+        let scope;
+        try {
+            scope = await resolveLearningScope(prisma, userId, readRequestLearnerId(req));
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) {
+                return notFound("Learner not found");
+            }
+            throw error;
+        }
+        const scopeWhere = learningScopeWhere(scope);
+
         // 1. Total Errors
         const totalErrors = await prisma.errorItem.count({
-            where: { userId }
+            where: scopeWhere,
         });
 
         // 2. Mastered Count
         const masteredCount = await prisma.errorItem.count({
-            where: { AND: [{ userId }, masteryStatusWhere('mastered', await getMasteryThreshold(userId))] }
+            where: { AND: [scopeWhere, masteryStatusWhere('mastered', await getMasteryThreshold(userId))] },
         });
 
         // 3. Mastery Rate
@@ -37,7 +50,7 @@ export async function GET() {
         // 4. Subject Distribution - Get error items grouped by subject
         // 只取科目名：错题行里有 base64 原图、解答和动画等大字段，不能整行读出
         const errorItemsWithSubject = await prisma.errorItem.findMany({
-            where: { userId },
+            where: scopeWhere,
             select: {
                 subject: { select: { name: true } },
             },
@@ -51,7 +64,7 @@ export async function GET() {
 
         const subjectStats = Array.from(subjectMap.entries()).map(([name, value]) => ({
             name,
-            value
+            value,
         }));
 
         // 5. Activity Data (Last 7 days) - Track ErrorItem creation (not practice)
@@ -65,17 +78,17 @@ export async function GET() {
             // Count error items created on this day
             const count = await prisma.errorItem.count({
                 where: {
-                    userId,
+                    ...scopeWhere,
                     createdAt: {
                         gte: start,
                         lt: end,
-                    }
-                }
+                    },
+                },
             });
 
             activityData.push({
                 date: dateStr,
-                count
+                count,
             });
         }
 
@@ -84,7 +97,7 @@ export async function GET() {
             masteredCount,
             masteryRate,
             subjectStats,
-            activityData
+            activityData,
         });
 
     } catch (error) {

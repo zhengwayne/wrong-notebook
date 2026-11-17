@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
-import { unauthorized, internalError } from "@/lib/api-errors";
+import { unauthorized, notFound, internalError } from "@/lib/api-errors";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { getAppTimeZone } from "@/lib/config";
 import { shiftCalendarDate } from "@/lib/date-time";
@@ -48,9 +50,17 @@ export async function GET(req: Request) {
             whereClause.subjectId = subjectId;
         }
 
-        const learnerId = searchParams.get("learnerId");
-        if (learnerId) {
-            whereClause.learnerId = learnerId;
+        const rawLearnerId = searchParams.get("learnerId")?.trim();
+        if (rawLearnerId) {
+            try {
+                const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
+                whereClause.learnerId = scope.learnerId;
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
         }
 
         // 搜索条件需要使用 AND 包装，避免与其他 OR 条件冲突

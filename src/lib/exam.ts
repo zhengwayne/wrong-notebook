@@ -325,7 +325,7 @@ export async function recordExamResults(paperId: string, userId: string, takenAt
                     answerText: true,
                     analysis: true,
                     figureSvg: true,
-                    errorItem: { select: { subject: { select: { name: true } } } },
+                    errorItem: { select: { learnerId: true, subject: { select: { name: true } } } },
                 },
             },
         },
@@ -346,6 +346,7 @@ export async function recordExamResults(paperId: string, userId: string, takenAt
             await tx.practiceRecord.create({
                 data: {
                     userId,
+                    ...(question.errorItem?.learnerId ? { learnerId: question.errorItem.learnerId } : {}),
                     errorItemId: question.errorItemId,
                     examQuestionId: question.id,
                     source: 'exam',

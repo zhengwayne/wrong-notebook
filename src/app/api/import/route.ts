@@ -435,9 +435,9 @@ export async function POST(req: Request) {
                 errorItemOwnerMap.set(item.id, targetUserId);
                 const newSubjectId = item.subjectId ? subjectIdMap.get(item.subjectId) : undefined;
 
-                const duplicate = await findDuplicateQuestion(tx, targetUserId, item);
+                const duplicate = await findDuplicateQuestion(tx, { userId: targetUserId, learnerId: null }, item);
                 if (duplicate) {
-                    const existing = await recordDuplicateQuestion(tx, targetUserId, duplicate, item);
+                    const existing = await recordDuplicateQuestion(tx, { userId: targetUserId, learnerId: null }, duplicate, item);
                     // 后续复习计划和练习历史映射到原题，保留本次导入的错误快照。
                     errorItemIdMap.set(item.id, existing.id);
                     masteryIds.add(existing.id);

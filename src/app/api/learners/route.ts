@@ -27,7 +27,7 @@ export async function GET() {
         const user = await parentUser(session.user.email);
         if (!user) return unauthorized();
         const children = await prisma.learner.findMany({
-            where: { userId: user.id, kind: LEARNER_KIND.child },
+            where: { userId: user.id, kind: LEARNER_KIND.child, archivedAt: null },
             orderBy: [{ order: "asc" }, { createdAt: "asc" }],
             select: {
                 id: true,

@@ -60,7 +60,11 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
             return badRequest("Deleting questions requires explicit confirmation");
         }
         const result = await deleteChildLearner(prisma, user.id, id, { deleteQuestions });
-        return NextResponse.json({ ok: true, deletedQuestions: result.deletedQuestions });
+        return NextResponse.json({
+            ok: true,
+            archived: result.archived,
+            deletedQuestions: result.deletedQuestions,
+        });
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid input", error.issues);
         if (error instanceof LearnerNotFoundError) return notFound("Child not found");

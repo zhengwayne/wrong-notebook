@@ -2,17 +2,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
-import { unauthorized, badRequest, conflict, internalError } from "@/lib/api-errors";
+import { unauthorized, badRequest, notFound, conflict, internalError } from "@/lib/api-errors";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { isValidNotebookScope, stageFromEducationStage, STAGE_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
 
 const logger = createLogger('api:notebooks');
 
-function notebookListInclude(learnerId: string | null) {
+function notebookListInclude(learnerId: string | null | undefined) {
     return {
         _count: {
             select: {
-                errorItems: learnerId ? { where: { learnerId } } : true,
+                errorItems: learnerId !== undefined ? { where: { learnerId } } : true,
             },
         },
     } as const;
@@ -20,11 +22,11 @@ function notebookListInclude(learnerId: string | null) {
 
 /**
  * GET /api/notebooks?learnerId=
- * 获取用户所有错题本（Subjects）；传入 learnerId 时只统计该孩子的错题数
+ * 获取用户所有错题本（Subjects）；传入 learnerId 时只统计该学习者的错题数
  */
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
-    const learnerId = new URL(req.url).searchParams.get("learnerId");
+    const rawLearnerId = new URL(req.url).searchParams.get("learnerId")?.trim();
 
     try {
         let user;
@@ -38,11 +40,24 @@ export async function GET(req: Request) {
             return unauthorized("Authentication required");
         }
 
+        let filterLearnerId: string | null | undefined;
+        if (rawLearnerId) {
+            try {
+                const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
+                filterLearnerId = scope.learnerId;
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
+        }
+
         let notebooks = await prisma.subject.findMany({
             where: {
                 userId: user.id,
             },
-            include: notebookListInclude(learnerId),
+            include: notebookListInclude(filterLearnerId),
             orderBy: {
                 createdAt: 'desc',
             },
@@ -73,7 +88,7 @@ export async function GET(req: Request) {
                 where: {
                     userId: user.id,
                 },
-                include: notebookListInclude(learnerId),
+                include: notebookListInclude(filterLearnerId),
                 orderBy: {
                     createdAt: 'desc',
                 },

@@ -266,7 +266,7 @@ describe('/api/stats', () => {
             await DELETE_ERROR_ITEMS();
 
             expect(mocks.mockPrismaErrorItem.deleteMany).toHaveBeenCalledWith({
-                where: { userId: 'user-123' },
+                where: { userId: 'user-123', learnerId: null },
             });
         });
 

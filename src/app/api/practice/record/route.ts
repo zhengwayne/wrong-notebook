@@ -7,12 +7,15 @@ import { unauthorized, internalError, notFound, validationError } from "@/lib/ap
 import { createLogger } from "@/lib/logger";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 
 const logger = createLogger('api:practice:record');
 
 const recordSchema = z.object({
     errorItemId: z.string().min(1).optional(),
+    learnerId: z.string().min(1).max(64).nullish(),
     result: z.enum(PRACTICE_RESULTS as [string, ...string[]]).optional(),
     isCorrect: z.boolean().nullable().optional(),
     subject: z.string().max(50).nullable().optional(),
@@ -48,15 +51,34 @@ export async function POST(req: Request) {
 
         const userId = session.user.id;
 
-        // 关联原题时校验归属，防止写入他人的错题
+        let requestedScope: { userId: string; learnerId: string | null } | undefined;
+        if (parsed.data.learnerId !== undefined && parsed.data.learnerId !== null) {
+            try {
+                requestedScope = await resolveLearningScope(prisma, userId, parsed.data.learnerId);
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
+        }
+
+        let resolvedLearnerId: string | null = requestedScope ? requestedScope.learnerId : null;
+
+        // 关联原题时校验归属，防止写入他人的错题或混淆学习者作用域
         if (errorItemId) {
             const item = await prisma.errorItem.findUnique({
                 where: { id: errorItemId },
-                select: { userId: true, subject: { select: { name: true } } },
+                select: { userId: true, learnerId: true, subject: { select: { name: true } } },
             });
             if (!item || item.userId !== userId) {
                 return notFound("Item not found");
             }
+            const itemLearnerId = item.learnerId ?? null;
+            if (requestedScope && itemLearnerId !== requestedScope.learnerId) {
+                return notFound("Item not found");
+            }
+            resolvedLearnerId = requestedScope ? requestedScope.learnerId : itemLearnerId;
             subject ??= item.subject?.name ?? null;
         }
 
@@ -65,6 +87,7 @@ export async function POST(req: Request) {
         const record = await prisma.practiceRecord.create({
             data: {
                 userId,
+                ...(resolvedLearnerId ? { learnerId: resolvedLearnerId } : {}),
                 subject,
                 difficulty,
                 isCorrect,
@@ -83,7 +106,7 @@ export async function POST(req: Request) {
 
         if (errorItemId && result) {
             scheduleMasteryEvaluation([errorItemId]);
-            scheduleLearningPathReplan(userId);
+            scheduleLearningPathReplan(userId, 'zh', resolvedLearnerId);
         }
 
         return NextResponse.json(record);

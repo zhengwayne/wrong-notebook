@@ -16,6 +16,8 @@ import { parseDifficultyStars } from "@/lib/ai/schema";
 import { recordAiProvenance } from "@/lib/ai/provenance";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorMessage } from "@/lib/error-message";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope, type LearningScope } from "@/lib/learning-scope";
 import { ImageValidationError, normalizeImageBuffer } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:openclaw:batch-upload');
@@ -126,7 +128,7 @@ async function callOpenclawAgent(imageBase64: string, mimeType: string, timeout:
 }
 
 async function createErrorItem(
-    userId: string,
+    scope: LearningScope,
     imageBase64: string,
     mimeType: string,
     parsedData: OpenclawResponse['data'],
@@ -134,6 +136,7 @@ async function createErrorItem(
     subjectId?: string,
     provenanceId?: string | null
 ) {
+    const userId = scope.userId;
     const { questionText, answerText, analysis, knowledgePoints, errorType, source } = parsedData || {};
     const difficultyStars = parseDifficultyStars(parsedData?.difficultyStars);
 
@@ -146,8 +149,8 @@ async function createErrorItem(
         originalImageUrl: `data:${mimeType};base64,${imageBase64}`,
     };
     const result = await runQuestionImportTransaction(async (tx) => {
-        const duplicate = await findDuplicateQuestion(tx, userId, content);
-        if (duplicate) return recordDuplicateQuestion(tx, userId, duplicate, content);
+        const duplicate = await findDuplicateQuestion(tx, scope, content);
+        if (duplicate) return recordDuplicateQuestion(tx, scope, duplicate, content);
 
         const tagNames: string[] = Array.isArray(knowledgePoints) ? knowledgePoints : [];
         const tagConnections: { id: string }[] = [];
@@ -195,6 +198,7 @@ async function createErrorItem(
                 shortId: await generateUniqueShortId(tx),
                 userId: userId,
                 subjectId: subjectId || undefined,
+                learnerId: scope.learnerId || undefined,
                 originalImageUrl: `data:${mimeType};base64,${imageBase64}`,
                 ocrText: questionText || null,
                 questionText: questionText || null,
@@ -359,6 +363,34 @@ export async function POST(req: Request) {
             );
         }
 
+        const rawLearnerInput = requestData.learnerId;
+        if (
+            rawLearnerInput !== undefined &&
+            rawLearnerInput !== null &&
+            typeof rawLearnerInput !== 'string'
+        ) {
+            return createErrorResponse(
+                'learnerId 参数无效',
+                400,
+                ErrorCode.BAD_REQUEST,
+                'Invalid learnerId'
+            );
+        }
+        let scope: LearningScope;
+        try {
+            scope = await resolveLearningScope(prisma, dbUser.id, rawLearnerInput ?? null);
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) {
+                return createErrorResponse(
+                    '未找到学习者档案',
+                    404,
+                    ErrorCode.NOT_FOUND,
+                    'Learner not found'
+                );
+            }
+            throw error;
+        }
+
         const timeout = parseInt(process.env.OPENCLAW_TIMEOUT || '30000', 10);
         const singleImageTimeout = Math.min(3000, timeout / images.length);
         const results: Array<{
@@ -425,7 +457,7 @@ export async function POST(req: Request) {
                     recognizedGradeSemester: openclawResponse.data.gradeSemester,
                 };
                 const duplicateBeforeRecognition = needsQuestionGradeRecognition(dbUser, gradeInput)
-                    ? await findDuplicateQuestion(prisma, dbUser.id, gradeInput) : null;
+                    ? await findDuplicateQuestion(prisma, scope, gradeInput) : null;
                 const gradeResult = await prepareImportGrade(dbUser, gradeInput, duplicateBeforeRecognition !== null);
                 if (gradeResult.response) {
                     results.push({ success: false, index: i, error: 'AI_DAILY_LIMIT_EXCEEDED' });
@@ -438,7 +470,7 @@ export async function POST(req: Request) {
                     modelOverride: 'agent',
                 });
                 const errorItem = await createErrorItem(
-                    dbUser.id,
+                    scope,
                     normalizedImg.base64,
                     normalizedImg.mimeType,
                     openclawResponse.data,

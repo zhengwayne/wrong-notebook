@@ -297,9 +297,9 @@ describe('题目导入自动判重（真实 SQLite）', () => {
     it('事务失败时回滚错误快照，保持原题不变', async () => {
         const original = await existing();
         await expect(runQuestionImportTransaction(async (tx) => {
-            const duplicate = await findDuplicateQuestion(tx, 'user-1', { questionText });
+            const duplicate = await findDuplicateQuestion(tx, { userId: 'user-1', learnerId: null }, { questionText });
             if (!duplicate) throw new Error('未找到重复题目');
-            await recordDuplicateQuestion(tx, 'user-1', duplicate, { questionText });
+            await recordDuplicateQuestion(tx, { userId: 'user-1', learnerId: null }, duplicate, { questionText });
             throw new Error('模拟事务失败');
         })).rejects.toThrow('模拟事务失败');
         expect(await database.practiceRecord.count()).toBe(0);

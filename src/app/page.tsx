@@ -19,7 +19,9 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SnapshotWarningBanner } from "@/components/snapshot-warning-banner";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { withChildParam } from "@/lib/current-child";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import { useQuestionImport } from "@/lib/use-question-import";
 import type { Notebook, PaginatedResponse } from "@/types/api";
@@ -42,6 +44,7 @@ function HomeContent() {
     const { t } = useLanguage();
     usePageTitle(t.pageTitle.home);
     const searchParams = useSearchParams();
+    const { learnerId } = useCurrentChild();
     const initialNotebookId = searchParams.get("notebook");
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
@@ -55,6 +58,7 @@ function HomeContent() {
         logPrefix: "[Home]",
         analyzeSubjectId: targetNotebookId,
         importSubjectId: initialNotebookId,
+        learnerId,
         textNotebook: targetNotebook && { id: targetNotebook.id, name: targetNotebook.name },
         // 按识别出的学科自动选择名称相近的错题本
         onParsed: (data) => {
@@ -68,14 +72,14 @@ function HomeContent() {
     useEffect(() => {
         let cancelled = false;
         apiClient
-            .get<Notebook[]>("/api/notebooks")
+            .get<Notebook[]>(withChildParam("/api/notebooks", learnerId))
             .then((data) => {
                 if (!cancelled) setNotebooks(data);
             })
             .catch((err) => frontendLogger.error("[Home]", "Failed to fetch notebooks", { error: err }));
 
         apiClient
-            .get<PaginatedResponse<unknown>>("/api/review/due?pageSize=1")
+            .get<PaginatedResponse<unknown>>(withChildParam("/api/review/due?pageSize=1", learnerId))
             .then((data) => {
                 if (!cancelled) setDueCount(data.total);
             })
@@ -84,7 +88,7 @@ function HomeContent() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [learnerId]);
 
     const handleDirectSave = async (data: DirectEntry): Promise<void> => {
         flow.setAnalysisStep("saving");

@@ -186,10 +186,22 @@ describe('persona confirmation and child learners', () => {
             body: JSON.stringify({ deleteQuestions: false }),
         }), { params: Promise.resolve({ id: childId }) });
         expect(kept.status).toBe(200);
+        expect(await kept.json()).toMatchObject({ ok: true, archived: true, deletedQuestions: 0 });
         const item = await db.errorItem.findUnique({ where: { id: 'item-1' } });
         expect(item).toBeTruthy();
-        expect(item?.learnerId).toBeNull();
-        expect(await db.learner.findUnique({ where: { id: childId } })).toBeNull();
+        // 默认软归档保留原孩子的 learnerId，不再改为 null 混入本人题库
+        expect(item?.learnerId).toBe(childId);
+        const archived = await db.learner.findUnique({ where: { id: childId } });
+        expect(archived?.archivedAt).not.toBeNull();
+        const activeList = await getLearners().then((r) => r.json());
+        expect(activeList.children.some((c: { id: string }) => c.id === childId)).toBe(false);
+        // 归档后未归档数量降至 2，可新增第 3 个活跃孩子
+        const fifth = await postLearners(new Request('http://localhost/api/learners', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: '小五' }),
+        }));
+        expect(fifth.status).toBe(201);
 
         const otherId = created[1].id as string;
         await db.errorItem.create({
