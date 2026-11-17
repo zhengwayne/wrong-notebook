@@ -15,8 +15,10 @@ import { getApiErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { ParentPaperOverlay } from "@/components/parent/parent-paper-overlay";
+import { ParentPaperResults } from "@/components/parent/parent-paper-results";
 import { isLowConfidence, type ParentReviewVerdict, type QuestionBBox } from "@/lib/parent-paper-review";
 import { PARENT_PAPER_STATUS, type ParentPaperQuestionView } from "@/lib/parent-papers";
+import { summarizeParentPaperReview, type ImportedNotebookCount } from "@/lib/parent-paper-summary";
 import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
 import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
@@ -32,6 +34,7 @@ interface PaperDetail {
     errorMessage: string | null;
     pages: Array<{ id: string; position: number; imageUrl: string }>;
     questions: ParentPaperQuestionView[];
+    importedNotebooks?: ImportedNotebookCount[];
 }
 
 const VERDICTS: ParentReviewVerdict[] = ["correct", "partial", "wrong"];
@@ -151,10 +154,17 @@ export default function ParentPaperReviewPage() {
     const canEdit = paper.status === PARENT_PAPER_STATUS.pendingConfirmation;
     const canRecognize = paper.status === PARENT_PAPER_STATUS.pendingRecognition || paper.status === PARENT_PAPER_STATUS.failed;
     const selectedWrong = paper.questions.filter((question) => question.selected && question.effectiveVerdict !== "correct");
+    const reviewSummary = summarizeParentPaperReview(paper.questions);
+    const showResults = paper.status === PARENT_PAPER_STATUS.pendingConfirmation || paper.status === PARENT_PAPER_STATUS.confirmed;
+    const scoreLabel = paper.hasAnswerKey && paper.correctCount != null
+        ? copy.correctCount.replace("{correct}", String(paper.correctCount)).replace("{total}", String(paper.questionCount))
+        : null;
+    const importedNotebooks = paper.importedNotebooks ?? [];
+    const importedCount = importedNotebooks.reduce((sum, item) => sum + item.count, 0);
 
     return (
-        <PageContainer>
-            <div className="mx-auto max-w-3xl space-y-6 py-6">
+        <PageContainer className="pb-8">
+            <div className="mx-auto max-w-3xl space-y-6 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] md:pb-8">
                 <PageHeader
                     title={paper.title || copy.untitled}
                     description={copy.reviewDesc}
@@ -168,24 +178,23 @@ export default function ParentPaperReviewPage() {
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
 
-                {paper.hasAnswerKey && paper.correctCount != null ? (
-                    <p className="text-sm text-muted-foreground">
-                        {copy.correctCount
-                            .replace("{correct}", String(paper.correctCount))
-                            .replace("{total}", String(paper.questionCount))}
-                    </p>
-                ) : paper.status === PARENT_PAPER_STATUS.pendingConfirmation || paper.status === PARENT_PAPER_STATUS.confirmed ? (
-                    <p className="text-sm text-muted-foreground">{copy.noScore}</p>
-                ) : null}
-
                 {paper.status === PARENT_PAPER_STATUS.recognizing && (
                     <p className="text-sm text-muted-foreground">{copy.recognizingHint}</p>
                 )}
                 {paper.status === PARENT_PAPER_STATUS.failed && (
                     <p className="text-sm text-destructive">{copy.failedHint}</p>
                 )}
-                {paper.status === PARENT_PAPER_STATUS.confirmed && (
-                    <p className="text-sm text-muted-foreground">{copy.confirmedHint}</p>
+
+                {showResults && (
+                    <ParentPaperResults
+                        summary={reviewSummary}
+                        hasAnswerKey={paper.hasAnswerKey}
+                        scoreLabel={scoreLabel}
+                        confirmed={paper.status === PARENT_PAPER_STATUS.confirmed}
+                        importedNotebooks={importedNotebooks}
+                        importedCount={importedCount}
+                        hrefWithChild={hrefWithChild}
+                    />
                 )}
 
                 {canRecognize && (
@@ -320,7 +329,7 @@ export default function ParentPaperReviewPage() {
                 </ul>
 
                 {canEdit && (
-                    <div className="space-y-2 pb-4">
+                    <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-30 space-y-2 rounded-2xl border border-border bg-card/95 p-3 md:static md:bottom-auto md:border-0 md:bg-transparent md:p-0">
                         {!selectedWrong.length && <p className="text-sm text-muted-foreground">{copy.confirmEmpty}</p>}
                         <Button
                             type="button"
@@ -330,7 +339,9 @@ export default function ParentPaperReviewPage() {
                             loading={busy === "confirm"}
                             loadingText={copy.confirming}
                         >
-                            {copy.confirm}
+                            {selectedWrong.length
+                                ? copy.confirmOneTap.replace("{count}", String(selectedWrong.length))
+                                : copy.confirmNone}
                         </Button>
                     </div>
                 )}

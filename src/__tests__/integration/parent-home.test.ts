@@ -40,6 +40,9 @@ beforeAll(() => {
 }, 120000);
 
 beforeEach(async () => {
+    await db.parentPaperQuestion.deleteMany();
+    await db.parentPaperPage.deleteMany();
+    await db.parentPaper.deleteMany();
     await db.learningPath.deleteMany();
     await db.knowledgeMastery.deleteMany();
     await db.practiceRecord.deleteMany();
@@ -125,5 +128,35 @@ describe('家长首页接口', () => {
         expect(data.child.practiceSummary).toEqual({ attempted: 2, correct: 1 });
         const todayAttempted = data.child.practiceTrend.reduce((sum: number, day: { attempted: number }) => sum + day.attempted, 0);
         expect(todayAttempted).toBe(2);
+        expect(data.child.latestPaper).toBeNull();
+    });
+
+    it('includes the latest paper entry for the selected child', async () => {
+        const paper = await db.parentPaper.create({
+            data: {
+                userId: 'parent-1',
+                learnerId: 'child-a',
+                title: '数学期中练习',
+                status: 'pending_confirmation',
+                pages: { create: [{ position: 0, imageUrl: 'data:image/jpeg;base64,AAAA' }] },
+            },
+        });
+        await db.parentPaper.create({
+            data: {
+                userId: 'parent-1',
+                learnerId: 'child-b',
+                title: '小红的卷子',
+                status: 'confirmed',
+                pages: { create: [{ position: 0, imageUrl: 'data:image/jpeg;base64,AAAA' }] },
+            },
+        });
+        const response = await GET_HOME(new Request('http://localhost/api/parent/home?learnerId=child-a&language=zh'));
+        const data = await response.json();
+        expect(data.child.latestPaper).toMatchObject({
+            id: paper.id,
+            title: '数学期中练习',
+            status: 'pending_confirmation',
+            pageCount: 1,
+        });
     });
 });

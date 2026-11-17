@@ -18,6 +18,8 @@ import {
     type ParentReviewQuestion,
     type QuestionBBox,
 } from "@/lib/parent-paper-review";
+import type { ImportedNotebookCount } from "@/lib/parent-paper-summary";
+import { verifyParentPaperQuestions } from "@/lib/parent-paper-verify";
 import {
     getParentPaper,
     isPaperPageImage,
@@ -189,6 +191,11 @@ async function runParentPaperRecognition(
             bbox: normalizeQuestionBBox(question.bbox, pages.length),
         }));
         if (keyQuestions.length) questions = applyAnswerKeyToReview(questions, keyQuestions);
+        try {
+            questions = await verifyParentPaperQuestions(questions, { language });
+        } catch (error) {
+            logger.warn({ error, paperId }, "Parent paper verification skipped");
+        }
 
         await db.$transaction(async (tx) => {
             await tx.parentPaperQuestion.deleteMany({ where: { paperId } });
@@ -310,7 +317,7 @@ export async function confirmParentPaper(
     userId: string,
     paperId: string,
     params: { questionIds?: string[]; language?: "zh" | "en" } = {},
-): Promise<{ importedCount: number; paper: ParentPaperDetail } | null> {
+): Promise<{ importedCount: number; importedNotebooks: ImportedNotebookCount[]; replanned: boolean; paper: ParentPaperDetail } | null> {
     const paper = await db.parentPaper.findFirst({
         where: { id: paperId, userId },
         include: {
@@ -396,5 +403,10 @@ export async function confirmParentPaper(
 
     const updated = await getParentPaper(db, userId, paperId);
     if (!updated) return null;
-    return { importedCount, paper: updated };
+    return {
+        importedCount,
+        importedNotebooks: updated.importedNotebooks,
+        replanned: importedCount > 0,
+        paper: updated,
+    };
 }

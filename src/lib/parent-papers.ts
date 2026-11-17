@@ -4,6 +4,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { getOwnedChildLearner, LearnerNotFoundError } from "@/lib/learners";
 import { effectiveVerdict, type ParentReviewVerdict, type QuestionBBox } from "@/lib/parent-paper-review";
+import { groupImportedNotebooks, type ImportedNotebookCount } from "@/lib/parent-paper-summary";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -87,6 +88,7 @@ export interface ParentPaperDetail extends ParentPaperSummary {
     answerKeyImageCount: number;
     pages: Array<{ id: string; position: number; imageUrl: string }>;
     questions: ParentPaperQuestionView[];
+    importedNotebooks: ImportedNotebookCount[];
 }
 
 function parseKnowledgePoints(value: string | null | undefined): string[] {
@@ -207,6 +209,23 @@ function toSummary(paper: {
     };
 }
 
+
+async function loadImportedNotebooks(
+    db: Db,
+    questions: Array<{ importedErrorItemId: string | null }>,
+): Promise<ImportedNotebookCount[]> {
+    const ids = questions.map((question) => question.importedErrorItemId).filter((id): id is string => Boolean(id));
+    if (!ids.length) return [];
+    const items = await db.errorItem.findMany({
+        where: { id: { in: ids } },
+        select: { subjectId: true, subject: { select: { name: true } } },
+    });
+    return groupImportedNotebooks(items.flatMap((item) => {
+        if (!item.subjectId) return [];
+        return [{ subjectId: item.subjectId, subjectName: item.subject?.name || item.subjectId }];
+    }));
+}
+
 const paperInclude = {
     learner: { select: { name: true } },
     pages: { orderBy: { position: "asc" as const }, select: { id: true, position: true, imageUrl: true } },
@@ -239,6 +258,7 @@ export async function getParentPaper(db: Db, userId: string, paperId: string): P
         answerKeyImageCount: parseAnswerKeyImages(paper.answerKeyImages).length,
         pages: paper.pages,
         questions: paper.questions.map(toQuestionView),
+        importedNotebooks: await loadImportedNotebooks(db, paper.questions),
     };
 }
 
@@ -282,5 +302,6 @@ export async function createParentPaper(
         answerKeyImageCount: answerKeyImages.length,
         pages: paper.pages,
         questions: paper.questions.map(toQuestionView),
+        importedNotebooks: [],
     };
 }

@@ -8,6 +8,7 @@ import { LEARNER_KIND } from '@/lib/learners';
 import { collectEvidence, getOrReplanPath } from '@/lib/learning-path/service';
 import { buildWeaknessProfile } from '@/lib/variant/weakness-profile';
 import { practiceTrendFromRecords, type PracticeTrendDay } from '@/lib/home-aggregates';
+import { listParentPapers, type ParentPaperSummary } from '@/lib/parent-papers';
 
 export interface ParentChildSummary {
     id: string;
@@ -27,6 +28,7 @@ export interface ParentHomePayload {
         pathId: string | null;
         practiceTrend: PracticeTrendDay[];
         practiceSummary: { attempted: number; correct: number };
+        latestPaper: ParentPaperSummary | null;
     } | null;
 }
 
@@ -71,6 +73,7 @@ export async function getParentHome(
     const practiceTrend = practiceTrendFromRecords(records, { days: 14, timeZone: getAppTimeZone() });
     const attempted = practiceTrend.reduce((sum, day) => sum + day.attempted, 0);
     const correct = practiceTrend.reduce((sum, day) => sum + day.correct, 0);
+    const papers = await listParentPapers(prisma, userId, selected.id);
 
     return {
         children: summaries,
@@ -84,6 +87,7 @@ export async function getParentHome(
             pathId: planned?.path.id ?? null,
             practiceTrend,
             practiceSummary: { attempted, correct },
+            latestPaper: papers[0] ?? null,
         },
     };
 }

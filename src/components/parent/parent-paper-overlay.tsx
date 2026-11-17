@@ -181,26 +181,33 @@ export function ParentPaperOverlay({
 
     return (
         <section id="parent-paper-overlay" className="space-y-3">
-            {orderedPages.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={copy.title}>
-                    {orderedPages.map((item, index) => (
-                        <Button
-                            key={item.id}
-                            type="button"
-                            size="sm"
-                            variant={index === safeIndex ? "default" : "outline"}
-                            onClick={() => goToPage(index)}
-                        >
-                            {copy.pageLabel.replace("{index}", String(index + 1))}
-                        </Button>
-                    ))}
-                </div>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                {orderedPages.length > 1 ? (
+                    <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" role="tablist" aria-label={copy.title}>
+                        {orderedPages.map((item, index) => (
+                            <Button
+                                key={item.id}
+                                type="button"
+                                size="sm"
+                                variant={index === safeIndex ? "default" : "outline"}
+                                onClick={() => goToPage(index)}
+                            >
+                                {copy.pageLabel.replace("{index}", String(index + 1))}
+                            </Button>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-muted-foreground">
+                        {copy.pageLabel.replace("{index}", String(safeIndex + 1))}
+                    </p>
+                )}
+                <ZoomControls variant="toolbar" zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={reset} />
+            </div>
 
             <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
                 <div
                     ref={containerRef}
-                    className="max-h-[70vh] overflow-auto overscroll-contain"
+                    className="max-h-[min(52dvh,calc(100dvh-18rem-env(safe-area-inset-bottom,0px)))] overflow-auto overscroll-contain"
                     style={{ touchAction: editing ? "none" : "pan-x pan-y" }}
                 >
                     <div className="relative inline-block min-w-full">
@@ -284,9 +291,6 @@ export function ParentPaperOverlay({
                             })}
                         </div>
                     </div>
-                </div>
-                <div className="absolute right-2 top-2 z-[3]">
-                    <ZoomControls zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={reset} />
                 </div>
             </div>
 

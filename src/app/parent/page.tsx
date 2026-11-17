@@ -20,6 +20,8 @@ import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import { withChildParam } from "@/lib/current-child";
 import type { PracticeTrendDay } from "@/lib/home-aggregates";
+import type { ParentPaperSummary } from "@/lib/parent-papers";
+import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
 
 interface ParentHomeData {
     children: Array<{ id: string; name: string; itemCount: number }>;
@@ -32,6 +34,7 @@ interface ParentHomeData {
         today: Array<{ id?: string; title: string; reason?: string; type: string; status: string; knowledgePoints?: string[] }>;
         practiceTrend: PracticeTrendDay[];
         practiceSummary: { attempted: number; correct: number };
+        latestPaper: ParentPaperSummary | null;
     } | null;
 }
 
@@ -131,6 +134,28 @@ function ParentHome() {
 
                         {child && (
                             <div className="space-y-8">
+                                {child.latestPaper ? (
+                                    <HomeSection title={copy.latestPaper}>
+                                        <Link
+                                            href={withChildParam(`/parent/papers/${child.latestPaper.id}`, child.id)}
+                                            className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/50"
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="truncate font-semibold">{child.latestPaper.title || t.parentPapers.untitled}</div>
+                                                <p className="mt-1 text-sm text-muted-foreground">
+                                                    {t.parentPapers.pageCount.replace("{count}", String(child.latestPaper.pageCount))}
+                                                </p>
+                                            </div>
+                                            <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${parentPaperStatusClass(child.latestPaper.status)}`}>
+                                                {parentPaperStatusLabel(t.parentPapers, child.latestPaper.status)}
+                                            </span>
+                                        </Link>
+                                    </HomeSection>
+                                ) : (
+                                    <HomeSection title={copy.latestPaper}>
+                                        <p className="text-sm text-muted-foreground">{copy.latestPaperEmpty}</p>
+                                    </HomeSection>
+                                )}
                                 <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
                                     <HomeSection title={copy.weakPoints}>
                                         <WeakPointList items={child.weakPoints} empty={copy.noWeakPoints} />

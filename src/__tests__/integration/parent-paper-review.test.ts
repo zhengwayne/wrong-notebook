@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
     session: { user: { id: "parent-1", email: "parent-review@example.com", role: "user" }, expires: "2099-01-01" },
     readExamPaper: vi.fn(),
+    completeJson: vi.fn(),
     replan: vi.fn(),
 }));
 
@@ -22,7 +23,7 @@ vi.mock("@/lib/logger", () => ({ createLogger: () => ({ debug: vi.fn(), info: vi
 vi.mock("@/lib/current-user", () => ({
     getCurrentUser: async () => mocks.prisma!.user.findUnique({ where: { email: mocks.session.user.email } }),
 }));
-vi.mock("@/lib/ai", () => ({ getAIService: () => ({ readExamPaper: mocks.readExamPaper }) }));
+vi.mock("@/lib/ai", () => ({ getAIService: () => ({ readExamPaper: mocks.readExamPaper, completeJson: mocks.completeJson }) }));
 vi.mock("@/lib/learning-path/service", () => ({ scheduleLearningPathReplan: (...args: unknown[]) => mocks.replan(...args) }));
 
 import { GET, POST } from "@/app/api/parent/papers/route";
@@ -79,6 +80,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
     mocks.readExamPaper.mockReset();
+    mocks.completeJson.mockReset();
+    mocks.completeJson.mockResolvedValue({ data: null, text: "" });
     mocks.replan.mockReset();
     await db.parentPaperQuestion.deleteMany();
     await db.parentPaperPage.deleteMany();
@@ -289,6 +292,51 @@ describe("parent paper recognition and confirm", () => {
             body: JSON.stringify({ bbox: { pageIndex: 3, x: 0.1, y: 0.1, width: 0.2, height: 0.2 } }),
         }), { params: Promise.resolve({ id: paper.id, questionId }) });
         expect(invalid.status).toBe(400);
+    });
+
+    it("flags x+2=5 judged as correct when the student wrote x=2", async () => {
+        mocks.readExamPaper.mockResolvedValue({
+            studentName: null, className: null, studentNo: null, questions: [],
+            reviewQuestions: [{
+                number: "2", type: "objective", questionText: "解方程：$x + 2 = 5$",
+                studentAnswer: "x = 2", correctAnswer: "x = 2",
+                verdict: "correct", confidence: 0.99, errorCause: null, knowledgePoints: ["方程"], subjectHint: "数学",
+                bbox: { pageIndex: 0, x: 0.1, y: 0.3, width: 0.8, height: 0.2 },
+            }],
+        });
+        const paper = await createPaper();
+        await recognize(paper.id);
+        const detail = await (await GET_PAPER(new Request(`http://localhost/api/parent/papers/${paper.id}`), { params: Promise.resolve({ id: paper.id }) })).json();
+        expect(detail.questions[0].verdict).toBe("correct");
+        expect(detail.questions[0].confidence).toBeLessThan(0.7);
+        expect(detail.questions[0].correctAnswer.replace(/\s/g, "")).toMatch(/x=3/);
+        expect(mocks.completeJson).not.toHaveBeenCalled();
+    });
+
+    it("returns imported notebooks after confirm", async () => {
+        mocks.readExamPaper.mockResolvedValue({
+            studentName: null, className: null, studentNo: null, questions: [],
+            reviewQuestions: [{
+                number: "1", type: "objective", questionText: "计算 1+1", studentAnswer: "3", correctAnswer: "2",
+                verdict: "wrong", confidence: 0.95, errorCause: "加法算错", knowledgePoints: ["加法"], subjectHint: "数学",
+                bbox: null,
+            }],
+        });
+        const paper = await createPaper();
+        await recognize(paper.id);
+        const confirmed = await CONFIRM(new Request(`http://localhost/api/parent/papers/${paper.id}/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: "zh" }),
+        }), { params: Promise.resolve({ id: paper.id }) });
+        const result = await confirmed.json();
+        expect(confirmed.status).toBe(200);
+        expect(result.importedCount).toBe(1);
+        expect(result.replanned).toBe(true);
+        expect(result.importedNotebooks).toEqual([
+            expect.objectContaining({ subjectName: "数学", count: 1 }),
+        ]);
+        expect(result.paper.importedNotebooks).toEqual(result.importedNotebooks);
     });
 
     it("lists status for the current child", async () => {
