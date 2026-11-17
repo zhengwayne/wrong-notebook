@@ -99,13 +99,13 @@ Numbering follows the assessment plan's OPT-01–OPT-18, with new items OPT-19�
 
 The assessment plan grouped several migration-free point fixes together. Per decision 1 they are split in two:
 
-**Batch 0 (independent of deployment form, cheap)**
+**Batch 0 (independent of deployment form, cheap)** (Done: `ec8ee57`, `3ecc30f`, `b2b6226`)
 
-1. Replace the local user directory in the test file with an example path allowed by `check-public-history.py` (`/Users/example/...`), and replace the user name on line 32 as well. [Delivery blocker]
-2. `PATCH /api/user` handles `variantPipelineEnabled` and returns the value actually saved on the server (R08). [P1]
-3. `src/lib/config.ts` writes with `{ mode: 0o600 }`; within one synchronous section it re-reads the file from disk, merges, writes a temporary file and replaces atomically with `renameSync`; `generateId()` uses `crypto.randomUUID()`. [P2]
-4. Remove the hard-coded `debug: true` from `src/lib/auth.ts` in favor of `NEXTAUTH_DEBUG === 'true'`. [P2]
-5. Add `*.db.bak-*`, `*.db.live-migrated-*` and `*.log.bak-*` to `.gitignore` (see OPT-18).
+1. Replace the local user directory in the test file with an example path allowed by `check-public-history.py` (`/Users/example/...`), and replace the user name on line 32 as well. [Delivery blocker] (Done: `ec8ee57`)
+2. `PATCH /api/user` handles `variantPipelineEnabled` and returns the value actually saved on the server (R08). [P1] (Done: `3ecc30f`)
+3. `src/lib/config.ts` writes with `{ mode: 0o600 }`; within one synchronous section it re-reads the file from disk, merges, writes a temporary file and replaces atomically with `renameSync`; `generateId()` uses `crypto.randomUUID()`. [P2] (Done: `b2b6226`)
+4. Remove the hard-coded `debug: true` from `src/lib/auth.ts` in favor of `NEXTAUTH_DEBUG === 'true'`. [P2] (Done: `b2b6226`)
+5. Add `*.db.bak-*`, `*.db.live-migrated-*` and `*.log.bak-*` to `.gitignore` (see OPT-18). (Done: `ec8ee57`)
 
 **Batch F (cross-account hardening)**
 
@@ -130,7 +130,7 @@ The assessment plan grouped several migration-free point fixes together. Per dec
 
 ### OPT-03 · Shared AI provider base and log leak prevention (P0 part + P1, Batch 0 + Batch B)
 
-- **Batch 0 [P0]**: in production, `logger.box` no longer prints content, only provenance and lengths. Debug output requires an explicit environment variable and is truncated and redacted. Add a test asserting that production-mode logs contain no `data:image`, test student names or prompt fragments.
+- **Batch 0 [P0] (Done: `1f2edc1`)**: in production, `logger.box` no longer prints content, only provenance and lengths. Debug output requires an explicit environment variable and is truncated and redacted. Add a test asserting that production-mode logs contain no `data:image`, test student names or prompt fragments.
 - **Batch B [P1]**: extract `base-xml-parser.ts` and `error-normalizer.ts` to unify tag parsing across the four providers (including the fallback for an unclosed `<analysis>`), exception handling in `completeJson`, and the `AI_*` error codes. Add `MAX_TOKENS` truncation retries to Gemini's remaining 13 methods; extend LongCat's `input_image` adapter to every method that takes images; fix Azure's wrong `deployment` argument and the missing `model` in `recognizeGrade`. No external AI SDK.
 
 **Acceptance**: a unit-test matrix of four providers × core methods returns a unified error code, or retries successfully, under 401, 429, timeout and truncation; with `NODE_ENV=production`, logs contain no full prompts or student answers.
@@ -269,7 +269,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 ### OPT-18 · Public history, workspace hygiene and documentation debt (delivery blocker + P2)
 
-- **Workspace hygiene (Batch 0)**: move local database and log backups out of the repository (anything kept as a migration test sample must first be confirmed to contain no real data); add matching `.gitignore` rules without covering `prisma/migrations/` or test fixtures.
+- **Workspace hygiene (Batch 0, Done: `ec8ee57`)**: move local database and log backups out of the repository (anything kept as a migration test sample must first be confirmed to contain no real data); add matching `.gitignore` rules without covering `prisma/migrations/` or test fixtures.
 - **Historical object (when merging into `main`)**: the object introduced by commit `48e96ed` is already on the feature branch in the public remote, so adding new commits cannot remove it. Use **path A**: squash when merging into `main`, or rebuild a clean branch from `main`, so `main` contains only clean commits and the pushed feature branch is not rewritten. **Path B** (interactively rebasing `48e96ed..HEAD` and force-pushing) requires separate confirmation from the user.
 - **Documentation debt**: `doc/wiki/` still describes the single-user era. Update affected pages with each batch (for example, Batches A and D update the backup and restore page with WAL, snapshots and the v3 scope), and before the features reach `main`, complete the Chinese and English pages and the website for multiple children, parent exam papers, teacher grading, learning paths and multi-platform installation troubleshooting.
 
@@ -333,8 +333,8 @@ Each guardrail goes into the same commit as the problem it prevents.
 
 | Guardrail | Implementation | Prevents | Batch |
 | --- | --- | --- | --- |
-| Log assertion test | Production-mode logs contain no `data:image`, test student names or prompt fragments | Log leak regressions | 0 |
-| Preference round-trip test | Generate PATCH→GET round-trip cases from the keys of `userUpdateSchema` | Bugs like R08 | 0 |
+| Log assertion test | Production-mode logs contain no `data:image`, test student names or prompt fragments | Log leak regressions | 0 (Done: `1f2edc1`) |
+| Preference round-trip test | Generate PATCH→GET round-trip cases from the keys of `userUpdateSchema` | Bugs like R08 | 0 (Done: `3ecc30f`) |
 | ESLint transaction rule | Forbid referencing the global `prisma` inside a `$transaction` callback | Missing `tx` from OPT-06 | A |
 | Two-tenant test helper | `withTwoTenants()` creates two accounts, two children and same-name students, and asserts that cross-scope access returns 404 | R03, R07, IDOR | C |
 | Backup coverage test | Enumerate every model through Prisma DMMF; each must appear on either the "exported" or the "deliberately not exported" list | R05 regressions | C |
@@ -362,7 +362,7 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 
 | Batch | Goal | Contents | Estimate (person-days) | Rationale |
 | --- | --- | --- | --- | --- |
-| **Batch 0 Stop the bleeding** | Restore the public history check, plug the log leak | The Batch 0 part of OPT-01 (test path, R08, `config.ts`, `debug`); OPT-03 log silencing; OPT-18 workspace hygiene; OPT-21 log assertion and preference round-trip tests | 1.5–2 | Cheap with certain payoff, independent of deployment form; without the public history check, every later push is blocked |
+| **Batch 0 Stop the bleeding** (Done: `ec8ee57`, `3ecc30f`, `b2b6226`, `1f2edc1`) | Restore the public history check, plug the log leak | The Batch 0 part of OPT-01 (test path, R08, `config.ts`, `debug`); OPT-03 log silencing; OPT-18 workspace hygiene; OPT-21 log assertion and preference round-trip tests | 1.5–2 | Cheap with certain payoff, independent of deployment form; without the public history check, every later push is blocked |
 | **Batch A Never lose data** | Families have no ops skills, so recovery comes first | OPT-22 daily snapshots; OPT-08 pre-migration backup and startup protection; OPT-06; OPT-05 | 4–6 | Every later migration relies on this layer |
 | **Batch B AI quality** | Accurate recognition, tagging and grading | OPT-04; OPT-03 provider consistency; OPT-19 provenance and evaluation; OPT-09 (with E7); OPT-20 `normalizeImage()` | 7–9 | Accuracy is what families notice every day |
 | **Batch C Isolation between children** | Correctness for families with several children | OPT-08 foreign-key migration (audit first, user confirms); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
