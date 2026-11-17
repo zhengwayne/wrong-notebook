@@ -1,0 +1,19 @@
+name: "Verify CI Gate"
+description: "校验当前提交 SHA 是否已通过完整的 ci.yml 检查（全部必需 Job 为 success）"
+inputs:
+  sha:
+    description: "待校验的提交 SHA（或标签引用）"
+    required: false
+    default: ${{ github.sha }}
+  github-token:
+    description: "用于查询 GitHub Actions 运行记录的令牌"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Verify same-SHA CI workflow passed
+      shell: bash
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "${{ github.action_path }}/../../../scripts/verify-ci-gate.mjs"

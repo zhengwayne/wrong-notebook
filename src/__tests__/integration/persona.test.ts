@@ -33,11 +33,6 @@ execFileSync(process.execPath, [PRISMA_BIN, 'migrate', 'deploy', '--schema', joi
     cwd: REPO,
     stdio: 'pipe',
 });
-execFileSync(process.execPath, [PRISMA_BIN, 'generate', '--schema', join(REPO, 'prisma/schema.prisma')], {
-    env: { ...process.env, DATABASE_URL: url },
-    cwd: REPO,
-    stdio: 'pipe',
-});
 
 const db = new PrismaClient({ datasources: { db: { url } } });
 mocks.prisma = db;

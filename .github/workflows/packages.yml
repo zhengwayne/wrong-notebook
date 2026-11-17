@@ -15,11 +15,29 @@ env:
   NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
+  ci-gate:
+    name: Verify CI Gate
+    if: github.server_url == 'https://github.com' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Verify same-SHA CI gate
+        uses: ./.github/actions/verify-ci-gate
+        with:
+          sha: ${{ github.sha }}
+          github-token: ${{ github.token }}
+
   npm:
     name: npm
+    needs: [ci-gate]
     runs-on: ubuntu-24.04
-    # 只在 GitHub 上运行；Gitea 读取 main 时会回退到本目录，需跳过
-    if: github.server_url == 'https://github.com'
+    # 只在 GitHub 上运行；打标签时要求先通过同 SHA 的全量 CI 门禁
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     permissions:
       contents: read
     steps:
@@ -100,7 +118,8 @@ jobs:
 
   desktop:
     name: Desktop (${{ matrix.name }})
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +253,8 @@ jobs:
 
   fnos:
     name: fnOS (${{ matrix.arch }})
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -285,7 +305,8 @@ jobs:
 
   android:
     name: Android
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     runs-on: ubuntu-24.04
     # 未命中缓存时需要交叉编译 Prisma 引擎
     timeout-minutes: 90

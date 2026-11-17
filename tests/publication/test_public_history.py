@@ -1,4 +1,5 @@
 """验证上传前拦截历史信息，而不只检查当前文件。"""
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,8 @@ class PublicHistoryTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.repo = Path(self.temporary.name)
         self.git("init", "-q")
+        # 屏蔽宿主全局 gitignore（例如 *.json），避免干扰临时测试仓库
+        self.git("config", "core.excludesfile", os.devnull)
         self.git("config", "user.name", "测试用户")
         self.git("config", "user.email", "test@example.com")
         self.commit("README.md", "公开源码\n")

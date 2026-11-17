@@ -19,6 +19,9 @@ vi.mock('@/lib/mastery', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/mastery')>()),
     scheduleMasteryEvaluation: mocks.scheduleMasteryEvaluation,
 }));
+vi.mock('@/lib/learning-path/service', () => ({
+    scheduleLearningPathReplan: vi.fn(),
+}));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 

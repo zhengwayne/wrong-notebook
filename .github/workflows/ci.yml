@@ -60,6 +60,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit --incremental false
+
       - name: Lint
         run: npm run lint
 
@@ -85,6 +91,9 @@ jobs:
 
       - name: Generate Prisma Client
         run: npx prisma generate
+
+      - name: Check migration drift
+        run: node scripts/check-migration-drift.mjs
 
       - name: Run integration tests
         run: npm run test:integration
@@ -182,7 +191,7 @@ jobs:
 
       - name: Setup Database
         run: |
-          npx prisma db push
+          npx prisma migrate deploy
           npx prisma db seed
           node scripts/prepare-e2e.js
 
@@ -213,11 +222,20 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: read
+      actions: read
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Verify same-SHA CI gate
+        uses: ./.github/actions/verify-ci-gate
+        with:
+          sha: ${{ github.sha }}
+          github-token: ${{ github.token }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
