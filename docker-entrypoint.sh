@@ -1,6 +1,19 @@
 #!/bin/sh
 set -e
 
+# Debian 镜像用 gosu，Alpine 镜像用 su-exec。
+# 注意：POSIX sh 的 exec 不能调用函数，所以特权降级命令必须放进变量。
+if command -v gosu >/dev/null 2>&1; then
+    DROP_PRIVS=gosu
+elif command -v su-exec >/dev/null 2>&1; then
+    DROP_PRIVS=su-exec
+else
+    echo "[Entrypoint] gosu/su-exec not found" >&2
+    exit 1
+fi
+drop_privs() { "$DROP_PRIVS" nextjs:nodejs "$@"; }
+
+
 # Define paths
 SOURCE_DB="/app/prisma/dev.db"
 TARGET_DB="/app/data/dev.db"
@@ -182,9 +195,9 @@ if [ "$HTTPS_ENABLED" = "true" ]; then
     # 启动 HTTPS 代理
     if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
         echo "[Entrypoint] 启动 HTTPS 代理 (端口 443)..."
-        su-exec nextjs:nodejs node /app/https-server.js &
+        drop_privs node /app/https-server.js &
     fi
 fi
 
 # Execute the main container command as nextjs user
-exec su-exec nextjs:nodejs "$@"
+exec "$DROP_PRIVS" nextjs:nodejs "$@"
