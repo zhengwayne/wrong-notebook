@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { RotateCw } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { ZoomControls } from "@/components/zoom-controls";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ export interface ParentPaperOverlayProps {
     onSelectQuestion: (id: string) => void;
     canEdit: boolean;
     onSaveBbox: (questionId: string, bbox: QuestionBBox) => Promise<void>;
+    canRotate?: boolean;
+    onRotatePage?: (pageIndex: number) => Promise<void>;
 }
 
 
@@ -52,6 +55,8 @@ export function ParentPaperOverlay({
     onSelectQuestion,
     canEdit,
     onSaveBbox,
+    canRotate = false,
+    onRotatePage,
 }: ParentPaperOverlayProps) {
     const { t } = useLanguage();
     const copy = t.parentPapers;
@@ -59,6 +64,7 @@ export function ParentPaperOverlay({
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<QuestionBBox | null>(null);
     const [exporting, setExporting] = useState(false);
+    const [rotating, setRotating] = useState(false);
     const shellRef = useRef<HTMLDivElement | null>(null);
     const [fitBox, setFitBox] = useState({ width: 0, height: 0 });
     const fitStyle = useMemo(() => ({
@@ -210,6 +216,20 @@ export function ParentPaperOverlay({
         }
     };
 
+
+    const rotatePage = async () => {
+        if (!onRotatePage || rotating || editing) return;
+        setRotating(true);
+        try {
+            await onRotatePage(safeIndex);
+        } catch (error) {
+            frontendLogger.error("[ParentPaperOverlay]", "Failed to rotate page", { error });
+            toast.error(getApiErrorMessage(error) || copy.saveError);
+        } finally {
+            setRotating(false);
+        }
+    };
+
     return (
         <section id="parent-paper-overlay" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -329,6 +349,12 @@ export function ParentPaperOverlay({
                 <Button type="button" variant="outline" size="sm" onClick={() => void exportPage()} loading={exporting} loadingText={copy.exporting}>
                     {copy.exportPage}
                 </Button>
+                {canRotate && onRotatePage && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => void rotatePage()} disabled={editing} loading={rotating} loadingText={copy.rotate} aria-label={copy.rotate}>
+                        <RotateCw className="h-4 w-4" aria-hidden="true" />
+                        {copy.rotate}
+                    </Button>
+                )}
                 {canEdit && active && !editing && (
                     <Button type="button" variant="outline" size="sm" onClick={() => startEdit(!active.bbox)}>
                         {active.bbox ? copy.editBox : copy.drawBox}
@@ -345,6 +371,9 @@ export function ParentPaperOverlay({
                     </>
                 )}
             </div>
+            {canRotate && onRotatePage && !editing && (
+                <p className="text-sm text-muted-foreground">{copy.rotateHint}</p>
+            )}
             {editing && (
                 <p className="text-sm text-muted-foreground">
                     {draft || active?.bbox ? copy.boxHint : copy.drawHint}

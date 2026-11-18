@@ -302,6 +302,7 @@ export const en = {
         moveUp: "Move up",
         moveDown: "Move down",
         rotate: "Rotate",
+        rotateHint: "If the photo is sideways, rotate to straighten the page and boxes together.",
         crop: "Crop",
         cropPage: "Crop this page",
         autoCropHint: "We'll try to trim the table or background when you save. You can also crop a page yourself first.",

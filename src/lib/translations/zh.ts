@@ -299,6 +299,7 @@ export const zh = {
         moveUp: "上移",
         moveDown: "下移",
         rotate: "旋转",
+        rotateHint: "若照片侧着，点旋转会把卷面和题框一起转正。",
         crop: "裁剪",
         cropPage: "裁切这一页",
         autoCropHint: "保存时会尽量裁掉照片里的桌面背景，你也可以先手动裁切。",

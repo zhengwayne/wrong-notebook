@@ -117,6 +117,11 @@ export default function ParentPaperReviewPage() {
         setPaper(updated);
     };
 
+    const rotatePage = async (pageIndex: number) => {
+        const updated = await apiClient.post<PaperDetail>(`/api/parent/papers/${paperId}/rotate`, { pageIndex, degrees: 90 });
+        setPaper(updated);
+    };
+
     const confirm = async () => {
         setBusy("confirm");
         try {
@@ -145,6 +150,7 @@ export default function ParentPaperReviewPage() {
     }
 
     const canEdit = paper.status === PARENT_PAPER_STATUS.pendingConfirmation;
+    const canRotate = paper.status !== PARENT_PAPER_STATUS.recognizing;
     const canRecognize = paper.status === PARENT_PAPER_STATUS.pendingRecognition || paper.status === PARENT_PAPER_STATUS.failed;
     const selectedWrong = paper.questions.filter((question) => question.selected && question.effectiveVerdict !== "correct");
     const reviewSummary = summarizeParentPaperReview(paper.questions);
@@ -211,6 +217,8 @@ export default function ParentPaperReviewPage() {
                         revealToken={revealToken}
                         onSelectQuestion={(id) => selectQuestion(id, "overlay")}
                         canEdit={canEdit}
+                        canRotate={canRotate}
+                        onRotatePage={rotatePage}
                         onSaveBbox={saveBbox}
                     />
                 ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { BookOpen, CalendarCheck, Route } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -72,8 +73,8 @@ export function ParentPaperResults({
                     <h3 className="text-sm font-medium">{copy.knowledgePoints}</h3>
                     <div className="flex flex-wrap gap-1.5">
                         {summary.knowledgePoints.map((point) => (
-                            <span key={point} className="rounded-full border border-[#ddd6fe] bg-[#f5f3ff] px-2.5 py-1 text-xs text-[#5b4b8a]">
-                                {point}
+                            <span key={point} className="inline-flex max-w-full items-center rounded-full border border-[#ddd6fe] bg-[#f5f3ff] px-2.5 py-1 text-xs text-[#5b4b8a] [&_p]:mb-0 [&_p]:inline [&_.katex]:text-[0.95em]">
+                                <MarkdownRenderer content={point} variant="compact" />
                             </span>
                         ))}
                     </div>
@@ -85,8 +86,8 @@ export function ParentPaperResults({
                     <h3 className="text-sm font-medium">{copy.errorCauses}</h3>
                     <div className="flex flex-wrap gap-1.5">
                         {summary.errorCauses.map((cause) => (
-                            <span key={cause} className="rounded-full border border-[#e8d4c8] bg-[#fbf3ee] px-2.5 py-1 text-xs text-[#8a5a48]">
-                                {cause}
+                            <span key={cause} className="inline-flex max-w-full items-center rounded-full border border-[#e8d4c8] bg-[#fbf3ee] px-2.5 py-1 text-xs text-[#8a5a48] [&_p]:mb-0 [&_p]:inline [&_.katex]:text-[0.95em]">
+                                <MarkdownRenderer content={cause} variant="compact" />
                             </span>
                         ))}
                     </div>

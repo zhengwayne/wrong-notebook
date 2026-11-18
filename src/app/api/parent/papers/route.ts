@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
 import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError, parentPaperSubjectKeySchema } from "@/lib/parent-papers";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
+import { uprightImageDataUrl } from "@/lib/server/page-orientation";
 
 const logger = createLogger("api:parent:papers");
 
@@ -53,10 +54,10 @@ export async function POST(req: Request) {
     try {
         const body = createSchema.parse(await req.json());
         const pages = await Promise.all(body.pages.map(async (page) => {
-            const normalized = await normalizeImageDataUrl(page.imageUrl);
-            const cropped = await autoCropPaperImage(normalized.dataUrl);
-            if (!cropped.cropped) return { imageUrl: normalized.dataUrl };
-            return { imageUrl: cropped.imageUrl, originalImageUrl: normalized.dataUrl };
+            const upright = await uprightImageDataUrl(page.imageUrl);
+            const cropped = await autoCropPaperImage(upright.dataUrl);
+            if (!cropped.cropped) return { imageUrl: upright.dataUrl };
+            return { imageUrl: cropped.imageUrl, originalImageUrl: upright.dataUrl };
         }));
         const answerKeyImages = body.answerKeyImages
             ? await Promise.all(body.answerKeyImages.map(async (img) => (await normalizeImageDataUrl(img)).dataUrl))

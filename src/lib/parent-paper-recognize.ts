@@ -6,6 +6,7 @@ import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
 import { recordAiProvenance } from "@/lib/ai/provenance";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
+import { uprightImageDataUrl } from "@/lib/server/page-orientation";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject } from "@/lib/notebook-scope";
@@ -107,14 +108,33 @@ async function ensurePagesAutoCropped(
     const prepared = [];
     for (const page of pages) {
         if (page.originalImageUrl) {
+            try {
+                const upright = await uprightImageDataUrl(page.originalImageUrl);
+                if (upright.contentRotation !== 0) {
+                    const recropped = await autoCropPaperImage(upright.dataUrl);
+                    const nextImage = recropped.cropped ? recropped.imageUrl : upright.dataUrl;
+                    await db.parentPaperPage.update({
+                        where: { id: page.id },
+                        data: { originalImageUrl: upright.dataUrl, imageUrl: nextImage },
+                    });
+                    prepared.push({ id: page.id, position: page.position, imageUrl: nextImage });
+                    continue;
+                }
+            } catch {
+                // 已有原图且无法转正时沿用当前展示图
+            }
             prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
             continue;
         }
         let cleanUrl = page.imageUrl;
         try {
-            cleanUrl = (await normalizeImageDataUrl(page.imageUrl)).dataUrl;
+            cleanUrl = (await uprightImageDataUrl(page.imageUrl)).dataUrl;
         } catch {
-            // 若是特殊 mock/内联历史数据，保留原样由后续裁切处理
+            try {
+                cleanUrl = (await normalizeImageDataUrl(page.imageUrl)).dataUrl;
+            } catch {
+                // 若是特殊 mock/内联历史数据，保留原样由后续裁切处理
+            }
         }
         const result = await autoCropPaperImage(cleanUrl);
         if (result.cropped && result.imageUrl !== page.imageUrl) {

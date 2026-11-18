@@ -78,6 +78,7 @@
     "parent/papers/[id]/confirm": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/questions/[questionId]": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/recognize": { "auth": "user", "mechanism": "getCurrentUser" },
+    "parent/papers/[id]/rotate": { "auth": "user", "mechanism": "getCurrentUser" },
     "persona": { "auth": "user", "mechanism": "defineApiRoute" },
     "practice/generate": { "auth": "user", "mechanism": "defineApiRoute" },
     "practice/grade": { "auth": "user", "mechanism": "defineApiRoute" },
