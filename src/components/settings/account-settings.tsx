@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { AccountPersonaSection } from "@/components/settings/account-persona-section";
 import { Button } from "@/components/ui/button";
@@ -99,12 +100,24 @@ export function AccountSettings() {
                 payload.password = profile.password;
             }
 
+            let updated: UserProfile;
             if (shared) {
-                await shared.patchProfile(payload);
+                updated = await shared.patchProfile(payload);
                 setDraft({});
             } else {
-                await apiClient.patch("/api/user", payload);
+                updated = await apiClient.patch<UserProfile>("/api/user", payload);
                 setStandaloneProfile((prev) => ({ ...prev, password: "" }));
+            }
+
+            // 改密递增 authVersion 后重签当前会话，避免重载被拦截到登录页
+            if (payload.password) {
+                const nextEmail = updated?.email || payload.email;
+                if (nextEmail) {
+                    const res = await signIn("credentials", { email: nextEmail, password: payload.password, redirect: false });
+                    if (res?.error) {
+                        throw new Error(res.error);
+                    }
+                }
             }
 
             toast.success(t.settings?.messages?.profileUpdated || "Profile updated");
