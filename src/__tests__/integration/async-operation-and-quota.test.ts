@@ -213,11 +213,25 @@ describe("AsyncOperation 统一作业表", () => {
             { params: Promise.resolve({ id: reqId }) },
         );
         expect(forbiddenLookup.status).toBe(404);
+        mocks.sessionEmail = "user-b@example.com";
+
+        const secondHandler = defineApiRoute(
+            { auth: "user" },
+            withRecoverableResponse(async () => NextResponse.json({ answer: "x = 7" })),
+        );
+        await secondHandler(new Request("http://localhost/api/analyze", {
+            method: "POST", headers: { "X-Request-Id": reqId },
+        }));
 
         // 模拟服务重启：清空内存缓存
         resetRecoverableResponsesForTest();
 
+        const secondResult = await GET_REQUEST_RESULT(new Request(`http://localhost/api/requests/${reqId}`),
+            { params: Promise.resolve({ id: reqId }) });
+        expect(await secondResult.json()).toEqual({ state: "done", status: 200, body: { answer: "x = 7" } });
+
         // 用户 A 在进程重启后仍能从 AsyncOperation 表恢复响应
+        mocks.sessionEmail = "user-a@example.com";
         mocks.currentUser = { id: "user-a", role: "user", personas: '["parent"]' };
         const recovered = await GET_REQUEST_RESULT(
             new Request(`http://localhost/api/requests/${reqId}`),

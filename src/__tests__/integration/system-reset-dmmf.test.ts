@@ -195,12 +195,13 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         await flushBackgroundTasksToDb();
 
         const reqId = '0123456789abcdef0123456789abcdef';
+        mocks.session = { user: { id: admin.id, email: admin.email, role: 'admin' }, expires: '2099-01-01' };
         const wrapped = withRecoverableResponse(async () => new Response(JSON.stringify({ ok: true }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
         }));
         await wrapped(new Request('http://localhost/test', { headers: { [REQUEST_ID_HEADER]: reqId } }));
-        expect(await getStoredResponse(reqId)).not.toBeNull();
+        expect(await getStoredResponse(reqId, admin.id)).not.toBeNull();
 
         // 重置前：DMMF 枚举的每个模型均至少有 1 条记录，防止测试漏覆盖新表
         for (const model of Prisma.dmmf.datamodel.models) {
@@ -230,7 +231,7 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         expect(preservedUser?.email).toBe(admin.email);
         expect(fs.existsSync(ttsDir)).toBe(false);
         expect(fs.existsSync(bgFile)).toBe(false);
-        expect(await getStoredResponse(reqId)).toBeNull();
+        expect(await getStoredResponse(reqId, admin.id)).toBeNull();
     });
 
     it('当系统重置管理员不存在时抛出 ADMIN_USER_NOT_FOUND，且 TTS 缓存清理异常时降级容错', async () => {

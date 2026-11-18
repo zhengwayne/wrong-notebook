@@ -24,7 +24,6 @@ const MAX_ENTRIES = 200;
 const MAX_BODY_LENGTH = 5_000_000;
 
 const REQUEST_ID_PATTERN = /^[a-f0-9]{32}$/;
-const RECOVERABLE_SCOPE_KEY = "request";
 const RECOVERABLE_CATEGORY = "recoverable";
 const RECOVERABLE_KIND = "http_request";
 
@@ -33,7 +32,7 @@ export type StoredResponse =
     | { state: "done"; status: number; body: unknown };
 
 interface Entry {
-    userId: string | null;
+    userId: string;
     startedAt: number;
     finishedAt: number | null;
     status: number;
@@ -102,28 +101,28 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
         const id = parseRequestId(req.headers.get(REQUEST_ID_HEADER));
         if (!id) return handler(req, ...args);
 
+        const ownerUserId = await tryResolveUserId();
+        if (!ownerUserId) return handler(req, ...args);
+        const scopeKey = ownerUserId;
+        const cacheKey = `${ownerUserId}:${id}`;
         const now = Date.now();
         prune(now);
-        const initialUserId = getRequestContext()?.userId ?? null;
         const entry: Entry = {
-            userId: initialUserId,
+            userId: ownerUserId,
             startedAt: now,
             finishedAt: null,
             status: 0,
             body: null,
         };
-        entries.set(id, entry);
+        entries.set(cacheKey, entry);
 
         const repo = getAsyncOpRepo();
         const dbInitPromise = (async () => {
-            if (!entry.userId) {
-                entry.userId = await tryResolveUserId();
-            }
             if (!repo) return;
             await repo.upsert({
                 where: {
                     scopeKey_category_kind_idempotencyKey: {
-                        scopeKey: RECOVERABLE_SCOPE_KEY,
+                        scopeKey,
                         category: RECOVERABLE_CATEGORY,
                         kind: RECOVERABLE_KIND,
                         idempotencyKey: id,
@@ -131,7 +130,7 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
                 },
                 create: {
                     userId: entry.userId,
-                    scopeKey: RECOVERABLE_SCOPE_KEY,
+                    scopeKey,
                     category: RECOVERABLE_CATEGORY,
                     kind: RECOVERABLE_KIND,
                     idempotencyKey: id,
@@ -157,8 +156,6 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
         try {
             const response = await handler(req, ...args);
             await dbInitPromise;
-            const ownerUserId = entry.userId ?? getRequestContext()?.userId ?? (await tryResolveUserId());
-            entry.userId = ownerUserId;
 
             try {
                 const body = await readBody(response.clone());
@@ -171,7 +168,7 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
                     await repo.upsert({
                         where: {
                             scopeKey_category_kind_idempotencyKey: {
-                                scopeKey: RECOVERABLE_SCOPE_KEY,
+                                scopeKey,
                                 category: RECOVERABLE_CATEGORY,
                                 kind: RECOVERABLE_KIND,
                                 idempotencyKey: id,
@@ -179,7 +176,7 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
                         },
                         create: {
                             userId: ownerUserId,
-                            scopeKey: RECOVERABLE_SCOPE_KEY,
+                            scopeKey,
                             category: RECOVERABLE_CATEGORY,
                             kind: RECOVERABLE_KIND,
                             idempotencyKey: id,
@@ -203,11 +200,11 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
                     });
                 }
             } catch (error) {
-                entries.delete(id);
+                entries.delete(cacheKey);
                 if (repo) {
                     await repo.deleteMany({
                         where: {
-                            scopeKey: RECOVERABLE_SCOPE_KEY,
+                            scopeKey,
                             category: RECOVERABLE_CATEGORY,
                             kind: RECOVERABLE_KIND,
                             idempotencyKey: id,
@@ -218,12 +215,12 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
             }
             return response;
         } catch (error) {
-            entries.delete(id);
+            entries.delete(cacheKey);
             await dbInitPromise;
             if (repo) {
                 await repo.deleteMany({
                     where: {
-                        scopeKey: RECOVERABLE_SCOPE_KEY,
+                        scopeKey,
                         category: RECOVERABLE_CATEGORY,
                         kind: RECOVERABLE_KIND,
                         idempotencyKey: id,
@@ -236,15 +233,13 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
 }
 
 /** 按请求编号查询：进行中、已结束（含响应），或不存在 / 跨用户无权（返回 null） */
-export async function getStoredResponse(id: string, viewerUserId?: string | null): Promise<StoredResponse | null> {
+export async function getStoredResponse(id: string, viewerUserId: string): Promise<StoredResponse | null> {
+    if (!viewerUserId) return null;
     const now = Date.now();
     prune(now);
 
-    const entry = entries.get(id);
+    const entry = entries.get(`${viewerUserId}:${id}`);
     if (entry) {
-        if (entry.userId && viewerUserId !== undefined && entry.userId !== viewerUserId) {
-            return null;
-        }
         return entry.finishedAt === null ? { state: "running" } : { state: "done", status: entry.status, body: entry.body };
     }
 
@@ -254,7 +249,7 @@ export async function getStoredResponse(id: string, viewerUserId?: string | null
     const record = await repo.findUnique({
         where: {
             scopeKey_category_kind_idempotencyKey: {
-                scopeKey: RECOVERABLE_SCOPE_KEY,
+                scopeKey: viewerUserId,
                 category: RECOVERABLE_CATEGORY,
                 kind: RECOVERABLE_KIND,
                 idempotencyKey: id,
@@ -268,7 +263,7 @@ export async function getStoredResponse(id: string, viewerUserId?: string | null
     if (record.status === "interrupted" || record.status === "failed") {
         return null;
     }
-    if (record.userId && viewerUserId !== undefined && record.userId !== viewerUserId) {
+    if (record.userId !== viewerUserId) {
         return null;
     }
     if (record.status === "running") {
