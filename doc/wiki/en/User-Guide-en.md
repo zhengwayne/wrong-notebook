@@ -75,4 +75,17 @@ Display: $$\frac{a}{b}$$ or \[\frac{a}{b}\]
 
 While editing you can switch between source and preview. For complex tables and formulas, see the [Markdown guide](https://github.com/margrop/wrong-notebook/blob/main/doc/MARKDOWN_GUIDE.md) and the [table recognition notes](https://github.com/margrop/wrong-notebook/blob/main/doc/TABLE_RECOGNITION.md).
 
+## Multi-role workspaces (Parent and Teacher)
+
+Enable and switch personas under **Settings → Account** to unlock role-specific workspaces on top of personal study, while keeping every learner's notebooks and records isolated:
+
+- **Parent (`/parent` and `/parent/papers`)**:
+  - Create and switch between up to **3 child profiles**; notebooks, duplicate detection, and learning paths stay scoped per child and per account (even when names match).
+  - Upload whole exam paper photos to detect and parse each question, student answer, reference answer, error cause, and knowledge points.
+  - Review each question against the overlay boxes on the photo: override the verdict (**Correct / Partial / Wrong**), tick **Add to notebook** where needed, and confirm in one tap to import selected mistakes into that child's subject notebook.
+- **Teacher (`/grading` and `/teacher`)**:
+  - Under **Grading (`/grading`)**, import multi-class rosters (paste from Excel or upload `.csv` / `.xlsx`), set an answer key, and batch-capture or upload student papers.
+  - Background jobs read handwritten headers (class, student number, name) and group multi-page sheets automatically; ambiguous or low-confidence matches pause in **To confirm** for manual assignment.
+  - Review AI scores, override verdicts, and confirm with optimistic concurrency protection (`graded` -> `confirmed`) to import mistakes into each student's `"student·subject"` notebook; inspect student profiles on `/teacher` and class-wide learning paths under `/learn?tab=class`.
+
 Next: [Practice and Exams](Practice-and-Exams-en).

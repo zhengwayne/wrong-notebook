@@ -14,7 +14,7 @@ Web exports **never** include user password hashes or server-side AI credentials
 
 ## Web export and import (ZIP v3 and legacy compatibility)
 
-1. Trigger export in **Settings → Data Management**. The server streams cursor-paged database records into `data/*.ndjson`, splits `data:` images into SHA-256 deduplicated `media/<sha256>` entries and cloud audio into `tts/<id>.mp3`, and appends `manifest.json` with counts and per-entry digests.
+1. Trigger export under **Settings → Danger → Data Management**. The server streams cursor-paged database records into `data/*.ndjson`, splits `data:` images into SHA-256 deduplicated `media/<sha256>` entries and cloud audio into `tts/<id>.mp3`, and appends `manifest.json` with counts and per-entry digests.
 2. Regular users can only import backups matching their own account email; admins using **Export All / Import All** preserve per-user ownership mappings across accounts.
 3. On import, the server verifies the manifest format version, every entry's byte size and SHA-256 digest, and remaps IDs across learners, parents' papers, teacher grading, variant stage logs, mastery states, and learning paths.
 4. **Legacy notes**:
@@ -34,8 +34,9 @@ If the data directory is mounted over NFS / CIFS on a NAS (where shared-memory l
 
 ## Daily consistent snapshots and pre-migration backups
 
-- **Daily automatic snapshots**: While running, the server creates a consistent daily snapshot in `backups/daily-snapshot-YYYY-MM-DD.db` via SQLite `VACUUM INTO`, keeping the latest 7 files by default (configurable with `DAILY_SNAPSHOT_RETENTION`). The last success timestamp appears in **Settings → Data Management**, and failures show a banner on the home page. Docker deployments that already snapshot volumes can disable it with `DAILY_SNAPSHOT_ENABLED=false`.
+- **Daily automatic snapshots**: While running, the server creates a consistent daily snapshot in `backups/daily-snapshot-YYYY-MM-DD.db` via SQLite `VACUUM INTO`, keeping the latest 7 files by default (configurable with `DAILY_SNAPSHOT_RETENTION`). The last success timestamp appears under **Settings → Danger → Data Management**, and failures show a banner on the home page. Docker deployments that already snapshot volumes can disable it with `DAILY_SNAPSHOT_ENABLED=false`.
 - **Pre-migration backups**: The package launcher (npm / Desktop / fnOS) and Docker entrypoint run a WAL checkpoint and back up existing databases to `backups/pre-migrate-*` (keeping the latest 3) before running `prisma migrate deploy`, refusing to start and printing restore instructions if a migration fails.
+- **Admin system initialization (factory reset)**: At the bottom of **Settings → Danger**, after two-step confirmation (dialog plus typing `RESET`), the server flushes queued background tasks and clears all business tables, other user accounts, and disk TTS/recovery caches in one transaction—preserving only the current admin account and the `isSystem: true` system knowledge-point tree.
 
 Run in the deployment directory:
 

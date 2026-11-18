@@ -12,10 +12,22 @@ After signing in, open "Settings → General" to adjust your own preferences:
 | GeoGebra interactive demos | Off |
 | Duplicate similarity threshold | 90%; a question is a duplicate when the similarity is strictly greater |
 | Mastered threshold | 50%; a question counts as mastered once its mastery probability reaches it |
+| Review scheduling algorithm | Default `ebbinghaus-v1` (7 intervals from day 0); switchable to `fsrs-v1` gradual rollout |
+| Staged variant pipeline | On by default (plan-then-generate, mathjs verification, independent AI re-solve) |
 
 The interface theme is not in Settings; switch it with the theme button in the top navigation bar: Auto (follow system, the default), Light or Dark. It is also saved per user and carries over when you sign in on another device.
 
 Personal preferences are saved per user. The AI service configuration and the app time zone are global settings that require admin rights.
+
+## Personas and child profiles
+
+Under **Settings → Account**, enable and switch between one or more usage personas, with data strictly isolated by `{ userId, learnerId }`:
+
+- **Student (`self`)**: manage your own notebooks, review queue, and statistics.
+- **Parent (`parent`)**: create, rename, and archive up to **3 child profiles**, switch the active child, and upload whole exam papers under `/parent` and `/parent/papers`.
+- **Teacher (`teacher`)**: access batch paper grading (`/grading`), student and class profiles (`/teacher`), and class learning paths (`/learn?tab=class`).
+
+Users can update their own password under **Settings → Account** (automatically refreshing the active session while revoking older sessions on other devices via `authVersion`) or permanently delete their own account under **Settings → Danger** (`DELETE /api/user`). Self-service deletion recommends exporting a backup first, verifies the current password, and cascades inside one database transaction to clear all personal business data while recording only a PII-free audit entry (the last active admin remains protected).
 
 ## Grade recognition for new questions
 
@@ -82,9 +94,12 @@ The percentage on the entry screen is an estimate by stage (compress, upload, an
 
 Task state is persisted in the SQLite `AsyncOperation` table (retaining finished records for 30 minutes). Navigating away does not stop processing already running on the server; tasks still running during a restart are marked interrupted (shown as failed with "Interrupted by a server restart") and do not auto-resume. Saved questions and exam papers in the database remain the source of truth.
 
-## Check the running version
+## About, data-flow disclosure and operational metrics
 
-"About" in the settings and `GET /api/health` both show the running version. When troubleshooting, note the version, the steps to reproduce and the redacted error message; do not send real API keys or full configuration files.
+- **Running version**: **Settings → About** and `GET /api/health` display the running version. Include the version, reproduction steps, and redacted error details when reporting issues; never share API keys or full configuration files.
+- **AI data-flow disclosure**: **Settings → About** informs every signed-in user which provider and endpoint locality (official cloud, local/LAN endpoint, or custom remote) handle vision, text, and cloud voice requests, noting that a local model endpoint can be configured instead. All uploaded images are re-encoded on the server to strip EXIF/GPS metadata before storage or upstream forwarding; see the [Privacy Policy](https://github.com/margrop/wrong-notebook/blob/main/doc/PRIVACY.en.md).
+- **Admin security posture checks** (visible to admins in **Settings → About**): surfaces warnings when `NEXTAUTH_SECRET` uses a weak or default value, HTTPS is not detected, `TRUST_PROXY` is unset behind proxies, public registration is enabled, or `OPENCLAW_AUTH_MODE=apikey` lacks a configured key.
+- **Admin operational metrics (`GET /api/admin/metrics`)**: an admin-only read-only endpoint summarizing background job and `AsyncOperation` status ratios (`succeeded` / `failed` / `interrupted` / `unknown`), AI queue saturation, upstream HTTP 429 rate and queue wait percentiles, SQLite foreign-key integrity checks, database file sizes, and human-override rates on parent papers and teacher grading grouped by `AiProvenance` (strictly PII-free).
 
 ## Debug logs
 

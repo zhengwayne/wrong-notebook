@@ -13,8 +13,8 @@ This Wiki covers [margrop/wrong-notebook](https://github.com/margrop/wrong-noteb
 | Run it locally and sign in for the first time | [Quick Start](Quick-Start-en) |
 | Deploy with Docker or installers (desktop, fnOS, Android, npm), enable HTTPS or upgrade | [Deployment and Upgrades](Deployment-en) |
 | Configure MiniMax, GLM, DeepSeek, Kimi, Qwen, StepFun, Volcengine, Anthropic, Azure, OpenAI or Gemini, plus cloud voices | [AI Configuration](AI-Configuration-en) |
-| Add, organize, review and search questions | [User Guide](User-Guide-en) |
-| Similar-question practice, exam papers, printing and recording results | [Practice and Exams](Practice-and-Exams-en) |
+| Add, organize, review questions; parent paper capture and teacher grading | [User Guide](User-Guide-en) |
+| Similar-question practice, learning paths, exam papers, printing and results | [Practice and Exams](Practice-and-Exams-en) |
 | Preferences, the app time zone and user permissions | [Settings and Users](Settings-and-Users-en) |
 | Export personal data or back up the whole site | [Backup and Restore](Backup-and-Restore-en) |
 | Batch-import questions from an external Openclaw agent | [Openclaw Integration](Openclaw-Integration-en) |
@@ -27,8 +27,9 @@ This Wiki covers [margrop/wrong-notebook](https://github.com/margrop/wrong-noteb
 - AI recognizes the question, answer, analysis, mistake cause, subject, knowledge points and a 1–5 star difficulty.
 - Duplicate detection by question similarity; a repeated import records another wrong attempt on the original question.
 - Markdown, LaTeX, SVG figures, SVG animated explanations with voice narration and optional GeoGebra interactive demos.
-- Similar-question practice with AI grading, daily review, exam papers built from mistakes, answer history, mastery probability, statistics and print export.
-- Per-user data isolation, daily AI limits, admin settings, personal preferences and Openclaw batch import.
+- Similar-question practice (with staged variant review) and AI grading, daily review (7-step Ebbinghaus / optional `fsrs-v1`), learning paths (`/learn`), exam papers built from mistakes, answer history, mastery probability, statistics and print export.
+- Multi-role workspaces for **students, parents, and teachers**: parents can manage multiple child profiles and scan full exam papers under `/parent`; teachers can import class rosters, batch-grade papers with automatic page grouping under `/grading`, and inspect student/class profiles under `/teacher`.
+- Per-user data isolation, daily AI limits and per-model concurrency caps, admin operational metrics, data-flow disclosure, password-verified self-service deletion, streaming optional-passphrase ZIP v3 backups with daily automatic snapshots, and Openclaw batch import.
 - Fresh installs set up the admin with a one-time setup link (the install wizard on fnOS) instead of a fixed default password, then the setup wizard helps configure AI and create a notebook.
 
 ## Recommended workflow

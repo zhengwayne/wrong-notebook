@@ -67,9 +67,14 @@ The background task list is persisted in the SQLite `AsyncOperation` table, so t
 
 `207` means some items in the batch failed; with the current implementation it can be returned even when every recognition failed. Always read `successCount`, `failCount` and each item in `results`. The per-image recognition timeout is at least 3 seconds; see [Openclaw Integration](Openclaw-Integration-en) for more limits.
 
-## Can the exported JSON restore the whole site?
+## Can web ZIP / JSON exports restore the whole site?
 
-The JSON does not include full account credentials or the server configuration. A full-site restore needs the complete database, `config/`, the deployment configuration and any certificates; see [Backup and Restore](Backup-and-Restore-en).
+The default **v3 ZIP archive** migrates complete personal and multi-role data (including child profiles, parent papers, teacher grading, variant stages, and learning paths, with optional AES-256-GCM passphrase encryption), but web exports never include password hashes or server-side AI credentials. A full-site disaster recovery still needs the complete SQLite database (or `backups/` snapshots), `config/`, deployment configuration, and TLS certificates; see [Backup and Restore](Backup-and-Restore-en).
+
+## What if the home page warns about a failed database snapshot, or SQLite reports `SQLITE_BUSY` on a NAS?
+
+- **Failed daily snapshot**: check disk space and write permissions on the `backups/` folder inside your data directory, then inspect the timestamp or retry manually via **Snapshot Now** under **Settings → Danger**. If your host already snapshots volumes, set `DAILY_SNAPSHOT_ENABLED=false`.
+- **Locks on NAS NFS/CIFS shares**: network filesystems often lack cross-node shared-memory locks for WAL (`-shm`); set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE` and restart the container.
 
 ## Data is missing after an upgrade, or the container won't start?
 

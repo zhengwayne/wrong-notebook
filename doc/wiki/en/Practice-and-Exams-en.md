@@ -30,12 +30,17 @@ Mastery probability helps plan reviews. It does not guarantee the student unders
 
 ## Daily review
 
-The **Review** page in the navigation lists questions due today, and the home page shows how many are due.
+The **Review** page in the navigation lists questions due today, sharing the unified `getDueItems` computation with the home page and the learning path so due counts never diverge:
 
-- Reviews follow intervals of 1, 2, 4, 7, 15 and 30 days: the first review is the day after adding a question; each correct answer moves it to the next interval, and a wrong answer starts over.
-- Intervals count from the most recent answer, whether from similar-question practice, manual entry, exams or duplicate imports; "not attempted" records do not change the schedule.
-- After 6 correct answers in a row the question is no longer scheduled. Dates follow the application time zone, and the earliest due questions come first.
+- **Default Ebbinghaus schedule (`ebbinghaus-v1`)**: follows **7 intervals of 0 (the day added), 1, 2, 4, 7, 15, and 30 days**—a newly recorded mistake is due immediately on round 1 (day 0), each correct answer advances one round, and any wrong answer resets to round 0; after **7 consecutive correct answers**, the item graduates from daily review.
+- **Per-item memory model rollout (`fsrs-v1`)**: switch the review algorithm under **Settings → General** to `fsrs-v1` to compute stability and due dates via `ItemMemory` and FSRS-style curves from `PracticeRecord` evidence (fully recomputable).
+- Intervals count from the most recent valid answer (similar-question practice, manual entry, exams, or duplicate imports; "not attempted" records do not shift the schedule). Dates follow the application time zone, earliest due first.
 - Open a card for details, or click **Practice** to practice right away; after you record a result the question leaves the list until its next interval.
+
+## Learning path and staged variant review
+
+- **Learning path (`/learn`)**: combines BKT mastery (`pKnown`) with power-law `stabilityDays` (capped at 1–180 days) and prerequisite edges from the knowledge-point tree to recommend study steps (`stabilityDays >= 180 && pKnown >= 0.9` marks mastery graduation). Teachers can also switch to the class overview (`/learn?tab=class`) to spot shared weak points and generate remedial sets or topics.
+- **Staged variant review (`/variants`)**: by default plans before generating each variant, checks computable problems with mathjs, performs an independent second AI solve, and deduplicates against existing questions. Unverified or conflicting items enter **To review** for manual approval, editing, or rejection before entering practice or printable exams (toggle the pipeline under **Settings → General** and export CSV comparisons).
 
 ## Generate an exam paper
 

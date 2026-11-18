@@ -78,7 +78,7 @@ For the default account of a fresh install, see [Quick Start](Quick-Start-en).
 | `/app/config` | AI configuration, prompts and global settings saved from the web UI | Mount persistently; backups contain sensitive credentials |
 | `/app/certs` | Certificates for the built-in HTTPS | Mount and back up when used |
 
-The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup runs the formal migrations and skips admin seeding and system tag rebuilding, so existing accounts, tags and their links are kept.
+The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup flushes the WAL checkpoint and creates a pre-migration backup under `backups/pre-migrate-*` (keeping the latest 3) before running formal migrations, skipping admin seeding and system tag rebuilding so existing accounts and links are preserved. When the data directory sits on NAS NFS/CIFS shares lacking cross-node shared memory locks, set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE`.
 
 ## HTTPS and reverse proxies
 
@@ -146,4 +146,4 @@ xattr -cr /Applications/WrongNotebook.app
 codesign --force --deep --sign - /Applications/WrongNotebook.app
 ```
 
-The Android standalone edition runs the server on the phone with no separate deployment and needs a 64-bit ARM device on Android 8.0 or later; the Android client edition is only a shell that connects to a server, which must first be deployed with one of the methods above. See [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md) for details.
+The Android standalone edition runs the server on the phone with no separate deployment on 64-bit ARM devices (Android 8.0+), bundling `@img/sharp-wasm32` so crop and region slicing run locally without native binaries; because data resides in the app-private directory, **always export a backup (preferably passphrase-encrypted ZIP v3) under Settings → Danger before uninstalling or switching devices**. The Android client edition is only a shell that connects to a server deployed with one of the methods above. See [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md) for details.

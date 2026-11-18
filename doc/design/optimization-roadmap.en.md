@@ -207,7 +207,7 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 - `admin/system-reset` clears every business table and the disk caches, keeping only the current admin account and the `isSystem: true` system knowledge-point tree.
 - Update `src/app/api/export`, `src/app/api/import`, `data-backup.test.ts` and the backup Wiki pages (both languages) together.
 
-**OPT-11b · Asset file storage (P2, Batch G, depending on benchmarks)**: following the original review's D8, decide whether to move images from the database to `${DATA_DIR}/assets/` only after OPT-17 produces benchmark data. If done, migrate gradually (dual reads, verification, keep the old field for a while) and serve them through an authenticated `/api/assets/:id`. The ownership check for `/api/tts/:id` does not depend on assets and has been completed in Batch F (`60600b9`).
+**OPT-11b · Asset file storage (P2, Batch G, deferred after benchmark evaluation)**: evaluated against the OPT-17 10,000-item benchmark report ([`perf/benchmark-report.md`](../../perf/benchmark-report.md)) and **deferred for this stage**: explicit `select` projections already hold 10k-item list and detail `p95` latency at `1.36–11.69 ms`, and streaming v3 export/restore adds only `+15.10 MB` / `+46.17 MB` peak RSS, so keeping images in SQLite avoids orphan-file GC and cross-platform storage complexity until libraries grow toward 100k+ items. The ownership check for `/api/tts/:id` does not depend on assets and has been completed in Batch F (`60600b9`).
 
 **Acceptance (11a)**: exporting a 500MB sample database with images and importing it into an empty one adds less than 150MB to peak RSS; after a v3 round trip, entity counts, learner ownership, `stages` and media SHA-256 all match exactly; after `system-reset`, business tables and caches are empty. Depends on OPT-07 and OPT-08.
 
@@ -253,27 +253,27 @@ Implement in order, to avoid deadlocks from a missing `tx` under a single-connec
 
 **Acceptance**: a transparent PNG compresses to a white background; opening settings sends one `GET /api/user`; unit tests pass for a plain-text 500 in `apiClient`, signal merging and automatic sign-out on session revocation; `html[lang]` follows the language.
 
-### OPT-16 · High-risk coverage and three-role E2E (P2, Batch G)
+### OPT-16 · High-risk coverage and three-role E2E (P2, Batch G, Done: `e7429c1`, `a035628`)
 
-- Add backend unit and integration tests first: `grading/*` (0% coverage per the assessment plan), parent exam-paper annotation and summary, `error-items/list`, `ai/test`, `admin/migrate-tags`, `admin/system-reset` and the SVG escape cases, then raise the coverage thresholds in `vitest.config.mts` step by step.
-- Add 4 Playwright specs (including a 390px mobile viewport): isolation across two accounts, several children and same-name students; a parent uploads a paper, selects regions, reviews and confirms; a teacher grades, confirms and checks the learning path; a v3 backup export, system reset and import round trip.
+- Added backend unit and integration tests for `grading/*`, parent paper annotation and summary, `error-items/list`, `ai/test`, `admin/migrate-tags`, `admin/system-reset`, and SVG escaping, and tightened thresholds in `vitest.config.mts`.
+- Added 4 new Playwright specs (including a 390px mobile viewport): cross-tenant isolation with matching child/student names; parent paper upload, review, override and import; teacher grading, confirm and learning paths; and v3 backup export, system reset and restore, passing all 15/15 specs along with two real bug fixes (`053b6b0`, `5ab5c06`).
 - The two-tenant test helper and the backup coverage test already exist from OPT-21 in Batch C and are reused here.
 
-**Acceptance**: line coverage of `grading/*` and `error-items/list` is at least 70%; E2E runs on a database built with `migrate deploy` and all specs pass.
+**Acceptance**: line coverage of `grading/*` and `error-items/list` is at least 70%; E2E runs on a database built with `migrate deploy` and all specs pass (accepted).
 
-### OPT-17 · Performance benchmarks and operational metrics (P2, Batch G)
+### OPT-17 · Performance benchmarks and operational metrics (P2, Batch G, Done: `241d9f6`)
 
-- A synthetic benchmark script: 1,000 / 10,000 items, 1 / 3 children, 30 / 100 students, multi-page papers; measure p50/p95/p99, SQL counts, RSS and queue wait time for lists, the learning path, import/export and grading confirmation.
-- Decide on composite indexes from the measured query plans; do not add indexes up front.
-- Operational metrics: job success/failure/unknown ratios, AI provider 429 rate, queue saturation, foreign-key check status, and the share of AI recognition results the user edited by hand, grouped by `provenanceId` (the online signal for OPT-19).
+- Synthetic benchmark script (`perf/bench/synthetic-suite.ts` and report `perf/benchmark-report.md`): measured p50/p95/p99, SQL counts, RSS and queue wait times across 1,000 / 10,000 items, 3 children, 30 / 100 students and multi-page papers; fixed the Prisma `P2029` negated nested filter query-splitting bottleneck uncovered at large scale.
+- Based on measured `EXPLAIN QUERY PLAN` results, no extra composite indexes were added so bulk import writes stay fast.
+- Operational metrics (`GET /api/admin/metrics`): summarizes `AsyncOperation` / job success, failure, interrupted and unknown ratios, AI provider 429 rate and queue saturation, SQLite foreign-key check status, database size and human-override share grouped by `provenanceId` (the online signal for OPT-19).
 
-**Acceptance**: the benchmark script is reproducible; p95 for ordinary lists and details is at most 500ms, and at most 1s for the cached learning path (excluding AI time).
+**Acceptance**: the benchmark script is reproducible; p95 for ordinary lists and details is at most 500ms, and at most 1s for the cached learning path (excluding AI time) (accepted).
 
-### OPT-18 · Public history, workspace hygiene and documentation debt (delivery blocker + P2)
+### OPT-18 · Public history, workspace hygiene and documentation debt (delivery blocker + P2, Workspace hygiene Done: `ec8ee57`; Documentation debt Done: this closing commit)
 
 - **Workspace hygiene (Batch 0, Done: `ec8ee57`)**: move local database and log backups out of the repository (anything kept as a migration test sample must first be confirmed to contain no real data); add matching `.gitignore` rules without covering `prisma/migrations/` or test fixtures.
 - **Historical object (when merging into `main`)**: the object introduced by commit `48e96ed` is already on the feature branch in the public remote, so adding new commits cannot remove it. Use **path A**: squash when merging into `main`, or rebuild a clean branch from `main`, so `main` contains only clean commits and the pushed feature branch is not rewritten. **Path B** (interactively rebasing `48e96ed..HEAD` and force-pushing) requires separate confirmation from the user.
-- **Documentation debt**: `doc/wiki/` still describes the single-user era. Update affected pages with each batch (for example, Batches A and D update the backup and restore page with WAL, snapshots and the v3 scope), and before the features reach `main`, complete the Chinese and English pages and the website for multiple children, parent exam papers, teacher grading, learning paths and multi-platform installation troubleshooting.
+- **Documentation debt**: updated `doc/wiki/` (7 Chinese/English core pages), `README.md` / `README.en.md`, `doc/PRIVACY*.md`, and this roadmap for multi-child profiles, parent papers, teacher grading, learning paths, 7-step review from day 0 / `fsrs-v1`, streaming encrypted backup and snapshots, multi-platform troubleshooting, and privacy/ops notes; note that the standalone website repository `wrong-notebook-github-pages` is not present locally and must be synced separately when publishing.
 
 **Acceptance**: `git status` shows no local backup files; after the merge, `check-public-history.py main` exits 0; the Wiki in both languages covers the shipped features.
 
@@ -322,8 +322,8 @@ The users are mostly primary and secondary school students. Today the server sto
 | --- | --- | --- | --- |
 | Server-side image normalization | Every entry point (recognition, Openclaw, parent exam papers, teacher grading) goes through `normalizeImage()`: decode with sharp, rotate by orientation, **strip all metadata**, cap the longest edge, re-encode; also check the real MIME type and a pixel limit (OPT-02 only limits bytes). Frontend compression is an optimization; the server is the security boundary. The `originalImageUrl` protocol check is done here too | P1 | B (Done: `b2d6a3f`) |
 | Backup encryption | ZIP v3 supports optional passphrase encryption (AES-256-GCM with a key derived from the passphrase by scrypt), with the encryption parameters stored in plain text in the manifest; unencrypted exports show a notice | P2 | D (Done: `9cbee2b`) |
-| Self-service deletion | `DELETE /api/user`: requires re-entering the password, offers an export first, then deletes all data in one transaction (relying on OPT-08's foreign keys) and writes one audit record with no personal data; admin user deletion reuses the same service | P2 | G |
-| Disclosure of data flows | The settings page and `doc/PRIVACY*.md` state that images are sent to the currently configured AI provider, name it, and mention that a local model endpoint can be used instead | P2 | G |
+| Self-service deletion | `DELETE /api/user`: requires re-entering the password, offers an export first, then deletes all data in one transaction (relying on OPT-08's foreign keys) and writes one audit record with no personal data; admin user deletion reuses the same service | P2 | G (Done: `a789181`) |
+| Disclosure of data flows | The settings page and `doc/PRIVACY*.md` state that images are sent to the currently configured AI provider, name it, and mention that a local model endpoint can be used instead | P2 | G (Done: `a789181`) |
 
 Log redaction is part of OPT-03's Batch 0 work.
 
@@ -370,8 +370,8 @@ Each independent requirement is its own commit; a guardrail ships in the same co
 | **Batch C Isolation between children** (Done: `0812330`, `bea3a21`, `f6bb37f`) | Correctness for families with several children | OPT-08 foreign-key migration (read-only audit and FK table rebuild); child part of OPT-07; OPT-21 two-tenant helper and backup coverage test | 5–7 | The most likely data mixing under a single account |
 | **Batch D Portable backup** (Done: `01fec89`, `b02986f`, `9cbee2b`, `76aac87`) | Moving devices or NAS | OPT-11a (including `ReviewSchedule` handling and system-reset); OPT-20 backup encryption; OPT-13 (wasm verified); OPT-21 system-reset coverage test | 5–7 | The main recovery scenario for families |
 | **Batch E Learning effect and experience** (Done: `6b0282f`, `6fa9ff1`, `f4c7547`, `38483c9`) | Review and everyday use | OPT-12a; OPT-12b gradual rollout; OPT-15; OPT-14 | 7–10 | Depends on Batch C's learner scope |
-| **Batch F Multiple accounts and hardening** (Done: `60600b9`, `c01b58b`, `afb9ac7`, `152547a`, `a16b1e4`, `fa435f4`, `7ce1664`) | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
-| **Batch G On demand** | Long-term quality | OPT-16; OPT-17; OPT-11b (depending on benchmarks); OPT-20 self-service deletion and data-flow disclosure; OPT-18 documentation debt | TBD | — |
+| **Batch F Multiple accounts and hardening** (Done: `60600b9`, `c01b58b`, `afb9ac7`, `152547a`, `a16b1e4`, `fa435f4`, `7ce1664`, `8f00dec`) | Cross-account security | OPT-02 (D1a first, wrapper migrated module by module); the Batch F part of OPT-01; teacher part of OPT-07; OPT-10; `/api/tts/:id` ownership check; OPT-21 route inventory and session rule | 8–11 | Low risk for a family single account; pulled forward wholly or partly when a section 3.2 trigger applies |
+| **Batch G On demand** (Done: `a789181`, `241d9f6`, `e7429c1`, `053b6b0`, `5ab5c06`, `a035628`, and this closing commit) | Long-term quality | OPT-16; OPT-17; OPT-11b (deferred after benchmarks); OPT-20 self-service deletion and data-flow disclosure; OPT-18 documentation debt | TBD | — |
 
 Batches 0–F total about **37–51 person-days**; through Batch D, about **22–30 person-days**. The assessment plan's Batches 0–D came to 24–33.5 person-days. The difference comes mainly from no longer packing OPT-02's route migration into one batch, the new OPT-19–OPT-22, and OPT-12b.
 

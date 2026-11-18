@@ -67,9 +67,14 @@
 
 `207` 表示批次存在逐项失败；当前实现中全部识别失败也可能返回它。必须读取 `successCount`、`failCount` 和每项 `results`。单张识别超时至少为 3 秒，更多限制见 [Openclaw 集成](Openclaw-Integration)。
 
-## 导出的 JSON 能恢复整个站点吗？
+## 网页导出的 ZIP / JSON 备份能恢复整个站点吗？
 
-当前 JSON 不包含完整账户凭据和服务端配置。整站恢复应保存完整数据库、`config/`、部署配置和所需证书，详见[备份与恢复](Backup-and-Restore)。
+网页默认导出的 **v3 ZIP 归档**可完整迁移个人与多角色业务数据（含孩子档案、家长试卷、教师改卷、变式阶段与学习路径，并支持可选 AES-256-GCM 口令加密），但均不包含账户密码哈希与服务端 AI 凭据。整站恢复仍需备份完整 SQLite 数据库（含 `backups/` 每日快照）、`config/`、部署配置和所需证书，详见[数据备份与恢复](Backup-and-Restore)。
+
+## 首页提示自动数据库快照失败，或 NAS 上出现 `SQLITE_BUSY` 锁定报错？
+
+- **快照失败告警**：检查数据目录下的 `backups/` 目录写权限与磁盘可用空间，在「设置 → 危险」可查看最近成功时间并点「立即创建快照」手动重试；若已在 Docker 宿主机层面做卷快照，可设 `DAILY_SNAPSHOT_ENABLED=false` 关闭内建每日快照。
+- **NAS NFS/CIFS 锁报错**：网络文件系统通常不支持 SQLite WAL 模式的共享内存锁（`-shm`），请在环境变量中添加 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE` 后重启服务。
 
 ## 升级后数据不见了，或者容器无法启动？
 

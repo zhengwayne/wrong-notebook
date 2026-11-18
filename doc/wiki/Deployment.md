@@ -78,7 +78,7 @@ docker compose logs wrong-notebook | grep initialize
 | `/app/config` | 网页保存的 AI 配置、提示词和全局设置 | 持久挂载，备份中包含敏感凭据 |
 | `/app/certs` | 使用内置 HTTPS 时的证书 | 按需挂载并备份 |
 
-镜像默认设置 `PRESERVE_EXISTING_DATA=true`。检测到已有数据库时，启动流程执行正式迁移，跳过管理员播种和系统标签重建，以保留已有账户、标签及关联。
+镜像默认设置 `PRESERVE_EXISTING_DATA=true`。检测到已有数据库时，启动流程先将 WAL 刷盘并在 `backups/pre-migrate-*` 生成迁移前备份（保留最近 3 份），随后执行正式迁移，跳过管理员播种和系统标签重建，以保留已有账户、标签及关联；若数据目录挂载于不支持共享内存锁的 NAS NFS/CIFS 网络存储，请配置环境变量 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE`。
 
 ## HTTPS 与反向代理
 
@@ -146,4 +146,4 @@ xattr -cr /Applications/WrongNotebook.app
 codesign --force --deep --sign - /Applications/WrongNotebook.app
 ```
 
-安卓单机版在手机上运行服务端，无需另行部署，需要 Android 8.0 及以上的 64 位 ARM 设备；安卓客户端版只是连接服务器的外壳，需要先用上面任一方式部署服务端。详细说明见 [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md)。
+安卓单机版在手机上运行服务端，无需另行部署，需要 Android 8.0 及以上的 64 位 ARM 设备，内置 `@img/sharp-wasm32` 纯 WebAssembly 图像处理引擎在本地完成框选切题与自动裁边（不依赖原生二进制）；因数据库位于 App 私有目录，**卸载或换机前务必先在「设置 → 危险」导出备份（推荐加密 ZIP v3）**。安卓客户端版只是连接服务器的外壳，需要先用上面任一方式部署服务端。详细说明见 [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md)。
