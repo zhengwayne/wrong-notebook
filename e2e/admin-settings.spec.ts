@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN_PASSWORD } from './helpers';
+import { ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 test('Admin can configure OpenAI settings with multi-instance support', async ({ page }) => {
     // 增加测试超时时间
     test.setTimeout(60000);
 
     // 1. Login as Admin
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.locator('input[name="email"]').fill('admin@localhost');
     await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
     await page.locator('button[type="submit"]').click();

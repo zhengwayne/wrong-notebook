@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN_PASSWORD } from './helpers';
+import { ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 async function login(page: Page) {
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.getByLabel(/邮箱|Email/).fill('admin@localhost');
     await page.getByLabel(/^密码$|^Password$/).fill(ADMIN_PASSWORD);
     await page.getByRole('button', { name: /登录|Login/ }).click();

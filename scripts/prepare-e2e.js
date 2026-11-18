@@ -36,18 +36,24 @@ function markSetupCompleted() {
 async function main() {
     const prisma = new PrismaClient();
     try {
+        const defaultPersona = {
+            personas: JSON.stringify(['self']),
+            activePersona: 'self',
+            personasConfirmedAt: new Date(),
+        };
+
         const adminHash = await hash(E2E_ADMIN_PASSWORD, 10);
         await prisma.user.upsert({
             where: { email: 'admin@localhost' },
-            update: { password: adminHash, role: 'admin', isActive: true },
-            create: { email: 'admin@localhost', name: 'Admin', password: adminHash, role: 'admin', isActive: true, educationStage: 'junior_high', enrollmentYear: 2025 },
+            update: { password: adminHash, role: 'admin', isActive: true, ...defaultPersona },
+            create: { email: 'admin@localhost', name: 'Admin', password: adminHash, role: 'admin', isActive: true, educationStage: 'junior_high', enrollmentYear: 2025, ...defaultPersona },
         });
 
         const defaultHash = await hash(DEFAULT_ADMIN_PASSWORD, 10);
         await prisma.user.upsert({
             where: { email: SETUP_ADMIN_EMAIL },
-            update: { password: defaultHash, role: 'admin', isActive: true },
-            create: { email: SETUP_ADMIN_EMAIL, name: 'Setup Admin', password: defaultHash, role: 'admin', isActive: true },
+            update: { password: defaultHash, role: 'admin', isActive: true, ...defaultPersona },
+            create: { email: SETUP_ADMIN_EMAIL, name: 'Setup Admin', password: defaultHash, role: 'admin', isActive: true, ...defaultPersona },
         });
 
         markSetupCompleted();
