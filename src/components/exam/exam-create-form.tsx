@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { TagInput } from "@/components/tag-input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { useCurrentChild } from "@/lib/use-current-child";
 import type { ExamPickRule, ExamScope, Notebook } from "@/types/api";
 
 const SCOPES: ExamScope[] = ["unmastered", "mastered", "all"];
@@ -21,6 +22,7 @@ const DIFFICULTIES = ["easy", "medium", "hard", "harder"] as const;
 export function ExamCreateForm() {
     const { t, language } = useLanguage();
     const router = useRouter();
+    const { isParent, learnerId, hrefWithChild } = useCurrentChild();
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [subjectIds, setSubjectIds] = useState<string[]>([]);
     const [tagNames, setTagNames] = useState<string[]>([]);
@@ -33,13 +35,20 @@ export function ExamCreateForm() {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        apiClient.get<Notebook[]>("/api/notebooks")
+        const url = isParent
+            ? (learnerId ? `/api/notebooks?learnerId=${encodeURIComponent(learnerId)}` : "/api/notebooks?learnerId=self")
+            : "/api/notebooks";
+        apiClient.get<Notebook[]>(url)
             .then((data) => {
-                setNotebooks(data);
-                if (data.length === 1) setSubjectIds([data[0].id]);
+                const visible = isParent ? data.filter((nb) => (nb._count?.errorItems ?? 0) > 0) : data;
+                setNotebooks(visible);
+                setSubjectIds((prev) => {
+                    const valid = prev.filter((id) => visible.some((nb) => nb.id === id));
+                    return valid.length > 0 ? valid : (visible.length === 1 ? [visible[0].id] : []);
+                });
             })
             .catch(() => setNotebooks([]));
-    }, []);
+    }, [isParent, learnerId]);
 
     const toggleNotebook = (id: string) => {
         setSubjectIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -63,8 +72,9 @@ export function ExamCreateForm() {
                 difficulty,
                 title: title.trim() || undefined,
                 language,
+                ...(isParent ? { learnerId: learnerId ?? null } : {}),
             });
-            router.push(`/exams/${paper.id}`);
+            router.push(hrefWithChild(`/exams/${paper.id}`));
         } catch (err) {
             const message = (err as { data?: { message?: string } })?.data?.message;
             setError(message === "NO_SOURCE_ITEMS" ? t.exam.noSource : t.common.messages?.saveFailed || "Failed");

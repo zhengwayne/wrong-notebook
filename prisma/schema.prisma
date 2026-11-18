@@ -234,6 +234,8 @@ model ExamPaper {
   id         String   @id @default(cuid())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId  String?
+  learner    Learner? @relation(fields: [learnerId], references: [id], onDelete: SetNull)
   title      String
   status     String   @default("generating") // generating | ready | partial | failed
   scope      String   // unmastered | mastered | all
@@ -250,6 +252,7 @@ model ExamPaper {
   updatedAt  DateTime @updatedAt
 
   @@index([userId, createdAt])
+  @@index([userId, learnerId, createdAt])
 }
 
 model ExamQuestion {
@@ -525,6 +528,7 @@ model Learner {
   practiceRecords PracticeRecord[]
   parentPapers    ParentPaper[]
   itemMemories    ItemMemory[]
+  examPapers      ExamPaper[]
 
   @@index([userId, kind])
 }

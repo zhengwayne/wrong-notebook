@@ -471,9 +471,12 @@ async function importCoreLearningRecords(
         const difficulty = EXAM_DIFFICULTIES.includes(row.difficulty as (typeof EXAM_DIFFICULTIES)[number])
             ? String(row.difficulty)
             : 'medium';
+        const oldLearnerId = asOptionalString(row.learnerId);
+        const mappedLearnerId = oldLearnerId ? (ctx.learnerIdMap.get(oldLearnerId) ?? null) : null;
         const created = await ctx.tx.examPaper.create({
             data: {
                 userId: targetUserId,
+                learnerId: mappedLearnerId,
                 title,
                 status: safeStatus,
                 scope,

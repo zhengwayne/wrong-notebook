@@ -15,23 +15,28 @@ import { ExamStatusBadge } from "@/components/exam/exam-status-badge";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
+import { useCurrentChild } from "@/lib/use-current-child";
 import type { ExamPaperSummary } from "@/types/api";
 
 export default function ExamsPage() {
     const { timeZone } = useTimeZone();
     const { t } = useLanguage();
     usePageTitle(t.exam.title);
+    const { isParent, learnerId, hrefWithChild } = useCurrentChild();
     const [papers, setPapers] = useState<ExamPaperSummary[] | null>(null);
     const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
-        apiClient.get<ExamPaperSummary[]>("/api/exams")
+        const url = isParent
+            ? `/api/exams?learnerId=${encodeURIComponent(learnerId ?? "self")}`
+            : "/api/exams";
+        apiClient.get<ExamPaperSummary[]>(url)
             .then((data) => {
                 setPapers(data);
                 if (data.length === 0) setShowForm(true);
             })
             .catch(() => setPapers([]));
-    }, []);
+    }, [isParent, learnerId]);
 
     const difficultyLabels = t.practice.difficulty as Record<string, string>;
 
@@ -65,7 +70,7 @@ export default function ExamsPage() {
                     ) : (
                         <div className="grid gap-3 md:grid-cols-2">
                             {papers.map((paper) => (
-                                <Link key={paper.id} href={`/exams/${paper.id}`}>
+                                <Link key={paper.id} href={hrefWithChild(`/exams/${paper.id}`)}>
                                     <Card className="h-full rounded-2xl transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
                                         <CardContent className="space-y-2 pt-4">
                                             <div className="flex items-start justify-between gap-2">

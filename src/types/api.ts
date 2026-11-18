@@ -429,6 +429,7 @@ export type ExamStatus = 'generating' | 'ready' | 'partial' | 'failed';
 
 export interface ExamPaperSummary {
     id: string;
+    learnerId?: string | null;
     title: string;
     status: ExamStatus;
     scope: ExamScope;

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     return {
         tx,
         user: { findUnique: vi.fn() },
+        learner: { findFirst: vi.fn() },
         subject: { findMany: vi.fn() },
         errorItem: { findMany: vi.fn() },
         examPaper: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), delete: vi.fn() },
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('@/lib/prisma', () => ({
     prisma: {
         user: mocks.user,
+        learner: mocks.learner,
         subject: mocks.subject,
         errorItem: mocks.errorItem,
         examPaper: mocks.examPaper,
@@ -151,6 +153,49 @@ describe('/api/exams', () => {
             expect(tooMany.status).toBe(400);
             expect(badScope.status).toBe(400);
             expect(badRule.status).toBe(400);
+        });
+
+        it('多孩家庭指定 learnerId 创建巩固卷时严格按孩子隔离抽题并持久化 learnerId', async () => {
+            mocks.learner.findFirst.mockResolvedValue({ id: 'child-elder', kind: 'child' });
+            mocks.subject.findMany.mockResolvedValue([{ id: 's-math', name: '数学' }]);
+            mocks.errorItem.findMany.mockResolvedValue([{ id: 'e-elder', shortId: 'ELDER1', _count: { practiceRecords: 0 } }]);
+            mocks.examPaper.create.mockResolvedValue({ id: 'p-elder', title: '数学', requestedCount: 1, _count: { questions: 1 } });
+
+            const response = await CREATE(json('http://localhost/api/exams', 'POST', {
+                ...options,
+                subjectIds: ['s-math'],
+                count: 1,
+                learnerId: 'child-elder',
+            }));
+
+            expect(response.status).toBe(201);
+            expect(mocks.errorItem.findMany.mock.calls[0][0].where).toMatchObject({
+                userId: 'user-1',
+                learnerId: 'child-elder',
+                subjectId: { in: ['s-math'] },
+            });
+            expect(mocks.examPaper.create.mock.calls[0][0].data.learnerId).toBe('child-elder');
+        });
+
+        it('传入非本人名下或已归档的 learnerId 时拒绝访问并返回 404', async () => {
+            mocks.learner.findFirst.mockResolvedValue(null);
+            const response = await CREATE(json('http://localhost/api/exams', 'POST', {
+                ...options,
+                learnerId: 'other-user-child',
+            }));
+            expect(response.status).toBe(404);
+            expect(mocks.examPaper.create).not.toHaveBeenCalled();
+        });
+    });
+
+    it('GET 列表传入 learnerId 时仅返回对应学习者的试卷', async () => {
+        mocks.learner.findFirst.mockResolvedValue({ id: 'child-elder', kind: 'child' });
+        mocks.examPaper.findMany.mockResolvedValue([]);
+        const response = await LIST(new Request('http://localhost/api/exams?learnerId=child-elder'));
+        expect(response.status).toBe(200);
+        expect(mocks.examPaper.findMany.mock.calls[0][0].where).toEqual({
+            userId: 'user-1',
+            learnerId: 'child-elder',
         });
     });
 
