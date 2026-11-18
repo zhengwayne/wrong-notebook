@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     user: { findUnique: vi.fn() },
     errorItem: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-    knowledgeTag: { findMany: vi.fn() },
+    knowledgeTag: { findMany: vi.fn(), create: vi.fn() },
     subject: { findUnique: vi.fn() },
     suggestKnowledgeTags: vi.fn(),
     getMathTagsFromDB: vi.fn(),
@@ -210,5 +210,26 @@ describe('知识点重新生成', () => {
 
         expect(response.status).toBe(404);
         expect(mocks.errorItem.findMany).not.toHaveBeenCalled();
+    });
+
+    it('小学语文错题本在数据库尚未同步系统标签行时自动补建标签并完成重标', async () => {
+        mocks.errorItem.findUnique.mockResolvedValue({
+            ...item,
+            questionText: '默写：床前明月光，疑是地上霜。',
+            subject: { name: '语文错题', stage: 'primary', subjectKey: 'chinese' },
+            tags: [],
+        });
+        mocks.getScopeTagsFromDB.mockResolvedValue(['古诗文默写', '字音字形']);
+        mocks.suggestKnowledgeTags.mockResolvedValue({ tags: ['古诗文默写'], difficultyStars: 2 });
+        mocks.knowledgeTag.findMany.mockResolvedValue([]);
+        mocks.knowledgeTag.create.mockResolvedValue({ id: 'tag-cn-1', name: '古诗文默写' });
+
+        const response = await RETAG_ITEM(new Request('http://localhost', { method: 'POST' }), params('e-cn'));
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(data.tags).toEqual(['古诗文默写']);
+        expect(mocks.knowledgeTag.create).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({ name: '古诗文默写', subject: 'chinese', isSystem: true }),
+        }));
     });
 });

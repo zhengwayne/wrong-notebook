@@ -15,7 +15,7 @@ export type NotebookSubject = (typeof NOTEBOOK_SUBJECTS)[number];
 
 /** 各学段可选的学科：只列出标签库中有该学段知识点的学科 */
 export const STAGE_SUBJECTS: Record<NotebookStage, readonly NotebookSubject[]> = {
-    primary: ["math", "english"],
+    primary: ["math", "english", "chinese"],
     junior_high: NOTEBOOK_SUBJECTS,
     senior_high: NOTEBOOK_SUBJECTS,
 };
