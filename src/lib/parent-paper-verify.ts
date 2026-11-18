@@ -4,6 +4,7 @@
  */
 import { getAIService } from "@/lib/ai";
 import { compareObjective } from "@/lib/grading";
+import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { createLogger } from "@/lib/logger";
 import {
     isLowConfidence,
@@ -63,11 +64,29 @@ export function looksLikeMath(text: string): boolean {
     return /解方程|计算|运算|方程|等式/.test(text);
 }
 
-export function shouldVerifyQuestion(question: ParentReviewQuestion): boolean {
+/** 已知非数学学科（如语文）时跳过本地算式核验，避免把默写、字词等误判成算式。 */
+export function isNonMathSubject(subject?: string | null): boolean {
+    const raw = (subject || "").trim();
+    if (!raw) return false;
+    const key = inferSubjectFromName(raw);
+    if (key) return key !== "math";
+    return false;
+}
+
+export function shouldVerifyQuestion(question: ParentReviewQuestion, paperSubject?: string | null): boolean {
     if (question.verdict === "wrong" || question.verdict === "partial") return true;
+    if (isNonMathSubject(paperSubject || question.subjectHint)) return false;
     if (question.type !== "objective") return false;
     const haystack = `${question.questionText} ${question.studentAnswer} ${question.correctAnswer} ${question.subjectHint || ""}`;
-    return looksLikeMath(haystack) || /数学|math/i.test(question.subjectHint || "");
+    return looksLikeMath(haystack) || /数学|math/i.test(question.subjectHint || paperSubject || "");
+}
+
+/** 仅对数学卷或未标明学科但题面像算式的题目做本地重算。 */
+export function shouldLocalVerifyMath(question: ParentReviewQuestion, paperSubject?: string | null): boolean {
+    if (isNonMathSubject(paperSubject || question.subjectHint)) return false;
+    if (!shouldVerifyQuestion(question, paperSubject)) return false;
+    const haystack = `${question.questionText} ${question.studentAnswer} ${question.correctAnswer} ${question.subjectHint || paperSubject || ""}`;
+    return looksLikeMath(haystack) || /数学|math/i.test(question.subjectHint || paperSubject || "");
 }
 
 function parseNumber(value: string): number | null {
@@ -453,6 +472,7 @@ export async function verifyParentPaperQuestions(
     questions: ParentReviewQuestion[],
     options: {
         language?: "zh" | "en";
+        subject?: string | null;
         aiVerify?: (question: ParentReviewQuestion) => Promise<IndependentCheck | null>;
         maxAiChecks?: number;
         concurrency?: number;
@@ -460,6 +480,7 @@ export async function verifyParentPaperQuestions(
     } = {},
 ): Promise<ParentReviewQuestion[]> {
     const language = options.language === "en" ? "en" : "zh";
+    const subject = options.subject ?? null;
     const maxAiChecks = options.maxAiChecks ?? VERIFY_MAX_AI_CHECKS;
     const concurrency = options.concurrency ?? VERIFY_CONCURRENCY;
     const timeoutMs = options.timeoutMs ?? VERIFY_TIMEOUT_MS;
@@ -467,8 +488,8 @@ export async function verifyParentPaperQuestions(
 
     const pendingAi: number[] = [];
     const next = questions.map((question, index) => {
-        if (!shouldVerifyQuestion(question)) return question;
-        const local = localVerifyMath(question);
+        if (!shouldVerifyQuestion(question, subject)) return question;
+        const local = shouldLocalVerifyMath(question, subject) ? localVerifyMath(question) : null;
         if (local) return applyIndependentCheck(question, local);
         pendingAi.push(index);
         return question;

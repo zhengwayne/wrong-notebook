@@ -554,6 +554,8 @@ model ParentPaper {
   learnerId String
   learner   Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
   title     String?
+  /// 家长选择的学科：math / chinese 等，对应 NOTEBOOK_SUBJECTS
+  subjectKey String?
   /// pending_recognition | recognizing | pending_confirmation | confirmed | failed
   status    String   @default("pending_recognition")
   /// 乐观锁版本号：编辑单题判定/框选或确认入库时递增

@@ -2,7 +2,9 @@
  * 家长为当前孩子上传的试卷：保存页图片，识别后待家长确认，确认前不写入错题本。
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { z } from "zod";
 import { getOwnedChildLearner, LearnerNotFoundError } from "@/lib/learners";
+import { isNotebookSubject, NOTEBOOK_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
 import { effectiveVerdict, type ParentReviewVerdict, type QuestionBBox } from "@/lib/parent-paper-review";
 import { groupImportedNotebooks, type ImportedNotebookCount } from "@/lib/parent-paper-summary";
 
@@ -21,6 +23,9 @@ export type ParentPaperStatus = (typeof PARENT_PAPER_STATUS)[keyof typeof PARENT
 export const MAX_PARENT_PAPER_PAGES = 20;
 export const MAX_PARENT_PAGE_IMAGE_CHARS = 3 * 1024 * 1024;
 export const MAX_PARENT_ANSWER_KEY_IMAGES = 20;
+
+/** 家长上传卷子时可选的学科，与错题本学科列表一致（含语文）。 */
+export const parentPaperSubjectKeySchema = z.enum(NOTEBOOK_SUBJECTS);
 
 export class ParentPaperValidationError extends Error {
     constructor(message: string) {
@@ -72,6 +77,7 @@ export interface ParentPaperSummary {
     learnerId: string;
     learnerName: string;
     title: string | null;
+    subjectKey: NotebookSubject | null;
     status: string;
     pageCount: number;
     questionCount: number;
@@ -180,6 +186,7 @@ function toSummary(paper: {
     id: string;
     learnerId: string;
     title: string | null;
+    subjectKey?: string | null;
     status: string;
     version?: number;
     hasAnswerKey?: boolean;
@@ -199,6 +206,7 @@ function toSummary(paper: {
         learnerId: paper.learnerId,
         learnerName: paper.learner.name,
         title: paper.title,
+        subjectKey: isNotebookSubject(paper.subjectKey) ? paper.subjectKey : null,
         status: paper.status,
         pageCount: paper.pages.length,
         questionCount: questions.length,
@@ -269,7 +277,7 @@ export async function getParentPaper(db: Db, userId: string, paperId: string): P
 export async function createParentPaper(
     db: Db,
     userId: string,
-    params: { learnerId: string; title?: string | null; pages: ParentPaperPageInput[]; answerKeyImages?: string[] },
+    params: { learnerId: string; title?: string | null; subjectKey?: string | null; pages: ParentPaperPageInput[]; answerKeyImages?: string[] },
 ): Promise<ParentPaperDetail> {
     const child = await getOwnedChildLearner(db, userId, params.learnerId);
     if (!child) throw new LearnerNotFoundError();
@@ -284,11 +292,13 @@ export async function createParentPaper(
         if (!isPaperPageImage(image)) throw new ParentPaperValidationError("INVALID_ANSWER_KEY_IMAGE");
     }
     const title = params.title?.trim() || null;
+    const subjectKey = isNotebookSubject(params.subjectKey) ? params.subjectKey : null;
     const paper = await db.parentPaper.create({
         data: {
             userId,
             learnerId: child.id,
             title,
+            subjectKey,
             status: PARENT_PAPER_STATUS.pendingRecognition,
             answerKeyImages: answerKeyImages.length ? JSON.stringify(answerKeyImages) : null,
             hasAnswerKey: answerKeyImages.length > 0,

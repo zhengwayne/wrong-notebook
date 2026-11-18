@@ -339,6 +339,8 @@ export const en = {
         removeAnswerKey: "Remove this answer-key photo",
         titleLabel: "Title",
         titlePlaceholder: "For example, math midterm",
+        subjectLabel: "Subject",
+        subjectPlaceholder: "Choose a subject",
         reviewTitle: "Review paper",
         reviewDesc: "Check each question, then choose which wrong items to add to the notebook.",
         questionN: "Question {number}",

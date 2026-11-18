@@ -96,6 +96,35 @@ describe("parent papers API", () => {
         expect((await other.json()).papers).toHaveLength(0);
     });
 
+    it("accepts subjectKey 语文 and rejects unknown subjects", async () => {
+        const created = await POST(new Request("http://localhost/api/parent/papers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                learnerId: "child-a",
+                title: "乐一语文练习",
+                subjectKey: "chinese",
+                pages: [{ imageUrl: IMAGE }],
+            }),
+        }));
+        expect(created.status).toBe(201);
+        const paper = await created.json();
+        expect(paper.subjectKey).toBe("chinese");
+        const row = await db.parentPaper.findFirstOrThrow({ where: { id: paper.id } });
+        expect(row.subjectKey).toBe("chinese");
+
+        const invalid = await POST(new Request("http://localhost/api/parent/papers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                learnerId: "child-a",
+                subjectKey: "french",
+                pages: [{ imageUrl: IMAGE }],
+            }),
+        }));
+        expect(invalid.status).toBeGreaterThanOrEqual(400);
+    });
+
     it("rejects empty pages, invalid images, and another users child", async () => {
         const empty = await POST(new Request("http://localhost/api/parent/papers", {
             method: "POST",

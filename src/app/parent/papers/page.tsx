@@ -23,6 +23,7 @@ interface PaperSummary {
     learnerId: string;
     learnerName: string;
     title: string | null;
+    subjectKey?: string | null;
     status: string;
     pageCount: number;
     questionCount?: number;
@@ -130,6 +131,9 @@ export default function ParentPapersPage() {
                                         <div className="min-w-0">
                                             <div className="truncate font-semibold">{paper.title || copy.untitled}</div>
                                             <p className="mt-1 text-sm text-muted-foreground">
+                                                {paper.subjectKey && t.tags.subjects[paper.subjectKey as keyof typeof t.tags.subjects]
+                                                    ? `${t.tags.subjects[paper.subjectKey as keyof typeof t.tags.subjects]} · `
+                                                    : ""}
                                                 {dateLabel(paper.createdAt)}
                                                 {" · "}
                                                 {copy.pageCount.replace("{count}", String(paper.pageCount))}

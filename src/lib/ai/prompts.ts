@@ -1300,8 +1300,34 @@ export function generateTagSuggestPrompt(input: {
  * 读卷提示词：识别答案卷（answer_key）或学生答卷（student），输出 JSON。
  * 学生答卷模式下，客观题只转写作答，由程序比对；主观题给出建议分和理由，最终由老师复核。
  */
-export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify' | 'parent_review', language: 'zh' | 'en' = 'zh'): string {
+/** 家长识卷时按学科补充的提示；语文需区分可客观核对的题与开放题。 */
+export function parentReviewSubjectGuidance(subject?: string | null, language: 'zh' | 'en' = 'zh'): string {
+  const raw = (subject || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  const isChinese = lower === 'chinese' || raw === '语文' || lower.includes('chinese') || raw.includes('语文');
+  if (isChinese) {
+    return language === 'en'
+      ? `This paper is a Chinese language (语文) exam. Set each question's subjectHint to "语文".
+- For objectively checkable items (pinyin, characters/words, multiple choice, true/false, ancient poetry or prose dictation with a unique answer): judge them as "objective". Transcribe handwritten pinyin, characters and punctuation faithfully; do not correct or polish the student's writing.
+- For open-ended reading-comprehension answers and compositions: do not guess a definitive right/wrong. Give brief reference points, set verdict to "partial", keep confidence below 0.7, and ask the parent to confirm in errorCause.
+- Do not use LaTeX unless the item actually contains a formula.`
+      : `【语文学科补充】本卷是语文试卷。请将每题的 subjectHint 设为「语文」。
+- 拼音、字词、选择题、判断题、古诗文默写等有唯一或可核对答案的题目：按 objective 判断对错。如实转写手写拼音、汉字与标点，不要擅自改字、补字或美化。
+- 阅读理解主观题、开放性简答、作文：不要猜一个确定对错。可给出简要参考要点，将 verdict 标为 partial，confidence 低于 0.7，并在 errorCause 中请家长确认。
+- 没有数学公式时不要使用 LaTeX。`;
+  }
+  const display = raw === 'math' ? (language === 'en' ? 'mathematics' : '数学')
+    : raw === 'english' ? (language === 'en' ? 'English' : '英语')
+    : raw;
+  return language === 'en'
+    ? `This paper is a ${display} exam. Judge questions in that subject and set each question's subjectHint to "${raw === 'math' ? '数学' : raw === 'english' ? '英语' : raw}".`
+    : `本卷学科为「${display}」。请按该学科判断，并将每题的 subjectHint 设为「${display}」。`;
+}
+
+export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify' | 'parent_review', language: 'zh' | 'en' = 'zh', subject?: string | null): string {
   const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
+  const subjectGuidance = parentReviewSubjectGuidance(subject, language);
 
   if (mode === 'parent_review') {
     return language === 'en'
@@ -1320,7 +1346,7 @@ Rules:
 - bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to the full image you are given (the same image shown to the parent). The box must tightly cover only this question: the stem, choices or student work, and a very small margin. Do not include the page header, other questions, or blank table/background. If questions sit in columns, the box must stay in that column and must not span the full page width. Stacked items should not overlap their neighbors. Do not box only the question number. Use null if the location is unclear. Do not use pixel coordinates.
 - If data.questions is provided as an answer key, judge objective items against it; still assess subjective items yourself.
 - Output JSON only. Do not output a total score.
-
+${subjectGuidance ? `\n${subjectGuidance}\n` : ''}
 Output format:
 {"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"Chose the wrong option","knowledgePoints":["linear equations"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`
       : `【角色与任务】
@@ -1339,7 +1365,9 @@ Output format:
 - bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例，且相对于你收到的整张图片（与家长看到的是同一张图）。框必须只紧紧罩住这一道题：题干、选项或学生作答，只留很小边距。不要框到卷头、其他题目或桌面背景。若题目分栏排列，框必须留在该栏内，不要拉满整页宽度。上下相邻的题不要互相重叠。不要只框题号。若无法确定位置，bbox 为 null。不要使用像素坐标。
 - 如果输入中提供了标准答案清单 data.questions，客观题必须对照标准答案判断；主观题仍由你评估。
 - 只输出 JSON，不要其他文字。不要输出整卷分数。
-
+${subjectGuidance ? `
+${subjectGuidance}
+` : ''}
 【输出格式】
 {"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"选错了选项","knowledgePoints":["一元一次方程"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`;
   }

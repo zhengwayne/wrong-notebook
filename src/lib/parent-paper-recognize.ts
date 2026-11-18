@@ -8,6 +8,7 @@ import { recordAiProvenance } from "@/lib/ai/provenance";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
+import { isNotebookSubject } from "@/lib/notebook-scope";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { createLogger } from "@/lib/logger";
 import { resolveNotebookForSubject } from "@/lib/notebook-resolver";
@@ -227,6 +228,7 @@ async function runParentPaperRecognition(
                 questionText: question.questionText,
             })),
             language,
+            subject: paper.subjectKey,
         });
 
         let questions: ParentReviewQuestion[] = (review.reviewQuestions ?? []).map((question) => ({
@@ -236,7 +238,7 @@ async function runParentPaperRecognition(
         if (keyQuestions.length) questions = applyAnswerKeyToReview(questions, keyQuestions);
         questions = layoutParentPaperBBoxes(questions);
         try {
-            questions = await verifyParentPaperQuestions(questions, { language });
+            questions = await verifyParentPaperQuestions(questions, { language, subject: paper.subjectKey });
         } catch (error) {
             logger.warn({ error, paperId }, "Parent paper verification skipped");
         }
@@ -259,7 +261,7 @@ async function runParentPaperRecognition(
                         errorCause: question.errorCause,
                         knowledgePoints: JSON.stringify(question.knowledgePoints),
                         bbox: question.bbox ? JSON.stringify(question.bbox) : null,
-                        subjectHint: question.subjectHint,
+                        subjectHint: question.subjectHint || (isNotebookSubject(paper.subjectKey) ? SUBJECT_NAMES[paper.subjectKey] : null),
                         provenanceId,
                         selected: shouldImportVerdict(question.verdict),
                     })),
@@ -310,7 +312,8 @@ async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: 
     return ids;
 }
 
-export function subjectNameForPaper(title: string | null, subjectHint: string | null): string {
+export function subjectNameForPaper(title: string | null, subjectHint: string | null, subjectKey?: string | null): string {
+    if (isNotebookSubject(subjectKey) && SUBJECT_NAMES[subjectKey]) return SUBJECT_NAMES[subjectKey];
     const raw = (subjectHint || title || "").trim();
     const key = inferSubjectFromName(raw);
     if (key && SUBJECT_NAMES[key]) return SUBJECT_NAMES[key];
@@ -459,7 +462,7 @@ export async function confirmParentPaper(
                 continue;
             }
 
-            const subjectName = subjectNameForPaper(paper.title, question.subjectHint);
+            const subjectName = subjectNameForPaper(paper.title, question.subjectHint, paper.subjectKey);
             const notebook = await resolveNotebookForSubject(userId, subjectName, tx);
             const subjectKey = inferSubjectFromName(subjectName) || "other";
             const knowledgePoints = (() => {

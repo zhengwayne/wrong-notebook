@@ -7,7 +7,7 @@ import { LearnerNotFoundError } from "@/lib/learners";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
-import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError } from "@/lib/parent-papers";
+import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError, parentPaperSubjectKeySchema } from "@/lib/parent-papers";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger("api:parent:papers");
@@ -19,6 +19,7 @@ const pageSchema = z.object({
 const createSchema = z.object({
     learnerId: z.string().min(1),
     title: z.string().max(120).nullish(),
+    subjectKey: parentPaperSubjectKeySchema.nullish(),
     pages: z.array(pageSchema).min(1).max(MAX_PARENT_PAPER_PAGES),
     answerKeyImages: z.array(z.string().min(1).max(MAX_PARENT_PAGE_IMAGE_CHARS)).max(MAX_PARENT_ANSWER_KEY_IMAGES).optional(),
 });

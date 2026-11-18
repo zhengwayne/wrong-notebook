@@ -26,6 +26,7 @@ import { usePageTitle } from "@/lib/page-title";
 interface PaperDetail {
     id: string;
     title: string | null;
+    subjectKey?: string | null;
     status: string;
     pageCount: number;
     questionCount: number;
@@ -159,7 +160,9 @@ export default function ParentPaperReviewPage() {
             <div className="mx-auto max-w-3xl space-y-6 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] md:pb-8">
                 <PageHeader
                     title={paper.title || copy.untitled}
-                    description={copy.reviewDesc}
+                    description={paper.subjectKey && t.tags.subjects[paper.subjectKey as keyof typeof t.tags.subjects]
+                        ? `${t.tags.subjects[paper.subjectKey as keyof typeof t.tags.subjects]} · ${copy.reviewDesc}`
+                        : copy.reviewDesc}
                     backHref={hrefWithChild("/parent/papers")}
                     actions={
                         <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${parentPaperStatusClass(paper.status)}`}>

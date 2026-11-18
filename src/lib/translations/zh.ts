@@ -336,6 +336,8 @@ export const zh = {
         removeAnswerKey: "删除这张答案卷",
         titleLabel: "标题",
         titlePlaceholder: "例如：数学期中卷",
+        subjectLabel: "学科",
+        subjectPlaceholder: "请选择学科",
         reviewTitle: "核对卷子",
         reviewDesc: "先核对每一题，再选择要把哪些错题加入错题本。",
         questionN: "第 {number} 题",

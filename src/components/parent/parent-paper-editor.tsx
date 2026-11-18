@@ -13,6 +13,7 @@ import { getApiErrorMessage, getErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { MAX_PARENT_PAPER_PAGES } from "@/lib/parent-papers";
+import { NOTEBOOK_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
 import { blobToDataUrl, rotateDataUrl } from "@/lib/paper-page-edit";
 import { compressPaperImages } from "@/lib/use-paper-images";
 
@@ -44,6 +45,7 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
     const [pages, setPages] = useState<DraftPage[]>([]);
     const [answerKeys, setAnswerKeys] = useState<DraftPage[]>([]);
     const [title, setTitle] = useState(childName || "");
+    const [subjectKey, setSubjectKey] = useState<NotebookSubject | "">("");
     const [cropIndex, setCropIndex] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [adding, setAdding] = useState(false);
@@ -131,6 +133,7 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
             const paper = await apiClient.post<{ id: string }>("/api/parent/papers", {
                 learnerId,
                 title: title.trim() || childName || undefined,
+                subjectKey: subjectKey || undefined,
                 pages: pages.map((page) => ({ imageUrl: page.image })),
                 answerKeyImages: answerKeys.map((page) => page.image),
             });
@@ -187,6 +190,20 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
                     placeholder={copy.titlePlaceholder}
                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-base"
                 />
+            </label>
+
+            <label className="block space-y-1.5">
+                <span className="text-sm font-medium">{copy.subjectLabel}</span>
+                <select
+                    value={subjectKey}
+                    onChange={(event) => setSubjectKey((event.target.value || "") as NotebookSubject | "")}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-base"
+                >
+                    <option value="">{copy.subjectPlaceholder}</option>
+                    {NOTEBOOK_SUBJECTS.map((value) => (
+                        <option key={value} value={value}>{t.tags.subjects[value]}</option>
+                    ))}
+                </select>
             </label>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">

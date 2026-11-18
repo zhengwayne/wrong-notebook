@@ -13,6 +13,8 @@ export interface ExamPaperReadInput {
     /** 学生答卷模式下的题目清单（题号、题型、分值、标准答案） */
     questions?: { number: string; type: 'objective' | 'subjective'; maxScore: number; answer: string; questionText?: string | null }[];
     language?: 'zh' | 'en';
+    /** 家长试卷学科（math / chinese 等），用于针对性提示词与核验 */
+    subject?: string | null;
 }
 
 const toNumberOrNull = z.preprocess((value) => {

@@ -9,7 +9,9 @@ import {
     evaluateArithmeticExpression,
     extractFinalMathValue,
     extractQuestionMath,
+    isNonMathSubject,
     normalizeMathText,
+    shouldLocalVerifyMath,
     shouldVerifyQuestion,
     verifyParentPaperQuestions,
     VERIFY_DISAGREE_CONFIDENCE,
@@ -236,6 +238,56 @@ describe("verifyParentPaperQuestions", () => {
         const [checked] = await verifyParentPaperQuestions([original], { aiVerify });
         expect(aiVerify).not.toHaveBeenCalled();
         expect(checked).toEqual(original);
+    });
+
+    it("skips the local math verifier for 语文 papers so dictation is not false-flagged", async () => {
+        expect(isNonMathSubject("chinese")).toBe(true);
+        expect(isNonMathSubject("语文")).toBe(true);
+        expect(isNonMathSubject("math")).toBe(false);
+
+        const dictation = question({
+            number: "3",
+            type: "objective",
+            questionText: "计算加点字的读音：行",
+            studentAnswer: "xíng",
+            correctAnswer: "xíng",
+            verdict: "correct",
+            subjectHint: "语文",
+            confidence: 0.9,
+        });
+        // 题干含「计算」时 looksLikeMath 会为真，但不能因此走本地算式核验
+        expect(looksLikeMath(dictation.questionText)).toBe(true);
+        expect(shouldLocalVerifyMath(dictation, "chinese")).toBe(false);
+        expect(shouldVerifyQuestion(dictation, "chinese")).toBe(false);
+
+        const aiVerify = vi.fn(async () => ({
+            verdict: "wrong" as const,
+            correctAnswer: "0",
+            source: "ai" as const,
+        }));
+        const [checked] = await verifyParentPaperQuestions([dictation], { subject: "chinese", aiVerify });
+        expect(aiVerify).not.toHaveBeenCalled();
+        expect(checked).toEqual(dictation);
+    });
+
+    it("does not locally recompute a 语文 wrong item that happens to contain numbers", async () => {
+        const item = question({
+            number: "2",
+            type: "objective",
+            questionText: "默写《观沧海》：日月之行，若出其中；____。",
+            studentAnswer: "星汉灿烂若出其里",
+            correctAnswer: "星汉灿烂，若出其里。",
+            verdict: "wrong",
+            confidence: 0.88,
+        });
+        expect(shouldLocalVerifyMath(item, "chinese")).toBe(false);
+        const aiVerify = vi.fn(async () => ({
+            verdict: "wrong" as const,
+            correctAnswer: item.correctAnswer,
+            source: "ai" as const,
+        }));
+        await verifyParentPaperQuestions([item], { subject: "chinese", aiVerify });
+        expect(aiVerify).toHaveBeenCalledTimes(1);
     });
 });
 
