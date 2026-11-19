@@ -50,6 +50,23 @@ describe('compareObjective', () => {
         expect(compareObjective('', { answer: 'A' })).toBe('blank');
         expect(compareObjective('x=2.0', { answer: 'x=2', acceptedAnswers: ['x=2.0'] })).toBe('correct');
     });
+
+    it('支持数学分数、小数与单变量方程解写法等价判定，并拒绝非等价近似值', () => {
+        expect(compareObjective('\\frac{1}{2}', { answer: '0.5' })).toBe('correct');
+        expect(compareObjective('0.5', { answer: '\\frac{1}{2}' })).toBe('correct');
+        expect(compareObjective('-0.75', { answer: '-\\frac{3}{4}' })).toBe('correct');
+        expect(compareObjective('3', { answer: 'x = 3' })).toBe('correct');
+        expect(compareObjective('x=0.5', { answer: '\\frac{1}{2}' })).toBe('correct');
+        expect(compareObjective('0.3', { answer: '\\frac{1}{3}' })).toBe('wrong');
+        expect(compareObjective('(2, 1)', { answer: '(1, 2)' })).toBe('wrong');
+    });
+
+    it('英语多词短语保留单词边界单空格，防止漏空格连写误判为正确', () => {
+        expect(compareObjective('Go  to  school.', { answer: 'go to school' })).toBe('correct');
+        expect(compareObjective('gotoschool', { answer: 'go to school' })).toBe('wrong');
+        expect(compareObjective("don't   worry", { answer: "don't worry" })).toBe('correct');
+        expect(compareObjective("dontworry", { answer: "don't worry" })).toBe('wrong');
+    });
 });
 
 describe('gradeAnswers', () => {

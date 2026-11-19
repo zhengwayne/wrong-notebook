@@ -77,14 +77,14 @@ afterAll(async () => {
     await db.$disconnect();
     if (prevConfigDir === undefined) delete process.env.CONFIG_DIR;
     else process.env.CONFIG_DIR = prevConfigDir;
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 beforeEach(async () => {
     mocks.infoLogs.length = 0;
     resetBackgroundTasksForTest();
     resetRecoverableResponsesForTest();
-    rmSync(process.env.CONFIG_DIR!, { recursive: true, force: true });
+    rmSync(process.env.CONFIG_DIR!, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 
     await db.asyncOperation.deleteMany();
     await db.aiDailyQuota.deleteMany();

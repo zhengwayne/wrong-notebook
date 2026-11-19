@@ -5,7 +5,8 @@
  * 设计参考 OMRChecker（MIT）的 evaluation.json：题号区间写法（q1..22）、
  * 每题可接受多种答案、按题设置分值；此处为独立实现，未复制其代码。
  */
-import { normalizeAnswer } from "@/lib/answer-match";
+import { isMultiWordEnglishPhrase, normalizeAnswer, normalizeEnglishPhrase } from "@/lib/answer-match";
+import { answersEquivalent } from "@/lib/variant/verify";
 
 export const GRADING_QUESTION_TYPES = ['objective', 'subjective'] as const;
 export type GradingQuestionType = typeof GRADING_QUESTION_TYPES[number];
@@ -132,17 +133,47 @@ function sortedLetters(value: string): string {
     return [...value.toUpperCase()].sort().join('');
 }
 
-/** 客观题比对：选择题忽略字母顺序与大小写，其他题按规范化后的文本完全一致判定 */
+const SINGLE_VAR_ASSIGNMENT = /^[a-zA-Z]\s*=\s*([^=,;]+)$/;
+
+function stripSingleVarPrefix(raw: string): string | null {
+    const trimmed = raw
+        .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/\$|\\\(|\\\)|\\\[|\\\]/g, '')
+        .trim();
+    const match = trimmed.match(SINGLE_VAR_ASSIGNMENT);
+    return match ? match[1].trim() : null;
+}
+
+function isMathObjectiveEquivalent(studentRaw: string, expectedRaw: string): boolean {
+    if (answersEquivalent(expectedRaw, studentRaw)) return true;
+    const stuRhs = stripSingleVarPrefix(studentRaw);
+    const expRhs = stripSingleVarPrefix(expectedRaw);
+    if (stuRhs && !expRhs && answersEquivalent(expectedRaw, stuRhs)) return true;
+    if (!stuRhs && expRhs && answersEquivalent(expRhs, studentRaw)) return true;
+    if (stuRhs && expRhs && answersEquivalent(expRhs, stuRhs)) return true;
+    return false;
+}
+
+/** 客观题比对：选择题忽略字母顺序与大小写，英文多词短语保留词间单空格，数学题支持分数/小数/单变量解等价 */
 export function compareObjective(studentAnswer: string, key: Pick<KeyQuestionInput, 'answer' | 'acceptedAnswers'>): 'correct' | 'wrong' | 'blank' {
     const student = normalizeAnswer(studentAnswer || '');
     if (!student) return 'blank';
     const candidates = [key.answer, ...(key.acceptedAnswers || [])].filter((value) => value && value.trim());
     for (const candidate of candidates) {
+        if (isMultiWordEnglishPhrase(candidate)) {
+            if (normalizeEnglishPhrase(studentAnswer) === normalizeEnglishPhrase(candidate)) {
+                return 'correct';
+            }
+            continue;
+        }
         const expected = normalizeAnswer(candidate);
         if (!expected) continue;
         if (student === expected) return 'correct';
         const studentLetters = student.replace(/^\((.*)\)$/, '$1');
         if (CHOICE_ONLY.test(expected) && CHOICE_ONLY.test(studentLetters) && sortedLetters(studentLetters) === sortedLetters(expected)) {
+            return 'correct';
+        }
+        if (!CHOICE_ONLY.test(expected) && isMathObjectiveEquivalent(studentAnswer, candidate)) {
             return 'correct';
         }
     }
