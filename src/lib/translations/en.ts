@@ -1643,6 +1643,7 @@ export const en = {
             failed: "Failed",
         },
         retry: "Retry",
+        partialSaved: "Saved {saved} of {total}; retry saves only the remaining questions.",
         retryFailed: "Retry failed",
         finish: "Done",
         question: "Question {index}",

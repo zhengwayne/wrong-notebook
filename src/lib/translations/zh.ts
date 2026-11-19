@@ -1639,6 +1639,7 @@ export const zh = {
             failed: "失败",
         },
         retry: "重试",
+        partialSaved: "已保存 {saved}/{total} 道，重试只补存剩余的题。",
         retryFailed: "重试失败的题",
         finish: "完成",
         question: "第 {index} 题",

@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { withChildParam } from "@/lib/current-child";
 import { frontendLogger } from "@/lib/frontend-logger";
-import { importQuestionImage } from "@/lib/question-import";
-import type { ImportedQuestion } from "@/lib/question-import";
+import { importQuestionImage, PartialQuestionImportError, resumeQuestionImport } from "@/lib/question-import";
+import type { ImportedQuestion, PendingQuestionImport } from "@/lib/question-import";
 
 interface BatchImportPanelProps {
     blobs: Blob[];
@@ -27,6 +27,8 @@ interface BatchItem {
     status: ItemStatus;
     imported?: ImportedQuestion;
     error?: string;
+    /** 识别成功但保存阶段部分失败：重试时只补存未成功的题，避免重复题 */
+    pending?: PendingQuestionImport;
 }
 
 // 同时识别的题目数，避免一次性压垮 AI 服务
@@ -42,25 +44,42 @@ export function BatchImportPanel({ blobs, subjectId, learnerId, timeout, onClose
         setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
     }, []);
 
+    const pendingRef = useRef(new Map<number, PendingQuestionImport>());
+
     const runOne = useCallback(async (index: number) => {
-        updateItem(index, { status: "analyzing", error: undefined });
+        const pending = pendingRef.current.get(index);
+        updateItem(index, { status: pending ? "saving" : "analyzing", error: undefined });
         try {
-            const imported = await importQuestionImage(blobs[index], {
-                language,
-                subjectId,
-                learnerId,
-                timeout,
-                onStage: (stage) => updateItem(index, { status: stage }),
-            });
-            updateItem(index, { status: "success", imported });
+            const imported = pending
+                ? await resumeQuestionImport(pending)
+                : await importQuestionImage(blobs[index], {
+                    language,
+                    subjectId,
+                    learnerId,
+                    timeout,
+                    onStage: (stage) => updateItem(index, { status: stage }),
+                });
+            pendingRef.current.delete(index);
+            updateItem(index, { status: "success", imported, pending: undefined });
         } catch (error) {
             const data = (error as { data?: { message?: string } })?.data;
             const backendError = data?.message || (error instanceof Error ? error.message : String(error));
             const mapped = (t.errors as Record<string, unknown>)[backendError];
-            updateItem(index, { status: "failed", error: typeof mapped === "string" ? mapped : backendError });
+            let message = typeof mapped === "string" ? mapped : backendError;
+            let nextPending: PendingQuestionImport | undefined;
+            if (error instanceof PartialQuestionImportError) {
+                nextPending = error.pending;
+                pendingRef.current.set(index, error.pending);
+                if (error.totalCount > 1 && error.savedCount > 0) {
+                    message = `${t.batchImport.partialSaved
+                        .replace("{saved}", String(error.savedCount))
+                        .replace("{total}", String(error.totalCount))} ${message}`;
+                }
+            }
+            updateItem(index, { status: "failed", error: message, pending: nextPending });
             frontendLogger.error('[BatchImport]', 'Question import failed', { index, error: backendError });
         }
-    }, [blobs, language, subjectId, learnerId, timeout, t.errors, updateItem]);
+    }, [blobs, language, subjectId, learnerId, timeout, t.errors, t.batchImport.partialSaved, updateItem]);
 
     const runAll = useCallback(async (indexes: number[]) => {
         const queue = [...indexes];
@@ -104,6 +123,15 @@ export function BatchImportPanel({ blobs, subjectId, learnerId, timeout, onClose
                                 {item.status === "success" && item.imported && (
                                     <div className="space-y-0.5">
                                         {(item.imported.savedItems ?? [item.imported]).map((saved) => (
+                                            <Link key={saved.id} href={withChildParam(`/error-items/${saved.id}`, learnerId)} className="block truncate text-xs text-primary hover:underline">
+                                                {saved.notebookName} · {saved.shortId}
+                                            </Link>
+                                        ))}
+                                    </div>
+                                )}
+                                {item.status === "failed" && item.pending && item.pending.saved.some(Boolean) && (
+                                    <div className="space-y-0.5">
+                                        {item.pending.saved.flatMap((saved) => (saved ? [saved] : [])).map((saved) => (
                                             <Link key={saved.id} href={withChildParam(`/error-items/${saved.id}`, learnerId)} className="block truncate text-xs text-primary hover:underline">
                                                 {saved.notebookName} · {saved.shortId}
                                             </Link>
