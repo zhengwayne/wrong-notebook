@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, Clock, Flame, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,40 +44,45 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
     const [minutes, setMinutes] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const requestSeqRef = useRef(0);
 
     const load = useCallback(async () => {
         if (!learnerId) return;
+        const seq = ++requestSeqRef.current;
         try {
             const res = await apiClient.get<HomeworkListResponse>(
                 `/api/parent/homeworks?learnerId=${encodeURIComponent(learnerId)}`,
             );
+            if (seq !== requestSeqRef.current) return;
+            setError(null);
             setData(res);
         } catch (err) {
-            setError(getApiErrorMessage(err) || "操作失败");
+            if (seq !== requestSeqRef.current) return;
+            setError(getApiErrorMessage(err) || copy.actionFailed);
         }
-    }, [learnerId]);
+    }, [learnerId, copy.actionFailed]);
 
     useEffect(() => {
         if (!learnerId) return;
-        let cancelled = false;
+        const seq = ++requestSeqRef.current;
         apiClient.get<HomeworkListResponse>(
             `/api/parent/homeworks?learnerId=${encodeURIComponent(learnerId)}`,
         )
             .then((res) => {
-                if (!cancelled) {
+                if (seq === requestSeqRef.current) {
                     setError(null);
                     setData(res);
                 }
             })
             .catch((err) => {
-                if (!cancelled) {
-                    setError(getApiErrorMessage(err) || "操作失败");
+                if (seq === requestSeqRef.current) {
+                    setError(getApiErrorMessage(err) || copy.actionFailed);
                 }
             });
         return () => {
-            cancelled = true;
+            requestSeqRef.current += 1;
         };
-    }, [learnerId]);
+    }, [learnerId, copy.actionFailed]);
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -98,7 +103,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             setMinutes("");
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err) || "操作失败");
+            setError(getApiErrorMessage(err) || copy.actionFailed);
         } finally {
             setSubmitting(false);
         }
@@ -111,7 +116,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             });
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err) || "操作失败");
+            setError(getApiErrorMessage(err) || copy.actionFailed);
         }
     };
 
@@ -120,7 +125,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             await apiClient.delete(`/api/parent/homeworks/${id}`);
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err) || "操作失败");
+            setError(getApiErrorMessage(err) || copy.actionFailed);
         }
     };
 

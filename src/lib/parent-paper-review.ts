@@ -64,6 +64,9 @@ const BBoxSchema = z.object({
     w: z.union([z.number(), z.string()]).optional(),
     height: z.union([z.number(), z.string()]).optional(),
     h: z.union([z.number(), z.string()]).optional(),
+    // 兼容 Gemini 等模型返回的 [ymin, xmin, ymax, xmax] 千分比坐标系（0-1000）
+    box_2d: z.array(z.union([z.number(), z.string()])).length(4).optional(),
+    box2d: z.array(z.union([z.number(), z.string()])).length(4).optional(),
 }).passthrough();
 
 const ReviewQuestionSchema = z.object({
@@ -97,20 +100,38 @@ function toFiniteNumber(value: unknown): number | null {
 
 /**
  * 校验并规范化模型给出的 bbox。
- * 接受已经是 0–1 的比例，或 0–100 的百分数；像素坐标、缺页、过小或越界的框丢弃为 null。
+ * 接受已经是 0–1 的比例、0–100 的百分数，以及明确的 box_2d / box2d [ymin, xmin, ymax, xmax] 千分比（0–1000）；
+ * 像素坐标、缺页、过小或越界的框丢弃为 null。
  */
 export function validateQuestionBBox(raw: unknown, pageCount: number): QuestionBBox | null {
     if (!raw || typeof raw !== "object") return null;
     const record = raw as Record<string, unknown>;
     const pageRaw = toFiniteNumber(record.pageIndex ?? record.page);
+    if (pageRaw == null) return null;
+    const pageIndex = Math.trunc(pageRaw);
+    if (pageIndex < 0 || pageIndex >= pageCount) return null;
+
+    const rawBox2d = Array.isArray(record.box_2d) ? record.box_2d : Array.isArray(record.box2d) ? record.box2d : null;
+    if (rawBox2d && rawBox2d.length === 4) {
+        const nums = rawBox2d.map(toFiniteNumber);
+        if (nums.some((n) => n === null)) return null;
+        const [ymin, xmin, ymax, xmax] = nums as [number, number, number, number];
+        if (Math.min(ymin, xmin, ymax, xmax) < 0 || Math.max(ymin, xmin, ymax, xmax) > 1000) return null;
+        if (xmax <= xmin || ymax <= ymin) return null;
+        return clampNormalizedBBox({
+            pageIndex,
+            x: xmin / 1000,
+            y: ymin / 1000,
+            width: (xmax - xmin) / 1000,
+            height: (ymax - ymin) / 1000,
+        });
+    }
+
     const xRaw = toFiniteNumber(record.x);
     const yRaw = toFiniteNumber(record.y);
     const wRaw = toFiniteNumber(record.width ?? record.w);
     const hRaw = toFiniteNumber(record.height ?? record.h);
-    if (pageRaw == null || xRaw == null || yRaw == null || wRaw == null || hRaw == null) return null;
-
-    const pageIndex = Math.trunc(pageRaw);
-    if (pageIndex < 0 || pageIndex >= pageCount) return null;
+    if (xRaw == null || yRaw == null || wRaw == null || hRaw == null) return null;
     if (wRaw <= 0 || hRaw <= 0) return null;
 
     const values = [xRaw, yRaw, wRaw, hRaw];

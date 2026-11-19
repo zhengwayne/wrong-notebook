@@ -309,11 +309,12 @@ describe('变式审核与学情接口（真实 SQLite）', () => {
         expect(fallbackRun.title).toBe('二次函数专项');
         const fallbackSnapshot = JSON.parse(fallbackRun.inputSnapshot || '{}') as {
             knowledgePoints?: string[];
-            slots?: Array<{ sourceItemId?: string }>;
+            slots?: Array<{ knowledgePoint?: string; sourceItemId?: string }>;
         };
         expect(fallbackSnapshot.knowledgePoints?.[0]).toBe('二次函数');
         expect(fallbackSnapshot.slots?.length).toBeGreaterThan(0);
         expect(fallbackSnapshot.slots?.some((slot) => slot.sourceItemId === 'item-geo')).toBe(true);
+        expect(fallbackSnapshot.slots?.every((slot) => slot.knowledgePoint === '二次函数')).toBe(true);
     });
 
     it('学生补救专题传入 topic 时优先围绕指定知识点置顶抽槽与生成，空白 topic 返回 400', async () => {

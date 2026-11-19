@@ -2206,6 +2206,7 @@ export const zh = {
         minutesPlaceholder: "分钟",
         addButton: "添加待办",
         deleteLabel: "删除此项作业",
+        actionFailed: "操作失败，请稍后重试",
         categories: {
             written: "书面作业",
             recitation: "背诵朗读",

@@ -481,7 +481,8 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
             count,
             previousQuestions: previous,
             plannedSlots: slots.map((slot) => ({
-                knowledgePoint: slot.knowledgePoint,
+                // 指定了专题但错题中无精确匹配标签时，仍锚定 focusedTopic，避免被无关薄弱点带偏
+                knowledgePoint: focusedTopic && matchedWeaknesses.length === 0 ? focusedTopic : slot.knowledgePoint,
                 difficulty: slot.difficulty,
                 sourceItemId: slot.sourceItemId,
                 sourceQuestion: itemById.get(slot.sourceItemId)?.questionText || items[0].questionText || '',
@@ -570,7 +571,8 @@ export async function startClassRuns(user: QuotaUser, options: {
                 count: slots.length || 4,
                 previousQuestions: previous,
                 plannedSlots: slots.map((slot) => ({
-                    knowledgePoint: slot.knowledgePoint,
+                    // 指定了专题但班级错题中无精确标签匹配时，显式锁定 focusedTopic，避免出题偏离目标专题
+                    knowledgePoint: focusedTopic && matchingWeaknesses.length === 0 ? focusedTopic : slot.knowledgePoint,
                     difficulty: slot.difficulty,
                     sourceItemId: slot.sourceItemId,
                     sourceQuestion: itemById.get(slot.sourceItemId)?.questionText || '',

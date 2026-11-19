@@ -2210,6 +2210,7 @@ export const en = {
         minutesPlaceholder: "Min",
         addButton: "Add Task",
         deleteLabel: "Remove homework item",
+        actionFailed: "Action failed. Please try again",
         categories: {
             written: "Written",
             recitation: "Recitation",

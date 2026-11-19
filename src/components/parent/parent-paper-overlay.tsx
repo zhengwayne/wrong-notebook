@@ -65,6 +65,8 @@ export function ParentPaperOverlay({
     const [draftState, setDraftState] = useState<{ pageId: string; box: QuestionBBox | null } | null>(null);
     const [exporting, setExporting] = useState(false);
     const [rotating, setRotating] = useState(false);
+    // 记录家长在本页手动保存过题框的题目，避免预览和导出时被重叠防撞算法强制二次裁切
+    const [manualEditedIds, setManualEditedIds] = useState<Set<string>>(() => new Set());
     const shellRef = useRef<HTMLDivElement | null>(null);
     const [fitBox, setFitBox] = useState({ width: 0, height: 0 });
     const fitStyle = useMemo(() => ({
@@ -96,7 +98,13 @@ export function ParentPaperOverlay({
     const dragRef = useRef<{ handle: BoxHandle | "draw"; start: { x: number; y: number }; box: { x: number; y: number; width: number; height: number } } | null>(null);
 
     const orderedPages = useMemo(() => [...pages].sort((a, b) => a.position - b.position), [pages]);
-    const laidOutQuestions = useMemo(() => layoutParentPaperBBoxes(questions), [questions]);
+    const laidOutQuestions = useMemo(() => {
+        const autoLaid = layoutParentPaperBBoxes(questions);
+        if (manualEditedIds.size === 0) return autoLaid;
+        return autoLaid.map((question, index) => (
+            manualEditedIds.has(question.id) ? questions[index] : question
+        ));
+    }, [questions, manualEditedIds]);
     const active = laidOutQuestions.find((question) => question.id === activeQuestionId) ?? null;
     const followActive = !manualPage || manualPage.reveal !== revealToken;
     const rawIndex = followActive && active?.bbox
@@ -159,6 +167,7 @@ export function ParentPaperOverlay({
         if (!active || !draft) return;
         try {
             await onSaveBbox(active.id, draft);
+            setManualEditedIds((prev) => new Set(prev).add(active.id));
             setEditing(false);
             setDraft(null);
         } catch (error) {

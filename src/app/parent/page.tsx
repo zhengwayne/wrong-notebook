@@ -48,6 +48,7 @@ function ParentHome() {
     usePageTitle(t.pageTitle.parentHome);
     const { setLearner, hrefWithChild } = useCurrentChild();
     const learnerId = params.get("learnerId") || "";
+    const paramsString = params.toString();
     const [data, setData] = useState<ParentHomeData | null>(null);
     const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -62,16 +63,27 @@ function ParentHome() {
             if (id) query.set("learnerId", id);
             const result = await apiClient.get<ParentHomeData>(`/api/parent/home?${query}`);
             if (seq !== requestSeq.current) return;
+            const effectiveId = result.child?.id ?? result.selectedLearnerId ?? "";
             setLoadedFor(id || "");
             setData(result);
             if (result.child) setLearner({ id: result.child.id, name: result.child.name });
             else if (result.selectedLearnerId) setLearner(result.selectedLearnerId);
+            else setLearner(null);
+
+            // 若当前 URL 指向已归档/失效的孩子，自动切换到后端选中的首个活跃孩子或清空 URL 参数
+            if (id && effectiveId !== id) {
+                const nextQuery = new URLSearchParams(paramsString);
+                if (effectiveId) nextQuery.set("learnerId", effectiveId);
+                else nextQuery.delete("learnerId");
+                const qs = nextQuery.toString();
+                router.replace(qs ? `/parent?${qs}` : "/parent", { scroll: false });
+            }
         } catch (err) {
             if (seq !== requestSeq.current) return;
             frontendLogger.error("[ParentHome]", "Failed to load parent home", { error: err });
             setError(getApiErrorMessage(err) || copy.loadError);
         }
-    }, [language, copy.loadError, setLearner]);
+    }, [language, copy.loadError, setLearner, paramsString, router]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换孩子时拉取首页数据

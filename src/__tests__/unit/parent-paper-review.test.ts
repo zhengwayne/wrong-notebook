@@ -34,10 +34,14 @@ describe("validateQuestionBBox", () => {
         });
     });
 
-    it("accepts 0-100 percentages", () => {
+    it("accepts 0-100 percentages and 0-1000 box_2d arrays", () => {
         expect(validateQuestionBBox({ pageIndex: 0, x: 10, y: 20, width: 50, height: 25 }, pageCount)).toEqual({
             pageIndex: 0, x: 0.1, y: 0.2, width: 0.5, height: 0.25,
         });
+        expect(validateQuestionBBox({ pageIndex: 1, box_2d: [150, 200, 450, 700] }, pageCount)).toEqual({
+            pageIndex: 1, x: 0.2, y: 0.15, width: 0.5, height: 0.3,
+        });
+        expect(validateQuestionBBox({ pageIndex: 0, box_2d: [0, 0, 1200, 500] }, pageCount)).toBeNull();
     });
 
     it("drops malformed, pixel, out-of-range and tiny boxes", () => {

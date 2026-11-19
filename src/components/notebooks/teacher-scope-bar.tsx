@@ -78,12 +78,22 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
     }, [pathname, router, searchParams, setTeacherScope]);
 
     useEffect(() => {
-        // 班级被删除后自动清除失效的班级/学生缓存与 URL 参数，防止错题本页面 404 锁死
+        // 班级或学生被删除后自动清除失效的缓存与 URL 参数，防止错题本页面 404 锁死
         if (!isTeacher || !classesLoaded) return;
         if (classId && !classes.some((cls) => cls.id === classId)) {
             commitScope(null);
+            return;
         }
-    }, [isTeacher, classesLoaded, classId, classes, commitScope]);
+        if (learnerId) {
+            const targetClass = classId ? classes.find((cls) => cls.id === classId) : null;
+            const studentExists = targetClass
+                ? targetClass.students.some((stu) => stu.learnerId === learnerId)
+                : classes.some((cls) => cls.students.some((stu) => stu.learnerId === learnerId));
+            if (!studentExists) {
+                commitScope(targetClass ? { classId: targetClass.id, learnerId: null } : null);
+            }
+        }
+    }, [isTeacher, classesLoaded, classId, learnerId, classes, commitScope]);
 
     if (!isTeacher || (classes.length === 0 && !classId && !learnerId)) return null;
 

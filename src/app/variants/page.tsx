@@ -62,12 +62,19 @@ function VariantsContent() {
     const v = t.variants;
     usePageTitle(v.title);
     const search = useSearchParams();
+    const searchKey = search.toString();
     const initialClassId = search.get("classId") || "";
     const initialTopic = search.get("topic") || "";
-    const explicitTab = search.get("tab") as Tab | null;
-    const [tab, setTab] = useState<Tab>(explicitTab || (initialClassId || initialTopic ? "weakness" : "queue"));
+    const rawTab = search.get("tab");
+    const explicitTab: Tab | null = rawTab === "queue" || rawTab === "weakness" || rawTab === "compare" ? rawTab : null;
+    const defaultTab: Tab = explicitTab || (initialClassId || initialTopic ? "weakness" : "queue");
+    const [tabOverride, setTabOverride] = useState<{ key: string; value: Tab } | null>(null);
+    const tab = tabOverride && tabOverride.key === searchKey ? tabOverride.value : defaultTab;
+    const setTab = (value: Tab) => setTabOverride({ key: searchKey, value });
     const [runs, setRuns] = useState<Run[] | null>(null);
-    const [selected, setSelected] = useState<string | null>(search.get("run"));
+    const [selectedOverride, setSelectedOverride] = useState<{ key: string; value: string | null } | null>(null);
+    const selected = selectedOverride && selectedOverride.key === searchKey ? selectedOverride.value : search.get("run");
+    const setSelected = (value: string | null) => setSelectedOverride({ key: searchKey, value });
     const [run, setRun] = useState<Run | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
 
@@ -108,6 +115,7 @@ function VariantsContent() {
                 )}
                 {tab === "weakness" && (
                     <WeaknessPanel
+                        key={`${initialClassId}::${initialTopic}`}
                         v={v}
                         language={language}
                         initialClassId={initialClassId}
@@ -309,9 +317,30 @@ function WeaknessPanel({
                 </div>
             )}
             <div className="flex flex-wrap gap-2">
-                {studentId && <Button disabled={busy} onClick={() => start("personalized_set")}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}{v.generateSet}</Button>}
-                {studentId && <Button variant="secondary" disabled={busy} onClick={() => start("topic")}>{v.generateTopic}</Button>}
-                {classId && !studentId && <Button disabled={busy} onClick={() => start("class_topic")}>{v.generateClassTopic}</Button>}
+                {studentId && topicFilter.trim() && (
+                    <>
+                        <Button disabled={busy} onClick={() => start("topic")}>
+                            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {v.generateTopic}（{topicFilter.trim()}）
+                        </Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateSet}</Button>
+                    </>
+                )}
+                {studentId && !topicFilter.trim() && (
+                    <>
+                        <Button disabled={busy} onClick={() => start("personalized_set")}>
+                            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {v.generateSet}
+                        </Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => start("topic")}>{v.generateTopic}</Button>
+                    </>
+                )}
+                {classId && !studentId && (
+                    <Button disabled={busy} onClick={() => start("class_topic")}>
+                        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {topicFilter.trim() ? `${v.generateClassTopic}（${topicFilter.trim()}）` : v.generateClassTopic}
+                    </Button>
+                )}
                 {classId && !studentId && <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateClassSets}</Button>}
             </div>
             {data?.classWeaknesses && (

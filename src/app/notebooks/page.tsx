@@ -34,7 +34,7 @@ function clearUrlLearnerParams() {
 export default function NotebooksPage() {
     const { t } = useLanguage();
     usePageTitle(t.notebooks.title);
-    const { isParent, isTeacher, classId, learnerId, childName, setTeacherScope, hrefWithChild } = useCurrentChild();
+    const { isParent, isTeacher, classId, learnerId, childName, setTeacherScope, setLearner, hrefWithChild } = useCurrentChild();
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -65,14 +65,19 @@ export default function NotebooksPage() {
             setHasLoaded(true);
         } catch (err) {
             if (seq !== requestSeqRef.current) return;
-            if (err instanceof ApiError && err.status === 404 && isTeacher && (classId || learnerId) && typeof setTeacherScope === "function") {
-                const scopeKey = `${classId ?? ""}:${learnerId ?? ""}`;
-                if (healedScopeRef.current !== scopeKey) {
-                    healedScopeRef.current = scopeKey;
-                    clearUrlLearnerParams();
-                    setTeacherScope(null);
-                    setError(getApiErrorMessage(err) || t.common.loadErrorDesc);
-                    return;
+            if (err instanceof ApiError && err.status === 404) {
+                const canHealTeacher = isTeacher && Boolean(classId || learnerId) && typeof setTeacherScope === "function";
+                const canHealParent = isParent && Boolean(learnerId) && typeof setLearner === "function";
+                if (canHealTeacher || canHealParent) {
+                    const scopeKey = `${isTeacher ? "T" : "P"}:${classId ?? ""}:${learnerId ?? ""}`;
+                    if (healedScopeRef.current !== scopeKey) {
+                        healedScopeRef.current = scopeKey;
+                        clearUrlLearnerParams();
+                        if (canHealTeacher) setTeacherScope(null);
+                        else if (canHealParent) setLearner(null);
+                        setError(getApiErrorMessage(err) || t.common.loadErrorDesc);
+                        return;
+                    }
                 }
             }
             frontendLogger.error("[Notebooks]", "Failed to fetch notebooks", { error: err });
@@ -80,7 +85,7 @@ export default function NotebooksPage() {
         } finally {
             if (seq === requestSeqRef.current) setLoading(false);
         }
-    }, [t.common.loadErrorDesc, learnerId, isTeacher, isParent, classId, setTeacherScope]);
+    }, [t.common.loadErrorDesc, learnerId, isTeacher, isParent, classId, setTeacherScope, setLearner]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面时拉取错题本列表并更新加载与错误状态

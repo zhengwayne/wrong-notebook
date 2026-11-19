@@ -45,6 +45,8 @@ export default function ParentPapersPage() {
     const [error, setError] = useState<string | null>(null);
     const [retryingId, setRetryingId] = useState<string | null>(null);
     const requestSeqRef = useRef(0);
+    // 独立记录孩子切换序号，避免 2 秒轮询刷新请求吞掉 retry() 的错误提示
+    const learnerSwitchSeqRef = useRef(0);
     const activeLearnerRef = useRef<string | null>(learnerId);
 
     const load = useCallback(async (id: string, silent = false) => {
@@ -68,6 +70,7 @@ export default function ParentPapersPage() {
 
     useEffect(() => {
         activeLearnerRef.current = learnerId;
+        learnerSwitchSeqRef.current += 1;
         requestSeqRef.current += 1;
         // 切换孩子时立即清空旧娃试卷并作废在途请求与定时器回调，防止闪烁或旧数据覆盖
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换孩子时重置界面状态并拉取新孩子卷子列表
@@ -99,20 +102,20 @@ export default function ParentPapersPage() {
         event.preventDefault();
         event.stopPropagation();
         const targetLearnerId = learnerId;
-        const seqAtStart = requestSeqRef.current;
+        const switchSeqAtStart = learnerSwitchSeqRef.current;
         setRetryingId(paperId);
         try {
             await apiClient.post(`/api/parent/papers/${paperId}/recognize`, { language });
-            if (targetLearnerId && activeLearnerRef.current === targetLearnerId) {
+            if (targetLearnerId && activeLearnerRef.current === targetLearnerId && switchSeqAtStart === learnerSwitchSeqRef.current) {
                 await load(targetLearnerId, true);
             }
         } catch (err) {
-            if (activeLearnerRef.current === targetLearnerId && seqAtStart === requestSeqRef.current) {
+            if (activeLearnerRef.current === targetLearnerId && switchSeqAtStart === learnerSwitchSeqRef.current) {
                 frontendLogger.error("[ParentPapers]", "Failed to retry recognition", { error: err });
                 setError(getApiErrorMessage(err) || copy.recognizeError);
             }
         } finally {
-            if (activeLearnerRef.current === targetLearnerId) {
+            if (activeLearnerRef.current === targetLearnerId && switchSeqAtStart === learnerSwitchSeqRef.current) {
                 setRetryingId(null);
             }
         }
