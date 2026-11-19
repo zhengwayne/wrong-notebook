@@ -21,7 +21,7 @@ const DialogOverlay = React.forwardRef<
     <DialogPrimitive.Overlay
         ref={ref}
         className={cn(
-            "fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+            "fixed top-0 right-0 bottom-0 left-0 z-50 bg-black/50 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             className
         )}
         {...props}
@@ -41,11 +41,11 @@ const DialogContent = React.forwardRef<
                 // 防止在关闭动画期间重新打开
                 e.preventDefault();
             }}
-            // 用 inset-0 + m-auto 居中，不依赖 CSS translate：旧版安卓系统 WebView（Chrome 104 以下）
-            // 不支持 translate 属性，按 left/top 50% 定位会让面板偏到屏幕右下方，按钮点不到。
+            // 用 top/right/bottom/left-0 + m-auto 居中，不依赖 CSS inset 或 translate：
+            // 兼容旧版安卓系统 WebView（Chrome 74–104），避免面板偏移到右下方且小屏溢出时可滚动。
             // Ported from margrop/wrong-notebook d1490587 (MIT).
             className={cn(
-                "fixed inset-0 m-auto h-fit z-50 grid w-[calc(100%-2rem)] max-w-lg gap-4 rounded-2xl border bg-card p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+                "fixed top-0 right-0 bottom-0 left-0 m-auto h-fit max-h-[calc(100dvh-2rem)] overflow-y-auto z-50 grid w-[calc(100%-2rem)] max-w-lg gap-4 rounded-2xl border bg-card p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
                 className
             )}
             {...props}

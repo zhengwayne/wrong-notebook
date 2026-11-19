@@ -25,7 +25,13 @@ export const EXAM_PRINT_CSS = `
 .exam-sheet .choice-options[data-columns="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .exam-sheet .choice-options[data-columns="1"] { grid-template-columns: minmax(0, 1fr); }
 .exam-sheet .choice-options > div { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.exam-sheet .choice-options > div > span:first-child { flex-shrink: 0; }
+.exam-sheet .choice-options .markdown-content { flex: 1; min-width: 0; overflow-wrap: break-word; }
 .exam-sheet .choice-options .markdown-content p { margin: 0; }
+@media screen and (max-width: 639px) {
+  .exam-sheet .choice-options[data-columns="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exam-sheet .choice-options[data-columns="2"] { grid-template-columns: minmax(0, 1fr); }
+}
 @media print { .exam-sheet { padding: 0; max-width: none; } @page { size: A4; margin: 15mm; } }
 `;
 

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { applyEraseStrokes, toSafeImageSrc } from '@/lib/image-crop';
+import { describe, it, expect, vi } from 'vitest';
+import { applyEraseStrokes, cropImageRegions, toSafeImageSrc } from '@/lib/image-crop';
 
 describe('toSafeImageSrc', () => {
     it('接受本地文件生成的 blob 与 data 图片地址', () => {
@@ -55,5 +55,30 @@ describe('applyEraseStrokes（Ported from margrop/wrong-notebook 35431618, MIT�
             { width: 100, height: 100 }, { sx: 0, sy: 0, sw: 100, sh: 100 }, { width: 100, height: 100 });
         expect(calls.find(([name]) => name === 'arc')?.slice(1, 4)).toEqual([10, 20, 0.5]);
         expect(calls.some(([name]) => name === 'fill')).toBe(true);
+    });
+
+    it('cropImageRegions 导出 JPEG 前先填充白底并钳制边界不越界', async () => {
+        const { ctx, calls } = recordingContext();
+        const fakeCanvas = {
+            width: 0,
+            height: 0,
+            getContext: () => ctx,
+            toBlob: (cb: (blob: Blob | null) => void) => cb(new Blob(['jpeg'], { type: 'image/jpeg' })),
+        };
+        vi.stubGlobal('document', { createElement: () => fakeCanvas });
+        try {
+            const fakeImage = { naturalWidth: 100, naturalHeight: 80 } as HTMLImageElement;
+            const [blob] = await cropImageRegions(fakeImage, [{ x: 0.9, y: 0.9, width: 0.5, height: 0.5 }]);
+            expect(blob.type).toBe('image/jpeg');
+            const fillIdx = calls.findIndex(([name]) => name === 'fillRect');
+            const drawIdx = calls.findIndex(([name]) => name === 'drawImage');
+            expect(fillIdx).toBeGreaterThanOrEqual(0);
+            expect(drawIdx).toBeGreaterThan(fillIdx);
+            expect(calls).toContainEqual(['set:fillStyle', '#ffffff']);
+            // sx=90, sw 被钳制为 10（不超过 naturalWidth-sx）
+            expect(calls[drawIdx]).toEqual(['drawImage', fakeImage, 90, 72, 10, 8, 0, 0, 10, 8]);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 });

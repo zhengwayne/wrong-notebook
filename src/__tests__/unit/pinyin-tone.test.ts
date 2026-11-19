@@ -69,4 +69,13 @@ describe('convertToneNumbers', () => {
     expect(convertToneNumbers('')).toBe('');
     expect(convertToneNumbers('ma 3 数学 123')).toBe('ma 3 数学 123');
   });
+
+  it('自动跳过公式、代码块、URL、化学式与规格型号', () => {
+    expect(convertToneNumbers('氧气 O2，纸张 A4，碳酸钠 Na2CO3，水 H2O，代数项 2a1 与 3ma2'))
+      .toBe('氧气 O2，纸张 A4，碳酸钠 Na2CO3，水 H2O，代数项 2a1 与 3ma2');
+    expect(convertToneNumbers('已知 $a1 + e2 = ma3$ 与 `lv4` 且 [图](https://example.com/a1.png)，读音 ma3'))
+      .toBe('已知 $a1 + e2 = ma3$ 与 `lv4` 且 [图](https://example.com/a1.png)，读音 mǎ');
+    expect(convertToneNumbers('访问 https://a.cn/ma3/e2.png 读 ni3hao3'))
+      .toBe('访问 https://a.cn/ma3/e2.png 读 nǐhǎo');
+  });
 });

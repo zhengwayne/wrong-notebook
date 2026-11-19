@@ -76,15 +76,15 @@ export function applyEraseStrokes(
     context.restore();
 }
 
-/** 按原图分辨率裁剪出各区域（含擦除笔画），返回 JPEG 图片 */
+/** 按原图分辨率裁剪出各区域（含擦除笔画），透明背景填充白底后返回 JPEG 图片 */
 export async function cropImageRegions(image: HTMLImageElement, regions: ImageRegion[]): Promise<Blob[]> {
     const { naturalWidth, naturalHeight } = image;
     return Promise.all(regions.map((region) => new Promise<Blob>((resolve, reject) => {
         const canvas = document.createElement("canvas");
-        const sx = Math.round(region.x * naturalWidth);
-        const sy = Math.round(region.y * naturalHeight);
-        const sw = Math.max(1, Math.round(region.width * naturalWidth));
-        const sh = Math.max(1, Math.round(region.height * naturalHeight));
+        const sx = Math.min(Math.max(0, Math.round(region.x * naturalWidth)), Math.max(0, naturalWidth - 1));
+        const sy = Math.min(Math.max(0, Math.round(region.y * naturalHeight)), Math.max(0, naturalHeight - 1));
+        const sw = Math.min(Math.max(1, Math.round(region.width * naturalWidth)), Math.max(1, naturalWidth - sx));
+        const sh = Math.min(Math.max(1, Math.round(region.height * naturalHeight)), Math.max(1, naturalHeight - sy));
         canvas.width = sw;
         canvas.height = sh;
         const ctx = canvas.getContext("2d");
@@ -92,6 +92,9 @@ export async function cropImageRegions(image: HTMLImageElement, regions: ImageRe
             reject(new Error("Canvas is not supported"));
             return;
         }
+        // JPEG 无透明通道，绘制前先铺白底，防止透明 PNG 导出变成黑底
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sw, sh);
         ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
         applyEraseStrokes(ctx, region.erase ?? [], { width: naturalWidth, height: naturalHeight }, { sx, sy, sw, sh }, { width: sw, height: sh });
         canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Canvas is empty"))), "image/jpeg", 0.95);

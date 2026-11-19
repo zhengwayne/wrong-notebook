@@ -110,6 +110,33 @@ describe('ImageCropper 擦除', () => {
         ));
         expect(button(zh.erase)).toBeUndefined();
     });
+
+    it('双指触碰缩放时取消当前误触笔画且不提交白点', async () => {
+        await act(async () => root.render(
+            <LanguageProvider>
+                <ImageCropper imageSrc="data:image/png;base64,iVBORw0KGgo=" open onClose={vi.fn()} onCropComplete={vi.fn()} />
+            </LanguageProvider>,
+        ));
+        await act(async () => button(zh.erase)!.click());
+        const canvas = document.querySelector('[data-testid="erase-canvas"]') as HTMLCanvasElement;
+        canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+        const touch = (type: string, pointerId: number, isPrimary: boolean, x: number, y: number) => {
+            const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 });
+            Object.defineProperty(event, 'pointerId', { value: pointerId });
+            Object.defineProperty(event, 'isPrimary', { value: isPrimary });
+            canvas.dispatchEvent(event);
+        };
+        await act(async () => {
+            touch('pointerdown', 1, true, 20, 50);
+            touch('pointerdown', 2, false, 80, 50);
+            touch('pointerup', 1, true, 20, 50);
+            touch('pointerup', 2, false, 80, 50);
+        });
+        expect(button(zh.undoErase)).toBeUndefined();
+        await act(async () => button(translations.zh.common.confirm)!.click());
+        const [, regions] = mocks.cropImageRegions.mock.calls[0] as unknown as [HTMLImageElement, Array<{ erase?: unknown }>];
+        expect(regions[0].erase).toBeUndefined();
+    });
 });
 
 describe('blobFromDataUrl', () => {

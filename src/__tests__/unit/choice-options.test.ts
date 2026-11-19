@@ -54,5 +54,28 @@ describe('splitChoiceOptions', () => {
         expect(splitChoiceOptions('已知 A、B、C 三点共线，求证：AB+BC=AC。')).toBeNull();
         // C 选项跨两行，后面的续行无法判断归属
         expect(splitChoiceOptions('下列正确的是\nA. 1\nB. 2\nC. 第一行\n第二行')).toBeNull();
+        // D 选项紧跟普通续行或含 E/F 选项时回退按原文渲染
+        expect(splitChoiceOptions('选出正确的一项\nA. 1\nB. 2\nC. 3\nD. 第一行\n第二行')).toBeNull();
+        expect(splitChoiceOptions('选出正确的一项\nA. 1\nB. 2\nC. 3\nD. 4\nE. 5')).toBeNull();
+    });
+
+    it('不破坏公式中的 \\neq/\\nabla/\\nu/\\not，不把绝对值 $|x|$ 误判为表格，也不在 C 行误切正文 (D)', () => {
+        const latex = '若条件成立，则\\nA. $x \\neq 1$\\nB. $\\nabla f = 0$\\nC. $\\nu > 0$ 与 (D) 无关\\nD. $|x - 1| = 2$';
+        const layout = splitChoiceOptions(latex);
+        expect(layout).not.toBeNull();
+        expect(layout?.options).toEqual([
+            { label: 'A.', content: '$x \\neq 1$' },
+            { label: 'B.', content: '$\\nabla f = 0$' },
+            { label: 'C.', content: '$\\nu > 0$ 与 (D) 无关' },
+            { label: 'D.', content: '$|x - 1| = 2$' },
+        ]);
+        expect(layout?.columns).toBe(2);
+
+        // 单独测纯绝对值短选项能排成 4 列，且 rawLatex 模式按原始 LaTeX 长度降列
+        const abs = splitChoiceOptions('化简结果\nA. $|x|$\nB. $|y|$\nC. $1$\nD. $2$');
+        expect(abs?.columns).toBe(4);
+        const longLatex = '结果是\nA. $\\frac{\\sqrt{x^2+1}}{2}$\nB. $1$\nC. $2$\nD. $3$';
+        expect(splitChoiceOptions(longLatex)?.columns).toBe(4);
+        expect(splitChoiceOptions(longLatex, { rawLatex: true })?.columns).toBe(2);
     });
 });

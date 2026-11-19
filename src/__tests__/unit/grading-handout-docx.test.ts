@@ -96,8 +96,10 @@ describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防�
         });
         const xml = strFromU8(unzipSync(bytes)['word/document.xml']);
         expect(xml).toContain('【原题题干】下列哪个数是质数？（ ）');
-        // 4 列：3 个制表位，四个选项在同一段
-        expect(xml.match(/<w:tab w:val="left"/g)).toHaveLength(3);
+        // 4 列：3 个制表位，四个选项在同一段，且制表位已计入 240 twips 左缩进
+        const tabs = [...xml.matchAll(/<w:tab w:val="left" w:pos="(\d+)"\/>/g)].map((m) => Number(m[1]));
+        expect(tabs).toHaveLength(3);
+        expect(tabs[0]).toBe(240 + Math.floor((11906 - 1134 * 2 - 240) / 4));
         const row = xml.slice(xml.indexOf('A. 4'), xml.indexOf('D. 9'));
         expect(row).not.toContain('</w:p>');
         expect(xml).toContain('D. 9');

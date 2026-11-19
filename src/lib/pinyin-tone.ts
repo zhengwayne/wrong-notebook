@@ -91,12 +91,50 @@ export function applyToneNumber(syllable: string): string {
   return base.slice(0, position) + marks[tone - 1] + base.slice(position + 1);
 }
 
+/** 需要原样保护、不做拼音声调转换的片段：代码块、LaTeX 公式、Markdown 链接目标与裸 URL */
+const PROTECTED_SEGMENT_PATTERN = /```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$[^$\n]+?(?<!\\)\$|\]\([^)\s]+\)|https?:\/\/[^\s)）>]+/g;
+
+function convertPlainToneNumbers(segment: string): string {
+  // 音节前不能紧接字母；若紧接数字，只允许接在刚转换完的连写拼音音节之后（如 ni3hao3），
+  // 从而避免误伤 2a1 / 3ma2 等数字前缀；数字后不能紧跟数字或大写字母（排除 Na2CO3 等化学式）；
+  // 单字母全大写（如 O2、A4）亦多为化学式/规格而非拼音，跳过不转。
+  let prevConvertedEnd = -1;
+  return segment.replace(
+    /(?<![A-Za-züÜ])[A-Za-züÜ]+[0-5](?![0-9A-Z])/g,
+    (candidate, offset: number) => {
+      if (offset > 0 && /[0-9]/.test(segment[offset - 1]) && offset !== prevConvertedEnd) {
+        return candidate;
+      }
+      if (/^[A-Z][0-5]$/.test(candidate)) return candidate;
+      const converted = applyToneNumber(candidate);
+      if (converted !== candidate) {
+        prevConvertedEnd = offset + candidate.length;
+      }
+      return converted;
+    },
+  );
+}
+
 /**
  * 把文本中所有「拼音字母 + 数字 1~5」的音节转换为带调符号，其余内容不动。
- * 音节前不能紧接字母，避免从英文单词中间截取；数字后不能紧跟数字。
- * 数字后紧接字母视为下一个连写音节，因此 ni3hao3 会同时转换两个音节；
+ * 自动跳过 LaTeX 公式、代码块、Markdown URL、化学式与规格型号（如 O2、A4、Na2CO3）。
+ * 数字后紧接小写字母视为下一个连写音节，因此 ni3hao3 会同时转换两个音节；
  * 音节本身再用合法音节表校验，code12、test2go、hello1 等英文不会转换。
  */
 export function convertToneNumbers(text: string): string {
-  return text.replace(/(?<![A-Za-züÜ])[A-Za-züÜ]+[0-5](?![0-9])/g, (candidate) => applyToneNumber(candidate));
+  if (!text) return text;
+  let result = '';
+  let lastIndex = 0;
+  for (const match of text.matchAll(PROTECTED_SEGMENT_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      result += convertPlainToneNumbers(text.slice(lastIndex, start));
+    }
+    result += match[0];
+    lastIndex = start + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    result += convertPlainToneNumbers(text.slice(lastIndex));
+  }
+  return result;
 }

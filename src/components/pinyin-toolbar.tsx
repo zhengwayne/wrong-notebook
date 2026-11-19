@@ -75,6 +75,7 @@ export function PinyinToolbar({ value, onChange, textareaRef, subject, className
                             <button
                                 key={tone}
                                 type="button"
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => insertAtCursor(tone)}
                                 aria-label={t.pinyinToolbar.insertTone.replace("{tone}", tone)}
                                 className="h-8 min-w-8 rounded-md border bg-background px-0 text-sm transition-colors hover:bg-accent"
@@ -85,6 +86,7 @@ export function PinyinToolbar({ value, onChange, textareaRef, subject, className
                     </div>
                     <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => onChange(convertToneNumbers(value))}
                         className="mt-2 h-8 rounded-md border bg-background px-3 text-xs transition-colors hover:bg-accent"
                     >

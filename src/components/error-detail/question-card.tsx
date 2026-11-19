@@ -50,7 +50,7 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
                 {question.editing && !readOnly ? (
                     <div className="space-y-3">
                         <MarkdownEditor value={question.value} onChange={question.setValue} textareaRef={questionTextRef} placeholder="Enter question text..." rows={8} className="w-full font-mono text-sm" />
-                        <PinyinToolbar value={question.value} onChange={question.setValue} textareaRef={questionTextRef} subject={item.subject?.name} />
+                        <PinyinToolbar value={question.value} onChange={question.setValue} textareaRef={questionTextRef} subject={item.subject?.subjectKey || item.subject?.name} />
                         <SaveCancelButtons onSave={question.submit} onCancel={question.cancel} />
                     </div>
                 ) : (

@@ -28,11 +28,11 @@ async function renderDialog(className?: string) {
 }
 
 describe('DialogContent 居中', () => {
-    it('用 inset-0 + m-auto 居中，不用 translate 与 left/top 50%', async () => {
+    it('用 top/right/bottom/left-0 + m-auto 居中，不用 inset 或 translate，并限制最大高度可滚动', async () => {
         const { dialog, unmount } = await renderDialog();
         const classes = dialog.className.split(/\s+/);
-        expect(classes).toEqual(expect.arrayContaining(['fixed', 'inset-0', 'm-auto', 'h-fit']));
-        expect(dialog.className).not.toMatch(/translate-[xy]-|left-\[50%\]|top-\[50%\]/);
+        expect(classes).toEqual(expect.arrayContaining(['fixed', 'top-0', 'right-0', 'bottom-0', 'left-0', 'm-auto', 'h-fit', 'max-h-[calc(100dvh-2rem)]', 'overflow-y-auto']));
+        expect(dialog.className).not.toMatch(/\binset-0\b|translate-[xy]-|left-\[50%\]|top-\[50%\]/);
         await unmount();
     });
 

@@ -60,15 +60,17 @@ function paragraphXml(text: string, opts?: { bold?: boolean; sizeHalfPt?: number
 
 /** A4 纵向、左右页边距 1134 twips 时的正文宽度 */
 const BODY_WIDTH_TWIPS = 11906 - 1134 * 2;
+/** 选项段落左缩进 */
+const CHOICE_INDENT_TWIPS = 240;
 
 /**
  * 选择题选项一行一段：按列数用制表位排开（4 列、2 列或 1 列），与打印页的选项横排一致。
  */
 function choiceRowsXml(options: ChoiceOption[], columns: ChoiceColumns, sizeHalfPt: number): string[] {
     const rPr = `<w:rPr><w:sz w:val="${sizeHalfPt}"/><w:szCs w:val="${sizeHalfPt}"/></w:rPr>`;
-    const step = Math.floor(BODY_WIDTH_TWIPS / columns);
+    const step = Math.floor((BODY_WIDTH_TWIPS - CHOICE_INDENT_TWIPS) / columns);
     const tabs = columns > 1
-        ? `<w:tabs>${Array.from({ length: columns - 1 }, (_, i) => `<w:tab w:val="left" w:pos="${step * (i + 1)}"/>`).join("")}</w:tabs>`
+        ? `<w:tabs>${Array.from({ length: columns - 1 }, (_, i) => `<w:tab w:val="left" w:pos="${CHOICE_INDENT_TWIPS + step * (i + 1)}"/>`).join("")}</w:tabs>`
         : "";
     const rows: string[] = [];
     for (let start = 0; start < options.length; start += columns) {
@@ -77,7 +79,7 @@ function choiceRowsXml(options: ChoiceOption[], columns: ChoiceColumns, sizeHalf
             const text = `${option.label} ${option.content}`.replace(/\r?\n/g, " ");
             return `${tab}<w:r>${rPr}<w:t xml:space="preserve">${escapeOoXmlText(text)}</w:t></w:r>`;
         }).join("");
-        rows.push(`<w:p><w:pPr>${tabs}<w:spacing w:after="20"/><w:ind w:left="240"/></w:pPr>${runs}</w:p>`);
+        rows.push(`<w:p><w:pPr>${tabs}<w:spacing w:after="20"/><w:ind w:left="${CHOICE_INDENT_TWIPS}"/></w:pPr>${runs}</w:p>`);
     }
     return rows;
 }
@@ -85,7 +87,7 @@ function choiceRowsXml(options: ChoiceOption[], columns: ChoiceColumns, sizeHalf
 /** 原题题干：逐行排列的选择题选项按长度排成 4 / 2 / 1 列；其他题目原样输出 */
 function questionTextXml(questionText: string | null): string[] {
     const text = questionText?.trim() || "";
-    const layout = text ? splitChoiceOptions(text) : null;
+    const layout = text ? splitChoiceOptions(text, { rawLatex: true }) : null;
     if (!layout) {
         return [paragraphXml(`【原题题干】${text || "（请对照原卷题目）"}`, { sizeHalfPt: 21, spacingAfter: 60 })];
     }
