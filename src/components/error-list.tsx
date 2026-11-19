@@ -22,6 +22,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { buildErrorListParams } from "@/lib/error-list-filters";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { confirmDialog, toast } from "@/lib/feedback";
+import { runInChunks } from "@/lib/chunked-batch";
 import { frontendLogger } from "@/lib/frontend-logger";
 import type { NotebookSubject } from "@/lib/notebook-scope";
 import { locateByShortId } from "@/lib/short-id-client";
@@ -39,16 +40,6 @@ export interface ErrorListProps {
     classId?: string | null;
     /** 批量移动或删除错题后回调，供父页面静默刷新顶部计数 */
     onItemsChanged?: () => void;
-}
-
-const BATCH_ACTION_CHUNK_SIZE = 100;
-
-function chunkIds(ids: string[], size = BATCH_ACTION_CHUNK_SIZE): string[][] {
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += size) {
-        chunks.push(ids.slice(i, i + size));
-    }
-    return chunks;
 }
 
 interface KnowledgeFilterChange {
@@ -211,20 +202,36 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId, onIte
         if (!(await confirmDialog(confirmMsg, { destructive: true }))) return;
 
         setIsDeleting(true);
+        let deleted = 0;
         try {
-            for (const batch of chunkIds(Array.from(selectedIds))) {
-                await apiClient.post("/api/error-items/batch-delete", { ids: batch });
+            const total = selectedIds.size;
+            const outcome = await runInChunks(Array.from(selectedIds), (batch) =>
+                apiClient.post<{ deleted?: number }>("/api/error-items/batch-delete", { ids: batch }));
+            deleted = outcome.results.reduce((sum, result) => sum + (result?.deleted ?? 0), 0);
+            if (outcome.error) {
+                frontendLogger.error("[ErrorList]", "Batch delete failed", { error: outcome.error, deleted, total });
+                if (outcome.processedIds.length > 0) {
+                    toast.warning(t.notebook.batchDeletePartial
+                        .replace("{done}", String(outcome.processedIds.length))
+                        .replace("{total}", String(total)));
+                } else {
+                    toast.error(t.common?.messages?.deleteFailed || "Delete failed");
+                }
+                // 只保留未处理的题，方便直接重试
+                setSelectedIds(new Set(outcome.unprocessedIds));
+            } else {
+                toast.success(t.notebook?.batchDeleteSuccess || "Deleted successfully");
+                setIsSelectMode(false);
+                setSelectedIds(new Set());
             }
-            toast.success(t.notebook?.batchDeleteSuccess || "Deleted successfully");
-            setIsSelectMode(false);
-            setSelectedIds(new Set());
-            await fetchItems();
-            onItemsChanged?.();
         } catch (err) {
             frontendLogger.error("[ErrorList]", "Batch delete failed", { error: err });
             toast.error(t.common?.messages?.deleteFailed || "Delete failed");
         } finally {
             setIsDeleting(false);
+            // 分批请求不是原子操作：无论成败都刷新列表与顶部计数，避免显示过期数据
+            await fetchItems();
+            if (deleted > 0) onItemsChanged?.();
         }
     };
 
@@ -233,41 +240,54 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId, onIte
     const handleBatchMove = async (targetSubjectId: string) => {
         if (selectedIds.size === 0 || !targetSubjectId) return;
         setIsMoving(true);
+        let totalMoved = 0;
         try {
-            let totalMoved = 0;
             let totalSkipped = 0;
+            const total = selectedIds.size;
             const scopePayload = learnerId
                 ? { learnerId }
                 : classId
                     ? { classId }
                     : {};
-            for (const batch of chunkIds(Array.from(selectedIds))) {
-                const result = await apiClient.post<{ moved: number; skipped: number }>("/api/error-items/batch-move", {
+            const outcome = await runInChunks(Array.from(selectedIds), (batch) =>
+                apiClient.post<{ moved: number; skipped: number }>("/api/error-items/batch-move", {
                     ids: batch,
                     subjectId: targetSubjectId,
                     ...scopePayload,
-                });
-                totalMoved += result.moved;
-                totalSkipped += result.skipped;
+                }));
+            for (const result of outcome.results) {
+                totalMoved += result?.moved ?? 0;
+                totalSkipped += result?.skipped ?? 0;
             }
-            if (totalMoved > 0) {
-                toast.success(t.notebook.moveSuccess.replace("{count}", String(totalMoved)));
-            }
-            if (totalSkipped > 0) {
-                toast.warning(t.notebook.moveSkipped.replace("{count}", String(totalSkipped)));
-            }
-            setMoveOpen(false);
-            setIsSelectMode(false);
-            setSelectedIds(new Set());
-            await fetchItems();
-            if (totalMoved > 0) {
-                onItemsChanged?.();
+            if (outcome.error) {
+                frontendLogger.error("[ErrorList]", "Batch move failed", { error: outcome.error, moved: totalMoved, total });
+                if (outcome.processedIds.length > 0) {
+                    toast.warning(t.notebook.movePartial
+                        .replace("{done}", String(outcome.processedIds.length))
+                        .replace("{total}", String(total)));
+                } else {
+                    toast.error(t.notebook.moveFailed);
+                }
+                setSelectedIds(new Set(outcome.unprocessedIds));
+            } else {
+                if (totalMoved > 0) {
+                    toast.success(t.notebook.moveSuccess.replace("{count}", String(totalMoved)));
+                }
+                if (totalSkipped > 0) {
+                    toast.warning(t.notebook.moveSkipped.replace("{count}", String(totalSkipped)));
+                }
+                setMoveOpen(false);
+                setIsSelectMode(false);
+                setSelectedIds(new Set());
             }
         } catch (err) {
             frontendLogger.error("[ErrorList]", "Batch move failed", { error: err });
             toast.error(t.notebook.moveFailed);
         } finally {
             setIsMoving(false);
+            // 分批请求不是原子操作：无论成败都刷新列表与顶部计数
+            await fetchItems();
+            if (totalMoved > 0) onItemsChanged?.();
         }
     };
 

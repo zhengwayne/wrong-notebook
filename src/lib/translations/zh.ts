@@ -606,6 +606,8 @@ export const zh = {
         moveSuccess: "已移动 {count} 道错题",
         moveSkipped: "{count} 道不在当前范围内，未移动",
         moveFailed: "移动失败，请重试",
+        movePartial: "已移动 {done}/{total} 道，其余移动失败，请重试",
+        batchDeletePartial: "已删除 {done}/{total} 道，其余删除失败，请重试",
         selectedCount: "已选 {count} 项",
         confirmBatchDelete: "确定删除 {count} 道错题？",
         batchDeleteSuccess: "删除成功",

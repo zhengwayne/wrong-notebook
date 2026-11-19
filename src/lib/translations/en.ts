@@ -609,6 +609,8 @@ export const en = {
         moveSuccess: "Moved {count} items",
         moveSkipped: "{count} items were outside the current scope and were not moved",
         moveFailed: "Failed to move, please try again",
+        movePartial: "Moved {done} of {total} items; the rest failed, please try again",
+        batchDeletePartial: "Deleted {done} of {total} items; the rest failed, please try again",
         selectedCount: "{count} selected",
         confirmBatchDelete: "Delete {count} items?",
         batchDeleteSuccess: "Deleted successfully",
