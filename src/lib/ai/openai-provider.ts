@@ -20,7 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
-import { deadlineFetch, withDeadlineSignal } from './deadline';
+import { currentAiDeadlineSignal, deadlineFetch, withDeadlineSignal } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:openai');
@@ -143,11 +143,17 @@ export class OpenAIProvider implements AIService {
             }, initialMaxTokens, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
         }
 
-        return withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
-            model: this.model,
-            messages: messages as unknown as ChatCompletionMessageParam[],
-            max_tokens: maxTokens,
-        }), initialMaxTokens, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+        return withTruncationRetry((maxTokens) => {
+            const signal = currentAiDeadlineSignal();
+            const params = {
+                model: this.model,
+                messages: messages as unknown as ChatCompletionMessageParam[],
+                max_tokens: maxTokens,
+            };
+            return signal
+                ? this.openai.chat.completions.create(params, { signal })
+                : this.openai.chat.completions.create(params);
+        }, initialMaxTokens, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
     }
 
     async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
@@ -412,11 +418,17 @@ export class OpenAIProvider implements AIService {
     async recognizeGrade(questionText: string): Promise<string | null> {
         const prompt = generateGradeRecognitionRequest(questionText);
         try {
-            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
-                model: this.model,
-                messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
-                max_tokens: maxTokens,
-            }), 1024, () => logger.warn('年级识别输出截断，增加上限重试'), this.model);
+            const response = await withTruncationRetry((maxTokens) => {
+                const signal = currentAiDeadlineSignal();
+                const params = {
+                    model: this.model,
+                    messages: [{ role: 'system' as const, content: prompt.system }, { role: 'user' as const, content: prompt.user }],
+                    max_tokens: maxTokens,
+                };
+                return signal
+                    ? this.openai.chat.completions.create(params, { signal })
+                    : this.openai.chat.completions.create(params);
+            }, 1024, () => logger.warn('年级识别输出截断，增加上限重试'), this.model);
             return parseGradeRecognition(response.choices[0]?.message?.content || '');
         } catch (error) {
             logger.error({ error }, '识别题目年级失败');

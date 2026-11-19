@@ -26,47 +26,49 @@ export function aiErrorCodeForStatus(status: number): AiErrorTextCode | null {
     return null;
 }
 
-// SDK 把状态码放在消息开头，如「401 Authentication Fails, Your api key …」「429 Too Many Requests」
-const LEADING_STATUS = /^\s*(?:error[:\s]+)?(\d{3})\b/i;
+// SDK 或网关把状态码放在消息开头或 HTTP/status 前缀后，如「401 Authentication Fails…」「HTTP 401 …」「status code 401」
+const LEADING_STATUS = /^\s*(?:error[:\s]+|http(?:\s+error)?[:\s]+|status(?:\s+code)?[:\s]+|\[)?(\d{3})(?:\]|\b)/i;
+const INLINE_HTTP_STATUS = /\b(?:http(?:\s+error)?|status(?:\s+code)?)\s*[:=]?\s*(\d{3})\b/i;
 
 /** 按错误原文归类；无法判断时返回 null */
 export function classifyAiErrorText(message: string): AiErrorTextCode | null {
     if (!message) return null;
-    // 开头的状态码最可靠，先于关键词判断，避免 request_id 里的数字（如 …502…）造成误判
-    const leading = LEADING_STATUS.exec(message);
+    // 开头或显式 HTTP/status 前缀的状态码最可靠，先于关键词判断，避免 request_id 里的数字（如 …502…）造成误判
+    const leading = LEADING_STATUS.exec(message) ?? INLINE_HTTP_STATUS.exec(message);
     if (leading) {
         const byStatus = aiErrorCodeForStatus(Number(leading[1]));
         if (byStatus) return byStatus;
     }
 
     const msg = message.toLowerCase();
+    const isSafetyTermination = /\bterminated\b/.test(msg) && /(?:safety|policy|content[\s_-]?filter|moderation|blocked)/.test(msg);
     // 网络/连接错误：undici 在连接中断时抛 TypeError「terminated」，另有 socket hang up 等
     if (msg.includes('fetch failed') || msg.includes('network') || msg.includes('connect') || msg.includes('econnreset') || msg.includes('econnrefused') || msg.includes('enotfound')
-        || msg.includes('terminated') || msg.includes('socket hang up') || msg.includes('other side closed') || msg.includes('epipe')) {
+        || (!isSafetyTermination && /\bterminated\b/.test(msg)) || msg.includes('socket hang up') || msg.includes('other side closed') || msg.includes('epipe')) {
         return 'AI_CONNECTION_FAILED';
     }
-    if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted') || msg.includes('408') || msg.includes('etimedout')) {
+    if (/\btimeout\b/.test(msg) || msg.includes('timed out') || /\baborted\b/.test(msg) || /\betimedout\b/.test(msg) || /\b408\b/.test(msg)) {
         return 'AI_TIMEOUT_ERROR';
     }
-    if (msg.includes('quota') || msg.includes('额度') || msg.includes('rate limit') || msg.includes('429') || msg.includes('too many')) {
+    if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('authentication fail') || msg.includes('invalid_api_key') || /\b401\b/.test(msg)) {
+        return 'AI_AUTH_ERROR';
+    }
+    if (msg.includes('quota') || msg.includes('额度') || msg.includes('rate limit') || msg.includes('too many') || /\b429\b/.test(msg)) {
         return 'AI_QUOTA_EXCEEDED';
     }
-    if (msg.includes('403') || msg.includes('forbidden') || msg.includes('permission')) {
+    if (msg.includes('forbidden') || msg.includes('permission') || /\b403\b/.test(msg)) {
         return 'AI_PERMISSION_DENIED';
     }
-    if (msg.includes('404') || msg.includes('not found') || msg.includes('does not exist')) {
+    if (msg.includes('not found') || msg.includes('does not exist') || /\b404\b/.test(msg)) {
         return 'AI_NOT_FOUND';
     }
-    if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('529') || msg.includes('无可用') || msg.includes('overloaded') || msg.includes('unavailable')) {
+    if (msg.includes('无可用') || msg.includes('overloaded') || msg.includes('unavailable') || /\b(?:500|502|503|504|529)\b/.test(msg)) {
         return 'AI_SERVICE_UNAVAILABLE';
-    }
-    if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401') || msg.includes('authentication fail')) {
-        return 'AI_AUTH_ERROR';
     }
     if (
         msg.includes('invalid json') ||
-        msg.includes('parse') ||
-        msg.includes('json') ||
+        msg.includes('failed to parse') ||
+        msg.includes('json parse') ||
         msg.includes('syntaxerror') ||
         msg.includes('missing critical xml') ||
         msg.includes('invalid ai response') ||

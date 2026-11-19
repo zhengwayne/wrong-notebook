@@ -28,6 +28,8 @@ AI settings, connection tests, model lists and prompt settings are admin-only. T
 | Volcengine Agent Plan | Dedicated Agent Plan API key | Defaults to `https://ark.cn-beijing.volces.com/api/plan/v3`; code default `doubao-seed-evolving` (or enter `ark-code-latest` to use the model chosen under Activation Management in the Ark console); the plan includes Doubao speech synthesis |
 | Volcengine Coding Plan | Volcengine Ark API key | Defaults to `https://ark.cn-beijing.volces.com/api/coding/v3` (changing it to `/api/v3` is billed pay-as-you-go instead of the plan); code default `doubao-seed-evolving` (or enter `ark-code-latest` to use the model chosen under Activation Management in the Ark console); the plan does not include speech synthesis |
 | Volcengine (free trial) | Volcengine Ark API key | Defaults to `https://ark.cn-beijing.volces.com/api/v3`; uses the new-user [free inference quota](https://www.volcengine.com/docs/82379/1399514); with worry-free trial mode on, calls pause when it runs out, so you are never charged |
+| SiliconFlow | API key (China site) | Defaults to `https://api.siliconflow.cn/v1`; code default `THUDM/GLM-Z1-9B-0414` (some chat models are free, text only, identity verification required; image recognition needs a paid vision model or another channel) |
+| SiliconFlow (international) | API key (separate international account) | Defaults to `https://api.siliconflow.com/v1`; code default `Qwen/Qwen2.5-VL-7B-Instruct` (supports image input; trial credit for new users) |
 | Anthropic or compatible | API key, model | Defaults to `https://api.anthropic.com`; code default `claude-sonnet-5-5` |
 | Azure OpenAI | API key, endpoint, deployment name | API version defaults to `2024-02-15-preview`; the model field is for display |
 | OpenAI or compatible | API key, model | Defaults to `https://api.openai.com/v1`; code default `gpt-6.1-sol` |
@@ -35,7 +37,7 @@ AI settings, connection tests, model lists and prompt settings are admin-only. T
 
 The default names come from the current code and do not mean these models are enabled for your account. Model availability, billing and capabilities are determined by the provider.
 
-For OpenAI-compatible services, the base URL should include the API path they require. For Anthropic-compatible services, the base URL excludes `/v1`; the app appends `/v1/messages`. The official MiniMax, GLM, DeepSeek, Kimi, Qwen, StepFun and Volcengine channels are called through the OpenAI-compatible API; leaving the endpoint and model empty uses the official defaults. Fill in the international endpoint if you use an international site.
+For OpenAI-compatible services, the base URL should include the API path they require. For Anthropic-compatible services, the base URL excludes `/v1`; the app appends `/v1/messages`. The official MiniMax, GLM, DeepSeek, Kimi, Qwen, StepFun, Volcengine and SiliconFlow channels are called through the OpenAI-compatible API; leaving the endpoint and model empty uses the official defaults. Fill in the international endpoint if you use an international site.
 
 ## MiniMax Code OAuth
 

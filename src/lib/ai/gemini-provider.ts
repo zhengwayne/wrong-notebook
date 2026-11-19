@@ -20,7 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
-import { isAiDeadlineExceeded } from './deadline';
+import { currentAiDeadlineSignal, deadlineFetch, isAiDeadlineExceeded, sleepWithDeadline } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:gemini');
@@ -43,13 +43,14 @@ export class GeminiProvider implements AIService {
             throw new Error("AI_AUTH_ERROR: GOOGLE_API_KEY is required for Gemini provider");
         }
 
-        // 使用 httpOptions.baseUrl 来配置自定义 API 地址，避免全局 setDefaultBaseUrls 的竞态条件
-        // 参考：@google/genai 的 GoogleGenAIOptions.httpOptions.baseUrl
+        // 使用 httpOptions.baseUrl 配置自定义 API 地址，并注入 deadlineFetch 以在总时限到期时中止底层连接
+        // 参考：@google/genai 的 GoogleGenAIOptions.httpOptions
         this.ai = new GoogleGenAI({
             apiKey,
-            httpOptions: baseUrl ? {
-                baseUrl: baseUrl
-            } : undefined
+            httpOptions: {
+                ...(baseUrl ? { baseUrl } : {}),
+                fetch: deadlineFetch,
+            },
         });
 
         this.modelName = config?.model || 'gemini-2.0-flash';
@@ -66,6 +67,9 @@ export class GeminiProvider implements AIService {
         let lastError: unknown;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            if (isAiDeadlineExceeded()) {
+                throw new Error('AI_TIMEOUT_ERROR');
+            }
             try {
                 return await operation();
             } catch (error) {
@@ -95,7 +99,7 @@ export class GeminiProvider implements AIService {
 
                 const delay = Math.pow(2, attempt - 1) * 1000; // Exponential backoff: 1s, 2s, 4s
                 logger.warn({ attempt, maxRetries, error: msg, nextRetryDelayMs: delay }, 'Gemini operation failed, retrying...');
-                await new Promise(resolve => setTimeout(resolve, delay));
+                await sleepWithDeadline(delay);
             }
         }
         throw lastError;
@@ -115,9 +119,10 @@ export class GeminiProvider implements AIService {
         initialMaxTokens: number = getInitialMaxTokens(this.modelName),
     ) {
         const result = await withTruncationRetry(async (maxOutputTokens) => {
+            const abortSignal = currentAiDeadlineSignal();
             const raw = await this.retryOperation(() => this.ai.models.generateContent({
                 model: this.modelName,
-                config: { systemInstruction, maxOutputTokens },
+                config: { systemInstruction, maxOutputTokens, ...(abortSignal ? { abortSignal } : {}) },
                 contents,
             }));
             const text = raw.text || '';

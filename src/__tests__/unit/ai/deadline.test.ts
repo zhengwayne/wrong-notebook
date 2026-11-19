@@ -13,6 +13,7 @@ import {
     deadlineFetch,
     isAiDeadlineExceeded,
     runWithAiDeadline,
+    sleepWithDeadline,
     withAiCallDeadline,
 } from '@/lib/ai/deadline';
 
@@ -86,5 +87,19 @@ describe('AI 调用总时限', () => {
         const init = { method: 'POST' };
         await deadlineFetch('https://example.com', init);
         expect(fetchMock).toHaveBeenCalledWith('https://example.com', init);
+    });
+
+    it('总时限到期时中止理由为 AbortError，且 sleepWithDeadline 立即结束', async () => {
+        let seenSignal: AbortSignal | undefined;
+        const sleepDone = vi.fn();
+        const pending = runWithAiDeadline(async () => {
+            seenSignal = currentAiDeadlineSignal();
+            await sleepWithDeadline(10_000).catch(sleepDone);
+        }, 500).catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(((await pending) as Error).message).toBe('AI_TIMEOUT_ERROR');
+        expect(seenSignal?.aborted).toBe(true);
+        expect((seenSignal?.reason as Error)?.name).toBe('AbortError');
+        expect(sleepDone).toHaveBeenCalledTimes(1);
     });
 });

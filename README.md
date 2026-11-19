@@ -521,7 +521,7 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 - **数据库**：[SQLite](https://www.sqlite.org/)（via [Prisma 5](https://www.prisma.io/)）
 - **样式**：[Tailwind CSS v4](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/)（shadcn/ui 风格组件）
 - **公式**：[KaTeX](https://katex.org/)（react-markdown + remark-math）
-- **AI**：MiniMax / MiniMax Code（网页登录）/ 智谱 GLM / DeepSeek / Kimi / 千问 Qwen / 阶跃星辰 StepFun / 火山引擎豆包（含 Agent Plan、Coding Plan、免费试用）/ Anthropic（及兼容接口）/ Azure OpenAI / OpenAI（及兼容接口）/ Google Gemini
+- **AI**：MiniMax / MiniMax Code（网页登录）/ 智谱 GLM / DeepSeek / Kimi / 千问 Qwen / 阶跃星辰 StepFun / 火山引擎豆包（含 Agent Plan、Coding Plan、免费试用）/ 硅基流动 SiliconFlow（国内站与国际站）/ Anthropic（及兼容接口）/ Azure OpenAI / OpenAI（及兼容接口）/ Google Gemini
 - **认证**：[NextAuth.js v4](https://next-auth.js.org/)
 - **测试**：Vitest（单元、集成）、Playwright（E2E）
 

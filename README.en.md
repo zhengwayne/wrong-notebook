@@ -523,7 +523,7 @@ Screen capture requires a secure browser context (HTTPS). When running in Docker
 - **Database**: [SQLite](https://www.sqlite.org/) (via [Prisma 5](https://www.prisma.io/))
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/) (shadcn/ui-style components)
 - **Formulas**: [KaTeX](https://katex.org/) (react-markdown + remark-math)
-- **AI**: MiniMax / MiniMax Code (browser sign-in) / Zhipu GLM / DeepSeek / Kimi / Qwen / StepFun / Volcengine Doubao (including Agent Plan, Coding Plan and a free trial) / Anthropic (and compatible APIs) / Azure OpenAI / OpenAI (and compatible APIs) / Google Gemini
+- **AI**: MiniMax / MiniMax Code (browser sign-in) / Zhipu GLM / DeepSeek / Kimi / Qwen / StepFun / Volcengine Doubao (including Agent Plan, Coding Plan and a free trial) / SiliconFlow (China & international) / Anthropic (and compatible APIs) / Azure OpenAI / OpenAI (and compatible APIs) / Google Gemini
 - **Auth**: [NextAuth.js v4](https://next-auth.js.org/)
 - **Testing**: Vitest (unit, integration), Playwright (E2E)
 

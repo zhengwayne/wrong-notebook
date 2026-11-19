@@ -45,9 +45,12 @@ export async function runWithAiDeadline<T>(operation: () => Promise<T>, deadline
         timer = setTimeout(() => {
             const error = new Error('AI_TIMEOUT_ERROR');
             logger.warn({ method: label, deadlineMs }, 'AI request exceeded total deadline');
-            controller.abort(error);
             reject(error);
+            const abortError = new Error('AI_TIMEOUT_ERROR');
+            abortError.name = 'AbortError';
+            controller.abort(abortError);
         }, deadlineMs);
+        timer.unref?.();
     });
 
     try {
@@ -55,6 +58,26 @@ export async function runWithAiDeadline<T>(operation: () => Promise<T>, deadline
     } finally {
         clearTimeout(timer);
     }
+}
+
+/** 响应总时限信号的等待：总时限到期时立即中止等待并抛出 AI_TIMEOUT_ERROR */
+export function sleepWithDeadline(ms: number): Promise<void> {
+    const signal = deadlineStorage.getStore();
+    if (signal?.aborted) {
+        return Promise.reject(new Error('AI_TIMEOUT_ERROR'));
+    }
+    return new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(new Error('AI_TIMEOUT_ERROR'));
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        timer.unref?.();
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
 }
 
 /** 给 AI 服务的每个方法加上总时限（放在并发限制之内，排队时间不计入） */
@@ -81,9 +104,10 @@ export function withDeadlineSignal(signal?: AbortSignal | null): AbortSignal | u
 }
 
 /**
- * 交给 OpenAI / Azure / Anthropic SDK 的 fetch：到达总时限时中止正在进行的请求（SDK 不会对主动中止重试）。
+ * 交给 OpenAI / Azure / Anthropic / Gemini SDK 的 fetch：到达总时限时中止正在进行的请求。
  */
 export const deadlineFetch: typeof fetch = (input, init) => {
-    const signal = withDeadlineSignal(init?.signal);
+    const requestSignal = input instanceof Request ? input.signal : undefined;
+    const signal = withDeadlineSignal(init?.signal ?? requestSignal);
     return fetch(input, signal ? { ...init, signal } : init);
 };

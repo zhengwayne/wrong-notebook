@@ -95,7 +95,7 @@ export function isMaxTokensError(message: string): boolean {
 export function isReasoningModel(model?: string | null): boolean {
     const name = (model || '').trim().toLowerCase();
     if (!name) return false;
-    return /reasoner|reasoning|thinking|hydrogen|\br1\b|\bo1\b|\bo3\b|\bo4\b|gemini-2\.5|gemini-[3-9]|minimax-m|gpt-[5-9]|claude-(opus|sonnet)-4|deepseek-r|glm-4\.|glm-5/.test(name);
+    return /reasoner|reasoning|thinking|hydrogen|\br1\b|\bo1\b|\bo3\b|\bo4\b|gemini-2\.5|gemini-[3-9]|minimax-m|gpt-[5-9]|claude-(opus|sonnet)-4|deepseek-r|glm-z1|glm-4\.|glm-5/.test(name);
 }
 
 /** 非推理任务的默认输出上限 */

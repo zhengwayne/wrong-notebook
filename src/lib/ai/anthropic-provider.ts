@@ -20,7 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
-import { deadlineFetch } from './deadline';
+import { currentAiDeadlineSignal, deadlineFetch } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:anthropic');
@@ -118,12 +118,16 @@ export class AnthropicProvider implements AIService {
     /** 发送一次单轮对话并返回正文；正文为空且因长度截断时用更大的上限重试 */
     private async complete(system: string, content: UserContent, maxTokens: number): Promise<string> {
         const response = await withTruncationRetry(async (limit) => {
-            const message = await this.client.messages.create({
+            const signal = currentAiDeadlineSignal();
+            const params = {
                 model: this.model,
                 max_tokens: limit,
                 system,
-                messages: [{ role: 'user', content }],
-            });
+                messages: [{ role: 'user' as const, content }],
+            };
+            const message = await (signal
+                ? this.client.messages.create(params, { signal })
+                : this.client.messages.create(params));
             // 兼容接口的推理模型会返回 thinking 块，只取正文
             const text = message.content
                 .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -203,12 +207,16 @@ export class AnthropicProvider implements AIService {
     async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
         try {
             const response = await withTruncationRetry(async (limit) => {
-                const message = await this.client.messages.create({
+                const signal = currentAiDeadlineSignal();
+                const params = {
                     model: this.model,
                     max_tokens: limit,
                     system: request.system,
-                    messages: [{ role: 'user', content: request.user }],
-                });
+                    messages: [{ role: 'user' as const, content: request.user }],
+                };
+                const message = await (signal
+                    ? this.client.messages.create(params, { signal })
+                    : this.client.messages.create(params));
                 const text = message.content
                     .filter((block): block is Anthropic.TextBlock => block.type === 'text')
                     .map((block) => block.text)

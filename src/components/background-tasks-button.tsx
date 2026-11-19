@@ -82,15 +82,19 @@ export function BackgroundTasksButton() {
 
     const runningCount = tasks.filter((task) => task.status === "running").length;
     const hasFinished = tasks.some((task) => task.status !== "running");
-    const errorText = (code: string | null) => {
+    const errorText = (code: string | null, kind?: BackgroundTask["kind"]) => {
         if (!code) return null;
         const lookup = (key: string) => (t.backgroundTasks.errors as Record<string, string>)[key] ?? (t.errors as Record<string, unknown>)[key];
-        const mapped = lookup(code);
+        const head = code.split(":")[0]?.trim() || code;
+        const mapped = lookup(code) ?? lookup(head);
         if (typeof mapped === "string") return mapped;
-        // 任务里可能保存了服务商原文（如 401 Authentication Fails…），先归类再翻译
-        const classified = classifyAiErrorText(code);
-        const translated = classified ? lookup(classified) : undefined;
-        return typeof translated === "string" ? translated : code;
+        // 仅对非数据导入类任务按 AI 服务商原文归类，避免把备份导入的 JSON/体积报错误译为 AI 错误
+        if (kind !== "data_import") {
+            const classified = classifyAiErrorText(code);
+            const translated = classified ? lookup(classified) : undefined;
+            if (typeof translated === "string") return translated;
+        }
+        return code;
     };
 
     const clearFinished = async () => {
@@ -156,7 +160,7 @@ export function BackgroundTasksButton() {
                                                     </div>
                                                 </div>
                                             )}
-                                            {task.error && <div className="text-xs text-destructive">{errorText(task.error)}</div>}
+                                            {task.error && <div className="text-xs text-destructive">{errorText(task.error, task.kind)}</div>}
                                             <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                                                 <span>{t.backgroundTasks.startedAt.replace("{time}", formatDateTime(task.startedAt, "HH:mm:ss", timeZone))}</span>
                                                 <span>{t.backgroundTasks.elapsed.replace("{time}", formatElapsed(task.startedAt, task.finishedAt, now))}</span>

@@ -221,9 +221,6 @@ export const FIGURE_SVG_RULES = `- 输出一个完整的 <svg> 元素，包含 x
 - 必须是合法 XML：同一元素的属性不能重复；<line> 只画一条线段，折线用 <polyline points="...">。`;
 
 /**
- * LaTeX 书写规则：页面用 KaTeX 渲染，只支持其中的命令（识别、举一反三、重新解题、修复公式共用）
- */
-/**
  * 语文题干转写规则：拼音声调、看拼音写词语的空位、注音汉字顺序。
  * Ported from margrop/wrong-notebook 8386537b (MIT).
  */
@@ -249,6 +246,9 @@ export function generateChineseTranscriptionRules(
   return '';
 }
 
+/**
+ * LaTeX 书写规则：页面用 KaTeX 渲染，只支持其中的命令（识别、举一反三、重新解题、修复公式共用）
+ */
 export const LATEX_RULES = String.raw`- 行内公式用 $...$，独立公式用 $$...$$；不要用 \(...\) 或 \[...\]，每个 $ 必须成对出现。
 - 所有 LaTeX 命令（如 \frac、\sqrt、\times、\angle）都必须写在 $...$ 内，公式外不能出现反斜杠命令。
 - 只使用 KaTeX 支持的命令和环境：方程组用 \begin{cases}...\end{cases}，多行推导用 \begin{aligned}...\end{aligned}（放在 $$...$$ 中），不要用 align、eqnarray、\newcommand、\usepackage、\label、\tag 等。
@@ -1340,7 +1340,9 @@ export function parentReviewSubjectGuidance(subject?: string | null, language: '
       ? `This paper is a Chinese language (语文) exam. Set each question's subjectHint to "语文".
 - For objectively checkable items (pinyin, characters/words, multiple choice, true/false, ancient poetry or prose dictation with a unique answer): judge them as "objective". Transcribe handwritten pinyin, characters and punctuation faithfully; do not correct or polish the student's writing.
 - For open-ended reading-comprehension answers and compositions: do not guess a definitive right/wrong. Give brief reference points, set verdict to "partial", keep confidence below 0.7, and ask the parent to confirm in errorCause.
-- Do not use LaTeX unless the item actually contains a formula.`
+- Do not use LaTeX unless the item actually contains a formula.
+
+${CHINESE_TRANSCRIPTION_RULES}`
       : `【语文学科补充】本卷是语文试卷。请将每题的 subjectHint 设为「语文」。
 - 拼音、字词、选择题、判断题、古诗文默写等有唯一或可核对答案的题目：按 objective 判断对错。如实转写手写拼音、汉字与标点，不要擅自改字、补字或美化。
 - 阅读理解主观题、开放性简答、作文：不要猜一个确定对错。可给出简要参考要点，将 verdict 标为 partial，confidence 低于 0.7，并在 errorCause 中请家长确认。
@@ -1358,7 +1360,8 @@ ${CHINESE_TRANSCRIPTION_RULES}`;
 
 export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify' | 'parent_review', language: 'zh' | 'en' = 'zh', subject?: string | null): string {
   const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
-  const subjectGuidance = parentReviewSubjectGuidance(subject, language);
+  const subjectGuidance = parentReviewSubjectGuidance(subject, language) || generateChineseTranscriptionRules(subject, null, mode === 'parent_review');
+  const examChineseRules = generateChineseTranscriptionRules(subject, null, false);
 
   if (mode === 'parent_review') {
     return language === 'en'
@@ -1413,7 +1416,7 @@ ${subjectGuidance}
 - answer：选择题只写选项字母（多选按字母顺序，如 "AC"）；主观题写参考答案或评分要点。
 - 若图片中包含学生手写作答或老师批改痕迹，请务必忽略手写内容，仅提取印刷题号、题型、分值、题干与知识点。
 - questionText：能看清时写题干，看不清写空字符串；knowledgePoints：1~3 个知识点名称。
-- 只输出 JSON，不要其他文字。
+- 只输出 JSON，不要其他文字。${examChineseRules ? `\n\n${examChineseRules}` : ''}
 
 【输出格式】
 {"studentName": null, "questions": [{"number": "1", "type": "objective", "maxScore": 3, "answer": "B", "questionText": "...", "knowledgePoints": ["一元一次方程"]}]}`;
@@ -1450,7 +1453,7 @@ ${subjectGuidance}
   - visualAlerts：仅在确有明显现象时从 ["heavy_erasure", "messy_handwriting", "missing_steps", "large_blank"] 中选取，正常情况写 []。
 - 卷面上老师的批改痕迹（对勾、分数）不作为评分依据。
 - ${reasonLanguage}
-- 只输出 JSON，不要其他文字。
+- 只输出 JSON，不要其他文字。${examChineseRules ? `\n\n${examChineseRules}` : ''}
 
 【输出格式】
 {"studentName": "张三", "className": "七年级3班", "studentNo": "12", "paperAppearance": {"handwritingLevel": "good", "neatnessLevel": "good", "attitudeLevel": "excellent", "visualAlerts": []}, "questions": [{"number": "1", "answer": "B", "score": null, "confidence": 0.96, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.12, "width": 0.84, "height": 0.1}, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "confidence": 0.85, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.45, "width": 0.84, "height": 0.3}, "reason": "方程列对，计算错误扣 2 分"}]}`;

@@ -1,3 +1,4 @@
+import { classifyAiErrorText } from "@/lib/ai/error-text-classification";
 import { getApiErrorMessage } from "@/lib/error-message";
 import type { Translations } from "@/lib/translations";
 
@@ -8,9 +9,10 @@ type ReanswerErrorMessages = {
     responseError?: string;
 };
 
-/** 校对页「重新解题」失败时的提示，按后端返回的 AI 错误码选择文案 */
+/** 校对页「重新解题」失败时的提示，按后端返回的 AI 错误码或归类结果选择文案 */
 export function getReanswerErrorMessage(error: unknown, t: Translations): string {
-    const code = getApiErrorMessage(error) || '';
+    const raw = getApiErrorMessage(error) || '';
+    const code = raw.includes('AI_') ? raw : (classifyAiErrorText(raw) || raw);
     const messages: ReanswerErrorMessages = t.errors?.reanswer || {};
     const fallback = messages.default || 'Reanswer failed';
 

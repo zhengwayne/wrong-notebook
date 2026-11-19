@@ -28,6 +28,8 @@ AI 设置、连接测试、模型列表与提示词设置只向管理员开放�
 | 火山引擎 Agent Plan | Agent Plan 专属 API Key | 默认 `https://ark.cn-beijing.volces.com/api/plan/v3`；代码默认 `doubao-seed-evolving`（也可填 `ark-code-latest`，使用方舟控制台「开通管理」中选择的模型）；套餐含豆包语音合成 |
 | 火山引擎 Coding Plan | 火山方舟 API Key | 默认 `https://ark.cn-beijing.volces.com/api/coding/v3`（改成 `/api/v3` 不计入套餐、按量计费）；代码默认 `doubao-seed-evolving`（也可填 `ark-code-latest`，使用方舟控制台「开通管理」中选择的模型）；套餐不含语音合成 |
 | 火山引擎（免费试用） | 火山方舟 API Key | 默认 `https://ark.cn-beijing.volces.com/api/v3`；使用新用户的[免费推理额度](https://www.volcengine.com/docs/82379/1399514)，开启「安心体验模式」后用完自动暂停，不产生费用 |
+| 硅基流动 SiliconFlow | API Key（中国站） | 默认 `https://api.siliconflow.cn/v1`；代码默认 `THUDM/GLM-Z1-9B-0414`（部分对话模型免费、仅文本输入，需实名认证；图片识别需换用付费视觉模型或其他渠道） |
+| 硅基流动（国际站） | API Key（国际站独立账号） | 默认 `https://api.siliconflow.com/v1`；代码默认 `Qwen/Qwen2.5-VL-7B-Instruct`（支持图片输入，新用户有体验赠金） |
 | Anthropic 或兼容接口 | API Key、模型 | 默认 `https://api.anthropic.com`；代码默认 `claude-sonnet-5-5` |
 | Azure OpenAI | API Key、Endpoint、部署名称 | API 版本默认 `2024-02-15-preview`；模型字段用于显示 |
 | OpenAI 或兼容接口 | API Key、模型 | 默认 `https://api.openai.com/v1`；代码默认 `gpt-6.1-sol` |

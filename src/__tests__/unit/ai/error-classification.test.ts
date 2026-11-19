@@ -29,15 +29,19 @@ describe('classifyAiErrorText', () => {
         ['401 Authentication Fails, Your api key: ****T6qA is invalid (request_id: cb727c1a)', 'AI_AUTH_ERROR'],
         // request_id 里出现 502 也不能盖过开头的 401
         ['401 Authentication Fails (request_id: 5021aa)', 'AI_AUTH_ERROR'],
+        ['HTTP 401 Unauthorized (request_id: abc502def)', 'AI_AUTH_ERROR'],
+        ['MiniMax Code request failed: HTTP 401 (trace 14089)', 'AI_AUTH_ERROR'],
         ['429 Too Many Requests', 'AI_QUOTA_EXCEEDED'],
         ['503 Service Unavailable', 'AI_SERVICE_UNAVAILABLE'],
     ])('%s → %s', (message, code) => {
         expect(classifyAiErrorText(message)).toBe(code);
     });
 
-    it('无法判断时返回 null', () => {
+    it('无法判断或 400 内容审查/参数错误时不误判为连接或解析错误', () => {
         expect(classifyAiErrorText('something odd')).toBeNull();
         expect(classifyAiErrorText('')).toBeNull();
+        expect(classifyAiErrorText('400 Stream terminated due to safety')).toBeNull();
+        expect(classifyAiErrorText('400 Request body must be valid JSON')).toBeNull();
     });
 });
 

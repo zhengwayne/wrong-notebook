@@ -7,6 +7,7 @@
  *   - refresh token 一次性轮换：刷新成功后旧值立即作废，调用方必须马上保存新值
  */
 import crypto from 'crypto';
+import { withDeadlineSignal } from '../ai/deadline';
 
 export const MINIMAX_CODE_ACCOUNT_BASE = 'https://account.minimax.cn';
 export const MINIMAX_CODE_AGENT_BASE = 'https://agent.minimax.cn';
@@ -80,7 +81,7 @@ function base64Url(buf: Buffer): string {
 }
 
 async function request(url: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    return fetch(url, { ...init, signal: withDeadlineSignal(AbortSignal.timeout(REQUEST_TIMEOUT_MS)) });
 }
 
 async function readJson<T>(res: Response): Promise<T | null> {

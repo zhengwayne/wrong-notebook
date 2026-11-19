@@ -12,6 +12,7 @@ import { RESULT_BADGE_CLASS } from "@/components/mastery-panel";
 import { PracticeResultPicker } from "@/components/practice-result-picker";
 import { QuestionFigure } from "@/components/question-figure";
 import { ExamQuestionRegenerate } from "@/components/exam/exam-question-regenerate";
+import { classifyAiErrorText } from "@/lib/ai/error-text-classification";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { ExamQuestionDetail, PracticeResult } from "@/types/api";
 
@@ -32,13 +33,17 @@ export function ExamQuestionCard({ paperId, question, editingResult, onResultCha
     const { timeZone } = useTimeZone();
     const [showAnswer, setShowAnswer] = useState(false);
     const isEditing = editingResult !== undefined;
-    // AI 错误码（如 AI_AUTH_ERROR: ...）映射为界面提示
+    // AI 错误码（如 AI_AUTH_ERROR: ...）或服务商原文映射为界面提示
     const errorText = (() => {
         if (!question.error) return "";
         if (question.error === "SOURCE_DELETED") return t.exam.sourceDeleted;
         const code = question.error.split(":")[0].trim();
-        const mapped = (t.errors as Record<string, unknown>)[code];
-        return typeof mapped === "string" ? mapped : question.error;
+        const errors = t.errors as Record<string, unknown>;
+        const mapped = errors[code];
+        if (typeof mapped === "string") return mapped;
+        const classified = classifyAiErrorText(question.error);
+        if (classified && typeof errors[classified] === "string") return errors[classified] as string;
+        return question.error;
     })();
 
     return (

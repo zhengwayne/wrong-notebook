@@ -21,9 +21,14 @@ describe('语文题干转写规则', () => {
         expect(generateAnalyzePrompt('zh', null, '数学')).not.toContain('【语文题干转写规则】');
     });
 
-    it('家长批改语文试卷时附带规则，数学试卷不带', () => {
+    it('家长批改语文试卷（含英文界面与未选学科）及教师阅卷语文模式附带规则，数学试卷不带', () => {
         expect(generateExamPaperReadPrompt('parent_review', 'zh', '语文')).toContain('【语文题干转写规则】');
+        expect(generateExamPaperReadPrompt('parent_review', 'en', 'chinese')).toContain('【语文题干转写规则】');
+        expect(generateExamPaperReadPrompt('parent_review', 'zh', null)).toContain('【语文题干转写规则】');
         expect(generateExamPaperReadPrompt('parent_review', 'zh', '数学')).not.toContain('【语文题干转写规则】');
+        expect(generateExamPaperReadPrompt('answer_key', 'zh', '语文')).toContain('【语文题干转写规则】');
+        expect(generateExamPaperReadPrompt('student', 'zh', '语文')).toContain('【语文题干转写规则】');
+        expect(generateExamPaperReadPrompt('answer_key', 'zh', '数学')).not.toContain('【语文题干转写规则】');
     });
 
     it('样例文字含拼音时附带规则', () => {
