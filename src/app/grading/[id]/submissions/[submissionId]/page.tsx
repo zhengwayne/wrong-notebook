@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, RotateCcw, Scissors, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { NativeSelect } from "@/components/grading/native-select";
 import { MatchPanel } from "@/components/grading/match-panel";
+import { SubmissionBboxViewer } from "@/components/grading/submission-bbox-viewer";
+import { scoreRatioToGradeLevel } from "@/lib/grading-grades";
 import { studentLabel } from "@/lib/grading-labels";
 import { ResultRow } from "@/components/grading/result-row";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -25,6 +27,7 @@ export default function GradingReviewPage() {
     const [submission, setSubmission] = useState<GradingSubmissionDetail | null>(null);
     const [task, setTask] = useState<GradingTaskDetail | null>(null);
     const [saving, setSaving] = useState(false);
+    const [activeResultId, setActiveResultId] = useState<string | null>(null);
 
     const load = useCallback(() => {
         apiClient.get<GradingSubmissionDetail>(`/api/grading/submissions/${submissionId}`).then(setSubmission).catch(() => router.replace(`/grading/${id}`));
@@ -103,18 +106,17 @@ export default function GradingReviewPage() {
                 <PageHeader backHref={`/grading/${id}?tab=papers`} title={t.grading.reviewTitle} description={submission.taskTitle}
                     actions={<Button variant="ghost" size="icon" aria-label={t.grading.deletePaper} onClick={remove}><Trash2 className="h-4 w-4" /></Button>} />
                 <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-2">
-                        {submission.images.map((image, index) => (
-                            <div key={index} className="space-y-1">
-                                <a href={image} target="_blank" rel="noreferrer">
-                                    <img src={image} alt={t.grading.paperN.replace("{index}", String(index + 1))} className="w-full rounded-xl border" />
-                                </a>
-                                {index > 0 && !confirmed && !grading && (
-                                    <Button size="sm" variant="outline" onClick={() => split(index)}><Scissors className="h-3.5 w-3.5" />{t.grading.match.splitHere}</Button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
+                    <SubmissionBboxViewer
+                        images={submission.images}
+                        results={submission.results}
+                        activeResultId={activeResultId}
+                        canSplit={!confirmed && !grading}
+                        onSelectResult={(rid) => {
+                            setActiveResultId(rid);
+                            document.getElementById(`result-row-${rid}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }}
+                        onSplitPage={split}
+                    />
                     <div className="space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
                             <NativeSelect aria-label={t.grading.student} className="flex-1" value={submission.studentId || ""} disabled={confirmed}
@@ -122,7 +124,13 @@ export default function GradingReviewPage() {
                                 <option value="">{t.grading.unassigned}</option>
                                 {task.students.map((student) => <option key={student.id} value={student.id}>{studentLabel(student, multiClass)}</option>)}
                             </NativeSelect>
-                            {submission.totalScore !== null && <span className="text-2xl font-bold">{submission.totalScore}</span>}
+                            {submission.totalScore !== null && (
+                                <span className="text-2xl font-bold">
+                                    {task.scoringMode === "grade"
+                                        ? t.grading.quickGrading.gradeLabels[scoreRatioToGradeLevel(submission.totalScore, task.questions.reduce((acc, qItem) => acc + qItem.maxScore, 0))]
+                                        : submission.totalScore}
+                                </span>
+                            )}
                         </div>
                         <MatchPanel info={submission} studentId={submission.studentId} students={task.students} multiClass={multiClass}
                             takenIds={new Set(task.submissions.filter((item) => item.id !== submission.id).map((item) => item.studentId).filter((sid): sid is string => !!sid))}
@@ -130,8 +138,10 @@ export default function GradingReviewPage() {
                         {grading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{t.grading.gradingInProgress}</p>}
                         {submission.status === "failed" && <p className="text-sm text-destructive">{t.grading.gradingFailed.replace("{error}", submission.error || "")}</p>}
                         {submission.results.map((result) => (
-                            <ResultRow key={result.id} result={result} disabled={confirmed}
-                                onOverride={(override) => patch({ results: [{ id: result.id, ...override }] })} />
+                            <div key={result.id} id={`result-row-${result.id}`} onClick={() => setActiveResultId(result.id)} className={activeResultId === result.id ? "rounded-xl ring-2 ring-primary" : ""}>
+                                <ResultRow result={result} disabled={confirmed}
+                                    onOverride={(override) => patch({ results: [{ id: result.id, ...override }] })} />
+                            </div>
                         ))}
                         <div className="sticky bottom-20 flex flex-wrap gap-2 rounded-xl bg-background/95 py-2 md:bottom-2">
                             {!confirmed && submission.results.length > 0 && (

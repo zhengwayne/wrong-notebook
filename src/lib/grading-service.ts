@@ -12,6 +12,7 @@ import { generateUniqueShortId } from "@/lib/short-id";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
 import { ensureLearnerForGradingStudent } from "@/lib/learners";
+import { DEFAULT_GRADING_CONCURRENCY, resolveCroppedGradingItemImage, runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
 import { ensureQuickStudentInClass, inferAnswerKeyFromSampleImages } from "@/lib/grading-quick-key";
 import {
     gradeAnswers, isWrong, parseJsonStringArray, totalScore,
@@ -216,13 +217,20 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         }
 
         const provenanceId = await recordAiProvenance(prisma, { task: 'grade', role: 'vision' });
+        const appearance = read.paperAppearance;
+        const appearanceData = appearance ? {
+            ...(submission.handwritingLevel ? {} : { handwritingLevel: appearance.handwritingLevel }),
+            ...(submission.neatnessLevel ? {} : { neatnessLevel: appearance.neatnessLevel }),
+            ...(submission.attitudeLevel ? {} : { attitudeLevel: appearance.attitudeLevel }),
+            visualAlerts: appearance.visualAlerts.length > 0 ? JSON.stringify(appearance.visualAlerts) : null,
+        } : {};
 
         await prisma.$transaction([
             prisma.gradingResult.deleteMany({ where: { submissionId } }),
             prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) }),
             prisma.gradingSubmission.update({
                 where: { id: submissionId },
-                data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData },
+                data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData, ...appearanceData },
             }),
         ]);
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');
@@ -235,13 +243,11 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
     }
 }
 
-/** 在后台依次判分，避免一次拍几十张卷时同时占满 AI 并发 */
+/** 在后台按有界并发池（默认 3 路）判分，大幅缩短全班几十份试卷的等待时间且受控不打满并发 */
 export function scheduleGrading(submissionIds: string[], language: 'zh' | 'en'): void {
-    void (async () => {
-        for (const id of submissionIds) {
-            await gradeSubmission(id, language);
-        }
-    })().catch((error) => logger.error({ error }, '后台判分异常'));
+    void runBoundedConcurrency(submissionIds, DEFAULT_GRADING_CONCURRENCY, async (id) => {
+        await gradeSubmission(id, language);
+    }).catch((error) => logger.error({ error }, '后台判分异常'));
 }
 
 async function resolveStudentNotebook(tx: Prisma.TransactionClient, userId: string, name: string, subjectName: string) {
@@ -298,8 +304,20 @@ export async function confirmSubmission(
     const snapshotVersion = submission.version;
     const studentName = submission.student.name;
     const { task } = submission;
-    const firstImage = parseJsonStringArray(submission.images)[0] || '';
+    const pages = parseJsonStringArray(submission.images);
+    const firstImage = pages[0] || '';
     const subjectKey = inferSubjectFromName(task.subjectName) || 'other';
+
+    // 在数据库写事务之外预先按单题 bbox 裁出清晰单题图，避免图像解码阻塞 SQLite 写锁
+    const croppedImageByResultId = new Map<string, string>();
+    await Promise.all(
+        submission.results
+            .filter((res) => isWrong(res.verdict) && !res.errorItemId)
+            .map(async (res) => {
+                const img = await resolveCroppedGradingItemImage(pages, res.bbox);
+                croppedImageByResultId.set(res.id, img || firstImage);
+            }),
+    );
 
     const imported = await prisma.$transaction(async (tx) => {
         // 先用 status + version CAS 条件更新抢占确认所有权
@@ -353,21 +371,26 @@ export async function confirmSubmission(
 
             const question = toKeyQuestion(result.keyQuestion);
             const tags = await resolveTags(tx, userId, question.knowledgePoints || [], subjectKey);
+            const itemImageUrl = croppedImageByResultId.get(result.id) || firstImage;
+            const noteParts = [`${studentName}：${result.score}/${question.maxScore}`];
+            if (result.comment?.trim()) noteParts.push(result.comment.trim());
+            if (submission.teacherComment?.trim()) noteParts.push(submission.teacherComment.trim());
             const item = await tx.errorItem.create({
                 data: {
                     shortId: await generateUniqueShortId(tx),
                     userId,
                     learnerId: learner.id,
                     subjectId: notebook.id,
-                    originalImageUrl: firstImage,
+                    originalImageUrl: itemImageUrl,
                     questionText: question.questionText || `${task.title} 第 ${question.number} 题`,
                     answerText: question.answer || null,
                     wrongAnswerText: result.studentAnswer || null,
                     mistakeAnalysis: result.reason || null,
+                    errorType: result.reason ? result.reason.slice(0, 80) : null,
                     mistakeStatus: result.verdict === 'blank' || !result.studentAnswer ? 'not_attempted' : 'wrong_attempt',
                     knowledgePoints: JSON.stringify(question.knowledgePoints || []),
                     source: task.title,
-                    userNotes: `${studentName}：${result.score}/${question.maxScore}`,
+                    userNotes: noteParts.join(' ｜ '),
                     provenanceId: result.provenanceId ?? null,
                     masteryLevel: 0,
                     tags: { connect: tags },

@@ -1402,7 +1402,7 @@ ${subjectGuidance}
 {"className": "七年级3班", "studentNo": "12", "studentName": "张三", "questions": []}`;
   }
   return `【角色与任务】
-你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
+你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页（第 1 张图为 pageIndex 0）。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
 
 【规则】
 - studentName：卷面姓名栏写的姓名，看不清或没有写为 null。
@@ -1411,12 +1411,17 @@ ${subjectGuidance}
 - answer：如实转写学生的作答。选择题只写所选字母；未作答写空字符串。不要把标准答案当成学生答案。
 - objective 题只转写，不评分（score 写 null）。
 - subjective 题按参考答案与步骤给出建议得分 score（0 到 maxScore，可为 0.5 的倍数），并用一句话写明 reason（得分点与扣分原因）。
+- confidence：0 到 1 的小数，表示看清并准确提取/评估本题作答的把握度（看不清时低于 0.75）。
+- bbox：该题及学生作答在对应页上的归一化矩形 { "pageIndex": 0, "x": 0.08, "y": 0.15, "width": 0.84, "height": 0.16 }，比例均为 0~1；位置无法确定时写 null。
+- paperAppearance：基于整卷宏观视觉特征（不评判微观书法笔锋，仅观察字迹清晰度、涂改墨团、步骤排版与留白情况）给出初评建议：
+  - handwritingLevel / neatnessLevel / attitudeLevel：取 "excellent" | "good" | "fair" | "needs_work"
+  - visualAlerts：仅在确有明显现象时从 ["heavy_erasure", "messy_handwriting", "missing_steps", "large_blank"] 中选取，正常情况写 []。
 - 卷面上老师的批改痕迹（对勾、分数）不作为评分依据。
 - ${reasonLanguage}
 - 只输出 JSON，不要其他文字。
 
 【输出格式】
-{"studentName": "张三", "className": "七年级3班", "studentNo": "12", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
+{"studentName": "张三", "className": "七年级3班", "studentNo": "12", "paperAppearance": {"handwritingLevel": "good", "neatnessLevel": "good", "attitudeLevel": "excellent", "visualAlerts": []}, "questions": [{"number": "1", "answer": "B", "score": null, "confidence": 0.96, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.12, "width": 0.84, "height": 0.1}, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "confidence": 0.85, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.45, "width": 0.84, "height": 0.3}, "reason": "方程列对，计算错误扣 2 分"}]}`;
 }
 
 /** 变式流水线：先规划再逐题生成（借鉴 DeepTutor 的阶段划分，提示词为独立撰写） */

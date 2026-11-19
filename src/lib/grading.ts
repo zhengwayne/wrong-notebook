@@ -39,6 +39,8 @@ export interface ReadAnswer {
     answer: string;
     /** 主观题的 AI 建议分 */
     score?: number | null;
+    confidence?: number | null;
+    bbox?: { pageIndex: number; x: number; y: number; width: number; height: number } | null;
     reason?: string | null;
 }
 
@@ -48,6 +50,8 @@ export interface GradedQuestion {
     verdict: GradingVerdict;
     score: number;
     aiScore: number | null;
+    confidence?: number | null;
+    bbox?: string | null;
     reason: string | null;
     source: 'auto' | 'ai' | 'teacher';
 }
@@ -211,6 +215,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
     return questions.map((question) => {
         const read = byNumber.get(normalizeNumber(question.number));
         const studentAnswer = (read?.answer || '').trim();
+        const confidence = typeof read?.confidence === 'number' ? read.confidence : null;
+        const bbox = read?.bbox ? JSON.stringify(read.bbox) : null;
         if (question.type === 'objective') {
             const verdict = compareObjective(studentAnswer, question);
             return {
@@ -219,6 +225,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
                 verdict,
                 score: verdict === 'correct' ? question.maxScore : 0,
                 aiScore: null,
+                confidence,
+                bbox,
                 reason: null,
                 source: 'auto',
             };
@@ -231,6 +239,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
             verdict: verdictFromScore(score, question.maxScore, !studentAnswer),
             score,
             aiScore,
+            confidence,
+            bbox,
             reason: read?.reason?.trim() || null,
             source: 'ai',
         };

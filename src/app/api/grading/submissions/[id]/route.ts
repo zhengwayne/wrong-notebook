@@ -8,18 +8,27 @@ import { taskClassIds, toKeyQuestion } from "@/lib/grading-service";
 import { resultOverrideSchema } from "@/lib/grading-api";
 import { parseCandidates, parseMatchReason } from "@/lib/grading-match-json";
 
+import { PROCESS_LEVELS } from "@/lib/ai/exam-paper-read";
+
 type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
     studentId: z.string().min(1).nullable().optional(),
-    results: z.array(resultOverrideSchema).max(200).optional(),
+    handwritingLevel: z.enum(PROCESS_LEVELS).nullable().optional(),
+    neatnessLevel: z.enum(PROCESS_LEVELS).nullable().optional(),
+    attitudeLevel: z.enum(PROCESS_LEVELS).nullable().optional(),
+    processTags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+    teacherComment: z.string().trim().max(500).nullable().optional(),
+    results: z.array(resultOverrideSchema.extend({
+        comment: z.string().trim().max(300).nullable().optional(),
+    })).max(200).optional(),
 });
 
 async function loadOwned(id: string, userId: string) {
     return prisma.gradingSubmission.findFirst({
         where: { id, task: { userId } },
         include: {
-            task: { select: { id: true, classId: true, extraClassIds: true, userId: true, title: true } },
+            task: { select: { id: true, classId: true, extraClassIds: true, userId: true, title: true, scoringMode: true } },
             student: { select: { id: true, name: true } },
             results: { include: { keyQuestion: true }, orderBy: { keyQuestion: { order: 'asc' } } },
         },
@@ -31,6 +40,7 @@ function serialize(submission: NonNullable<Awaited<ReturnType<typeof loadOwned>>
         id: submission.id,
         taskId: submission.task.id,
         taskTitle: submission.task.title,
+        scoringMode: submission.task.scoringMode,
         studentId: submission.studentId,
         studentName: submission.student?.name || null,
         detectedName: submission.detectedName,
@@ -41,6 +51,13 @@ function serialize(submission: NonNullable<Awaited<ReturnType<typeof loadOwned>>
         matchReason: parseMatchReason(submission.matchReason),
         matchCandidates: parseCandidates(submission.matchCandidates),
         status: submission.status,
+        reviewBucket: submission.reviewBucket,
+        handwritingLevel: submission.handwritingLevel,
+        neatnessLevel: submission.neatnessLevel,
+        attitudeLevel: submission.attitudeLevel,
+        processTags: parseJsonStringArray(submission.processTags),
+        visualAlerts: parseJsonStringArray(submission.visualAlerts),
+        teacherComment: submission.teacherComment,
         version: submission.version ?? 0,
         totalScore: submission.totalScore,
         error: submission.error,
@@ -83,9 +100,18 @@ export async function PATCH(req: Request, { params }: Params) {
     const updates = (parsed.data.results || []).flatMap((override) => {
         const current = byId.get(override.id);
         if (!current) return [];
-        const next = applyTeacherOverride(current.keyQuestion.maxScore, override);
+        const hasScoreOrVerdict = override.score !== undefined || override.verdict !== undefined;
+        const next = hasScoreOrVerdict
+            ? applyTeacherOverride(current.keyQuestion.maxScore, override)
+            : { score: current.score, verdict: current.verdict, source: current.source };
         scores.set(current.id, next.score);
-        return [prisma.gradingResult.update({ where: { id: current.id }, data: next })];
+        return [prisma.gradingResult.update({
+            where: { id: current.id },
+            data: {
+                ...(hasScoreOrVerdict ? next : {}),
+                ...(override.comment !== undefined ? { comment: override.comment } : {}),
+            },
+        })];
     });
 
     await prisma.$transaction([
@@ -99,6 +125,11 @@ export async function PATCH(req: Request, { params }: Params) {
                     matchStatus: parsed.data.studentId ? 'manual' : 'review',
                     ...(parsed.data.studentId ? { matchReason: JSON.stringify({ code: 'manual' }) } : {}),
                 } : {}),
+                ...(parsed.data.handwritingLevel !== undefined ? { handwritingLevel: parsed.data.handwritingLevel } : {}),
+                ...(parsed.data.neatnessLevel !== undefined ? { neatnessLevel: parsed.data.neatnessLevel } : {}),
+                ...(parsed.data.attitudeLevel !== undefined ? { attitudeLevel: parsed.data.attitudeLevel } : {}),
+                ...(parsed.data.processTags !== undefined ? { processTags: JSON.stringify(parsed.data.processTags) } : {}),
+                ...(parsed.data.teacherComment !== undefined ? { teacherComment: parsed.data.teacherComment } : {}),
                 ...(updates.length ? { totalScore: totalScore([...scores.values()].map((score) => ({ score }))) } : {}),
                 version: { increment: 1 },
             },
