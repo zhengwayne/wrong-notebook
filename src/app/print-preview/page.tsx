@@ -17,6 +17,12 @@ import { usePageTitle } from "@/lib/page-title";
 import { PRINT_PREVIEW_PAGE_SIZE } from "@/lib/constants/pagination";
 import { frontendLogger } from "@/lib/frontend-logger";
 import {
+    PRINT_PREVIEW_SHOW_ANALYSIS_KEY,
+    PRINT_PREVIEW_SHOW_ANSWERS_KEY,
+    readStoredFlag,
+    writeStoredFlag,
+} from "@/lib/print-answer-preference";
+import {
     getPrintPreviewCountLabel,
     getPrintPreviewEmptyState,
     getSelectedPrintItems,
@@ -47,7 +53,19 @@ function PrintPreviewResults({ query }: { query: string }) {
         showOriginalImage: true,
         imageScale: 70,
     });
-    const updateOptions = (patch: Partial<PrintDisplayOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
+    const updateOptions = (patch: Partial<PrintDisplayOptions>) => {
+        // 答案、解析默认不打印；勾选结果记在本机浏览器，下次打印沿用
+        if (patch.showAnswers !== undefined) writeStoredFlag(PRINT_PREVIEW_SHOW_ANSWERS_KEY, patch.showAnswers);
+        if (patch.showAnalysis !== undefined) writeStoredFlag(PRINT_PREVIEW_SHOW_ANALYSIS_KEY, patch.showAnalysis);
+        setOptions((prev) => ({ ...prev, ...patch }));
+    };
+    useEffect(() => {
+        const showAnswers = readStoredFlag(PRINT_PREVIEW_SHOW_ANSWERS_KEY, false);
+        const showAnalysis = readStoredFlag(PRINT_PREVIEW_SHOW_ANALYSIS_KEY, false);
+        if (!showAnswers && !showAnalysis) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 本地存储只能在客户端挂载后读取，避免与服务端渲染结果不一致
+        setOptions((prev) => ({ ...prev, showAnswers, showAnalysis }));
+    }, []);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [visibleImageLimit, setVisibleImageLimit] = useState(PRINT_IMAGE_BATCH_SIZE);
     const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);

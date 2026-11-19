@@ -1650,6 +1650,7 @@ export const zh = {
             greenBatchDone: "已批量确认 {confirmed} 份答卷，归档 {imported} 道错题",
             horizontalTab: "按题横批",
             exportDocx: "导出讲评讲义 (.docx)",
+            exportDocxAnswers: "讲义含参考答案",
             submitLinkLabel: "扫码交作业链接",
             enableSelfSubmit: "开启学生/家长扫码拍照交作业",
             copySubmitLink: "复制交卷链接",

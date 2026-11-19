@@ -12,14 +12,15 @@ function safeAsciiFileName(raw: string): string {
 }
 
 /**
- * GET /api/grading/tasks/:id/export-docx?topN=10
- * 按本班错题率自动生成可编辑 Word (.docx) 错题讲评讲义。
+ * GET /api/grading/tasks/:id/export-docx?topN=10&answers=1
+ * 按本班错题率自动生成可编辑 Word (.docx) 错题讲评讲义；默认不含参考答案，answers=1 时写入。
  */
 export const GET = defineApiRoute({ auth: "user" }, async (req, { user, params }) => {
     const { id: taskId } = await (params as Promise<{ id: string }>);
     const searchParams = new URL(req.url).searchParams;
     const rawTopN = Number(searchParams.get("topN") || 10);
     const topN = Number.isFinite(rawTopN) ? Math.max(1, Math.min(50, Math.floor(rawTopN))) : 10;
+    const includeAnswers = searchParams.get("answers") === "1";
 
     const task = await prisma.gradingTask.findFirst({
         where: { id: taskId, userId: user.id },
@@ -106,6 +107,7 @@ export const GET = defineApiRoute({ auth: "user" }, async (req, { user, params }
                 };
             }),
         topN,
+        includeAnswers,
     });
 
     const encodedName = encodeURIComponent(`${task.title}_讲评讲义.docx`);

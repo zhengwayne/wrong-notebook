@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PageLoading } from "@/components/ui/page-loading";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { HANDOUT_INCLUDE_ANSWERS_KEY, useStoredFlag } from "@/lib/print-answer-preference";
 import { cn } from "@/lib/utils";
 import type { GradingTaskSummaryStats } from "@/types/grading";
 
@@ -25,6 +27,8 @@ function rateColor(rate: number): string {
 export function ClassSummary({ taskId, version }: ClassSummaryProps) {
     const { t, language } = useLanguage();
     const [summary, setSummary] = useState<GradingTaskSummaryStats | null>(null);
+    // 讲义默认不含参考答案，勾选结果记在本机浏览器
+    const [handoutAnswers, setHandoutAnswers] = useStoredFlag(HANDOUT_INCLUDE_ANSWERS_KEY, false);
 
     useEffect(() => {
         apiClient.get<GradingTaskSummaryStats>(`/api/grading/tasks/${taskId}/summary`).then(setSummary).catch(() => setSummary(null));
@@ -47,8 +51,12 @@ export function ClassSummary({ taskId, version }: ClassSummaryProps) {
                     <a href={`/api/grading/tasks/${taskId}/summary?format=csv&lang=${language}`}><Download className="h-4 w-4" />{t.grading.exportCsv}</a>
                 </Button>
                 <Button variant="outline" asChild>
-                    <a href={`/api/grading/tasks/${taskId}/export-docx?topN=10`}><FileText className="h-4 w-4" />{t.grading.quickGrading.exportDocx}</a>
+                    <a href={`/api/grading/tasks/${taskId}/export-docx?topN=10${handoutAnswers ? "&answers=1" : ""}`}><FileText className="h-4 w-4" />{t.grading.quickGrading.exportDocx}</a>
                 </Button>
+                <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={handoutAnswers} onCheckedChange={(value) => setHandoutAnswers(value === true)} />
+                    {t.grading.quickGrading.exportDocxAnswers}
+                </label>
                 <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />{t.grading.print}</Button>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

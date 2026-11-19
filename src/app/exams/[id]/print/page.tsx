@@ -20,6 +20,7 @@ import {
     isAnswerSpaceMode,
 } from "@/lib/exam-answer-space";
 import type { AnswerSpaceMode } from "@/lib/exam-answer-space";
+import { EXAM_PRINT_INCLUDE_ANSWERS_KEY, useStoredFlag } from "@/lib/print-answer-preference";
 import type { ExamPaperDetail } from "@/types/api";
 
 export default function ExamPrintPage() {
@@ -27,7 +28,8 @@ export default function ExamPrintPage() {
     const { t, language } = useLanguage();
     const [paper, setPaper] = useState<ExamPaperDetail | null>(null);
     usePageTitle(t.exam.title, paper?.title, t.pageTitle.examPrint);
-    const [includeAnswers, setIncludeAnswers] = useState(true);
+    // 「包含答案页」默认不勾选，勾选结果记在本机浏览器，下次打印沿用
+    const [includeAnswers, setIncludeAnswers] = useStoredFlag(EXAM_PRINT_INCLUDE_ANSWERS_KEY, false);
     const [answerSpace, setAnswerSpace] = useState<AnswerSpaceMode>(DEFAULT_ANSWER_SPACE_MODE);
     const sheetRef = useRef<HTMLDivElement>(null);
 

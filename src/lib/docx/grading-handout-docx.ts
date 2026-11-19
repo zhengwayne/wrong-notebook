@@ -19,6 +19,8 @@ export interface GradingHandoutInput {
     weakPoints: Array<{ name: string; errorRate: number }>;
     questions: HandoutQuestionItem[];
     topN?: number;
+    /** 是否写入参考答案；默认不写，讲义可直接发给学生订正 */
+    includeAnswers?: boolean;
 }
 
 /**
@@ -106,7 +108,11 @@ export function buildGradingHandoutDocx(input: GradingHandoutInput): Uint8Array 
         if (q.sampleMistakes && q.sampleMistakes.length > 0) {
             paragraphs.push(paragraphXml(`【典型错因/错答】${q.sampleMistakes.join("；")}`, { sizeHalfPt: 20, colorHex: "6B7280", spacingAfter: 60 }));
         }
-        paragraphs.push(paragraphXml(`【参考答案与订正区】参考答案：${q.answer?.trim() || "略"}`, { sizeHalfPt: 20, spacingAfter: 40 }));
+        if (input.includeAnswers) {
+            paragraphs.push(paragraphXml(`【参考答案与订正区】参考答案：${q.answer?.trim() || "略"}`, { sizeHalfPt: 20, spacingAfter: 40 }));
+        } else {
+            paragraphs.push(paragraphXml("【订正区】", { sizeHalfPt: 20, spacingAfter: 40 }));
+        }
         paragraphs.push(paragraphXml("课堂订正笔记：________________________________________________________________", { sizeHalfPt: 20, colorHex: "9CA3AF", spacingAfter: 200 }));
     }
 

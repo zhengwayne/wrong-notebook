@@ -65,4 +65,22 @@ describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防�
         expect(docXml).not.toContain('全对题不应进入讲评');
         expect(docXml.indexOf('第 12 题')).toBeLessThan(docXml.indexOf('第 5 题'));
     });
+
+    it('讲义默认不写参考答案，includeAnswers 为 true 时才写入', () => {
+        const base = {
+            taskTitle: '随堂测',
+            className: '三(2)班',
+            subjectName: '数学',
+            gradedCount: 10,
+            averageScore: 80,
+            weakPoints: [],
+            questions: [{ number: '1', questionText: '1+1=?', answer: '2', errorRate: 50, wrongCount: 5, answeredCount: 10 }],
+        };
+        const read = (bytes: Uint8Array) => strFromU8(unzipSync(bytes)['word/document.xml']);
+        const withoutAnswers = read(buildGradingHandoutDocx(base));
+        expect(withoutAnswers).not.toContain('参考答案：2');
+        expect(withoutAnswers).toContain('【订正区】');
+        const withAnswers = read(buildGradingHandoutDocx({ ...base, includeAnswers: true }));
+        expect(withAnswers).toContain('参考答案：2');
+    });
 });

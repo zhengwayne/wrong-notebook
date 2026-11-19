@@ -1654,6 +1654,7 @@ export const en = {
             greenBatchDone: "Confirmed {confirmed} papers, archived {imported} wrong answers",
             horizontalTab: "By-Question Grader",
             exportDocx: "Export Handout (.docx)",
+            exportDocxAnswers: "Include answer key in handout",
             submitLinkLabel: "QR / Link Submission",
             enableSelfSubmit: "Allow students/parents to submit photos via link",
             copySubmitLink: "Copy Submit Link",
