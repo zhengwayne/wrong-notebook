@@ -1095,6 +1095,40 @@ async function importPapersGradingVariantsPaths(
         });
         ctx.stats.itemMemoriesImported++;
     });
+
+    await ctx.archive.readNdjson('data/dailyHomeworkItems.ndjson', async (row) => {
+        const targetUserId = await resolveOwnerId(ctx, row.userId);
+        const mappedLearnerId = ctx.learnerIdMap.get(asRequiredString(row.learnerId));
+        const dateKey = asOptionalString(row.dateKey);
+        const title = asOptionalString(row.title);
+        if (!targetUserId || !mappedLearnerId || !dateKey || !title) return;
+
+        const category = asRequiredString(row.category, 'written');
+        const subjectKey = asRequiredString(row.subjectKey, 'math');
+        const existing = await ctx.tx.dailyHomeworkItem.findFirst({
+            where: { userId: targetUserId, learnerId: mappedLearnerId, dateKey, category, title },
+            select: { id: true },
+        });
+        if (existing) return;
+
+        await ctx.tx.dailyHomeworkItem.create({
+            data: {
+                userId: targetUserId,
+                learnerId: mappedLearnerId,
+                dateKey,
+                subjectKey,
+                category,
+                title,
+                estimatedMinutes: asOptionalNumber(row.estimatedMinutes) ?? null,
+                actualMinutes: asOptionalNumber(row.actualMinutes) ?? null,
+                completed: asOptionalBoolean(row.completed) ?? false,
+                completedAt: safeParseDate(row.completedAt) ?? null,
+                order: asOptionalNumber(row.order) ?? 0,
+                ...(safeParseDate(row.createdAt) ? { createdAt: safeParseDate(row.createdAt) } : {}),
+            },
+        });
+        ctx.stats.dailyHomeworksCreated = (ctx.stats.dailyHomeworksCreated ?? 0) + 1;
+    });
 }
 
 /** 从流式 ZIP v3 备份归档恢复学习数据 */
@@ -1144,6 +1178,7 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
             preferencesRestored: false,
             practiceRecordsCreated: 0,
             parentPapersCreated: 0,
+            dailyHomeworksCreated: 0,
             gradingTasksCreated: 0,
             variantRunsCreated: 0,
             knowledgeMasteriesImported: 0,

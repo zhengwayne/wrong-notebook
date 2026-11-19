@@ -44,6 +44,11 @@ model User {
   themePreference String @default("system") // 界面主题：system 跟随系统、light 浅色、dark 深色
   reviewAlgorithmVersion String @default("ebbinghaus-v1") // 逐题复习算法：ebbinghaus-v1 | fsrs-v1
 
+  /// 家长专注做题模式 4 位 PIN 码的 bcrypt 哈希（不随普通查询或备份导出）
+  parentPinHash        String?
+  parentPinFailedCount Int       @default(0)
+  parentPinLockedUntil DateTime?
+
   errorItems ErrorItem[]
   subjects   Subject[]
   practiceRecords PracticeRecord[]
@@ -57,6 +62,7 @@ model User {
   learningPaths LearningPath[]
   learners     Learner[]
   parentPapers ParentPaper[]
+  dailyHomeworks DailyHomeworkItem[]
   itemMemories ItemMemory[]
   sourceImports SourceImport[]
   asyncOperations AsyncOperation[]
@@ -545,6 +551,7 @@ model Learner {
   errorItems      ErrorItem[]
   practiceRecords PracticeRecord[]
   parentPapers    ParentPaper[]
+  dailyHomeworks  DailyHomeworkItem[]
   itemMemories    ItemMemory[]
   examPapers      ExamPaper[]
 
@@ -800,4 +807,26 @@ model AiDailyQuota {
 
   @@unique([userId, dayKey])
   @@index([dayKey])
+}
+
+/// 家长每日全科作业待办项
+model DailyHomeworkItem {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId        String
+  learner          Learner   @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  dateKey          String    // YYYY-MM-DD（应用时区）
+  subjectKey       String    @default("math")
+  category         String    @default("written") // written 书面 | recitation 背诵 | dictation 听写 | review 错题复习
+  title            String
+  estimatedMinutes Int?
+  actualMinutes    Int?
+  completed        Boolean   @default(false)
+  completedAt      DateTime?
+  order            Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId, learnerId, dateKey])
 }

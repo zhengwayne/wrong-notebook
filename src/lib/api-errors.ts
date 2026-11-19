@@ -27,6 +27,7 @@ export const ErrorCode = {
     FORBIDDEN: 'FORBIDDEN',
     NOT_OWNER: 'NOT_OWNER',
     ADMIN_REQUIRED: 'ADMIN_REQUIRED',
+    KID_MODE_RESTRICTED: 'KID_MODE_RESTRICTED',
 
     // 资源相关 (404)
     NOT_FOUND: 'NOT_FOUND',
@@ -112,6 +113,15 @@ export function accountDisabled(message: string = "Account is disabled"): NextRe
  */
 export function forbidden(message: string = "Forbidden"): NextResponse<ApiErrorResponse> {
     return createErrorResponse(message, 403, ErrorCode.FORBIDDEN);
+}
+
+/**
+ * 403 Kid Mode Restricted - 孩子专注做题受限模式下禁止管理或删除操作
+ */
+export function kidModeRestricted(
+    message: string = "专注做题模式下禁止此操作，请先由家长输入 PIN 码解锁",
+): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 403, ErrorCode.KID_MODE_RESTRICTED);
 }
 
 /**

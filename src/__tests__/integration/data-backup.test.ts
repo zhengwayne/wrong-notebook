@@ -83,6 +83,7 @@ async function clearUserData() {
     await database.parentPaperQuestion.deleteMany({});
     await database.parentPaperPage.deleteMany({});
     await database.parentPaper.deleteMany({});
+    await database.dailyHomeworkItem.deleteMany({});
     await database.gradingResult.deleteMany({});
     await database.gradingSubmission.deleteMany({});
     await database.gradingKeyQuestion.deleteMany({});

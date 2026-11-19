@@ -20,6 +20,7 @@ export const BACKUP_EXPORTED_MODELS = {
     ParentPaper: 'db.parentPaper.findMany',
     ParentPaperPage: 'db.parentPaperPage.findMany',
     ParentPaperQuestion: 'db.parentPaperQuestion.findMany',
+    DailyHomeworkItem: 'db.dailyHomeworkItem.findMany',
     GradingTask: 'db.gradingTask.findMany',
     GradingKeyQuestion: 'db.gradingKeyQuestion.findMany',
     GradingSubmission: 'db.gradingSubmission.findMany',

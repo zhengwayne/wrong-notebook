@@ -491,6 +491,19 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
         );
         derivedCounts.itemMemories = await imEntry.close();
 
+        // 13b. 家长每日全科作业待办项
+        const dhEntry = zipWriter.openNdjsonEntry('data/dailyHomeworkItems.ndjson');
+        await streamPaged(
+            (cursor, take) => db.dailyHomeworkItem.findMany({
+                where: userFilter,
+                orderBy: { id: 'asc' },
+                take,
+                ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            }),
+            async (row) => dhEntry.writeLine(row),
+        );
+        counts.dailyHomeworkItems = await dhEntry.close();
+
         // 14. 动画云端语音缓存（MP3 单独写入 tts/<id>.mp3）
         const speeches = await exportSpeeches(narrationSources);
         const ttsEntry = zipWriter.openNdjsonEntry('data/ttsSpeeches.ndjson');

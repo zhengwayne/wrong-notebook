@@ -4,12 +4,14 @@ import {
     accountDisabled,
     badRequest,
     forbidden,
+    kidModeRestricted,
     payloadTooLarge,
     sessionRevoked,
     unauthorized,
     validationError,
 } from '@/lib/api-errors';
 import { isAdmin } from '@/lib/auth-utils';
+import { getKidModeLockFromRequest, isApiAllowedInKidMode } from '@/lib/kid-mode-lock';
 import { resolveActor, type ActorUser } from '@/lib/server/actor';
 import {
     createRequestContext,
@@ -173,6 +175,19 @@ export function defineApiRoute<
                     user = actor.user;
                     session = actor.session;
                     setRequestContextUserId(actor.user.id);
+                }
+
+                if (user && req) {
+                    const activeKidLock = getKidModeLockFromRequest(req, {
+                        userId: user.id,
+                        authVersion: user.authVersion,
+                    });
+                    if (activeKidLock) {
+                        const pathname = new URL(req.url, 'http://127.0.0.1').pathname;
+                        if (!isApiAllowedInKidMode(pathname, req.method)) {
+                            return kidModeRestricted();
+                        }
+                    }
                 }
             }
 

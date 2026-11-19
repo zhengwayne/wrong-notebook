@@ -63,6 +63,7 @@ export interface ImportStatsV3 {
     preferencesRestored: boolean;
     practiceRecordsCreated: number;
     parentPapersCreated: number;
+    dailyHomeworksCreated?: number;
     gradingTasksCreated: number;
     variantRunsCreated: number;
     knowledgeMasteriesImported: number;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { createLogger } from "@/lib/logger";
+import { KID_MODE_COOKIE_NAME, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
 import { isPersona, landingPath } from "@/lib/personas";
 
 const logger = createLogger('proxy');
@@ -165,6 +166,20 @@ export async function proxy(req: NextRequest) {
             logger.warn({ userId: token?.id, path: req.nextUrl.pathname }, 'Non-admin user attempting to access admin area');
             const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
             return NextResponse.redirect(new URL(home, req.url));
+        }
+
+        // 家长开启孩子专注做题模式时，服务端强制将非学习页面收敛重定向至对应孩子的学习路径页
+        const rawKidCookie = req.cookies.get(KID_MODE_COOKIE_NAME)?.value;
+        if (rawKidCookie) {
+            const kidLock = verifyKidModeToken(rawKidCookie, {
+                userId: typeof token?.id === "string" ? token.id : undefined,
+                authVersion: typeof token?.authVersion === "number" ? token.authVersion : undefined,
+            });
+            if (kidLock && !isKidModeAllowedPagePath(req.nextUrl.pathname)) {
+                return NextResponse.redirect(
+                    new URL(`/learn?studentKey=${encodeURIComponent(kidLock.learnerId)}`, req.url),
+                );
+            }
         }
     } catch (e) {
         // 无法确认登录状态时按未登录处理（失败即拒绝），否则会绕过强制改密和管理员页面的拦截

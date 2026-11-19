@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { LogOut, Settings, Shield } from "lucide-react";
 import { MobileNav, navLabel } from "@/components/layout/mobile-nav";
+import { GlobalKidModeBanner, useKidModeState } from "@/components/parent/kid-mode-lock-bar";
 import { PersonaSwitcher } from "@/components/persona-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const { hrefWithChild } = useCurrentChild();
     const isBare = BARE_PATHS.some((pattern) => pattern.test(pathname));
     useSetupRedirect(isAdmin && !isBare);
+    const { state: kidMode } = useKidModeState(status === "authenticated" && !isBare);
+    const kidLocked = Boolean(kidMode?.active);
+    const visibleNavItems = kidLocked
+        ? navItems.filter((item) => item.href === "/learn" || item.href === "/review")
+        : navItems;
+    const effectiveHomeHref = kidLocked && kidMode?.learnerId
+        ? `/learn?studentKey=${encodeURIComponent(kidMode.learnerId)}`
+        : homeHref;
     const [settingsMounted, setSettingsMounted] = useState(false);
 
     useEffect(() => {
@@ -92,10 +101,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {t.nav.skipToContent}
             </a>
 
+            {kidLocked && kidMode && <GlobalKidModeBanner state={kidMode} />}
+
             <header className="sticky top-0 z-40 border-b border-border/80 bg-card/85 backdrop-blur-md supports-[backdrop-filter]:bg-card/75 print:hidden">
                 <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 md:h-16 md:px-8">
                     <Link
-                        href={homeHref}
+                        href={effectiveHomeHref}
                         className="flex shrink-0 items-center gap-2.5 rounded-lg py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <Image
@@ -111,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Link>
 
                     <nav aria-label={t.nav.primaryNav} className="ml-4 hidden items-center gap-1 md:flex">
-                        {navItems.map((item) => {
+                        {visibleNavItems.map((item) => {
                             const active = item.match(pathname);
                             return (
                                 <NavLink
@@ -143,8 +154,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 <span className="truncate text-foreground/85">{userName}</span>
                             </span>
                         )}
-                        <PersonaSwitcher />
-                        {isAdmin && (
+                        {!kidLocked && <PersonaSwitcher />}
+                        {!kidLocked && isAdmin && (
                             <Button asChild variant="ghost" size="icon" className="rounded-full">
                                 <Link href="/admin" title={t.nav.admin} aria-label={t.nav.admin}>
                                     <Shield className="h-5 w-5" aria-hidden="true" />
@@ -152,32 +163,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             </Button>
                         )}
                         <ThemeToggle />
-                        {settingsMounted ? (
-                            <LazySettingsDialog defaultOpen />
-                        ) : (
+                        {!kidLocked && (
+                            settingsMounted ? (
+                                <LazySettingsDialog defaultOpen />
+                            ) : (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="rounded-full"
+                                    onClick={() => setSettingsMounted(true)}
+                                    title={t.settings?.title || "Settings"}
+                                    aria-label={t.settings?.title || "Settings"}
+                                >
+                                    <Settings className="h-5 w-5" />
+                                </Button>
+                            )
+                        )}
+                        {!kidLocked && (
                             <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full"
-                                onClick={() => setSettingsMounted(true)}
-                                title={t.settings?.title || "Settings"}
-                                aria-label={t.settings?.title || "Settings"}
+                                className="rounded-full text-muted-foreground hover:text-destructive"
+                                onClick={() => signOut({ callbackUrl: "/login" })}
+                                title={t.app.logout}
+                                aria-label={t.app.logout}
                             >
-                                <Settings className="h-5 w-5" />
+                                <LogOut className="h-5 w-5" aria-hidden="true" />
                             </Button>
                         )}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full text-muted-foreground hover:text-destructive"
-                            onClick={() => signOut({ callbackUrl: "/login" })}
-                            title={t.app.logout}
-                            aria-label={t.app.logout}
-                        >
-                            <LogOut className="h-5 w-5" aria-hidden="true" />
-                        </Button>
                     </div>
                 </div>
             </header>
@@ -186,12 +201,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
 
-            <MobileNav
-                pathname={pathname}
-                isAdmin={isAdmin}
-                activePersona={activePersona}
-                hrefWithChild={hrefWithChild}
-            />
+            {!kidLocked && (
+                <MobileNav
+                    pathname={pathname}
+                    isAdmin={isAdmin}
+                    activePersona={activePersona}
+                    hrefWithChild={hrefWithChild}
+                />
+            )}
         </div>
     );
 }
