@@ -15,6 +15,7 @@ import { DifficultyPicker, DifficultySelect } from "@/components/practice/diffic
 import { GenerateButton } from "@/components/practice/generate-button";
 import { PracticeFeedback } from "@/components/practice/practice-feedback";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { usePageTitle } from "@/lib/page-title";
 import { usePracticeSession } from "@/lib/use-practice-session";
 
@@ -22,8 +23,13 @@ export const dynamic = 'force-dynamic';
 
 function PracticeContent() {
     const searchParams = useSearchParams();
+    const errorItemId = searchParams.get("id") ?? searchParams.get("itemId");
+    return <PracticeSession key={errorItemId} errorItemId={errorItemId} />;
+}
+
+function PracticeSession({ errorItemId }: { errorItemId: string | null }) {
     const router = useRouter();
-    const errorItemId = searchParams.get("id");
+    const { timeZone } = useTimeZone();
     const { t, language } = useLanguage();
     usePageTitle(t.practice.title);
     const session = usePracticeSession(errorItemId);
@@ -81,15 +87,15 @@ function PracticeContent() {
                             <CardTitle className="flex justify-between items-center">
                                 <span>{t.app.practiceProblem}</span>
                                 <div className="flex items-center gap-2">
-                                    <DifficultySelect value={session.difficulty} onChange={session.setDifficulty} disabled={loading} />
-                                    <GenerateButton loading={loading} onClick={session.generateQuestion} regenerate />
+                                    <DifficultySelect value={session.difficulty} onChange={session.setDifficulty} disabled={loading || session.grading} />
+                                    <GenerateButton loading={loading} onClick={session.generateQuestion} disabled={session.grading} regenerate />
                                 </div>
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             {session.generatedAt && (
                                 <p className="mb-3 text-xs text-muted-foreground">
-                                    {(t.practice.lastGeneratedAt || "Generated at {time}").replace("{time}", new Date(session.generatedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US"))}
+                                    {(t.practice.lastGeneratedAt || "Generated at {time}").replace("{time}", new Date(session.generatedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone }))}
                                 </p>
                             )}
                             <MarkdownRenderer content={question.questionText} className="font-medium" />
@@ -108,14 +114,14 @@ function PracticeContent() {
                                 placeholder={t.app.answerPlaceholder || "Enter your answer..."}
                                 value={session.userAnswer}
                                 onChange={(e) => session.setUserAnswer(e.target.value)}
-                                disabled={session.isSubmitted}
+                                disabled={session.isSubmitted || loading}
                                 className="text-lg"
                             />
                             <Textarea
                                 placeholder={t.app.notesPlaceholder || "Record your thinking process (optional)..."}
                                 value={session.notes}
                                 onChange={(e) => session.setNotes(e.target.value)}
-                                disabled={session.isSubmitted}
+                                disabled={session.isSubmitted || loading}
                                 rows={3}
                             />
                         </CardContent>
@@ -128,6 +134,7 @@ function PracticeContent() {
                         gradeFailed={session.gradeFailed}
                         gradeReason={session.gradeReason}
                         notes={session.notes}
+                        loading={loading}
                         canSubmit={!!session.userAnswer.trim()}
                         onSubmit={session.submitAnswer}
                         onReveal={session.revealAnswer}

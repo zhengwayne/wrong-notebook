@@ -147,7 +147,7 @@ function LearnPage() {
         }
     }, [langQuery, t.learn.loadError]);
 
-    const effectiveTab: Tab = isParent && tab === "class" ? "today" : tab;
+    const effectiveTab: Tab = (isParent || kidLocked) && tab === "class" ? "today" : tab;
     const effectiveStudentKey = isParent && learnerId ? learnerId : studentKey;
 
     useEffect(() => {
@@ -211,9 +211,9 @@ function LearnPage() {
             { value: "today", label: t.learn.tabToday },
             { value: "path", label: t.learn.tabPath },
         ];
-        if (!isParent) options.push({ value: "class", label: t.learn.tabClass });
+        if (!isParent && !kidLocked) options.push({ value: "class", label: t.learn.tabClass });
         return options;
-    }, [t.learn.tabToday, t.learn.tabPath, t.learn.tabClass, isParent]);
+    }, [t.learn.tabToday, t.learn.tabPath, t.learn.tabClass, isParent, kidLocked]);
 
     const visibleSteps = effectiveTab === "today" ? (path?.today ?? []) : (path?.steps ?? []);
     const openCount = path?.today.length ?? 0;
@@ -221,14 +221,25 @@ function LearnPage() {
     const ctaFor = (step: PathStep) => {
         if (step.type === "review_explanation") {
             const href = step.href || (step.errorItemIds[0] ? `/error-items/${step.errorItemIds[0]}` : null);
-            return href ? { href, label: t.learn.openExplanation } : null;
+            return href ? { href: hrefWithChild(href), label: t.learn.openExplanation } : null;
         }
         if (step.type === "variant_practice") {
-            const href = step.href || (step.errorItemIds[0] ? `/practice?itemId=${step.errorItemIds[0]}` : "/variants");
-            return { href, label: t.learn.generateVariant };
+            const rawHref = step.href && step.href !== "/variants"
+                ? step.href
+                : (step.errorItemIds[0] ? `/practice?itemId=${step.errorItemIds[0]}` : (step.href || "/variants"));
+            if (kidLocked && rawHref === "/variants" && !step.errorItemIds[0]) {
+                return null;
+            }
+            return { href: hrefWithChild(rawHref), label: t.learn.generateVariant };
         }
         if (step.type === "spaced_review") return { href: hrefWithChild("/review"), label: t.learn.openReview };
-        return { href: hrefWithChild("/practice"), label: t.learn.openPractice };
+        const fallbackItemId = path?.steps.find((item) => item.errorItemIds.length > 0)?.errorItemIds[0];
+        const checkpointHref = step.errorItemIds[0]
+            ? `/practice?itemId=${step.errorItemIds[0]}`
+            : (step.href && step.href !== "/practice"
+                ? step.href
+                : (fallbackItemId ? `/practice?itemId=${fallbackItemId}` : "/review"));
+        return { href: hrefWithChild(checkpointHref), label: t.learn.openPractice };
     };
 
     return (
@@ -269,7 +280,7 @@ function LearnPage() {
             {effectiveStudentKey !== "self" && path && effectiveTab !== "class" && (
                 <p className="text-sm text-muted-foreground">
                     {path.studentName}
-                    {!isParent && (
+                    {!isParent && !kidLocked && (
                         <Button type="button" variant="link" className="ml-2 h-auto p-0" onClick={() => { setStudentKey("self"); setTab("today"); }}>
                             {t.learn.me}
                         </Button>
@@ -293,7 +304,7 @@ function LearnPage() {
                             icon={Route}
                             title={t.learn.empty}
                             description={t.learn.emptyHint}
-                            action={<Button type="button" onClick={handleReplan}>{t.learn.replan}</Button>}
+                            action={!kidLocked ? <Button type="button" onClick={handleReplan}>{t.learn.replan}</Button> : undefined}
                         />
                     }
                     empty={Boolean(path) && visibleSteps.length === 0 && openCount === 0 && (path?.steps.length ?? 0) === 0}

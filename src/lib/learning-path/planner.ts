@@ -151,7 +151,12 @@ export function planLearningPath(input: PlannerInput): PlanResult {
     const checkpointPoints = covered.slice(0, 5);
     if (checkpointPoints.length > 0 || planned.length > 0 || input.dueItemIds.length > 0) {
         const points = checkpointPoints.length > 0 ? checkpointPoints : weakPoints.slice(0, 3);
-        tryPush("checkpoint", points, [], copy.checkpointTitle, copy.checkpointReason(points), "/practice");
+        const checkpointItemId =
+            planned.find((step) => step.errorItemIds.length > 0)?.errorItemIds[0]
+            ?? input.weaknesses.find((item) => item.representativeItemIds.length > 0)?.representativeItemIds[0];
+        const checkpointIds = checkpointItemId ? [checkpointItemId] : [];
+        const checkpointHref = checkpointItemId ? `/practice?itemId=${checkpointItemId}` : "/review";
+        tryPush("checkpoint", points, checkpointIds, copy.checkpointTitle, copy.checkpointReason(points), checkpointHref);
     }
 
     const merged = [...kept, ...planned.map((step) => asPreserved(step))]

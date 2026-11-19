@@ -185,6 +185,52 @@ describe("学习路径规划与锁定保留", () => {
         expect(firstExplain?.knowledgePoints).toEqual(["整数运算"]);
         expect(plan.focusPoints[0]).toBe("整数运算");
         expect(firstExplain?.href).toBe("/error-items/item-arith");
+        const checkpoint = plan.steps[plan.steps.length - 1];
+        expect(checkpoint.href).toBe("/practice?itemId=item-due");
+        expect(checkpoint.errorItemIds).toEqual(["item-due"]);
+    });
+
+    it("checkpoint 优先取 planned 首题，其次取 weaknesses 代表题，均无时回退 /review", () => {
+        const fromPlanned = planLearningPath({ ...baseInput, dueItemIds: [] });
+        const cpPlanned = fromPlanned.steps.find((step) => step.type === "checkpoint");
+        expect(cpPlanned?.href).toBe("/practice?itemId=item-arith");
+        expect(cpPlanned?.errorItemIds).toEqual(["item-arith"]);
+
+        // planned 步骤均无 errorItemIds 时，checkpoint 应兜底取 weaknesses 首个代表题
+        const fromWeakness = planLearningPath({
+            weaknesses: [
+                { knowledgePoint: "无题薄弱点", score: 10, unmasteredCount: 1, representativeItemIds: [] },
+                { knowledgePoint: "方程", score: 2, unmasteredCount: 1, representativeItemIds: ["item-eq"] },
+            ],
+            mastery: new Map([
+                ["无题薄弱点", mastery("无题薄弱点", 0.2)],
+                ["方程", mastery("方程", 0.2)],
+            ]),
+            dueItemIds: [],
+            itemMeta: new Map(),
+            orderedPoints: ["无题薄弱点"],
+            preserved: [],
+            language: "zh",
+            now: day(2),
+        });
+        const cpWeakness = fromWeakness.steps.find((step) => step.type === "checkpoint");
+        expect(cpWeakness?.href).toBe("/practice?itemId=item-eq");
+        expect(cpWeakness?.errorItemIds).toEqual(["item-eq"]);
+
+        // 既无 planned 代表题又无 weaknesses 代表题时回退 /review
+        const noItemsPlan = planLearningPath({
+            weaknesses: [{ knowledgePoint: "方程式", score: 5, unmasteredCount: 1, representativeItemIds: [] }],
+            mastery: new Map([["方程式", mastery("方程式", 0.2)]]),
+            dueItemIds: [],
+            itemMeta: new Map(),
+            orderedPoints: ["方程式"],
+            preserved: [],
+            language: "zh",
+            now: day(2),
+        });
+        const cpFallback = noItemsPlan.steps.find((step) => step.type === "checkpoint");
+        expect(cpFallback?.href).toBe("/review");
+        expect(cpFallback?.errorItemIds).toEqual([]);
     });
 
     it("重规划时保留锁定步骤与已完成步骤，且不重复同一指纹", () => {
