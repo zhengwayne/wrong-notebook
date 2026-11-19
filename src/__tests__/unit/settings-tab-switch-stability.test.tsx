@@ -90,7 +90,8 @@ describe("设置弹窗切换到账户标签时保持对话框稳定", () => {
         const dialogSrc = fs.readFileSync(path.join(process.cwd(), "src/components/settings-dialog.tsx"), "utf8");
         expect(dialogSrc).toContain('data-testid="settings-dialog"');
         expect(dialogSrc).toContain('data-testid="settings-tab-panel"');
-        expect(dialogSrc).toContain("min-h-[calc(85vh-12rem)]");
+        expect(dialogSrc).toContain("h-[85vh]");
+        expect(dialogSrc).toContain("[scrollbar-gutter:stable]");
         expect(dialogSrc).toContain("<Suspense");
     });
 

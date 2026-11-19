@@ -114,14 +114,14 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                     <Settings className="h-5 w-5" />
                 </Button>
             </DialogTrigger>
-            <DialogContent ref={dialogContentRef} data-testid="settings-dialog" className="w-[calc(100vw-2rem)] sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
+            <DialogContent ref={dialogContentRef} data-testid="settings-dialog" className="flex flex-col w-[calc(100vw-2rem)] sm:max-w-[900px] h-[85vh] max-h-[85vh] overflow-y-auto [scrollbar-gutter:stable]">
                 <DialogHeader>
                     <DialogTitle>{t.settings?.title || "Settings"}</DialogTitle>
                     <DialogDescription>{t.settings?.desc || "Manage your preferences and data."}</DialogDescription>
                 </DialogHeader>
 
                 <UserProfileProvider enabled={open}>
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full min-h-0 flex-1 flex-col">
                         <TabsList className={`grid w-full grid-cols-4 ${isAdmin ? "sm:grid-cols-7" : "sm:grid-cols-4"} gap-1 h-auto`}>
                             <SettingsTab value="general" icon={<Languages className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.general || "General"} />
                             <SettingsTab value="account" icon={<User className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.account || "Account"} />
@@ -136,7 +136,7 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                             <SettingsTab value="about" icon={<Info className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.about || "About"} />
                         </TabsList>
 
-                        <div data-testid="settings-tab-panel" className="min-h-[calc(85vh-12rem)]">
+                        <div data-testid="settings-tab-panel" className="min-h-0 flex-1">
                         <Suspense fallback={<SettingsPanelFallback />}>
                         <TabsContent value="general" className="space-y-4 py-4">
                             {activeTab === "general" && (

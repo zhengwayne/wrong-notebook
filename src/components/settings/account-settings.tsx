@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { AccountPersonaSection } from "@/components/settings/account-persona-section";
-import { SettingsPanelFallback } from "@/components/settings/settings-panel-fallback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,28 +131,25 @@ export function AccountSettings() {
         }
     };
 
-    if (loading) {
-        return <SettingsPanelFallback />;
-    }
-
+    // 资料已在设置弹窗打开时由 UserProfileProvider 预取：立刻渲染表单，避免整面板骨架造成高度抖动
     return (
         <>
             <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label>{t.auth?.name || "Name"}</Label>
-                        <Input value={profile.name || ""} onChange={(e) => updateField({ name: e.target.value })} />
+                        <Input value={profile.name || ""} onChange={(e) => updateField({ name: e.target.value })} disabled={loading} />
                     </div>
                     <div className="space-y-2">
                         <Label>{t.auth?.email || "Email"}</Label>
-                        <Input value={profile.email || ""} onChange={(e) => updateField({ email: e.target.value })} type="email" />
+                        <Input value={profile.email || ""} onChange={(e) => updateField({ email: e.target.value })} type="email" disabled={loading} />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label>{t.auth?.educationStage || "Education Stage"}</Label>
-                        <Select value={profile.educationStage || ""} onValueChange={(val) => updateField({ educationStage: val })}>
+                        <Select value={profile.educationStage || ""} onValueChange={(val) => updateField({ educationStage: val })} disabled={loading}>
                             <SelectTrigger>
                                 <SelectValue placeholder={t.auth?.selectStage || "Select Stage"} />
                             </SelectTrigger>
@@ -167,14 +163,14 @@ export function AccountSettings() {
                     </div>
                     <div className="space-y-2">
                         <Label>{t.auth?.enrollmentYear || "Enrollment Year"}</Label>
-                        <Input type="number" value={profile.enrollmentYear || ""} onChange={(e) => updateField({ enrollmentYear: e.target.value })} placeholder="YYYY" />
+                        <Input type="number" value={profile.enrollmentYear || ""} onChange={(e) => updateField({ enrollmentYear: e.target.value })} placeholder="YYYY" disabled={loading} />
                     </div>
                 </div>
 
                 <div className="space-y-3 pt-2 border-t">
                     <div className="space-y-2">
                         <Label>{t.settings?.account?.changePassword || "Change Password (Leave empty to keep)"}</Label>
-                        <PasswordInput value={profile.password} onChange={(e) => updateField({ password: e.target.value })} placeholder="******" minLength={6} />
+                        <PasswordInput value={profile.password} onChange={(e) => updateField({ password: e.target.value })} placeholder="******" minLength={6} disabled={loading} />
                     </div>
                     {profile.password && (
                         <div className="space-y-2">
@@ -184,7 +180,7 @@ export function AccountSettings() {
                     )}
                 </div>
 
-                <Button onClick={handleSave} disabled={saving} className="w-full">
+                <Button onClick={handleSave} disabled={saving || loading} className="w-full">
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {t.settings?.account?.update || "Update Profile"}
                 </Button>
