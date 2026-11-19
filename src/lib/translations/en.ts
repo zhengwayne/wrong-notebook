@@ -618,6 +618,14 @@ export const en = {
         expandTags: "+{count} more",
         expandTagsTooltip: "Click to expand {count} tags",
         collapseTagsTooltip: "Click to collapse",
+        teacherScope: {
+            label: "Class & Student Filter",
+            allClasses: "All Notebooks (All Classes)",
+            allStudentsInClass: "All Archived in Class",
+            selectStudent: "Filter by Student",
+            reset: "Clear Filter",
+            viewingStudent: "Viewing student: {name}",
+        },
         dialog: {
             stageLabel: "Stage",
             subjectLabel: "Subject",

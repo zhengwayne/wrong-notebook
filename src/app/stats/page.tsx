@@ -6,6 +6,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { WrongAnswerStats } from "@/components/wrong-answer-stats";
 import { PracticeStats } from "@/components/practice-stats";
+import { TeacherScopeBar } from "@/components/notebooks/teacher-scope-bar";
 import { TagUsageStats } from "@/components/tags/tag-usage-stats";
 import { TagManagement } from "@/components/tags/tag-management";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -83,6 +84,7 @@ export default function StatsPage() {
                 title={t.stats?.headerTitle || "Statistics Center"}
                 description={t.stats?.headerDesc || "View your learning progress, data analysis and knowledge points"}
             />
+            <TeacherScopeBar requireStudentForStats />
             <Suspense fallback={null}>
                 <StatsTabs />
             </Suspense>

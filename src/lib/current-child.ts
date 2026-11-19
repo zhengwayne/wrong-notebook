@@ -5,6 +5,7 @@
 import { SELF_STUDENT_KEY } from "@/lib/learning-path/types";
 
 export const CURRENT_CHILD_STORAGE_KEY = "xueji.currentChildLearner";
+export const TEACHER_SCOPE_STORAGE_KEY = "xueji.teacherLearnerScope";
 
 /** 按 userId 生成隔离的 localStorage 键，防止同一浏览器切换账号后读取前一账号的孩子选择 */
 export function currentChildStorageKey(userId?: string | null): string {
@@ -12,9 +13,62 @@ export function currentChildStorageKey(userId?: string | null): string {
     return trimmed ? `${CURRENT_CHILD_STORAGE_KEY}:${trimmed}` : CURRENT_CHILD_STORAGE_KEY;
 }
 
+/** 按 userId 隔离教师端选中的班级与学生作用域 */
+export function teacherScopeStorageKey(userId?: string | null): string {
+    const trimmed = userId?.trim();
+    return trimmed ? `${TEACHER_SCOPE_STORAGE_KEY}:${trimmed}` : TEACHER_SCOPE_STORAGE_KEY;
+}
+
 export interface StoredChild {
     id: string;
     name?: string;
+}
+
+export interface StoredTeacherScope {
+    classId: string | null;
+    learnerId: string | null;
+    name?: string;
+}
+
+export function readStoredTeacherScope(userId?: string | null): StoredTeacherScope | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = window.localStorage.getItem(teacherScopeStorageKey(userId));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<StoredTeacherScope>;
+        if (!parsed || typeof parsed !== "object") return null;
+        const classId = typeof parsed.classId === "string" && parsed.classId.trim() ? parsed.classId.trim() : null;
+        const learnerId = isUsableChildId(parsed.learnerId ?? null) ? parsed.learnerId!.trim() : null;
+        if (!classId && !learnerId) return null;
+        return {
+            classId,
+            learnerId,
+            ...(typeof parsed.name === "string" && parsed.name ? { name: parsed.name } : {}),
+        };
+    } catch {
+        return null;
+    }
+}
+
+export function writeStoredTeacherScope(scope: StoredTeacherScope | null, userId?: string | null): void {
+    if (typeof window === "undefined") return;
+    const key = teacherScopeStorageKey(userId);
+    try {
+        if (!scope || (!scope.classId && !isUsableChildId(scope.learnerId))) {
+            window.localStorage.removeItem(key);
+        } else {
+            window.localStorage.setItem(key, JSON.stringify({
+                classId: scope.classId ?? null,
+                learnerId: isUsableChildId(scope.learnerId) ? scope.learnerId : null,
+                ...(scope.name ? { name: scope.name } : {}),
+            }));
+        }
+        if (typeof window.dispatchEvent === "function" && typeof CustomEvent === "function") {
+            window.dispatchEvent(new CustomEvent("xueji:learner-scope-change"));
+        }
+    } catch {
+        // 隐私模式或配额满时忽略
+    }
 }
 
 export function isUsableChildId(value: string | null | undefined): value is string {

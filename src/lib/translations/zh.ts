@@ -615,6 +615,14 @@ export const zh = {
         expandTags: "+{count} 个 ↓",
         expandTagsTooltip: "点击展开 {count} 个标签",
         collapseTagsTooltip: "点击收起",
+        teacherScope: {
+            label: "班级与学生筛选",
+            allClasses: "全部错题本（不限班级）",
+            allStudentsInClass: "全班已归档错题本",
+            selectStudent: "指定学生查看",
+            reset: "清除筛选",
+            viewingStudent: "当前查看学生：{name}",
+        },
         dialog: {
             stageLabel: "学段",
             subjectLabel: "学科",

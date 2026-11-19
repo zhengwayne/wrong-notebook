@@ -9,25 +9,39 @@ import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:notebooks');
 
-function notebookListInclude(learnerId: string | null | undefined) {
+function notebookListInclude(learnerFilter: string | string[] | null | undefined) {
+    if (Array.isArray(learnerFilter)) {
+        return {
+            _count: {
+                select: {
+                    errorItems: { where: { learnerId: { in: learnerFilter } } },
+                },
+            },
+        } as const;
+    }
     return {
         _count: {
             select: {
-                errorItems: learnerId !== undefined ? { where: { learnerId } } : true,
+                errorItems: learnerFilter !== undefined ? { where: { learnerId: learnerFilter } } : true,
             },
         },
     } as const;
 }
 
 /**
- * GET /api/notebooks?learnerId=
- * 获取用户所有错题本（Subjects）；传入 learnerId 时只统计该学习者的错题数
+ * GET /api/notebooks?learnerId=&classId=&nonEmptyOnly=1
+ * 获取用户所有错题本（Subjects）；支持按单个学习者或整个班级过滤统计，并可隐藏 0 题空错题本
  */
 export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
-    const rawLearnerId = new URL(req.url).searchParams.get("learnerId")?.trim();
+    const searchParams = new URL(req.url).searchParams;
+    const rawLearnerId = searchParams.get("learnerId")?.trim();
+    const rawClassId = searchParams.get("classId")?.trim();
+    const nonEmptyOnly = searchParams.get("nonEmptyOnly") === "1";
 
     try {
-        let filterLearnerId: string | null | undefined;
+        let filterLearnerId: string | string[] | null | undefined;
+        let classLearnerIds: string[] | null = null;
+
         if (rawLearnerId) {
             try {
                 const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
@@ -38,20 +52,40 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
                 }
                 throw error;
             }
+        } else if (rawClassId) {
+            const cls = await prisma.gradingClass.findFirst({
+                where: { id: rawClassId, userId: user.id },
+                select: {
+                    id: true,
+                    students: { select: { learner: { select: { id: true } } } },
+                },
+            });
+            if (!cls) {
+                return notFound("Class not found");
+            }
+            classLearnerIds = cls.students
+                .map((s) => s.learner?.id)
+                .filter((id): id is string => Boolean(id));
+            filterLearnerId = classLearnerIds;
         }
 
-        let notebooks = await prisma.subject.findMany({
-            where: {
+        const whereClause = classLearnerIds !== null
+            ? {
                 userId: user.id,
-            },
+                errorItems: { some: { learnerId: { in: classLearnerIds } } },
+            }
+            : { userId: user.id };
+
+        let notebooks = await prisma.subject.findMany({
+            where: whereClause,
             include: notebookListInclude(filterLearnerId),
             orderBy: {
                 createdAt: 'desc',
             },
         });
 
-        // If no notebooks exist, create default ones（学段取用户的教育阶段）
-        if (notebooks.length === 0) {
+        // If no notebooks exist (仅在未加班级筛选的初始态下自动初始化默认错题本)
+        if (notebooks.length === 0 && !rawClassId && !nonEmptyOnly) {
             const stage = stageFromEducationStage(user.educationStage);
             const defaults: { name: string; subjectKey: NotebookSubject }[] = [
                 { name: "数学", subjectKey: "math" },
@@ -70,16 +104,17 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
                 })
             ));
 
-            // Fetch again
             notebooks = await prisma.subject.findMany({
-                where: {
-                    userId: user.id,
-                },
+                where: whereClause,
                 include: notebookListInclude(filterLearnerId),
                 orderBy: {
                     createdAt: 'desc',
                 },
             });
+        }
+
+        if (nonEmptyOnly) {
+            notebooks = notebooks.filter((nb) => (nb._count?.errorItems ?? 0) > 0);
         }
 
         return NextResponse.json(notebooks);

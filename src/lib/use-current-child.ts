@@ -7,9 +7,12 @@ import {
     childIdFromSearchParams,
     isUsableChildId,
     readStoredChild,
+    readStoredTeacherScope,
     withChildParam,
     writeStoredChild,
+    writeStoredTeacherScope,
     type StoredChild,
+    type StoredTeacherScope,
 } from "@/lib/current-child";
 
 function childFromWindow(): StoredChild | null {
@@ -34,31 +37,56 @@ function readInitialChild(userId?: string | null): StoredChild | null {
 }
 
 /**
- * 家长身份下记住当前孩子，并给链接带上 learnerId / studentKey。
- * 按 userId 隔离 localStorage，避免同浏览器切换账号串孩子；只在明确读取路径后同步。
+ * 家长/教师身份下记住当前选中的学习者（孩子或班级学生），并给链接带上 learnerId / studentKey。
+ * 按 userId 隔离 localStorage，并通过自定义事件在同一页面的筛选栏与统计组件之间实时同步。
  */
 export function useCurrentChild() {
     const { data: session } = useSession();
     const pathname = usePathname();
     const userId = session?.user?.id ?? null;
-    const isParent = session?.user?.activePersona === "parent";
+    const activePersona = session?.user?.activePersona ?? null;
+    const isParent = activePersona === "parent";
+    const isTeacher = activePersona === "teacher";
+
     const [child, setChild] = useState<StoredChild | null>(() => readInitialChild(userId));
+    const [teacherScope, setTeacherScopeState] = useState<StoredTeacherScope | null>(() => readStoredTeacherScope(userId));
 
     useEffect(() => {
-        const fromUrl = childFromWindow();
-        const fromStore = readStoredChild(userId);
-        if (fromUrl) {
-            const merged: StoredChild = {
-                id: fromUrl.id,
-                name: fromStore?.id === fromUrl.id ? fromStore.name : undefined,
-            };
-            writeStoredChild(merged, userId);
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- 路径或账号变化时与 URL、按账号隔离的本地存储对齐当前孩子
-            setChild(merged);
-            return;
+        const sync = () => {
+            const fromUrl = childFromWindow();
+            if (isTeacher) {
+                const stored = readStoredTeacherScope(userId);
+                if (fromUrl) {
+                    const next: StoredTeacherScope = {
+                        classId: stored?.classId ?? null,
+                        learnerId: fromUrl.id,
+                        name: stored?.learnerId === fromUrl.id ? stored.name : undefined,
+                    };
+                    setTeacherScopeState(next);
+                } else {
+                    setTeacherScopeState(stored);
+                }
+                return;
+            }
+            const fromStore = readStoredChild(userId);
+            if (fromUrl) {
+                const merged: StoredChild = {
+                    id: fromUrl.id,
+                    name: fromStore?.id === fromUrl.id ? fromStore.name : undefined,
+                };
+                writeStoredChild(merged, userId);
+                setChild(merged);
+                return;
+            }
+            setChild(fromStore);
+        };
+        sync();
+        if (typeof window !== "undefined") {
+            window.addEventListener("xueji:learner-scope-change", sync);
+            return () => window.removeEventListener("xueji:learner-scope-change", sync);
         }
-        setChild(fromStore);
-    }, [pathname, userId]);
+        return undefined;
+    }, [pathname, userId, isTeacher]);
 
     const setLearner = useCallback((next: StoredChild | string | null, name?: string) => {
         const stored: StoredChild | null = typeof next === "string"
@@ -66,17 +94,33 @@ export function useCurrentChild() {
             : next;
         writeStoredChild(stored, userId);
         setChild(stored);
+        if (typeof window !== "undefined" && typeof CustomEvent === "function") {
+            window.dispatchEvent(new CustomEvent("xueji:learner-scope-change"));
+        }
     }, [userId]);
 
-    const learnerId = isParent && child ? child.id : null;
+    const setTeacherScope = useCallback((next: StoredTeacherScope | null) => {
+        writeStoredTeacherScope(next, userId);
+        setTeacherScopeState(next);
+    }, [userId]);
+
+    const learnerId = isParent
+        ? (child ? child.id : null)
+        : (isTeacher ? (teacherScope?.learnerId ?? null) : null);
+
+    const activeName = isParent ? child?.name : (isTeacher ? teacherScope?.name : undefined);
+    const classId = isTeacher ? (teacherScope?.classId ?? null) : null;
 
     const hrefWithChild = useCallback((href: string) => withChildParam(href, learnerId), [learnerId]);
 
     return {
         isParent,
+        isTeacher,
+        classId,
         learnerId,
-        childName: isParent ? child?.name : undefined,
+        childName: activeName,
         setLearner,
+        setTeacherScope,
         hrefWithChild,
     };
 }

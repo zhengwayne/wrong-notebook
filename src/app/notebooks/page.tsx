@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { BookOpen, Plus } from "lucide-react";
 import { CreateNotebookDialog, type CreateNotebookInput } from "@/components/create-notebook-dialog";
 import { NotebookCard } from "@/components/notebook-card";
+import { TeacherScopeBar } from "@/components/notebooks/teacher-scope-bar";
 import { ShortIdLocator } from "@/components/short-id-locator";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import type { Notebook } from "@/types/api";
 export default function NotebooksPage() {
     const { t } = useLanguage();
     usePageTitle(t.notebooks.title);
-    const { isParent, learnerId, childName, hrefWithChild } = useCurrentChild();
+    const { isParent, isTeacher, classId, learnerId, childName, hrefWithChild } = useCurrentChild();
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -33,7 +34,15 @@ export default function NotebooksPage() {
         setLoading(true);
         setError(null);
         try {
-            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : "";
+            const params = new URLSearchParams();
+            if (learnerId) {
+                params.set("learnerId", learnerId);
+                if (isTeacher || isParent) params.set("nonEmptyOnly", "1");
+            } else if (isTeacher && classId) {
+                params.set("classId", classId);
+                params.set("nonEmptyOnly", "1");
+            }
+            const query = params.toString() ? `?${params.toString()}` : "";
             const data = await apiClient.get<Notebook[]>(`/api/notebooks${query}`);
             setNotebooks(data);
             setHasLoaded(true);
@@ -43,7 +52,7 @@ export default function NotebooksPage() {
         } finally {
             setLoading(false);
         }
-    }, [t.common.loadErrorDesc, learnerId]);
+    }, [t.common.loadErrorDesc, learnerId, isTeacher, isParent, classId]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面时拉取错题本列表并更新加载与错误状态
@@ -65,7 +74,13 @@ export default function NotebooksPage() {
         <PageContainer className="space-y-6">
             <PageHeader
                 title={t.notebooks?.title || "My Notebooks"}
-                description={isParent && childName ? t.persona.parentHome.forChild.replace("{name}", childName) : (t.notebooks?.subtitle || "Manage your mistakes by subject")}
+                description={
+                    isParent && childName
+                        ? t.persona.parentHome.forChild.replace("{name}", childName)
+                        : isTeacher && childName
+                            ? t.notebooks.teacherScope.viewingStudent.replace("{name}", childName)
+                            : (t.notebooks?.subtitle || "Manage your mistakes by subject")
+                }
                 actions={
                     <Button onClick={() => setDialogOpen(true)} aria-label={t.notebooks?.create || "New Notebook"}>
                         <Plus className="h-4 w-4" aria-hidden="true" />
@@ -74,6 +89,7 @@ export default function NotebooksPage() {
                 }
             />
 
+            <TeacherScopeBar />
             <ShortIdLocator />
 
             <AsyncBoundary

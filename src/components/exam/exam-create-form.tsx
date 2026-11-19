@@ -22,7 +22,8 @@ const DIFFICULTIES = ["easy", "medium", "hard", "harder"] as const;
 export function ExamCreateForm() {
     const { t, language } = useLanguage();
     const router = useRouter();
-    const { isParent, learnerId, hrefWithChild } = useCurrentChild();
+    const { isParent, isTeacher, learnerId, hrefWithChild } = useCurrentChild();
+    const isScopedPersona = isParent || (isTeacher && Boolean(learnerId));
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [subjectIds, setSubjectIds] = useState<string[]>([]);
     const [tagNames, setTagNames] = useState<string[]>([]);
@@ -35,12 +36,12 @@ export function ExamCreateForm() {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const url = isParent
-            ? (learnerId ? `/api/notebooks?learnerId=${encodeURIComponent(learnerId)}` : "/api/notebooks?learnerId=self")
+        const url = isScopedPersona
+            ? (learnerId ? `/api/notebooks?learnerId=${encodeURIComponent(learnerId)}&nonEmptyOnly=1` : "/api/notebooks?learnerId=self")
             : "/api/notebooks";
         apiClient.get<Notebook[]>(url)
             .then((data) => {
-                const visible = isParent ? data.filter((nb) => (nb._count?.errorItems ?? 0) > 0) : data;
+                const visible = isScopedPersona ? data.filter((nb) => (nb._count?.errorItems ?? 0) > 0) : data;
                 setNotebooks(visible);
                 setSubjectIds((prev) => {
                     const valid = prev.filter((id) => visible.some((nb) => nb.id === id));
@@ -48,7 +49,7 @@ export function ExamCreateForm() {
                 });
             })
             .catch(() => setNotebooks([]));
-    }, [isParent, learnerId]);
+    }, [isScopedPersona, learnerId]);
 
     const toggleNotebook = (id: string) => {
         setSubjectIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -72,7 +73,7 @@ export function ExamCreateForm() {
                 difficulty,
                 title: title.trim() || undefined,
                 language,
-                ...(isParent ? { learnerId: learnerId ?? null } : {}),
+                ...(isScopedPersona ? { learnerId: learnerId ?? null } : {}),
             });
             router.push(hrefWithChild(`/exams/${paper.id}`));
         } catch (err) {

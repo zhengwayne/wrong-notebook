@@ -14,16 +14,28 @@ const createSchema = z.object({
     roster: z.string().max(20000).default(''),
 });
 
-/** GET /api/grading/classes：老师的班级与花名册 */
+/** GET /api/grading/classes：老师的班级与花名册（含已关联的学生 learnerId） */
 export async function GET() {
     const user = await getCurrentUser();
     if (!user) return unauthorized();
     const classes = await prisma.gradingClass.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: 'asc' },
-        include: { students: { orderBy: { order: 'asc' }, select: { id: true, name: true, studentNo: true } } },
+        include: {
+            students: {
+                orderBy: { order: 'asc' },
+                select: { id: true, name: true, studentNo: true, learner: { select: { id: true } } },
+            },
+        },
     });
-    return NextResponse.json(classes.map(({ id, name, students }) => ({ id, name, students })));
+    return NextResponse.json(classes.map(({ id, name, students }) => ({
+        id,
+        name,
+        students: students.map(({ learner, ...stu }) => ({
+            ...stu,
+            learnerId: learner?.id ?? null,
+        })),
+    })));
 }
 
 /** POST /api/grading/classes：新建班级，roster 为换行或逗号分隔的学生姓名（带学号的名册用导入接口） */
