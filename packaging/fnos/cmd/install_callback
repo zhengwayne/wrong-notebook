@@ -31,11 +31,18 @@ mkdir -p "${DATA_DIR}"
 LOG="${DATA_DIR}/install.log"
 
 if [ -n "${wizard_admin_password:-}" ]; then
-    if WN_ADMIN_EMAIL="${wizard_admin_email:-}" WN_ADMIN_PASSWORD="${wizard_admin_password}" \
-        "${NODE_BIN}" "${TARGET_DIR}/initial-admin.mjs" "${TARGET_DIR}/server" "${DATA_DIR}/config/initial-admin.json" >> "${LOG}" 2>&1; then
+    if ADMIN_OUTPUT=$(WN_ADMIN_EMAIL="${wizard_admin_email:-}" WN_ADMIN_PASSWORD="${wizard_admin_password}" \
+        "${NODE_BIN}" "${TARGET_DIR}/initial-admin.mjs" "${TARGET_DIR}/server" "${DATA_DIR}/config/initial-admin.json" 2>&1); then
+        [ -n "${ADMIN_OUTPUT}" ] && printf '%s\n' "${ADMIN_OUTPUT}" >> "${LOG}"
         echo "[$(date '+%F %T')] install_callback: admin account prepared from wizard (${wizard_admin_email:-})" >> "${LOG}"
     else
-        echo "[$(date '+%F %T')] install_callback: ERROR: failed to prepare admin from wizard" | tee -a "${LOG}" >&2
+        SUMMARY="[$(date '+%F %T')] install_callback: ERROR: failed to prepare admin from wizard${ADMIN_OUTPUT:+: ${ADMIN_OUTPUT}}"
+        printf '%s\n' "${SUMMARY}" >> "${LOG}"
+        printf '%s\n' "${SUMMARY}" >&2
+        if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+            mkdir -p "$(dirname "${TRIM_TEMP_LOGFILE}")" 2>/dev/null || true
+            printf '%s\n' "${SUMMARY}" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null || true
+        fi
         exit 1
     fi
 fi

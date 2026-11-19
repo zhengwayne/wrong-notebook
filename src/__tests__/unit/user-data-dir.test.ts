@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
@@ -14,6 +15,20 @@ const {
 };
 
 describe('resolveWrongNotebookUserData', () => {
+    it('桌面包包含入口加载的本地模块和窗口图标', () => {
+        const pkg = require('../../../packaging/desktop/package.json') as {
+            main: string;
+            build: { files: string[] };
+        };
+        const entry = require.resolve(`../../../packaging/desktop/${pkg.main}`);
+        const source = readFileSync(entry, 'utf8');
+        for (const [, specifier] of source.matchAll(/require\(['"](\.\/[^'"]+)['"]\)/g)) {
+            const moduleFile = createRequire(entry).resolve(specifier);
+            expect(pkg.build.files).toContain(path.relative(path.dirname(entry), moduleFile));
+        }
+        expect(pkg.build.files).toContain('icon.png');
+    });
+
     it('显示名是学迹，但数据目录名固定为 WrongNotebook', () => {
         expect(DISPLAY_NAME).toBe('学迹');
         expect(USER_DATA_FOLDER).toBe('WrongNotebook');

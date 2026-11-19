@@ -97,7 +97,6 @@ function buildSeedDatabase() {
         '--esModuleInterop', '--resolveJsonModule', '--skipLibCheck', '--module', 'commonjs', '--target', 'ES2020',
     ]);
     runNodeBin('prisma/build/index.js', ['migrate', 'deploy'], { env });
-    run(process.execPath, ['scripts/seed-admin.js'], { env });
     run(process.execPath, [path.join(scriptsOut, 'scripts', 'rebuild-system-tags.js')], { env });
     return seedDb;
 }
@@ -348,6 +347,10 @@ function verifyDesktopOutput(releaseDir) {
         return;
     }
     for (const root of roots) {
+        const appDir = path.join(path.dirname(root), 'app');
+        for (const file of ['main.js', 'user-data-dir.js', 'icon.png']) {
+            if (!fs.existsSync(path.join(appDir, file))) throw new Error(`${appDir} 缺少文件：${file}`);
+        }
         const missing = required.filter((file) => !fs.existsSync(path.join(root, file)));
         const queryEngines = prismaEngineNames(path.join(root, 'node_modules', '.prisma', 'client'));
         if (!queryEngines.some((name) => /query_engine/.test(name))) {
@@ -373,6 +376,7 @@ function buildFnos() {
     rm(stage);
     log(`准备飞牛OS 打包目录（${arch}）`);
     copy(path.join(PACKAGING, 'fnos'), stage);
+    copy(path.join(ROOT, 'src/lib/legacy-admin-password-hash.mjs'), path.join(stage, 'app/legacy-admin-password-hash.mjs'));
     copy(BUNDLE, path.join(stage, 'app', 'server'));
     const manifestFile = path.join(stage, 'manifest');
     fs.writeFileSync(manifestFile, fs.readFileSync(manifestFile, 'utf8')

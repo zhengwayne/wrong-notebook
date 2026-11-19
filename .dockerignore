@@ -1,12 +1,13 @@
-# Docker 构建时排除的文件
-Dockerfile
-.dockerignore
+# 镜像内的部署回归测试需要读取 Dockerfile、忽略规则和 HTTPS Compose 示例
 docker-compose*.yml
+!docker-compose.yml
+!docker-compose.https.yml
 
 # 依赖和构建产物
 node_modules
 npm-debug.log
 .next
+.next-*
 dist
 
 # 版本控制
@@ -16,17 +17,18 @@ dist
 # 环境配置
 .env
 .env.*
-# 本机配置与登录凭据（含密钥），运行时由挂载的配置目录提供
-config/app-config.json
-config/minimax-code.json
-config/tts-cache/
+!.env.example
+# 配置、证书和用户数据只在运行时挂载
+config
+certs
+data
+outputs
 
 # 构建阶段运行单元/集成测试；最终 standalone 镜像不复制测试目录
 coverage
 
 # E2E 测试文件 (Playwright)
 e2e
-playwright.config.ts
 playwright-report
 test-results
 blob-report
@@ -42,12 +44,17 @@ __pycache__
 *.pyc
 *.tsbuildinfo
 
-# 本地数据库
-*.db
-*.db-journal
-*.sqlite
-*.sqlite-journal
-/prisma/*.db
+# 只把迁移和种子代码送入镜像，开发库、WAL 和任意命名的备份均留在宿主机
+prisma/*
+!prisma/schema.prisma
+!prisma/seed.ts
+!prisma/migrations
+**/*.db
+**/*.db-*
+**/*.db.*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
 
 # 文档
 README.md

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker image tag (default: latest)'
+        description: 'Docker image tag (default: manual)'
         required: false
-        default: 'latest'
+        default: 'manual'
 
 permissions:
   contents: read
@@ -16,7 +16,22 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  publication-check:
+    runs-on: ubuntu-latest
+    # 只在 GitHub 上运行；Gitea 读取 main 时会回退到本目录，需跳过
+    if: github.server_url == 'https://github.com'
+    name: Public History Check
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Check public history before continuing Docker build
+        run: |
+          python3 -m unittest discover -s tests/publication -v
+          python3 scripts/check-public-history.py HEAD
+
   build-and-push:
+    needs: publication-check
     runs-on: ubuntu-latest
     # 只在 GitHub 上运行；Gitea 读取 main 时会回退到本目录，需跳过
     if: github.server_url == 'https://github.com'
@@ -25,6 +40,15 @@ jobs:
       packages: write
 
     steps:
+      - name: Reject latest tag for manual builds
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$INPUT_TAG" ] || [ "$INPUT_TAG" = "latest" ]; then
+            echo "错误：手动构建禁止使用 'latest' 标签；latest 由正式版本标签发布流水线生成。" >&2
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

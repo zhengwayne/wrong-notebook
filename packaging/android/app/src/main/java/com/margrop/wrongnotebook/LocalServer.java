@@ -102,7 +102,8 @@ final class LocalServer {
             if (!isAlive(process)) {
                 throw new IOException("Server exited (" + process.exitValue() + ")\n" + tail(log));
             }
-            if (healthyVersion() != null) return;
+            String liveVersion = healthyVersion();
+            if (version.isEmpty() ? liveVersion != null : version.equals(liveVersion)) return;
             try {
                 Thread.sleep(300);
             } catch (InterruptedException e) {
@@ -134,7 +135,10 @@ final class LocalServer {
             connection.setReadTimeout(2000);
             if (connection.getResponseCode() != 200) return null;
             try (InputStream in = connection.getInputStream()) {
-                return new JSONObject(readStream(in)).optString("version", "");
+                JSONObject json = new JSONObject(readStream(in));
+                if (!"ok".equals(json.optString("status"))) return null;
+                String version = json.optString("version", "");
+                return version.isEmpty() ? null : version;
             }
         } catch (IOException | JSONException e) {
             return null;

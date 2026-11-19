@@ -4,7 +4,7 @@
  *
  * 与 docker-entrypoint.sh 的行为保持一致：
  *   1. 准备数据目录：数据库、配置文件、NextAuth 密钥都放在数据目录，安装目录可以只读
- *   2. 首次运行时复制打包时预置的数据库（含系统标签，不含管理员；服务启动后在日志中打印一次性初始化链接）
+ *   2. 首次运行时复制打包时预置的数据库（含系统标签，不含管理员；服务启动后生成 setup-token 文件）
  *   3. 每次启动执行 prisma migrate deploy，只做增量迁移，保留已有数据
  *   4. 在当前进程内启动 Next.js standalone 服务
  *
@@ -79,6 +79,14 @@ function sqliteUrl(file) {
     return `file:${file.split(path.sep).join('/')}`;
 }
 
+/** 与 Prisma 一致，相对 SQLite 文件名以 schema 目录为基准，问号后是连接选项。 */
+function resolveSqliteFile(url, schemaDir) {
+    if (typeof url !== 'string' || !url.startsWith('file:')) throw new Error('DATABASE_URL 需要是 SQLite 文件地址。');
+    const filename = url.slice(5).split('?')[0];
+    if (!filename || filename === ':memory:') throw new Error('DATABASE_URL 需要指向可持久化的数据库文件。');
+    return path.resolve(schemaDir, filename);
+}
+
 /** 为 Prisma 数据源补充单连接池参数，减少 SQLite 并发写锁争用 */
 function sqliteDatasourceUrl(file) {
     const base = sqliteUrl(file);
@@ -122,14 +130,18 @@ async function checkpointWalWithPrisma(dbFile, env = process.env) {
     }
 }
 
-/** 删除超出保留份数的旧 pre-migrate 备份 */
-function pruneOldBackups(backupsDir, prefix, keep = 3) {
-    const entries = fs.readdirSync(backupsDir)
-        .filter((name) => name.startsWith(prefix) && !name.endsWith('.tmp'))
-        .sort();
-    if (entries.length <= keep) return;
-    for (const stale of entries.slice(0, entries.length - keep)) {
-        fs.rmSync(path.join(backupsDir, stale), { recursive: true, force: true });
+/** 保留本次备份和另两份最新备份；兼容 Docker 旧版没有序号的文件名。 */
+function pruneOldBackups(backupsDir, currentName) {
+    const previous = [];
+    for (const name of fs.readdirSync(backupsDir)) {
+        const match = /^pre-migrate-.*-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)(?:-(\d+))?(?:\.db)?$/.exec(name);
+        if (name !== currentName && match) {
+            previous.push({ name, timestamp: match[1], sequence: Number(match[2] || 0) });
+        }
+    }
+    previous.sort((a, b) => b.timestamp.localeCompare(a.timestamp) || b.sequence - a.sequence);
+    for (const stale of previous.slice(2)) {
+        fs.rmSync(path.join(backupsDir, stale.name), { recursive: true, force: true });
     }
 }
 
@@ -209,7 +221,7 @@ function backupBeforeMigrate({ dbFile, dataDir, version, env = process.env, chec
         }
     }
 
-    pruneOldBackups(backupsDir, 'pre-migrate-', 3);
+    pruneOldBackups(backupsDir, path.basename(backupPath));
     return backupPath;
 }
 
@@ -312,7 +324,7 @@ function prepare(options = {}) {
     if (!dbAlreadyExists) {
         const seed = path.join(appDir, 'prisma', 'seed.db');
         if (fs.existsSync(seed)) {
-            console.log('[wrong-notebook] 初始化数据库（首次访问需用启动日志中的初始化链接创建管理员）');
+            console.log('[wrong-notebook] 初始化数据库（首次访问时按启动提示读取 setup-token 文件创建管理员）');
             fs.copyFileSync(seed, dbFile);
         }
     } else {
@@ -376,6 +388,7 @@ module.exports = {
     parseArgs,
     defaultDataDir,
     sqliteUrl,
+    resolveSqliteFile,
     sqliteDatasourceUrl,
     ensureSecret,
     checkpointWalWithPrisma,

@@ -24,7 +24,7 @@ const HELP = `错题本 wrong-notebook v${pkg.version}
   -d, --data-dir <目录>    数据目录，默认 ~/.wrong-notebook（也可用环境变量 WRONG_NOTEBOOK_HOME）
 
 数据库、配置文件（config/app-config.json）和会话密钥都保存在数据目录中，升级不会丢失数据。
-首次启动时终端会打印一次性初始化链接，打开后设置管理员账号（链接只能使用一次）。`;
+首次启动时按终端显示的路径读取 setup-token 文件，在本站地址后添加 /initialize?token= 和文件内容，打开后设置管理员账号。`;
 
 const ALIASES = { '-h': 'help', '--help': 'help', '-v': 'version', '--version': 'version' };
 const [first, ...rest] = process.argv.slice(2);

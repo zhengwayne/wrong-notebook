@@ -4,35 +4,29 @@ const { hash } = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-    const users = await prisma.user.findMany();
-    console.log('Existing users:');
-    users.forEach(u => console.log(`- ${u.email} (${u.name || 'No Name'})`));
-
-    const email = process.argv[2];
+    const rawEmail = process.argv[2];
     const newPassword = process.argv[3];
+    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
 
     if (!email || !newPassword) {
-        console.log('\nUsage: node reset-password.js <email> <new_password>');
+        console.error('\nUsage: node reset-password.js <email> <new_password>');
+        process.exitCode = 1;
         return;
     }
 
     const hashedPassword = await hash(newPassword, 12);
 
-    try {
-        await prisma.user.update({
-            where: { email },
-            data: { password: hashedPassword },
-        });
-        console.log(`\nPassword for ${email} has been reset successfully.`);
-    } catch (e) {
-        console.error(`\nError resetting password: ${e.message}`);
-    }
+    await prisma.user.update({
+        where: { email },
+        data: { password: hashedPassword, authVersion: { increment: 1 } },
+    });
+    console.log(`\nPassword for ${email} has been reset successfully.`);
 }
 
 main()
     .catch(e => {
-        console.error(e);
-        process.exit(1);
+        console.error('密码重置失败。', e.code || e.name);
+        process.exitCode = 1;
     })
     .finally(async () => {
         await prisma.$disconnect();

@@ -26,6 +26,8 @@
     "asar": false,
     "files": [
       "main.js",
+      "user-data-dir.js",
+      "icon.png",
       "package.json"
     ],
     "extraResources": [

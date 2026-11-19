@@ -43,7 +43,7 @@ COPY . .
 RUN npx prisma generate \
     && if [ "$SKIP_TESTS" != "1" ]; then npm test -- --testTimeout="${TEST_TIMEOUT_MS}" --hookTimeout="${TEST_TIMEOUT_MS}"; fi \
     && sh -n docker-entrypoint.sh \
-    && bash -n scripts/ci.sh scripts/build-image.sh
+    && bash -n scripts/ci.sh && bash -n scripts/build-image.sh
 
 # Rebuild the source code only after the checks pass.
 FROM ci AS builder
@@ -120,21 +120,20 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
 
-# Copy Prisma schema and migrations for runtime usage if needed (e.g. for migrations)
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-
-# Copy config directory for runtime
-COPY --from=builder --chown=nextjs:nodejs /app/config ./config
+# 运行时只需预置库、迁移及 schema
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/dev.db /app/prisma/schema.prisma ./prisma/
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
 
 # Copy pre-compiled runtime scripts
 COPY --from=builder --chown=nextjs:nodejs /app/dist-scripts ./dist-scripts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/seed-admin.js ./dist-scripts/scripts/seed-admin.js
 
 # SQLite 与上传文件的持久化目录（运行时由卷挂到 /app/data）
-RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
+RUN mkdir -p /app/data/uploads /app/config && chown -R nextjs:nodejs /app/data /app/config
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+COPY --chown=nextjs:nodejs packaging/runtime/launcher.js ./launcher.js
 # --chmod 需要 BuildKit；经典构建器用这一步设置可执行位
 RUN chmod 755 /app/docker-entrypoint.sh
 
@@ -143,7 +142,7 @@ COPY --chown=nextjs:nodejs https-server.js ./
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=4 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok||(await r.json()).status!=='ok')process.exit(1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(async r=>{if(!r.ok||(await r.json()).status!=='ok')process.exit(1)}).catch(()=>process.exit(1))"
 
 ENV PORT=3000
 # set hostname to localhost

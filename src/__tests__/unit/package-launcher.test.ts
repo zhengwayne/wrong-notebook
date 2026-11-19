@@ -178,6 +178,28 @@ describe('package launcher', () => {
         }
     });
 
+    it('跨版本迁移按创建时间保留备份，兼容 Docker 的无序号备份', () => {
+        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-backup-order-'));
+        const backupsDir = path.join(dataDir, 'backups');
+        const dbFile = path.join(dataDir, 'wrong-notebook.db');
+        try {
+            fs.mkdirSync(backupsDir);
+            const oldest = 'pre-migrate-2026.9.8-2026-09-08T00-00-00-000Z.db';
+            const previous = 'pre-migrate-2026.9.9-2026-09-09T00-00-00-000Z-1.db';
+            const recent = 'pre-migrate-2026.9.10-2026-09-10T00-00-00-000Z';
+            fs.writeFileSync(path.join(backupsDir, oldest), 'old');
+            fs.writeFileSync(path.join(backupsDir, previous), 'previous');
+            fs.mkdirSync(path.join(backupsDir, recent));
+            fs.writeFileSync(dbFile, 'latest');
+
+            const latest = launcher.backupBeforeMigrate({ dbFile, dataDir, version: '2026.10.1' })!;
+            expect(fs.readFileSync(latest, 'utf8')).toBe('latest');
+            expect(fs.readdirSync(backupsDir).sort()).toEqual([previous, recent, path.basename(latest)].sort());
+        } finally {
+            fs.rmSync(dataDir, { recursive: true, force: true });
+        }
+    });
+
     it('prepare 在迁移失败时输出备份恢复指引并拒绝启动，首次无库时不触发备份', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-prepare-'));
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
