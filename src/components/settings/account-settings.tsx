@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { AccountPersonaSection } from "@/components/settings/account-persona-section";
+import { SettingsPanelFallback } from "@/components/settings/settings-panel-fallback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,11 +133,7 @@ export function AccountSettings() {
     };
 
     if (loading) {
-        return (
-            <div className="flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-        );
+        return <SettingsPanelFallback />;
     }
 
     return (

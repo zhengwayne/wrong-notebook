@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { ChildLearnersManager } from "@/components/child-learners-manager";
 import { PersonaPicker } from "@/components/persona-picker";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
@@ -29,10 +30,23 @@ export function AccountPersonaSection() {
             })
             .catch((error) => {
                 frontendLogger.error("[AccountSettings]", "Failed to fetch personas", { error });
+                setPersonasLoaded(true);
             });
     }, []);
 
-    if (!personasLoaded) return null;
+    if (!personasLoaded) {
+        return (
+            <div data-testid="account-persona-fallback" className="space-y-3 border rounded-lg p-4 bg-muted/30 min-h-[10rem]" role="status" aria-live="polite">
+                <Skeleton className="h-4 w-1/4" />
+                <Skeleton className="h-4 w-2/3" />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4 border rounded-lg p-4 bg-muted/30">

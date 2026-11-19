@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -21,6 +21,7 @@ import {
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { UserProfileProvider } from "@/contexts/UserProfileContext";
+import { SettingsPanelFallback } from "@/components/settings/settings-panel-fallback";
 import { apiClient } from "@/lib/api-client";
 import { validateAiConfig } from "@/lib/ai-config-validation";
 import { DEFAULT_TIME_ZONE } from "@/lib/date-time";
@@ -113,7 +114,7 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                     <Settings className="h-5 w-5" />
                 </Button>
             </DialogTrigger>
-            <DialogContent ref={dialogContentRef} className="w-[calc(100vw-2rem)] sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
+            <DialogContent ref={dialogContentRef} data-testid="settings-dialog" className="w-[calc(100vw-2rem)] sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{t.settings?.title || "Settings"}</DialogTitle>
                     <DialogDescription>{t.settings?.desc || "Manage your preferences and data."}</DialogDescription>
@@ -135,6 +136,8 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                             <SettingsTab value="about" icon={<Info className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.about || "About"} />
                         </TabsList>
 
+                        <div data-testid="settings-tab-panel" className="min-h-[calc(85vh-12rem)]">
+                        <Suspense fallback={<SettingsPanelFallback />}>
                         <TabsContent value="general" className="space-y-4 py-4">
                             {activeTab === "general" && (
                                 <>
@@ -187,6 +190,8 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                                 />
                             )}
                         </TabsContent>
+                        </Suspense>
+                        </div>
                     </Tabs>
                 </UserProfileProvider>
             </DialogContent>
