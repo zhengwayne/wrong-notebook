@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
+import { classifyAiErrorText } from "@/lib/ai/error-text-classification";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/date-time";
 import type { BackgroundTask } from "@/lib/background-tasks";
@@ -83,8 +84,13 @@ export function BackgroundTasksButton() {
     const hasFinished = tasks.some((task) => task.status !== "running");
     const errorText = (code: string | null) => {
         if (!code) return null;
-        const mapped = (t.backgroundTasks.errors as Record<string, string>)[code] ?? (t.errors as Record<string, unknown>)[code];
-        return typeof mapped === "string" ? mapped : code;
+        const lookup = (key: string) => (t.backgroundTasks.errors as Record<string, string>)[key] ?? (t.errors as Record<string, unknown>)[key];
+        const mapped = lookup(code);
+        if (typeof mapped === "string") return mapped;
+        // 任务里可能保存了服务商原文（如 401 Authentication Fails…），先归类再翻译
+        const classified = classifyAiErrorText(code);
+        const translated = classified ? lookup(classified) : undefined;
+        return typeof translated === "string" ? translated : code;
     };
 
     const clearFinished = async () => {

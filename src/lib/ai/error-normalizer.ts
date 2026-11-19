@@ -4,6 +4,7 @@
  */
 import { ZodError } from 'zod';
 import { createLogger } from '../logger';
+import { aiErrorCodeForStatus, classifyAiErrorText } from './error-text-classification';
 import { AI_OUTPUT_TRUNCATED } from './truncation';
 
 const logger = createLogger('ai:error');
@@ -38,13 +39,8 @@ function readHttpStatus(error: unknown): number | undefined {
 }
 
 function mapStatusToError(status: number, cause: unknown): Error | null {
-    if (status === 401) return new Error('AI_AUTH_ERROR', { cause });
-    if (status === 403) return new Error('AI_PERMISSION_DENIED', { cause });
-    if (status === 404) return new Error('AI_NOT_FOUND', { cause });
-    if (status === 408) return new Error('AI_TIMEOUT_ERROR', { cause });
-    if (status === 429) return new Error('AI_QUOTA_EXCEEDED', { cause });
-    if (status >= 500) return new Error('AI_SERVICE_UNAVAILABLE', { cause });
-    return null;
+    const code = aiErrorCodeForStatus(status);
+    return code ? new Error(code, { cause }) : null;
 }
 
 /** 统一记录错误并抛出标准化 AI_* Error */
@@ -74,39 +70,8 @@ export function normalizeAiError(error: unknown, providerLabel: string): never {
             throw new Error('AI_CONNECTION_FAILED', { cause: error });
         }
 
-        const msg = error.message.toLowerCase();
-        if (msg.includes('fetch failed') || msg.includes('network') || msg.includes('connect') || msg.includes('econnreset') || msg.includes('econnrefused') || msg.includes('enotfound')) {
-            throw new Error('AI_CONNECTION_FAILED', { cause: error });
-        }
-        if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted') || msg.includes('408') || msg.includes('etimedout')) {
-            throw new Error('AI_TIMEOUT_ERROR', { cause: error });
-        }
-        if (msg.includes('quota') || msg.includes('额度') || msg.includes('rate limit') || msg.includes('429') || msg.includes('too many')) {
-            throw new Error('AI_QUOTA_EXCEEDED', { cause: error });
-        }
-        if (msg.includes('403') || msg.includes('forbidden') || msg.includes('permission')) {
-            throw new Error('AI_PERMISSION_DENIED', { cause: error });
-        }
-        if (msg.includes('404') || msg.includes('not found') || msg.includes('does not exist')) {
-            throw new Error('AI_NOT_FOUND', { cause: error });
-        }
-        if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('529') || msg.includes('无可用') || msg.includes('overloaded') || msg.includes('unavailable')) {
-            throw new Error('AI_SERVICE_UNAVAILABLE', { cause: error });
-        }
-        if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) {
-            throw new Error('AI_AUTH_ERROR', { cause: error });
-        }
-        if (
-            msg.includes('invalid json') ||
-            msg.includes('parse') ||
-            msg.includes('json') ||
-            msg.includes('syntaxerror') ||
-            msg.includes('missing critical xml') ||
-            msg.includes('empty response') ||
-            msg.includes('unexpected token')
-        ) {
-            throw new Error('AI_RESPONSE_ERROR', { cause: error });
-        }
+        const code = classifyAiErrorText(error.message);
+        if (code) throw new Error(code, { cause: error });
     }
 
     throw new Error('AI_UNKNOWN_ERROR', { cause: error });
