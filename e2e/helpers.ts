@@ -13,7 +13,7 @@ export async function acceptConfirmDialog(page: Page) {
     await expect(confirmDialog).not.toBeVisible({ timeout: 5000 });
 }
 
-/** 各用例登录用的管理员密码，需先运行 scripts/prepare-e2e.js 设置（默认管理员会被强制改密） */
+/** 与测试服务器为本轮临时管理员设置的密码一致 */
 export const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'e2e-admin-pass';
 
 /** 访问登录页并等待水合与 NextAuth 初始会话请求完成，避免并发 CSRF cookie 覆盖或水合前提交 */

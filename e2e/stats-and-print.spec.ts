@@ -56,7 +56,7 @@ test('知识点统计按标签计数，打印预览显示所选错题本的题�
         await page.goto(`/print-preview?subjectId=${notebook.id}`);
         await expect(page.getByRole('heading', { name: '打印预览' }).or(page.getByText('打印预览').first())).toBeVisible({ timeout: 15000 });
         for (let i = 1; i <= 3; i++) {
-            await expect(page.getByText(`细胞题 ${i}-${suffix}`)).toBeVisible();
+            await expect(page.getByRole('main').getByText(`细胞题 ${i}-${suffix}`)).toBeVisible();
         }
         // 默认只打印题目，勾选后才显示答案；取消勾选题目后不打印该题
         await expect(page.getByText(`答案 1-${suffix}`)).not.toBeVisible();

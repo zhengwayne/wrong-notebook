@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { gotoLoginHydrated } from './helpers';
 
-// setup-admin@localhost 由 scripts/prepare-e2e.js 创建，仍使用默认密码
+// setup-admin@localhost 由 scripts/start-e2e.js 创建，仍使用默认密码
 test('管理员使用默认密码登录后必须先修改密码', async ({ page }) => {
     test.setTimeout(60000);
 

@@ -228,19 +228,21 @@ export function compareWithBaseline(
     const regressions: BaselineRegression[] = [];
     const baselineByTask = new Map<string, EvalMetricsSummary>();
     for (const entry of baseline) {
+        baselineByTask.set(JSON.stringify([entry.task, entry.provider, entry.model]), entry);
         baselineByTask.set(`${entry.task}::${entry.provider}`, entry);
         if (!baselineByTask.has(entry.task)) baselineByTask.set(entry.task, entry);
     }
 
     for (const row of current) {
-        const ref = baselineByTask.get(`${row.task}::${row.provider}`) || baselineByTask.get(row.task);
+        const ref = baselineByTask.get(JSON.stringify([row.task, row.provider, row.model]))
+            ?? baselineByTask.get(`${row.task}::${row.provider}`) ?? baselineByTask.get(row.task);
         if (!ref) continue;
 
         for (const metric of HIGHER_IS_BETTER) {
             const curVal = row[metric];
             const baseVal = ref[metric];
             if (baseVal <= 0) continue;
-            const delta = curVal - baseVal;
+            const delta = round4(curVal - baseVal);
             if (delta < -thresholdDrop) {
                 regressions.push({
                     task: row.task,
@@ -257,7 +259,7 @@ export function compareWithBaseline(
         for (const metric of LOWER_IS_BETTER) {
             const curVal = row[metric];
             const baseVal = ref[metric];
-            const delta = curVal - baseVal;
+            const delta = round4(curVal - baseVal);
             if (delta > thresholdDrop) {
                 regressions.push({
                     task: row.task,
@@ -279,6 +281,7 @@ export function compareWithBaseline(
 export function formatEvalMarkdownReport(
     summaries: EvalMetricsSummary[],
     regressions: BaselineRegression[],
+    thresholdDrop = 0.02,
 ): string {
     const lines: string[] = [
         '# AI 离线评测报告',
@@ -296,7 +299,7 @@ export function formatEvalMarkdownReport(
 
     lines.push('', '## 基线回归检查');
     if (regressions.length === 0) {
-        lines.push('', '- 无超过阈值（2 个百分点）的核心指标退化。');
+        lines.push('', `- 无超过阈值（${round4(thresholdDrop * 100)} 个百分点）的核心指标退化。`);
     } else {
         lines.push('');
         for (const reg of regressions) {

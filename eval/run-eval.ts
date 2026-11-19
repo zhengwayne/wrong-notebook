@@ -2,7 +2,7 @@
  * AI 离线评测运行器（OPT-19）：按 task × provider × model 运行，
  * 输出结构化 JSON、Markdown 对比表并与基线比较是否超过退化阈值。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -64,8 +64,8 @@ function runVerifySuite(datasetsDir: string, providerMeta: { provider: string; m
             id: c.id,
             task: 'verify',
             passed,
-            expectedAnswer: c.expected,
-            predictedAnswer: c.expectedStatus === 'passed' ? c.actual : c.expected,
+            expectedAnswer: c.expectedStatus,
+            predictedAnswer: res.status,
             latencyMs: Math.max(1, Math.round(performance.now() - t0)),
             cost: 0,
         });
@@ -118,6 +118,7 @@ async function deterministicReplayCase(
     task: Exclude<EvalTaskName, 'verify'>,
     spec: ProviderEvalSpec,
     rawCase: Record<string, unknown>,
+    caseNumber: number,
 ): Promise<EvalCaseOutcome> {
     const id = String(rawCase.id || 'unknown');
     const isDegradedReplay = spec.provider.includes('degraded') || spec.provider.includes('beta');
@@ -127,9 +128,8 @@ async function deterministicReplayCase(
         const expectedStem = String(rawCase.questionText || '');
         const expectedAnswer = String(rawCase.answerText || '');
         const expectedTags = Array.isArray(rawCase.expectedTags) ? rawCase.expectedTags.map(String) : [];
-        const indexNum = parseInt(id.replace(/\D/g, '') || '1', 10);
-        // replay-b 模拟略低的标签命中率以展示多提供商对照差异
-        const dropTag = isDegradedReplay && indexNum % 5 === 0;
+        // 题号可在不同学科重复，使用整套样本的序号选取模拟漏标的题。
+        const dropTag = isDegradedReplay && caseNumber % 5 === 0;
         return {
             id,
             task,
@@ -148,8 +148,7 @@ async function deterministicReplayCase(
 
     if (task === 'grading') {
         const expectedVerdict = String(rawCase.expectedVerdict || 'wrong') as 'correct' | 'wrong' | 'partial';
-        const indexNum = parseInt(id.replace(/\D/g, '') || '1', 10);
-        const predictedVerdict: 'correct' | 'wrong' | 'partial' = isDegradedReplay && indexNum % 10 === 0
+        const predictedVerdict: 'correct' | 'wrong' | 'partial' = isDegradedReplay && caseNumber % 10 === 0
             ? 'correct'
             : expectedVerdict;
         return {
@@ -197,10 +196,10 @@ export async function runEvaluation(options: RunEvalOptions): Promise<RunEvalRes
             const datasetPath = join(datasetsDir, task, 'cases.json');
             const dataset = readJsonFile<{ cases: Array<Record<string, unknown>> }>(datasetPath);
             const outcomes: EvalCaseOutcome[] = [];
-            for (const rawCase of dataset.cases) {
+            for (const [index, rawCase] of dataset.cases.entries()) {
                 const outcome = providerSpec.runCase
                     ? await providerSpec.runCase(task, rawCase)
-                    : await deterministicReplayCase(task, providerSpec, rawCase);
+                    : await deterministicReplayCase(task, providerSpec, rawCase, index + 1);
                 outcomes.push(outcome);
             }
             summaries.push(evaluateTaskOutcomes({ task, provider: providerSpec.provider, model: providerSpec.model }, outcomes));
@@ -208,11 +207,11 @@ export async function runEvaluation(options: RunEvalOptions): Promise<RunEvalRes
     }
 
     let baseline: EvalMetricsSummary[] = [];
-    if (options.baselinePath && existsSync(options.baselinePath)) {
+    if (options.baselinePath) {
         baseline = readJsonFile<EvalMetricsSummary[]>(options.baselinePath);
     }
     const regressions = compareWithBaseline(summaries, baseline, options.thresholdDrop ?? 0.02);
-    const markdown = formatEvalMarkdownReport(summaries, regressions);
+    const markdown = formatEvalMarkdownReport(summaries, regressions, options.thresholdDrop);
     const result: RunEvalResult = {
         generatedAt: new Date().toISOString(),
         summaries,
@@ -231,8 +230,8 @@ export async function runEvaluation(options: RunEvalOptions): Promise<RunEvalRes
 
 function parseCliArgs(argv: string[]): RunEvalOptions {
     let taskArg = 'all';
-    let providerArg = 'replay-a,replay-b';
-    let baselineArg: string | null = 'eval/baselines/baseline-sample.json';
+    let providerArg = 'replay-a,replay-beta-degraded';
+    let baselineArg = join(dirname(fileURLToPath(import.meta.url)), 'baselines', 'baseline-sample.json');
     let outputArg: string | null = null;
 
     for (let i = 0; i < argv.length; i++) {

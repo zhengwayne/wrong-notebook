@@ -12,6 +12,12 @@
 
 # testing
 /coverage
+# 离线评测随源码分发，覆盖用户级忽略 JSON 的设置。
+!/eval/baselines/baseline-sample.json
+!/eval/datasets/analyze/cases.json
+!/eval/datasets/exam-read/cases.json
+!/eval/datasets/grading/cases.json
+!/eval/datasets/verify/golden-cases.json
 
 # next.js
 /.next/
@@ -39,7 +45,6 @@ yarn-error.log*
 .vercel
 
 # typescript
-*.tsbuildinfoconfig
 *.tsbuildinfo
 next-env.d.ts
 
@@ -48,6 +53,9 @@ next-env.d.ts
 
 # App config (contains secrets)
 /config/app-config.json
+/config/setup-token
+/config/setup-token.*.claimed
+/config/initial-admin.json
 /config/minimax-code.json
 /config/background-tasks.json
 /config/tts-cache/

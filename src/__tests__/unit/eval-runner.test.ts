@@ -13,6 +13,14 @@ import {
 import { runEvaluation } from '../../../eval/run-eval';
 
 describe('eval-metrics 与离线评测工具（OPT-19）', () => {
+    it('指定的基线文件缺失时提示读取失败', async () => {
+        await expect(runEvaluation({
+            tasks: ['verify'],
+            providers: [{ provider: 'local', model: 'verify' }],
+            baselinePath: resolve('eval/baselines/missing.json'),
+        })).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     it('评测集各任务均包含 30 条合成样本，analyze 覆盖全部 9 科', () => {
         const analyze = JSON.parse(readFileSync(resolve(process.cwd(), 'eval/datasets/analyze/cases.json'), 'utf-8')) as {
             cases: Array<{ subject: string }>;
@@ -57,6 +65,13 @@ describe('eval-metrics 与离线评测工具（OPT-19）', () => {
         expect(summary.gradingAccuracy).toBeCloseTo(2 / 3, 3);
         expect(summary.wrongMarkedCorrectRate).toBe(0.5);
         expect(summary.costPerItem).toBe(0.002);
+
+        const baseline = { ...summary, passRate: 1 };
+        const otherModel = { ...summary, model: 'previous', passRate: 0.5 };
+        expect(compareWithBaseline([{ ...summary, passRate: 0.98 }], [baseline], 0.02)).toEqual([]);
+        const regression = compareWithBaseline([{ ...summary, passRate: 0.9 }], [baseline, otherModel], 0.02);
+        expect(regression).toContainEqual(expect.objectContaining({ metric: 'passRate', baseline: 1 }));
+        expect(formatEvalMarkdownReport([baseline], [], 0.05)).toContain('5 个百分点');
     });
 
     it('支持至少两个提供商输出 Markdown 与 JSON 报告并与基线对比', async () => {
@@ -76,6 +91,9 @@ describe('eval-metrics 与离线评测工具（OPT-19）', () => {
             expect(report.summaries).toHaveLength(8);
             const verifyRows = report.summaries.filter((s) => s.task === 'verify');
             expect(verifyRows.every((r) => r.passRate === 1)).toBe(true);
+            const [standard, degraded] = report.summaries.filter((s) => s.task === 'analyze');
+            expect(standard.tagF1).toBe(1);
+            expect(degraded.tagF1).toBeLessThan(standard.tagF1);
             // replay-beta-degraded 故意制造退化，应触发 > 2 个百分点基线告警
             expect(report.regressions.length).toBeGreaterThan(0);
             expect(report.markdown).toContain('replay-a');
