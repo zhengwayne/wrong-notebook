@@ -80,12 +80,13 @@ While editing you can switch between source and preview. For complex tables and 
 Enable and switch personas under **Settings → Account** to unlock role-specific workspaces on top of personal study, while keeping every learner's notebooks and records isolated:
 
 - **Parent (`/parent` and `/parent/papers`)**:
-  - Create and switch between up to **3 child profiles**; notebooks, duplicate detection, and learning paths stay scoped per child and per account (even when names match).
-  - Upload whole exam paper photos to detect and parse each question, student answer, reference answer, error cause, and knowledge points.
-  - Review each question against the overlay boxes on the photo: override the verdict (**Correct / Partial / Wrong**), tick **Add to notebook** where needed, and confirm in one tap to import selected mistakes into that child's subject notebook.
+  - Create and switch between up to **3 child profiles**; notebooks, exam generation pools, duplicate detection, and learning paths stay strictly scoped per child and per account (with Primary Chinese and full K-12 Humanities tag trees built in).
+  - **Daily All-Subject Homework Checklist & Streaks**: track daily written, recitation, dictation, and review tasks right on `/parent`, combined with practice records to compute consecutive study streaks.
+  - **Kid Focus Mode (4-digit PIN lock)**: enable a server-signed `HttpOnly` lock before handing the device to your child, restricting access to Learning Path, Review, and Practice while blocking deletion, settings, and account switching (with a 15-minute lockout after 5 failed PIN attempts).
+  - Upload whole exam paper photos to review and import mistakes, or open a teacher-shared feedback card (`/share/submission/[token]`) to import mistakes into your child's notebook in one click without re-photographing.
 - **Teacher (`/grading` and `/teacher`)**:
-  - Under **Grading (`/grading`)**, import multi-class rosters (paste from Excel or upload `.csv` / `.xlsx`), set an answer key, and batch-capture or upload student papers.
-  - Background jobs read handwritten headers (class, student number, name) and group multi-page sheets automatically; ambiguous or low-confidence matches pause in **To confirm** for manual assignment.
-  - Review AI scores, override verdicts, and confirm with optimistic concurrency protection (`graded` -> `confirmed`) to import mistakes into each student's `"student·subject"` notebook; inspect student profiles on `/teacher` and class-wide learning paths under `/learn?tab=class`.
+  - Under **Grading (`/grading`)**, choose standard answer-key mode or **Answer-Key-Free Quick Mode** (AI extracts stems first and independently derives the key, supporting numeric scores or `Excellent / Good / Pass / Needs Review` grades), enable sign-up-free self-submit links (`/submit/[token]` verified by student ID + name), and copy missing-homework reminders in one click.
+  - Review faster with **traffic-light confidence triage** (1-click batch confirmation for Green papers), **horizontal strip grading** by question number, interactive `bbox` overlays with per-question cropped imports, and **Handwriting · Neatness · Attitude** ratings with bilingual quick comment pills.
+  - Export editable **Word (`.docx`) review handouts** from class summaries, inspect the **Students × Knowledge Points × Habits** mastery heatmap on `/teacher`, and filter `/notebooks` and `/stats` by **Class → Student**.
 
 Next: [Practice and Exams](Practice-and-Exams-en).
