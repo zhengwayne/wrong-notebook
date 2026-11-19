@@ -239,6 +239,7 @@ async function runParentPaperRecognition(
             subject: paper.subjectKey,
         });
 
+        // 解析层只返回校验后的原始框；这里是唯一一次外扩边距的地方
         let questions: ParentReviewQuestion[] = (review.reviewQuestions ?? []).map((question) => ({
             ...question,
             bbox: normalizeQuestionBBox(question.bbox, pages.length),
