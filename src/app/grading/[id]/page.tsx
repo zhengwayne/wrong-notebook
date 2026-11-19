@@ -12,6 +12,7 @@ import { HorizontalQuestionGrader } from "@/components/grading/horizontal-questi
 import { KeyEditor } from "@/components/grading/key-editor";
 import { PaperCapture } from "@/components/grading/paper-capture";
 import { SubmissionList } from "@/components/grading/submission-list";
+import { TaskCollectShareBar } from "@/components/grading/task-collect-share-bar";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { confirmDialog } from "@/lib/feedback";
@@ -66,6 +67,16 @@ function GradingTaskView() {
                     description={`${task.classNames.join("、")} · ${task.subjectName} · ${t.grading.questionCount.replace("{count}", String(task.questions.length))} · ${t.grading.submissionCount.replace("{count}", String(task.submissions.length))}/${task.students.length}`}
                     actions={<Button variant="ghost" size="icon" aria-label={t.grading.deleteTask} onClick={removeTask}><Trash2 className="h-4 w-4" /></Button>}
                     className="print:hidden"
+                />
+                <TaskCollectShareBar
+                    taskId={task.id}
+                    taskTitle={task.title}
+                    subjectName={task.subjectName}
+                    allowSelfSubmit={task.allowSelfSubmit}
+                    students={task.students}
+                    submissions={task.submissions}
+                    multiClass={task.classIds.length > 1}
+                    onChanged={load}
                 />
                 <SegmentedControl<Tab> className="print:hidden" value={tab} onChange={setTab} options={[
                     { value: "key", label: t.grading.tabs.key, icon: KeyRound },

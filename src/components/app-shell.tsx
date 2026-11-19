@@ -26,8 +26,8 @@ const LazySettingsDialog = dynamic(
     { ssr: false },
 );
 
-/** 登录、注册与打印页不显示导航 */
-const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/initialize/, /^\/onboarding/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
+/** 登录、注册、公开扫码交卷/反馈卡与打印页不显示全局导航 */
+const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/initialize/, /^\/onboarding/, /^\/submit\//, /^\/share\//, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
 
 function NavLink({
     item,

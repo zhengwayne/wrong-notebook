@@ -64,6 +64,11 @@ export async function proxy(req: NextRequest) {
     // 页面请求的登录保护（Next.js 16 起由 middleware 更名为 proxy，运行在 Node.js 运行时）
     logger.debug({ method: req.method, path: req.nextUrl.pathname }, 'Processing request');
 
+    // 免注册公开令牌页面（扫码交作业 / 单生批改反馈卡）直接放行，由页面内公开/半公开 API 做哈希令牌校验
+    if (req.nextUrl.pathname.startsWith("/submit/") || req.nextUrl.pathname.startsWith("/share/")) {
+        return NextResponse.next();
+    }
+
     try {
         const token = await getToken({
             req,

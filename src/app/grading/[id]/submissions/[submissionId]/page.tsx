@@ -11,6 +11,7 @@ import { NativeSelect } from "@/components/grading/native-select";
 import { MatchPanel } from "@/components/grading/match-panel";
 import { ProcessEvaluationPanel, type ProcessEvaluationValue } from "@/components/grading/process-evaluation-panel";
 import { SubmissionBboxViewer } from "@/components/grading/submission-bbox-viewer";
+import { SubmissionShareButton } from "@/components/grading/task-collect-share-bar";
 import type { ProcessLevel } from "@/lib/ai/exam-paper-read";
 import { scoreRatioToGradeLevel } from "@/lib/grading-grades";
 import { studentLabel } from "@/lib/grading-labels";
@@ -114,7 +115,12 @@ export default function GradingReviewPage() {
         <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-4">
                 <PageHeader backHref={`/grading/${id}?tab=papers`} title={t.grading.reviewTitle} description={submission.taskTitle}
-                    actions={<Button variant="ghost" size="icon" aria-label={t.grading.deletePaper} onClick={remove}><Trash2 className="h-4 w-4" /></Button>} />
+                    actions={(
+                        <div className="flex items-center gap-2">
+                            {submission.results.length > 0 && <SubmissionShareButton submissionId={submission.id} />}
+                            <Button variant="ghost" size="icon" aria-label={t.grading.deletePaper} onClick={remove}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                    )} />
                 <div className="grid gap-4 lg:grid-cols-2">
                     <SubmissionBboxViewer
                         images={submission.images}
