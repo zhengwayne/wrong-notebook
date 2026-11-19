@@ -515,10 +515,10 @@ export const zh = {
         multiCropProgress: "第 {n}/{total} 张",
         skipImage: "跳过这张",
         cancelAllImages: "取消全部",
-        invalidFileType: "不支持的文件类型，请上传 JPG、PNG、WebP 或 HEIC 图片",
+        invalidFileType: "不支持的文件类型，请上传 JPG、PNG、WebP、GIF 或 HEIC/HEIF 图片",
         fileTooLarge: "单张图片不能超过 {max}MB",
         // dragDrop: "点击或拖拽上传图片", // Moved to app
-        support: "支持 JPG, PNG (最大 5MB)",
+        support: "支持 JPG、PNG、WebP、GIF、HEIC/HEIF，单张最大 {max}MB",
         analyze: "AI 智能解析",
         // analyzing: "解析中...", // Moved to app
         screenshot: "屏幕截图",
@@ -772,6 +772,7 @@ export const zh = {
         generateSet: "生成个性化练习",
         generateTopic: "生成补救专题",
         generateClassTopic: "生成班级专题",
+        withTopic: "{label}（{topic}）",
         generateClassSets: "为每位学生生成一套练习",
         commonWeaknesses: "共性薄弱点",
         noCommon: "还没有足够多学生共同薄弱的知识点。",

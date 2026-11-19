@@ -98,6 +98,23 @@ function toFiniteNumber(value: unknown): number | null {
     return null;
 }
 
+/** [ymin, xmin, ymax, xmax] 千分比（0–1000）坐标转成 0–1 比例；任一值缺失、越界或宽高非正时返回 null */
+function box2dToBBox(raw: unknown[], pageIndex: number): QuestionBBox | null {
+    if (raw.length !== 4) return null;
+    const nums = raw.map(toFiniteNumber);
+    if (nums.some((n) => n === null)) return null;
+    const [ymin, xmin, ymax, xmax] = nums as [number, number, number, number];
+    if (Math.min(ymin, xmin, ymax, xmax) < 0 || Math.max(ymin, xmin, ymax, xmax) > 1000) return null;
+    if (xmax <= xmin || ymax <= ymin) return null;
+    return clampNormalizedBBox({
+        pageIndex,
+        x: xmin / 1000,
+        y: ymin / 1000,
+        width: (xmax - xmin) / 1000,
+        height: (ymax - ymin) / 1000,
+    });
+}
+
 /**
  * 校验并规范化模型给出的 bbox。
  * 接受已经是 0–1 的比例、0–100 的百分数，以及明确的 box_2d / box2d [ymin, xmin, ymax, xmax] 千分比（0–1000）；
@@ -112,20 +129,9 @@ export function validateQuestionBBox(raw: unknown, pageCount: number): QuestionB
     if (pageIndex < 0 || pageIndex >= pageCount) return null;
 
     const rawBox2d = Array.isArray(record.box_2d) ? record.box_2d : Array.isArray(record.box2d) ? record.box2d : null;
-    if (rawBox2d && rawBox2d.length === 4) {
-        const nums = rawBox2d.map(toFiniteNumber);
-        if (nums.some((n) => n === null)) return null;
-        const [ymin, xmin, ymax, xmax] = nums as [number, number, number, number];
-        if (Math.min(ymin, xmin, ymax, xmax) < 0 || Math.max(ymin, xmin, ymax, xmax) > 1000) return null;
-        if (xmax <= xmin || ymax <= ymin) return null;
-        return clampNormalizedBBox({
-            pageIndex,
-            x: xmin / 1000,
-            y: ymin / 1000,
-            width: (xmax - xmin) / 1000,
-            height: (ymax - ymin) / 1000,
-        });
-    }
+    const fromBox2d = rawBox2d ? box2dToBBox(rawBox2d, pageIndex) : null;
+    // box_2d 合法时优先使用；不合法时退回同一结果里的 x/y/width/height
+    if (fromBox2d) return fromBox2d;
 
     const xRaw = toFiniteNumber(record.x);
     const yRaw = toFiniteNumber(record.y);

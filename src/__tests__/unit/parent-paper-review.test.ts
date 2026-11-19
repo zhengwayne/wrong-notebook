@@ -44,6 +44,22 @@ describe("validateQuestionBBox", () => {
         expect(validateQuestionBBox({ pageIndex: 0, box_2d: [0, 0, 1200, 500] }, pageCount)).toBeNull();
     });
 
+    it("falls back to x/y/width/height when box_2d is invalid", () => {
+        // 越界、宽高为负、含非数值时都退回同一结果里的 x/y/w/h
+        for (const box_2d of [[0, 0, 1200, 500], [500, 500, 100, 100], [1, "abc", 3, 4]]) {
+            expect(validateQuestionBBox({ pageIndex: 0, box_2d, x: 0.1, y: 0.2, width: 0.5, height: 0.25 }, pageCount)).toEqual({
+                pageIndex: 0, x: 0.1, y: 0.2, width: 0.5, height: 0.25,
+            });
+        }
+        expect(validateQuestionBBox({ pageIndex: 0, box2d: [0, 0, 1200, 500], x: 10, y: 20, w: 50, h: 25 }, pageCount)).toEqual({
+            pageIndex: 0, x: 0.1, y: 0.2, width: 0.5, height: 0.25,
+        });
+        // 合法的 box_2d 仍优先于 x/y/w/h
+        expect(validateQuestionBBox({ pageIndex: 1, box_2d: [150, 200, 450, 700], x: 0.1, y: 0.1, width: 0.1, height: 0.1 }, pageCount)).toEqual({
+            pageIndex: 1, x: 0.2, y: 0.15, width: 0.5, height: 0.3,
+        });
+    });
+
     it("drops malformed, pixel, out-of-range and tiny boxes", () => {
         expect(validateQuestionBBox(null, pageCount)).toBeNull();
         expect(validateQuestionBBox({ pageIndex: 0, x: 10, y: 10 }, pageCount)).toBeNull();

@@ -314,7 +314,7 @@ export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: Uploa
                             {isAnalyzing ? t.app.analyzing : t.app.dragDrop}
                         </p>
                         <p className="mt-2 text-xs text-muted-foreground">
-                            {t.upload.support}
+                            {t.upload.support.replace("{max}", String(MAX_IMAGE_FILE_MB))}
                         </p>
                         {onImagesSelect && (
                             <p className="text-xs text-muted-foreground">

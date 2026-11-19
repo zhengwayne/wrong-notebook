@@ -18,6 +18,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "@/lib/feedback";
+import { withTopicLabel } from "@/lib/variant/topic-label";
 import type { GradingClassInfo } from "@/types/grading";
 
 type Tab = "queue" | "weakness" | "compare";
@@ -321,7 +322,7 @@ function WeaknessPanel({
                     <>
                         <Button disabled={busy} onClick={() => start("topic")}>
                             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {v.generateTopic}（{topicFilter.trim()}）
+                            {withTopicLabel(v.withTopic, v.generateTopic, topicFilter.trim())}
                         </Button>
                         <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateSet}</Button>
                     </>
@@ -338,7 +339,7 @@ function WeaknessPanel({
                 {classId && !studentId && (
                     <Button disabled={busy} onClick={() => start("class_topic")}>
                         {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {topicFilter.trim() ? `${v.generateClassTopic}（${topicFilter.trim()}）` : v.generateClassTopic}
+                        {topicFilter.trim() ? withTopicLabel(v.withTopic, v.generateClassTopic, topicFilter.trim()) : v.generateClassTopic}
                     </Button>
                 )}
                 {classId && !studentId && <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateClassSets}</Button>}

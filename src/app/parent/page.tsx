@@ -55,6 +55,11 @@ function ParentHome() {
     const [managing, setManaging] = useState(false);
 
     const requestSeq = useRef(0);
+    // 自动纠正网址时需要当前的其他参数；放在 ref 里，避免加载函数随任意参数变化而重新拉取
+    const paramsStringRef = useRef(paramsString);
+    useEffect(() => {
+        paramsStringRef.current = paramsString;
+    }, [paramsString]);
     const load = useCallback(async (id?: string) => {
         const seq = ++requestSeq.current;
         setError(null);
@@ -72,7 +77,7 @@ function ParentHome() {
 
             // 若当前 URL 指向已归档/失效的孩子，自动切换到后端选中的首个活跃孩子或清空 URL 参数
             if (id && effectiveId !== id) {
-                const nextQuery = new URLSearchParams(paramsString);
+                const nextQuery = new URLSearchParams(paramsStringRef.current);
                 if (effectiveId) nextQuery.set("learnerId", effectiveId);
                 else nextQuery.delete("learnerId");
                 const qs = nextQuery.toString();
@@ -83,7 +88,7 @@ function ParentHome() {
             frontendLogger.error("[ParentHome]", "Failed to load parent home", { error: err });
             setError(getApiErrorMessage(err) || copy.loadError);
         }
-    }, [language, copy.loadError, setLearner, paramsString, router]);
+    }, [language, copy.loadError, setLearner, router]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换孩子时拉取首页数据

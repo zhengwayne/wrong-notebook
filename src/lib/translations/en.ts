@@ -518,10 +518,10 @@ export const en = {
         multiCropProgress: "Image {n} of {total}",
         skipImage: "Skip this",
         cancelAllImages: "Cancel all",
-        invalidFileType: "Unsupported file type. Please upload a JPG, PNG, WebP, or HEIC image",
+        invalidFileType: "Unsupported file type. Please upload a JPG, PNG, WebP, GIF, or HEIC/HEIF image",
         fileTooLarge: "Each image must be smaller than {max}MB",
         // dragDrop: "Click or drag image to upload", // Moved to app
-        support: "Support JPG, PNG (Max 5MB)",
+        support: "Supports JPG, PNG, WebP, GIF and HEIC/HEIF, up to {max}MB each",
         analyze: "Analyze with AI",
         // analyzing: "Analyzing...", // Moved to app
         screenshot: "Screenshot",
@@ -775,6 +775,7 @@ export const en = {
         generateSet: "Generate personalized set",
         generateTopic: "Suggest a remedial topic",
         generateClassTopic: "Suggest a class topic",
+        withTopic: "{label} ({topic})",
         generateClassSets: "Generate a set for each student",
         commonWeaknesses: "Shared weaknesses",
         noCommon: "No knowledge points shared by enough students yet.",

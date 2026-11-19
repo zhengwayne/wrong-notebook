@@ -165,6 +165,50 @@ it('快速切换孩子后仅展示最后一次选择的首页，并立即移除�
     }
 });
 
+it('家长首页加载只随 learnerId 变化：其他网址参数变化不重复拉取，失效孩子纠正网址时保留其他参数', async () => {
+    const homeCalls: string[] = [];
+    mocks.query = 'learnerId=GONE&tab=week';
+    mocks.get.mockImplementation(async (url: string) => {
+        const { pathname, searchParams } = new URL(url, 'http://localhost');
+        if (pathname === '/api/parent/homeworks') {
+            return { items: [], summary: { total: 0, completed: 0, estimatedMinutes: 0, streakDays: 0 } };
+        }
+        homeCalls.push(searchParams.get('learnerId') ?? '');
+        return {
+            selectedLearnerId: 'A', children: [{ id: 'A', name: 'A' }],
+            child: { id: 'A', name: 'A', weakPoints: [], mastery: [], today: [], practiceTrend: [], practiceSummary: { attempted: 0, correct: 0 }, latestPaper: null },
+        };
+    });
+
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = () => act(async () => root.render(<LanguageProvider><ParentHomePage /></LanguageProvider>));
+    try {
+        await render();
+        expect(homeCalls).toEqual(['GONE']);
+        expect(mocks.replace).toHaveBeenCalledTimes(1);
+        const redirected = new URL(mocks.replace.mock.lastCall![0], 'http://localhost');
+        expect(redirected.searchParams.get('learnerId')).toBe('A');
+        expect(redirected.searchParams.get('tab')).toBe('week');
+
+        mocks.query = 'learnerId=A&tab=week';
+        await render();
+        expect(homeCalls).toEqual(['GONE', 'A']);
+
+        // 只改其他参数时不再请求首页数据
+        mocks.query = 'learnerId=A&tab=month';
+        await render();
+        expect(homeCalls).toEqual(['GONE', 'A']);
+        expect(mocks.replace).toHaveBeenCalledTimes(1);
+    } finally {
+        await act(async () => root.unmount());
+        container.remove();
+        vi.unstubAllGlobals();
+    }
+});
+
 it('家长试卷列表页切娃时立即清空旧数据，并丢弃在途轮询响应与旧定时器回调', async () => {
     vi.useFakeTimers();
     const pendingPollA = Promise.withResolvers<{ papers: Array<{ id: string; learnerId: string; learnerName: string; title: string; status: string; pageCount: number; createdAt: string }> }>();
