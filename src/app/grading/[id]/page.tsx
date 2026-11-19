@@ -2,12 +2,13 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { BarChart3, Camera, KeyRound, ListChecks, Trash2 } from "lucide-react";
+import { BarChart3, Camera, Columns3, KeyRound, ListChecks, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ClassSummary } from "@/components/grading/class-summary";
+import { HorizontalQuestionGrader } from "@/components/grading/horizontal-question-grader";
 import { KeyEditor } from "@/components/grading/key-editor";
 import { PaperCapture } from "@/components/grading/paper-capture";
 import { SubmissionList } from "@/components/grading/submission-list";
@@ -17,8 +18,8 @@ import { confirmDialog } from "@/lib/feedback";
 import { usePageTitle } from "@/lib/page-title";
 import type { GradingTaskDetail } from "@/types/grading";
 
-type Tab = "key" | "capture" | "papers" | "summary";
-const TABS: Tab[] = ["key", "capture", "papers", "summary"];
+type Tab = "key" | "capture" | "papers" | "horizontal" | "summary";
+const TABS: Tab[] = ["key", "capture", "papers", "horizontal", "summary"];
 
 function GradingTaskView() {
     const { id } = useParams<{ id: string }>();
@@ -70,6 +71,7 @@ function GradingTaskView() {
                     { value: "key", label: t.grading.tabs.key, icon: KeyRound },
                     { value: "capture", label: t.grading.tabs.capture, icon: Camera },
                     { value: "papers", label: t.grading.tabs.papers, icon: ListChecks },
+                    { value: "horizontal", label: t.grading.quickGrading.horizontalTab, icon: Columns3 },
                     { value: "summary", label: t.grading.tabs.summary, icon: BarChart3 },
                 ]} />
                 {tab === "key" && <KeyEditor key={task.questions.map((q) => q.id).join()} taskId={task.id} initial={task.questions} onSaved={load} />}
@@ -77,6 +79,7 @@ function GradingTaskView() {
                     ? <p className="text-sm text-muted-foreground">{t.grading.noKey}</p>
                     : <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />)}
                 {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} multiClass={task.classIds.length > 1} onChanged={load} />}
+                {tab === "horizontal" && <HorizontalQuestionGrader taskId={task.id} questions={task.questions} onChanged={load} />}
                 {tab === "summary" && <ClassSummary taskId={task.id} version={version} />}
             </div>
         </main>

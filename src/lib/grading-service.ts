@@ -14,6 +14,7 @@ import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope
 import { ensureLearnerForGradingStudent } from "@/lib/learners";
 import { DEFAULT_GRADING_CONCURRENCY, resolveCroppedGradingItemImage, runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
 import { ensureQuickStudentInClass, inferAnswerKeyFromSampleImages } from "@/lib/grading-quick-key";
+import { computeSubmissionBucket } from "@/lib/grading-triage";
 import {
     gradeAnswers, isWrong, parseJsonStringArray, totalScore,
     MAX_GRADING_QUESTIONS,
@@ -225,12 +226,34 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             visualAlerts: appearance.visualAlerts.length > 0 ? JSON.stringify(appearance.visualAlerts) : null,
         } : {};
 
+        const finalStudentId = (identityData.studentId as string | null | undefined) !== undefined
+            ? (identityData.studentId as string | null)
+            : submission.studentId;
+        const finalMatchStatus = (identityData.matchStatus as string | null | undefined) !== undefined
+            ? (identityData.matchStatus as string | null)
+            : submission.matchStatus;
+        const finalMatchConfidence = (identityData.matchConfidence as number | null | undefined) !== undefined
+            ? (identityData.matchConfidence as number | null)
+            : submission.matchConfidence;
+        const questionTypeById = new Map(questions.map((qItem) => [qItem.id, qItem.type]));
+        const reviewBucket = computeSubmissionBucket({
+            studentId: finalStudentId,
+            matchStatus: finalMatchStatus,
+            matchConfidence: finalMatchConfidence,
+            visualAlertsCount: appearance?.visualAlerts.length ?? 0,
+            results: graded.map((res) => ({
+                type: questionTypeById.get(res.keyQuestionId) || 'objective',
+                verdict: res.verdict,
+                confidence: res.confidence,
+            })),
+        });
+
         await prisma.$transaction([
             prisma.gradingResult.deleteMany({ where: { submissionId } }),
             prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) }),
             prisma.gradingSubmission.update({
                 where: { id: submissionId },
-                data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData, ...appearanceData },
+                data: { status: 'graded', reviewBucket, totalScore: totalScore(graded), error: null, ...identityData, ...appearanceData },
             }),
         ]);
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');
