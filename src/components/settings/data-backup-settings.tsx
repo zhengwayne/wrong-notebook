@@ -32,7 +32,28 @@ function getImportErrorToast(code: string | undefined, t: Translations): string 
     if (code === 'BACKUP_INVALID_PASSPHRASE') {
         return t.settings?.backupInvalidPassphrase || "Incorrect backup passphrase. Please verify and retry.";
     }
+    if (code === 'BACKUP_ALL_USERS_REQUIRED') return t.settings.backupAllUsersRequired;
+    if (code === 'BACKUP_PERSON_AMBIGUOUS') return t.settings.backupPersonAmbiguous;
+    if (code === 'BACKUP_TAG_AMBIGUOUS') return t.settings.backupTagAmbiguous;
+    if (code === 'BACKUP_TOO_LARGE') return t.settings.backupTooLarge;
     return t.settings?.importFailed || "Import failed";
+}
+
+function getImportWarningMessages(warnings: string[] | undefined, t: Translations): string[] {
+    if (!Array.isArray(warnings) || warnings.length === 0) return [];
+    const map: Record<string, string> = {
+        CHILD_LEARNER_LIMIT_EXCEEDED: t.settings.backupWarningChildLimitExceeded,
+        LEGACY_CUSTOM_TAG_PARENT_DETACHED: t.settings.backupWarningLegacyTagParentDetached,
+        LEGACY_SYSTEM_TAG_APPROXIMATED: t.settings.backupWarningLegacySystemTagApproximated,
+    };
+    const messages: string[] = [];
+    for (const code of warnings) {
+        const message = map[code];
+        if (message && !messages.includes(message)) {
+            messages.push(message);
+        }
+    }
+    return messages;
 }
 
 /** 数据备份：默认导出流式 ZIP v3（可选口令加密），兼容导入 v3 ZIP 与 v1/v2 JSON */
@@ -43,6 +64,7 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
     const [exportPassphrase, setExportPassphrase] = useState('');
     const [importPassphrase, setImportPassphrase] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
     const handleExport = async (all: boolean) => {
         if (all && !(await confirmDialog(t.settings?.exportAllConfirm || "Export all users' data? This may take a while."))) {
@@ -85,15 +107,27 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
             formData.append('file', selectedFile);
             if (importPassphrase.length > 0) formData.append('passphrase', importPassphrase);
             const res = await fetch(all ? '/api/import?all=true' : '/api/import', { method: 'POST', body: formData });
-            const payload = await res.json().catch(() => ({})) as { stats?: ImportStats; message?: string; code?: string };
+            const payload = await res.json().catch(() => ({})) as {
+                stats?: ImportStats;
+                warnings?: string[];
+                message?: string;
+                code?: string;
+            };
             if (!res.ok || !payload.stats) {
-                toast.error(getImportErrorToast(payload.code, t));
+                toast.error(getImportErrorToast(payload.code ?? (res.status === 413 ? 'BACKUP_TOO_LARGE' : undefined), t));
                 return;
             }
+            const warningMessages = getImportWarningMessages(payload.warnings, t);
             toast.success(formatImportResult(payload.stats, t));
+            for (const msg of warningMessages) {
+                toast.warning(msg);
+            }
+            setImportWarnings(warningMessages);
             setSelectedFile(null);
             setImportPassphrase('');
-            window.location.reload();
+            if (warningMessages.length === 0) {
+                window.location.reload();
+            }
         } catch (error) {
             frontendLogger.error('[DataBackupSettings]', all ? 'Import all failed' : 'Import failed', { error });
             toast.error(t.settings?.importFailed || "Import failed");
@@ -172,6 +206,16 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
                         onChange={setImportPassphrase}
                         disabled={importing}
                     />
+                )}
+                {importWarnings.length > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" role="status">
+                        <p className="font-medium mb-1">{t.settings.backupImportWarningsTitle}</p>
+                        <ul className="list-disc pl-4 space-y-1">
+                            {importWarnings.map((warning) => (
+                                <li key={warning}>{warning}</li>
+                            ))}
+                        </ul>
+                    </div>
                 )}
             </div>
 

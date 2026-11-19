@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { loadSystemTagPaths } from '@/lib/backup/tags';
 import { getAppConfig } from '@/lib/config';
 import { StreamingZipWriter } from '@/lib/backup/archive-write';
 import { extractMediaDataUrl, extractMediaFromJsonArray, type ExtractedMedia } from '@/lib/backup/media';
@@ -176,6 +177,7 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
         );
         counts.subjects = await subjectEntry.close();
 
+        const systemTagPaths = await loadSystemTagPaths(db);
         const tagEntry = zipWriter.openNdjsonEntry('data/customTags.ndjson');
         await streamPaged(
             (cursor, take) => db.knowledgeTag.findMany({
@@ -184,7 +186,10 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
                 take,
                 ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
             }),
-            async (row) => tagEntry.writeLine(row),
+            async (row) => tagEntry.writeLine({
+                ...row,
+                systemParentPath: row.parentId ? systemTagPaths.get(row.parentId)?.path : undefined,
+            }),
         );
         counts.customTags = await tagEntry.close();
 
@@ -206,6 +211,7 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
                 await errorItemEntry.writeLine({
                     ...row,
                     originalImageUrl: imageRef ?? '',
+                    tags: row.tags.map((tag) => ({ ...tag, systemPath: systemTagPaths.get(tag.id)?.path })),
                 });
             },
             MEDIA_PAGE_SIZE,

@@ -4,9 +4,26 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
-import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
+import { Readable, Transform } from 'node:stream';
+import { openPromise } from 'yauzl';
+import { BackupError } from '@/lib/backup/errors';
 import type { BackupManifestV3, EntryTransform } from '@/lib/backup/types';
+
+export interface BackupArchiveLimits {
+    maxZipBytes?: number;
+    maxUncompressedBytes?: number;
+    maxEntries?: number;
+}
+
+const DEFAULT_MAX_ZIP_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_ENTRIES = 50_000;
+
+/** 备份上传体积上限；默认 2 GiB，可用 BACKUP_MAX_UPLOAD_BYTES（正整数字节）调小或调大 */
+export function backupUploadLimitBytes(): number {
+    const raw = Number(process.env.BACKUP_MAX_UPLOAD_BYTES);
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : DEFAULT_MAX_ZIP_BYTES;
+}
 
 export interface UnpackedBackupArchive {
     manifest: BackupManifestV3;
@@ -33,8 +50,13 @@ export async function unpackBackupZipStream(
     options: {
         decryptEntry?: (manifest: BackupManifestV3, entryName: string, packed: Uint8Array) => Uint8Array;
         resolveDecryptor?: (manifest: BackupManifestV3) => EntryTransform | undefined;
+        limits?: BackupArchiveLimits;
     } = {},
 ): Promise<UnpackedBackupArchive> {
+    const maxZipBytes = options.limits?.maxZipBytes ?? backupUploadLimitBytes();
+    const maxUncompressedBytes = options.limits?.maxUncompressedBytes ?? DEFAULT_MAX_UNCOMPRESSED_BYTES;
+    const maxEntries = options.limits?.maxEntries ?? DEFAULT_MAX_ENTRIES;
+
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xueji-backup-unzip-'));
     const zipFile = path.join(workDir, 'upload.zip');
     const extractDir = path.join(workDir, 'extracted');
@@ -46,78 +68,64 @@ export async function unpackBackupZipStream(
 
     try {
         if (source instanceof Uint8Array) {
+            if (source.byteLength > maxZipBytes) {
+                throw new BackupError('BACKUP_TOO_LARGE', `Backup archive exceeds ${maxZipBytes} bytes limit`, 413);
+            }
             await fs.promises.writeFile(zipFile, source);
         } else {
+            let receivedZipBytes = 0;
+            const sizeLimiter = new Transform({
+                transform(chunk: Buffer, _encoding, callback) {
+                    receivedZipBytes += chunk.byteLength;
+                    if (receivedZipBytes > maxZipBytes) {
+                        callback(new BackupError('BACKUP_TOO_LARGE', `Backup archive exceeds ${maxZipBytes} bytes limit`, 413));
+                        return;
+                    }
+                    callback(null, chunk);
+                },
+            });
             const nodeReadable = Readable.fromWeb(source as Parameters<typeof Readable.fromWeb>[0]);
-            await pipeline(nodeReadable, fs.createWriteStream(zipFile));
+            await pipeline(nodeReadable, sizeLimiter, fs.createWriteStream(zipFile));
         }
 
         const digests = new Map<string, { size: number; sha256: string }>();
         const entryPaths = new Set<string>();
-        const entryWrites: Promise<void>[] = [];
-
-        const unzip = new Unzip((file) => {
-            if (file.name.endsWith('/')) return;
-            const target = safeEntryTarget(extractDir, file.name);
-            if (!target) {
-                throw new Error(`INVALID_ZIP_ENTRY_PATH:${file.name}`);
+        let totalUncompressedBytes = 0;
+        // 以中央目录中的长度界定每个条目，媒体和密文中的任意字节均可原样还原。
+        const zip = await openPromise(zipFile);
+        try {
+            if (zip.entryCount > maxEntries) {
+                throw new BackupError('BACKUP_TOO_LARGE', `Backup archive exceeds ${maxEntries} entries limit`, 413);
             }
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            const writeStream = fs.createWriteStream(target);
-            const hash = crypto.createHash('sha256');
-            let size = 0;
+            for await (const entry of zip.eachEntry()) {
+                const name = entry.fileName;
+                if (name.endsWith('/')) continue;
+                const target = safeEntryTarget(extractDir, name);
+                if (!target) throw new Error(`INVALID_ZIP_ENTRY_PATH:${name}`);
+                await fs.promises.mkdir(path.dirname(target), { recursive: true });
 
-            const done = new Promise<void>((resolve, reject) => {
-                writeStream.on('error', reject);
-                writeStream.on('finish', () => {
-                    digests.set(file.name, { size, sha256: hash.digest('hex') });
-                    entryPaths.add(file.name);
-                    resolve();
+                const hash = crypto.createHash('sha256');
+                let size = 0;
+                const digest = new Transform({
+                    transform(chunk: Buffer, _encoding, callback) {
+                        totalUncompressedBytes += chunk.byteLength;
+                        if (totalUncompressedBytes > maxUncompressedBytes) {
+                            callback(new BackupError('BACKUP_TOO_LARGE', `Uncompressed backup exceeds ${maxUncompressedBytes} bytes limit`, 413));
+                            return;
+                        }
+                        hash.update(chunk);
+                        size += chunk.byteLength;
+                        callback(null, chunk);
+                    },
                 });
-            });
-            entryWrites.push(done);
-
-            file.ondata = (err, data, final) => {
-                if (err) {
-                    writeStream.destroy(err instanceof Error ? err : new Error(String(err)));
-                    return;
-                }
-                if (data && data.length > 0) {
-                    hash.update(data);
-                    size += data.byteLength;
-                    writeStream.write(data);
-                }
-                if (final) {
-                    writeStream.end();
-                }
-            };
-            file.start();
-        });
-        unzip.register(UnzipPassThrough);
-        unzip.register(UnzipInflate);
-
-        await new Promise<void>((resolve, reject) => {
-            const readStream = fs.createReadStream(zipFile, { highWaterMark: 256 * 1024 });
-            readStream.on('data', (chunk: string | Buffer) => {
-                try {
-                    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
-                    unzip.push(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength), false);
-                } catch (err) {
-                    readStream.destroy(err instanceof Error ? err : new Error(String(err)));
-                }
-            });
-            readStream.on('end', () => {
-                try {
-                    unzip.push(new Uint8Array(0), true);
-                    resolve();
-                } catch (err) {
-                    reject(err);
-                }
-            });
-            readStream.on('error', reject);
-        });
-
-        await Promise.all(entryWrites);
+                const input = await zip.openReadStreamPromise(entry);
+                await pipeline(input, digest, fs.createWriteStream(target, { flags: 'wx' }));
+                digests.set(name, { size, sha256: hash.digest('hex') });
+                entryPaths.add(name);
+            }
+        } finally {
+            zip.close();
+        }
 
         const manifestPath = safeEntryTarget(extractDir, 'manifest.json');
         if (!manifestPath || !fs.existsSync(manifestPath)) {

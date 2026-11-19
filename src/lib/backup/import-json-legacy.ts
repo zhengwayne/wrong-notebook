@@ -9,6 +9,7 @@ import { findDuplicateQuestion, recordDuplicateQuestion } from '@/lib/question-d
 import { generateUniqueShortId, isShortId } from '@/lib/short-id';
 import { sanitizeSvgAnimation } from '@/lib/svg-animation';
 import { importSpeeches } from '@/lib/tts/speech-cache';
+import { restoreBackupTags, type BackupCustomTag } from '@/lib/backup/tags';
 import { BackupFormatError, BackupOwnershipError } from '@/lib/backup/errors';
 import {
     asJsonText,
@@ -54,12 +55,13 @@ export interface LegacyImportData {
     customTags?: Array<{
         id: string;
         name: string;
-        subject: string;
-        parentId: string | null;
-        order: number;
-        code: string | null;
-        isSystem: boolean;
-        userId: string;
+        subject?: string;
+        parentId?: string | null;
+        systemParentPath?: unknown;
+        order?: number;
+        code?: string | null;
+        isSystem?: boolean;
+        userId?: string;
     }>;
     errorItems: Array<{
         id: string;
@@ -95,7 +97,7 @@ export interface LegacyImportData {
         provenanceId?: string | null;
         createdAt: string;
         updatedAt: string;
-        tags: Array<{ id: string; name: string; subject: string }>;
+        tags: Array<{ id: string; name: string; subject: string; systemPath?: string[] }>;
     }>;
     reviewSchedules?: Array<{
         id: string;
@@ -176,6 +178,9 @@ export async function importLegacyJsonBackup(options: {
     if (!body?.version || !body?.user || !Array.isArray(body.errorItems)) {
         throw new BackupFormatError("Invalid import data format");
     }
+    if (!importAll && body.scope === 'all') {
+        throw new BackupFormatError('Use the all-users import for this backup', 'BACKUP_ALL_USERS_REQUIRED');
+    }
     if (!importAll && body.user.email !== currentUser.email) {
         throw new BackupOwnershipError();
     }
@@ -200,6 +205,7 @@ export async function importLegacyJsonBackup(options: {
 
     const masteryIds = new Set<string>();
     const evaluatedIds = new Set<string>();
+    const tagWarnings = new Set<string>();
 
     await db.$transaction(async (tx) => {
         const preferences = body.user.email === currentUser.email ? parseUserPreferences(body.user) : {};
@@ -224,48 +230,28 @@ export async function importLegacyJsonBackup(options: {
             }
         }
 
-        const tagIdMap = new Map<string, string>();
-        for (const tag of (body.customTags || [])) {
-            const targetUserId = importAll ? tag.userId : currentUser.id;
-            const existing = await tx.knowledgeTag.findFirst({
-                where: { name: tag.name, userId: targetUserId, isSystem: false },
+        const customTags: BackupCustomTag[] = [];
+        for (const row of (body.customTags ?? [])) {
+            const id = asOptionalString(row?.id);
+            const name = asOptionalString(row?.name);
+            if (!id || !name) continue;
+            const rawSubject = asOptionalString(row.subject);
+            const rawParentId = asOptionalString(row.parentId);
+            const rawCode = asOptionalString(row.code);
+            const rawUserId = asOptionalString(row.userId);
+            customTags.push({
+                id,
+                name,
+                userId: importAll && rawUserId ? rawUserId : currentUser.id,
+                subject: rawSubject || 'math',
+                parentId: rawParentId || null,
+                systemParentPath: row.systemParentPath,
+                order: asOptionalNumber(row.order) ?? 0,
+                code: rawCode || null,
             });
-            if (existing) {
-                tagIdMap.set(tag.id, existing.id);
-            } else {
-                const newParentId = tag.parentId && tagIdMap.has(tag.parentId) ? tagIdMap.get(tag.parentId) : undefined;
-                const created = await tx.knowledgeTag.create({
-                    data: {
-                        name: tag.name,
-                        subject: tag.subject,
-                        isSystem: false,
-                        userId: targetUserId,
-                        parentId: newParentId,
-                        order: tag.order || 0,
-                        code: tag.code,
-                    },
-                });
-                tagIdMap.set(tag.id, created.id);
-                stats.tagsCreated++;
-            }
         }
-
-        const allTagNames = new Set<string>();
-        for (const item of body.errorItems) {
-            for (const tag of item.tags || []) allTagNames.add(tag.name);
-        }
-        const preloadedTags = await tx.knowledgeTag.findMany({
-            where: {
-                name: { in: Array.from(allTagNames) },
-                OR: [{ isSystem: true }, ...(importAll ? [] : [{ userId: currentUser.id }])],
-            },
-        });
-        const tagNameMap = new Map<string, string>();
-        for (const tag of preloadedTags) {
-            if (!tagNameMap.has(tag.name) || (!importAll && tag.userId === currentUser.id)) {
-                tagNameMap.set(tag.name, tag.id);
-            }
-        }
+        const tags = await restoreBackupTags(tx, customTags, tagWarnings);
+        stats.tagsCreated += tags.created;
 
         const provenanceIdMap = new Map<string, string>();
         for (const prov of (body.aiProvenances || [])) {
@@ -353,11 +339,7 @@ export async function importLegacyJsonBackup(options: {
             stats.errorItemsCreated++;
 
             if (item.tags && item.tags.length > 0) {
-                const tagConnections: { id: string }[] = [];
-                for (const tag of item.tags) {
-                    if (tagIdMap.has(tag.id)) tagConnections.push({ id: tagIdMap.get(tag.id)! });
-                    else if (tagNameMap.has(tag.name)) tagConnections.push({ id: tagNameMap.get(tag.name)! });
-                }
+                const tagConnections = await tags.connections(targetUserId, item.tags);
                 if (tagConnections.length > 0) {
                     await tx.errorItem.update({
                         where: { id: created.id },
@@ -568,6 +550,12 @@ export async function importLegacyJsonBackup(options: {
             await syncMasteryLevels(tx, currentUser.id, preferences.masteryThreshold);
         }
     }, { timeout: 60000 });
+
+    for (const warning of tagWarnings) {
+        if (!warnings.includes(warning)) {
+            warnings.push(warning);
+        }
+    }
 
     if (masteryIds.size) scheduleMasteryEvaluation([...masteryIds]);
     stats.ttsSpeechesImported = await importSpeeches(body.ttsSpeeches, currentUser.id).catch(() => 0);

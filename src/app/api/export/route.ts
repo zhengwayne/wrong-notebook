@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { badRequest, forbidden, internalError } from "@/lib/api-errors";
 import { prepareBackupEncryption } from "@/lib/backup/crypto";
 import { createBackupV3Stream } from "@/lib/backup/export-v3";
+import { loadSystemTagPaths } from "@/lib/backup/tags";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
 import { createLogger } from "@/lib/logger";
@@ -111,14 +112,21 @@ async function executeExport({ user, exportAll, format, passphrase }: ExportPara
             ...(item.svgAnimationEn ? [{ language: 'en' as const, svg: item.svgAnimationEn }] : []),
         ]));
 
+        const systemTagPaths = await loadSystemTagPaths(prisma);
         const exportData = {
             version: 2,
             exportedAt: new Date().toISOString(),
             scope: exportAll ? 'all' : 'user',
             user: userProfile,
             subjects,
-            customTags,
-            errorItems,
+            customTags: customTags.map((tag) => ({
+                ...tag,
+                systemParentPath: tag.parentId ? systemTagPaths.get(tag.parentId)?.path : undefined,
+            })),
+            errorItems: errorItems.map((item) => ({
+                ...item,
+                tags: item.tags.map((tag) => ({ ...tag, systemPath: systemTagPaths.get(tag.id)?.path })),
+            })),
             reviewSchedules,
             practiceRecords,
             examPapers,

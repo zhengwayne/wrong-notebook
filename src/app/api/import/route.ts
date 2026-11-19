@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { internalError, badRequest, forbidden } from "@/lib/api-errors";
+import { backupUploadLimitBytes } from "@/lib/backup/archive-read";
 import { BackupError } from "@/lib/backup/errors";
 import { importLegacyJsonBackup, type LegacyImportData } from "@/lib/backup/import-json-legacy";
 import { importBackupV3 } from "@/lib/backup/import-v3";
@@ -9,6 +10,44 @@ import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:import');
+
+/** 表单上传除文件外还有分隔符与口令字段，留 1 MiB 余量 */
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+
+function backupTooLarge(limit: number): BackupError {
+    return new BackupError('BACKUP_TOO_LARGE', `Backup upload exceeds ${limit} bytes limit`, 413);
+}
+
+/** 按 Content-Length 提前拒绝超限上传，避免先把整个请求体读进内存或临时盘 */
+function assertDeclaredSize(req: Request, limit: number): void {
+    const declared = Number(req.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > limit) throw backupTooLarge(limit);
+}
+
+/** 对没有或伪造 Content-Length 的请求边读边计数，超限立即中断读取 */
+function withBodyLimit(req: Request, limit: number): { request: Request; exceeded: () => boolean } {
+    let received = 0;
+    let over = false;
+    if (!req.body) return { request: req, exceeded: () => false };
+    const counted = req.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            received += chunk.byteLength;
+            if (received > limit) {
+                over = true;
+                controller.error(backupTooLarge(limit));
+                return;
+            }
+            controller.enqueue(chunk);
+        },
+    }));
+    const request = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body: counted,
+        duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+    return { request, exceeded: () => over };
+}
 
 function isZipMagic(bytes: Uint8Array): boolean {
     return bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
@@ -33,7 +72,16 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
         task = startBackgroundTask({ userId: user.id, kind: 'data_import' });
 
         if (contentType.includes('multipart/form-data')) {
-            const formData = await req.formData();
+            const multipartLimit = backupUploadLimitBytes() + MULTIPART_OVERHEAD_BYTES;
+            assertDeclaredSize(req, multipartLimit);
+            const limited = withBodyLimit(req, multipartLimit);
+            let formData: FormData;
+            try {
+                formData = await limited.request.formData();
+            } catch (error) {
+                if (limited.exceeded()) throw backupTooLarge(multipartLimit);
+                throw error;
+            }
             const file = formData.get('file');
             const rawPassphrase = formData.get('passphrase');
             if (typeof rawPassphrase === 'string' && rawPassphrase.length > 0) {
@@ -68,6 +116,8 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
         }
 
         if (contentType.includes('application/zip') || contentType.includes('application/octet-stream')) {
+            // 请求体在 archive-read 中边写临时文件边计数；这里先按声明长度快速拒绝
+            assertDeclaredSize(req, backupUploadLimitBytes());
             const source = req.body ?? new Uint8Array(await req.arrayBuffer());
             const { stats, warnings } = await importBackupV3({
                 db: prisma,
