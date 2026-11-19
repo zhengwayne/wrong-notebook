@@ -1,6 +1,7 @@
 "use client";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { PrintQuestionText } from "@/components/print-preview/print-question-text";
 import { FigureCompare } from "@/components/figure-compare";
 import { QuestionFigure } from "@/components/question-figure";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -64,7 +65,7 @@ export function PrintableQuestion({ item, index, options, reserveAnswerSpace, de
 
             {(options.showQuestionText || !item.originalImageUrl) && item.questionText ? (
                 <div className="mb-4">
-                    <MarkdownRenderer content={item.questionText} />
+                    <PrintQuestionText content={item.questionText} />
                     {item.figureSvg && options.showOriginalImage && item.originalImageUrl ? (
                         <FigureCompare svg={item.figureSvg} originalSrc={item.originalImageUrl} imageScale={options.imageScale} />
                     ) : (

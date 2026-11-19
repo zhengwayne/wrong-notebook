@@ -83,4 +83,23 @@ describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防�
         const withAnswers = read(buildGradingHandoutDocx({ ...base, includeAnswers: true }));
         expect(withAnswers).toContain('参考答案：2');
     });
+
+    it('选择题选项按长度用制表位排成多列，与打印页一致', () => {
+        const bytes = buildGradingHandoutDocx({
+            taskTitle: '随堂测',
+            className: '三(2)班',
+            subjectName: '数学',
+            gradedCount: 10,
+            averageScore: 80,
+            weakPoints: [],
+            questions: [{ number: '3', questionText: '下列哪个数是质数？（ ）\nA. 4\nB. 6\nC. 7\nD. 9', answer: 'C', errorRate: 50, wrongCount: 5, answeredCount: 10 }],
+        });
+        const xml = strFromU8(unzipSync(bytes)['word/document.xml']);
+        expect(xml).toContain('【原题题干】下列哪个数是质数？（ ）');
+        // 4 列：3 个制表位，四个选项在同一段
+        expect(xml.match(/<w:tab w:val="left"/g)).toHaveLength(3);
+        const row = xml.slice(xml.indexOf('A. 4'), xml.indexOf('D. 9'));
+        expect(row).not.toContain('</w:p>');
+        expect(xml).toContain('D. 9');
+    });
 });

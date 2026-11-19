@@ -136,7 +136,7 @@ function takeListContinuations(lines: string[], start: number, contentColumn: nu
 }
 
 /** 还原公式占位符；若占位符所在行已缩进，把公式块的后续行对齐到同一缩进 */
-function restoreMathSegments(text: string, segments: MathSegment[]): string {
+export function restoreMathSegments(text: string, segments: MathSegment[]): string {
     return text.replace(PLACEHOLDER_PATTERN, (_match, index: string, offset: number) => {
         const source = segments[Number(index)].source;
         if (!source.includes('\n')) return source;

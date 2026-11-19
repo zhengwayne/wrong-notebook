@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BackButton } from "@/components/ui/back-button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { QuestionFigure } from "@/components/question-figure";
+import { PrintQuestionText } from "@/components/print-preview/print-question-text";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
@@ -133,7 +134,7 @@ export default function ExamPrintPage() {
                             <span>{index + 1}.</span>
                             <span className="exam-source">{t.exam.sourceLabel}: {question.sourceShortId}</span>
                         </div>
-                        <MarkdownRenderer content={question.questionText!} />
+                        <PrintQuestionText content={question.questionText!} />
                         <QuestionFigure svg={question.figureSvg} />
                         <div
                             className="exam-answer-space"

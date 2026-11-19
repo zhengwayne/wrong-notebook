@@ -1,4 +1,6 @@
 import { strToU8, zipSync } from "fflate";
+import { splitChoiceOptions } from "@/lib/choice-options";
+import type { ChoiceColumns, ChoiceOption } from "@/lib/choice-options";
 
 export interface HandoutQuestionItem {
     number: string;
@@ -56,6 +58,43 @@ function paragraphXml(text: string, opts?: { bold?: boolean; sizeHalfPt?: number
     return `<w:p>${pPr}${runs}</w:p>`;
 }
 
+/** A4 纵向、左右页边距 1134 twips 时的正文宽度 */
+const BODY_WIDTH_TWIPS = 11906 - 1134 * 2;
+
+/**
+ * 选择题选项一行一段：按列数用制表位排开（4 列、2 列或 1 列），与打印页的选项横排一致。
+ */
+function choiceRowsXml(options: ChoiceOption[], columns: ChoiceColumns, sizeHalfPt: number): string[] {
+    const rPr = `<w:rPr><w:sz w:val="${sizeHalfPt}"/><w:szCs w:val="${sizeHalfPt}"/></w:rPr>`;
+    const step = Math.floor(BODY_WIDTH_TWIPS / columns);
+    const tabs = columns > 1
+        ? `<w:tabs>${Array.from({ length: columns - 1 }, (_, i) => `<w:tab w:val="left" w:pos="${step * (i + 1)}"/>`).join("")}</w:tabs>`
+        : "";
+    const rows: string[] = [];
+    for (let start = 0; start < options.length; start += columns) {
+        const runs = options.slice(start, start + columns).map((option, index) => {
+            const tab = index > 0 ? `<w:r>${rPr}<w:tab/></w:r>` : "";
+            const text = `${option.label} ${option.content}`.replace(/\r?\n/g, " ");
+            return `${tab}<w:r>${rPr}<w:t xml:space="preserve">${escapeOoXmlText(text)}</w:t></w:r>`;
+        }).join("");
+        rows.push(`<w:p><w:pPr>${tabs}<w:spacing w:after="20"/><w:ind w:left="240"/></w:pPr>${runs}</w:p>`);
+    }
+    return rows;
+}
+
+/** 原题题干：逐行排列的选择题选项按长度排成 4 / 2 / 1 列；其他题目原样输出 */
+function questionTextXml(questionText: string | null): string[] {
+    const text = questionText?.trim() || "";
+    const layout = text ? splitChoiceOptions(text) : null;
+    if (!layout) {
+        return [paragraphXml(`【原题题干】${text || "（请对照原卷题目）"}`, { sizeHalfPt: 21, spacingAfter: 60 })];
+    }
+    const out = [paragraphXml(`【原题题干】${layout.stem}`, { sizeHalfPt: 21, spacingAfter: 20 })];
+    out.push(...choiceRowsXml(layout.options, layout.columns, 21));
+    if (layout.after) out.push(paragraphXml(layout.after, { sizeHalfPt: 21, spacingAfter: 60 }));
+    return out;
+}
+
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -104,7 +143,7 @@ export function buildGradingHandoutDocx(input: GradingHandoutInput): Uint8Array 
                 { bold: true, sizeHalfPt: 23, colorHex: "B91C1C", spacingAfter: 80 },
             ),
         );
-        paragraphs.push(paragraphXml(`【原题题干】${q.questionText?.trim() || "（请对照原卷题目）"}`, { sizeHalfPt: 21, spacingAfter: 60 }));
+        paragraphs.push(...questionTextXml(q.questionText));
         if (q.sampleMistakes && q.sampleMistakes.length > 0) {
             paragraphs.push(paragraphXml(`【典型错因/错答】${q.sampleMistakes.join("；")}`, { sizeHalfPt: 20, colorHex: "6B7280", spacingAfter: 60 }));
         }
