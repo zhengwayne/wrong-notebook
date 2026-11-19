@@ -1,28 +1,53 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/current-user";
-import { unauthorized, notFound, badRequest } from "@/lib/api-errors";
-import { patchStep } from "@/lib/learning-path/service";
+import { z } from "zod";
+import { badRequest, kidModeRestricted, notFound } from "@/lib/api-errors";
+import { patchStep, StepPatchError } from "@/lib/learning-path/service";
+import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
-const ACTIONS = new Set(["lock", "unlock", "skip", "complete", "start", "move", "note", "attach_run"]);
+const patchStepSchema = z.object({
+    action: z.enum(["lock", "unlock", "skip", "complete", "start", "move", "note", "attach_run"]),
+    direction: z.enum(["up", "down"]).optional(),
+    teacherNote: z.string().trim().max(500).nullable().optional(),
+    variantRunId: z.string().trim().min(1).max(64).nullable().optional(),
+});
 
 /** PATCH /api/learning-path/steps/:id 锁定、完成、调序或批注某一步 */
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-    const user = await getCurrentUser();
-    if (!user) return unauthorized();
-    const { id } = await ctx.params;
-    const body = await req.json().catch(() => ({})) as {
-        action?: string;
-        direction?: "up" | "down";
-        teacherNote?: string | null;
-        variantRunId?: string | null;
-    };
-    if (!body.action || !ACTIONS.has(body.action)) return badRequest("Invalid action");
-    const path = await patchStep(user.id, id, {
-        action: body.action as "lock" | "unlock" | "skip" | "complete" | "start" | "move" | "note" | "attach_run",
-        direction: body.direction,
-        teacherNote: body.teacherNote,
-        variantRunId: body.variantRunId,
-    });
-    if (!path) return notFound("Step not found");
-    return NextResponse.json(path);
-}
+export const PATCH = defineApiRoute<Request, { id: string }>(
+    { auth: "user", maxBodyBytes: 8192 },
+    async (req, { user, params }) => {
+        const { id } = await params;
+        const raw = await req.json().catch(() => null);
+        const parsed = patchStepSchema.safeParse(raw);
+        if (!parsed.success) {
+            return badRequest("Invalid action");
+        }
+
+        const kidLearnerId = getKidModeLearnerId();
+        if (kidLearnerId && parsed.data.action !== "start" && parsed.data.action !== "complete") {
+            return kidModeRestricted();
+        }
+
+        try {
+            const path = await patchStep(
+                user.id,
+                id,
+                {
+                    action: parsed.data.action,
+                    direction: parsed.data.direction,
+                    teacherNote: parsed.data.teacherNote,
+                    variantRunId: parsed.data.variantRunId,
+                },
+                kidLearnerId ? { expectedStudentKey: kidLearnerId } : undefined,
+            );
+            if (!path) return notFound("Step not found");
+            return NextResponse.json(path);
+        } catch (error) {
+            if (error instanceof StepPatchError) {
+                if (error.code === "KID_MODE_RESTRICTED") return kidModeRestricted();
+                if (error.code === "VARIANT_RUN_NOT_FOUND") return notFound("Variant run not found");
+            }
+            throw error;
+        }
+    },
+);

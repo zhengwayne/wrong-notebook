@@ -2166,6 +2166,7 @@ export const zh = {
         submitLinkClosed: "已关闭在线交卷入口",
         copyReminder: "复制催交文案（{count} 人未交）",
         reminderCopied: "已复制未交催交文案",
+        copyFallbackHint: "当前环境不支持自动剪贴板，请手动复制下方内容",
         shareFeedbackCard: "生成家长反馈卡",
         feedbackLinkCopied: "已复制该生专属批改反馈卡链接",
         submitPageTitle: "在线拍照交作业",

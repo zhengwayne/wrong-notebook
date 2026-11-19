@@ -698,17 +698,38 @@ async function loadSourceItemsByIds(ids: string[]) {
     });
 }
 
+export class StepPatchError extends Error {
+    readonly code: "KID_MODE_RESTRICTED" | "VARIANT_RUN_NOT_FOUND";
+    constructor(code: "KID_MODE_RESTRICTED" | "VARIANT_RUN_NOT_FOUND") {
+        super(code);
+        this.name = "StepPatchError";
+        this.code = code;
+    }
+}
+
 export async function patchStep(userId: string, stepId: string, patch: {
     action: "lock" | "unlock" | "skip" | "complete" | "start" | "move" | "note" | "attach_run";
     direction?: "up" | "down";
     teacherNote?: string | null;
     variantRunId?: string | null;
-}) {
+}, options?: { expectedStudentKey?: string }) {
     const step = await prisma.learningPathStep.findFirst({
         where: { id: stepId, path: { userId } },
         include: { path: { include: { steps: { orderBy: { position: "asc" } } } } },
     });
     if (!step) return null;
+    if (options?.expectedStudentKey && step.path.studentKey !== options.expectedStudentKey) {
+        throw new StepPatchError("KID_MODE_RESTRICTED");
+    }
+    if (patch.action === "attach_run" && patch.variantRunId) {
+        const ownedRun = await prisma.variantRun.findFirst({
+            where: { id: patch.variantRunId, userId },
+            select: { id: true },
+        });
+        if (!ownedRun) {
+            throw new StepPatchError("VARIANT_RUN_NOT_FOUND");
+        }
+    }
 
     if (patch.action === "move") {
         const steps = step.path.steps;

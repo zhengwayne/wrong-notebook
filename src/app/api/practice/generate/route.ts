@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { notFound, internalError } from "@/lib/api-errors";
+import { notFound, internalError, kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { parseLastPractice } from "@/lib/last-practice";
@@ -10,6 +10,7 @@ import { startItemPipeline, startLegacyRun } from "@/lib/variant/service";
 import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { serializeRun } from "@/lib/variant/serialize";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:practice:generate');
 
@@ -28,10 +29,14 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 
         const item = await prisma.errorItem.findUnique({
             where: { id: errorItemId },
-            select: { userId: true, lastPractice: true }
+            select: { userId: true, learnerId: true, lastPractice: true }
         });
         if (!item || item.userId !== user.id) {
             return notFound("Item not found");
+        }
+        const kidLearnerId = getKidModeLearnerId();
+        if (kidLearnerId && (item.learnerId ?? null) !== kidLearnerId) {
+            return kidModeRestricted();
         }
 
         return NextResponse.json({ practice: parseLastPractice(item.lastPractice) });
@@ -53,6 +58,10 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         // 只能基于自己的错题生成，否则等于间接读取他人题目
         if (!errorItemWithSubject || errorItemWithSubject.userId !== user.id) {
             return notFound("Item not found");
+        }
+        const kidLearnerId = getKidModeLearnerId();
+        if (kidLearnerId && (errorItemWithSubject.learnerId ?? null) !== kidLearnerId) {
+            return kidModeRestricted();
         }
 
         let tags: string[] = [];

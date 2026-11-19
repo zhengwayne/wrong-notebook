@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { internalError, notFound, validationError } from "@/lib/api-errors";
+import { internalError, kidModeRestricted, notFound, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
@@ -10,6 +10,7 @@ import { resolveLearningScope } from "@/lib/learning-scope";
 import { syncItemMemory } from "@/lib/due-items";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:practice:record');
 
@@ -45,10 +46,12 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 
         const userId = user.id;
 
+        const kidLearnerId = getKidModeLearnerId();
         let requestedScope: { userId: string; learnerId: string | null } | undefined;
-        if (parsed.data.learnerId !== undefined && parsed.data.learnerId !== null) {
+        const targetLearnerParam = kidLearnerId ?? parsed.data.learnerId;
+        if (targetLearnerParam !== undefined && targetLearnerParam !== null) {
             try {
-                requestedScope = await resolveLearningScope(prisma, userId, parsed.data.learnerId);
+                requestedScope = await resolveLearningScope(prisma, userId, targetLearnerParam);
             } catch (error) {
                 if (error instanceof LearnerNotFoundError) {
                     return notFound("Learner not found");
@@ -69,6 +72,9 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
                 return notFound("Item not found");
             }
             const itemLearnerId = item.learnerId ?? null;
+            if (kidLearnerId && itemLearnerId !== kidLearnerId) {
+                return kidModeRestricted();
+            }
             if (requestedScope && itemLearnerId !== requestedScope.learnerId) {
                 return notFound("Item not found");
             }

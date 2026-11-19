@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestContext {
     requestId: string;
     userId?: string;
+    kidModeLearnerId?: string;
 }
 
 const requestContextStorage = new AsyncLocalStorage<RequestContext>();
@@ -31,6 +32,19 @@ export function setRequestContextUserId(userId: string): void {
     if (store) {
         store.userId = userId;
     }
+}
+
+/** 家长专注锁生效时记录绑定的目标孩子 learnerId */
+export function setRequestContextKidModeLearnerId(learnerId: string): void {
+    const store = requestContextStorage.getStore();
+    if (store) {
+        store.kidModeLearnerId = learnerId;
+    }
+}
+
+/** 读取当前请求受专注锁约束的目标孩子 learnerId（未启用专注锁时返回 undefined） */
+export function getKidModeLearnerId(): string | undefined {
+    return requestContextStorage.getStore()?.kidModeLearnerId;
 }
 
 type RequestContextGlobal = typeof globalThis & {

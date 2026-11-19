@@ -72,6 +72,7 @@ function GradingTaskView() {
                     taskId={task.id}
                     taskTitle={task.title}
                     subjectName={task.subjectName}
+                    taskMode={task.taskMode}
                     allowSelfSubmit={task.allowSelfSubmit}
                     students={task.students}
                     submissions={task.submissions}

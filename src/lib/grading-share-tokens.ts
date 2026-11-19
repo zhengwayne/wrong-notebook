@@ -1,4 +1,8 @@
 import crypto from 'node:crypto';
+import { buildMissingReminderCopy } from '@/lib/grading-reminder-copy';
+import { getClientIp } from '@/lib/rate-limit';
+
+export { buildMissingReminderCopy };
 
 // TODO(security): 自托管轻量部署暂不集成外部商业杀毒扫描引擎（AV API）与 CDR 宏剥离服务，通过严格限制仅接收图像重编码归一化（sharp 重新编码剥离元数据与潜在夹带载荷）保障上传安全。
 
@@ -51,34 +55,41 @@ export function checkPublicTokenRateLimit(
                 rateBuckets.delete(k);
             }
         }
+        // 清理过期键后若仍超上限，按插入序淘汰最早桶防止随机 IP 撑爆内存
+        if (rateBuckets.size > 2000) {
+            for (const oldestKey of rateBuckets.keys()) {
+                if (rateBuckets.size <= 2000) break;
+                rateBuckets.delete(oldestKey);
+            }
+        }
     }
     return { allowed: true, retryAfterMs: 0 };
 }
 
 export function resolveRequestClientIp(req: Request): string {
-    const xff = req.headers.get('x-forwarded-for');
-    if (xff) {
-        const first = xff.split(',')[0]?.trim();
-        if (first) return first.slice(0, 64);
-    }
-    return (req.headers.get('x-real-ip')?.trim() || 'local').slice(0, 64);
+    return (getClientIp(req.headers) || 'local').slice(0, 64);
 }
 
-export function buildMissingReminderCopy(params: {
-    taskTitle: string;
-    subjectName: string;
-    missingNames: string[];
-    submitUrl?: string | null;
-    language?: 'zh' | 'en';
-}): string {
-    const { taskTitle, subjectName, missingNames, submitUrl, language = 'zh' } = params;
-    const count = missingNames.length;
-    if (language === 'en') {
-        const namesText = missingNames.join(', ');
-        const linkSuffix = submitUrl ? ` Submit online here: ${submitUrl}` : '';
-        return `[Homework Reminder] "${taskTitle}" (${subjectName}): ${count} student(s) still pending (${namesText}). Please assist with photo submission.${linkSuffix}`;
+const mutexGlobal = globalThis as typeof globalThis & { __wnBridgeMutexes?: Map<string, Promise<unknown>> };
+const bridgeMutexes: Map<string, Promise<unknown>> = (mutexGlobal.__wnBridgeMutexes ??= new Map());
+
+/** 按业务键串行化短链交卷与反馈卡导入临界区，防止并发双击产生重复提交或 P2002 报错 */
+export async function withBridgeMutex<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = bridgeMutexes.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const tail = prev.catch(() => undefined).then(() => current);
+    bridgeMutexes.set(key, tail);
+
+    await prev.catch(() => undefined);
+    try {
+        return await fn();
+    } finally {
+        release();
+        if (bridgeMutexes.get(key) === tail) {
+            bridgeMutexes.delete(key);
+        }
     }
-    const namesText = missingNames.join('、');
-    const linkSuffix = submitUrl ? `，在线扫码/拍照交卷入口：${submitUrl}` : '';
-    return `【作业温馨提醒】《${taskTitle}》（${subjectName}）目前还有 ${count} 位同学尚未提交：${namesText}。烦请家长协助核对并提交作业${linkSuffix}，感谢配合！`;
 }

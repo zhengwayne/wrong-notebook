@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
+import { kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
-import { KID_MODE_COOKIE_NAME, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
+import { KID_MODE_COOKIE_NAME, isApiAllowedInKidMode, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
 import { isPersona, landingPath } from "@/lib/personas";
 
 const logger = createLogger('proxy');
@@ -61,6 +62,33 @@ function redirectToLoginClearingSession(req: NextRequest, callbackUrl?: string):
 }
 
 export async function proxy(req: NextRequest) {
+    // 家长开启孩子专注做题锁时，在网关层统一拦截所有非白名单 API（包括未使用 defineApiRoute 的路由）；未带锁 Cookie 时零开销直通
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+        const rawKidCookie = req.cookies.get(KID_MODE_COOKIE_NAME)?.value;
+        if (!rawKidCookie) {
+            return NextResponse.next();
+        }
+        try {
+            const token = await getToken({
+                req,
+                secret: process.env.NEXTAUTH_SECRET,
+                cookieName: SESSION_COOKIE_NAME,
+            });
+            if (token) {
+                const kidLock = verifyKidModeToken(rawKidCookie, {
+                    userId: typeof token.id === "string" ? token.id : undefined,
+                    authVersion: typeof token.authVersion === "number" ? token.authVersion : undefined,
+                });
+                if (kidLock && !isApiAllowedInKidMode(req.nextUrl.pathname, req.method)) {
+                    return kidModeRestricted();
+                }
+            }
+        } catch {
+            // 令牌解析失败时不阻断后续路由自身鉴权流程
+        }
+        return NextResponse.next();
+    }
+
     // 页面请求的登录保护（Next.js 16 起由 middleware 更名为 proxy，运行在 Node.js 运行时）
     logger.debug({ method: req.method, path: req.nextUrl.pathname }, 'Processing request');
 
@@ -180,10 +208,21 @@ export async function proxy(req: NextRequest) {
                 userId: typeof token?.id === "string" ? token.id : undefined,
                 authVersion: typeof token?.authVersion === "number" ? token.authVersion : undefined,
             });
-            if (kidLock && !isKidModeAllowedPagePath(req.nextUrl.pathname)) {
-                return NextResponse.redirect(
-                    new URL(`/learn?studentKey=${encodeURIComponent(kidLock.learnerId)}`, req.url),
-                );
+            if (kidLock) {
+                if (!isKidModeAllowedPagePath(req.nextUrl.pathname)) {
+                    return NextResponse.redirect(
+                        new URL(`/learn?studentKey=${encodeURIComponent(kidLock.learnerId)}`, req.url),
+                    );
+                }
+                if (req.nextUrl.pathname === "/learn") {
+                    const reqKey = req.nextUrl.searchParams.get("studentKey") || req.nextUrl.searchParams.get("learnerId");
+                    if (reqKey && reqKey !== kidLock.learnerId) {
+                        const target = new URL(req.url);
+                        target.searchParams.set("studentKey", kidLock.learnerId);
+                        target.searchParams.delete("learnerId");
+                        return NextResponse.redirect(target);
+                    }
+                }
             }
         }
     } catch (e) {
@@ -210,6 +249,6 @@ export const config = {
          * - icons/、manifest.webmanifest（PWA 图标与清单，登录页也要能加载）
          * - sw.js、offline.html（Service Worker 与离线页，未登录时也要能加载）
          */
-        "/((?!api|_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html).*)",
+        "/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html).*)",
     ],
 };

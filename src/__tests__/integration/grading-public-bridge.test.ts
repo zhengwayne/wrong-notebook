@@ -290,4 +290,70 @@ describe('扫码交作业短链与家长批改反馈卡免重拍导入闭环', (
         expect(parentErrors[0].questionText).toBe('计算 2 - 5 的值');
         expect(parentErrors[0].wrongAnswerText).toBe('3');
     });
+
+    it('随堂速批模式拒绝生成与提交公开短链、未批改答卷拒绝分享，且默认不信任伪造 XFF 绕过限流', async () => {
+        await database.gradingTask.create({
+            data: {
+                id: 'quick-task-1',
+                userId: 'teacher-1',
+                classId: 'cls-1',
+                title: '随堂速批测试',
+                subjectName: '数学',
+                taskMode: 'quick',
+            },
+        });
+        const quickLinkRes = await CREATE_SUBMIT_LINK(
+            new Request('http://127.0.0.1/api/grading/tasks/quick-task-1/submit-link', { method: 'POST' }),
+            { params: Promise.resolve({ id: 'quick-task-1' }) },
+        );
+        expect(quickLinkRes.status).toBe(400);
+
+        const pendingSub = await database.gradingSubmission.create({
+            data: {
+                id: 'sub-pending',
+                taskId: 'task-1',
+                studentId: 'stu-2',
+                status: 'pending',
+                images: JSON.stringify([validPngDataUrl]),
+            },
+        });
+        const pendingShareRes = await CREATE_SHARE_LINK(
+            new Request(`http://127.0.0.1/api/grading/submissions/${pendingSub.id}/share`, { method: 'POST' }),
+            { params: Promise.resolve({ id: pendingSub.id }) },
+        );
+        expect(pendingShareRes.status).toBe(400);
+
+        // 生成标准任务链接并连续以不同伪造 XFF 提交，在未设 TRUST_PROXY 时统一归入同 IP 限流桶并在第 11 次触发 429
+        const linkRes = await CREATE_SUBMIT_LINK(
+            new Request('http://127.0.0.1/api/grading/tasks/task-1/submit-link', { method: 'POST' }),
+            { params: Promise.resolve({ id: 'task-1' }) },
+        );
+        const { rawToken } = await linkRes.json();
+        const prevTrust = process.env.TRUST_PROXY;
+        delete process.env.TRUST_PROXY;
+        try {
+            let throttled = 0;
+            for (let i = 0; i < 12; i += 1) {
+                const res = await SUBMIT_PUBLIC_PAPER(
+                    new Request(`http://127.0.0.1/api/public/grading-submit/${rawToken}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-forwarded-for': `198.51.100.${i + 1}`,
+                        },
+                        body: JSON.stringify({
+                            studentNo: '999999',
+                            studentName: '不存在',
+                            images: [validPngDataUrl],
+                        }),
+                    }),
+                    { params: Promise.resolve({ token: rawToken }) },
+                );
+                if (res.status === 429) throttled += 1;
+            }
+            expect(throttled).toBeGreaterThanOrEqual(2);
+        } finally {
+            if (prevTrust !== undefined) process.env.TRUST_PROXY = prevTrust;
+        }
+    });
 });

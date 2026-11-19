@@ -2170,6 +2170,7 @@ export const en = {
         submitLinkClosed: "Self-submit link closed",
         copyReminder: "Copy Reminder ({count} missing)",
         reminderCopied: "Missing homework reminder copied",
+        copyFallbackHint: "Clipboard unavailable here; please copy the text below manually",
         shareFeedbackCard: "Share Parent Feedback Card",
         feedbackLinkCopied: "Student feedback card link copied",
         submitPageTitle: "Submit Homework Photos",

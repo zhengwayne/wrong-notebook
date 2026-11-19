@@ -5,6 +5,7 @@ import {
     buildKidModeSetCookie,
     isApiAllowedInKidMode,
     isKidModeAllowedPagePath,
+    isRequestHttps,
     signKidModeToken,
     verifyKidModeToken,
 } from '@/lib/kid-mode-lock';
@@ -83,6 +84,11 @@ describe('kid-mode-lock 签名锁与路由收敛纯函数', () => {
         expect(isApiAllowedInKidMode('/api/error-items/item-1', 'GET')).toBe(true);
         expect(isApiAllowedInKidMode('/api/user', 'GET')).toBe(true);
 
+        expect(isApiAllowedInKidMode('/api/auth/session', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/auth/csrf', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/practice/generate', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/auth/signout', 'POST')).toBe(false);
+        expect(isApiAllowedInKidMode('/api/auth/callback/credentials', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/user', 'DELETE')).toBe(false);
         expect(isApiAllowedInKidMode('/api/user', 'PATCH')).toBe(false);
         expect(isApiAllowedInKidMode('/api/error-items/item-1/delete', 'POST')).toBe(false);
@@ -92,5 +98,22 @@ describe('kid-mode-lock 签名锁与路由收敛纯函数', () => {
         expect(isApiAllowedInKidMode('/api/persona', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/settings', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/parent/pin', 'POST')).toBe(false);
+    });
+
+    it('isRequestHttps 遵循 TRUST_PROXY 开关', () => {
+        const orig = process.env.TRUST_PROXY;
+        try {
+            delete process.env.TRUST_PROXY;
+            const spoofedReq = new Request('http://127.0.0.1/api/parent/kid-mode', {
+                headers: { 'x-forwarded-proto': 'https' },
+            });
+            expect(isRequestHttps(spoofedReq)).toBe(false);
+
+            process.env.TRUST_PROXY = 'true';
+            expect(isRequestHttps(spoofedReq)).toBe(true);
+        } finally {
+            if (orig === undefined) delete process.env.TRUST_PROXY;
+            else process.env.TRUST_PROXY = orig;
+        }
     });
 });

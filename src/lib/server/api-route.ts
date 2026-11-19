@@ -16,6 +16,7 @@ import { resolveActor, type ActorUser } from '@/lib/server/actor';
 import {
     createRequestContext,
     runWithRequestContext,
+    setRequestContextKidModeLearnerId,
     setRequestContextUserId,
     type RequestContext,
 } from '@/lib/server/request-context';
@@ -187,6 +188,7 @@ export function defineApiRoute<
                         if (!isApiAllowedInKidMode(pathname, req.method)) {
                             return kidModeRestricted();
                         }
+                        setRequestContextKidModeLearnerId(activeKidLock.learnerId);
                     }
                 }
             }

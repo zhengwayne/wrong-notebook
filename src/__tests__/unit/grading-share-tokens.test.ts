@@ -5,6 +5,7 @@ import {
     generateShareToken,
     hashShareToken,
     resetPublicTokenRateLimitForTests,
+    resolveRequestClientIp,
 } from '@/lib/grading-share-tokens';
 
 describe('grading-share-tokens 公开短链令牌、催交文案与限流', () => {
@@ -47,5 +48,28 @@ describe('grading-share-tokens 公开短链令牌、催交文案与限流', () =
         const third = checkPublicTokenRateLimit('ip1:tok1', 2, 60_000);
         expect(third.allowed).toBe(false);
         expect(third.retryAfterMs).toBeGreaterThan(0);
+
+        for (let i = 0; i < 2050; i += 1) {
+            checkPublicTokenRateLimit(`flood-${i}`, 5, 60_000);
+        }
+        // 新键写入后内部桶数量受 2000 上限约束
+        expect(checkPublicTokenRateLimit('flood-last', 5, 60_000).allowed).toBe(true);
+    });
+
+    it('resolveRequestClientIp 遵循 TRUST_PROXY 配置防止伪造 XFF 绕过限流', () => {
+        const orig = process.env.TRUST_PROXY;
+        try {
+            delete process.env.TRUST_PROXY;
+            const req = new Request('http://127.0.0.1/api/public/test', {
+                headers: { 'x-forwarded-for': '203.0.113.9' },
+            });
+            expect(resolveRequestClientIp(req)).toBe('local');
+
+            process.env.TRUST_PROXY = 'true';
+            expect(resolveRequestClientIp(req)).toBe('203.0.113.9');
+        } finally {
+            if (orig === undefined) delete process.env.TRUST_PROXY;
+            else process.env.TRUST_PROXY = orig;
+        }
     });
 });

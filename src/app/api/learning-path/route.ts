@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/current-user";
-import { unauthorized, notFound, badRequest } from "@/lib/api-errors";
-import { getOrReplanPath } from "@/lib/learning-path/service";
+import { z } from "zod";
+import { badRequest, kidModeRestricted, notFound } from "@/lib/api-errors";
 import { suggestKnowledgeOrder } from "@/lib/learning-path/ai";
-import { prisma } from "@/lib/prisma";
+import { getOrReplanPath } from "@/lib/learning-path/service";
 import { SELF_STUDENT_KEY } from "@/lib/learning-path/types";
+import { prisma } from "@/lib/prisma";
+import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 function languageOf(req: Request, fallback: "zh" | "en" = "zh"): "zh" | "en" {
     const url = new URL(req.url);
@@ -14,26 +16,38 @@ function languageOf(req: Request, fallback: "zh" | "en" = "zh"): "zh" | "en" {
     return header.toLowerCase().startsWith("en") ? "en" : fallback;
 }
 
+const postPathSchema = z.object({
+    action: z.enum(["replan", "suggest-order"]).optional(),
+    studentKey: z.string().trim().max(64).optional(),
+    language: z.enum(["zh", "en"]).optional(),
+});
+
 /** GET /api/learning-path?studentKey=&subjectId=&language= 获取学习路径（只读；缓存命中时不写库） */
-export async function GET(req: Request) {
-    const user = await getCurrentUser();
-    if (!user) return unauthorized();
+export const GET = defineApiRoute({ auth: "user" }, async (req, { user }) => {
     const url = new URL(req.url);
+    const kidLearnerId = getKidModeLearnerId();
+    const studentKey = kidLearnerId || url.searchParams.get("studentKey") || SELF_STUDENT_KEY;
     const result = await getOrReplanPath(user.id, {
-        studentKey: url.searchParams.get("studentKey") || SELF_STUDENT_KEY,
+        studentKey,
         subjectId: url.searchParams.get("subjectId"),
         language: languageOf(req),
         force: false,
     });
     if (!result) return notFound("Student not found");
     return NextResponse.json({ ...result.path, replanned: result.replanned });
-}
+});
 
 /** POST /api/learning-path  { action: "replan" | "suggest-order", studentKey?, language? } */
-export async function POST(req: Request) {
-    const user = await getCurrentUser();
-    if (!user) return unauthorized();
-    const body = await req.json().catch(() => ({})) as { action?: string; studentKey?: string; language?: "zh" | "en" };
+export const POST = defineApiRoute({ auth: "user", maxBodyBytes: 8192 }, async (req, { user }) => {
+    if (getKidModeLearnerId()) {
+        return kidModeRestricted();
+    }
+    const rawBody = await req.json().catch(() => ({}));
+    const parsed = postPathSchema.safeParse(rawBody);
+    if (!parsed.success) {
+        return badRequest("Unknown action");
+    }
+    const body = parsed.data;
     const language = body.language === "en" ? "en" : "zh";
     const studentKey = body.studentKey || SELF_STUDENT_KEY;
 
@@ -57,8 +71,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ suggestion, path: current.path });
     }
 
-    if (body.action && body.action !== "replan") return badRequest("Unknown action");
     const result = await getOrReplanPath(user.id, { studentKey, language, force: true });
     if (!result) return notFound("Student not found");
     return NextResponse.json({ ...result.path, replanned: true });
-}
+});

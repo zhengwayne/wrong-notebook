@@ -12,6 +12,7 @@ import {
     type NavItem,
 } from "@/lib/nav-items";
 import type { Persona } from "@/lib/personas";
+import { withChildParam } from "@/lib/current-child";
 import { requestOpenSettings } from "@/lib/settings-events";
 import { cn } from "@/lib/utils";
 
@@ -32,10 +33,11 @@ interface MobileNavProps {
     isAdmin: boolean;
     activePersona: Persona | null;
     hrefWithChild: (href: string) => string;
+    kidModeLearnerId?: string | null;
 }
 
 /** 移动端底部固定导航与「更多」抽屉菜单 */
-export function MobileNav({ pathname, isAdmin, activePersona, hrefWithChild }: MobileNavProps) {
+export function MobileNav({ pathname, isAdmin, activePersona, hrefWithChild, kidModeLearnerId }: MobileNavProps) {
     const { t } = useLanguage();
     const [moreOpen, setMoreOpen] = useState(false);
     const moreTitleId = useId();
@@ -45,6 +47,48 @@ export function MobileNav({ pathname, isAdmin, activePersona, hrefWithChild }: M
     const mobilePrimaryItems = mobilePrimaryItemsForPersona(activePersona);
     const mobileMoreItems = mobileMoreItemsForPersona(activePersona);
     const moreActive = isMobileMoreActive(pathname, activePersona);
+
+    if (kidModeLearnerId) {
+        const kidItems = [
+            ...mobilePrimaryItems,
+            ...mobileMoreItems,
+        ].filter((item) => item.href === "/learn" || item.href === "/review");
+        return (
+            <nav
+                aria-label={t.nav.mobileNav}
+                className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-card/92 backdrop-blur-md md:hidden print:hidden"
+            >
+                <div className="grid h-16 grid-cols-2 px-1">
+                    {kidItems.map((item) => {
+                        const active = item.match(pathname);
+                        const Icon = item.icon;
+                        const label = navLabel(t, item.key, true, activePersona);
+                        return (
+                            <Link
+                                key={item.key}
+                                href={withChildParam(item.href, kidModeLearnerId)}
+                                className={cn(
+                                    "flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                                    active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                                )}
+                                aria-current={active ? "page" : undefined}
+                            >
+                                <span
+                                    className={cn(
+                                        "flex h-7 w-11 items-center justify-center rounded-full transition-colors",
+                                        active && "bg-accent text-accent-foreground",
+                                    )}
+                                >
+                                    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                                </span>
+                                <span className="max-w-full truncate">{label}</span>
+                            </Link>
+                        );
+                    })}
+                </div>
+            </nav>
+        );
+    }
 
     const openSettingsFromMore = () => {
         setMoreOpen(false);

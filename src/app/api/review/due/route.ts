@@ -10,6 +10,7 @@ import { getMasteryThreshold } from "@/lib/mastery";
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:review:due');
 
@@ -23,7 +24,8 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
         let scope;
         try {
-            scope = await resolveLearningScope(prisma, user.id, readRequestLearnerId(req));
+            const kidLearnerId = getKidModeLearnerId();
+            scope = await resolveLearningScope(prisma, user.id, kidLearnerId ?? readRequestLearnerId(req));
         } catch (error) {
             if (error instanceof LearnerNotFoundError) {
                 return notFound("Learner not found");

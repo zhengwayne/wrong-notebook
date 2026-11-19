@@ -197,6 +197,9 @@ export async function deleteChildLearner(
         await tx.parentPaper.deleteMany({
             where: { userId, learnerId: existing.id },
         });
+        await tx.examPaper.deleteMany({
+            where: { userId, learnerId: existing.id },
+        });
         const result = await tx.errorItem.deleteMany({
             where: { userId, learnerId: existing.id },
         });

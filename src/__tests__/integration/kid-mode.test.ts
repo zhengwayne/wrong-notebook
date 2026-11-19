@@ -33,8 +33,12 @@ import { POST as SET_PIN, GET as GET_PIN } from '@/app/api/parent/pin/route';
 import { POST as ENABLE_KID_MODE, GET as GET_KID_MODE } from '@/app/api/parent/kid-mode/route';
 import { POST as UNLOCK_KID_MODE } from '@/app/api/parent/kid-mode/unlock/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
+import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
+import { GET as GET_LEARNING_PATH } from '@/app/api/learning-path/route';
+import { PATCH as PATCH_STEP } from '@/app/api/learning-path/steps/[id]/route';
 import { proxy } from '@/proxy';
 import { KID_MODE_COOKIE_NAME } from '@/lib/kid-mode-lock';
+import bcrypt from 'bcryptjs';
 
 let database: PrismaClient;
 let directory: string;
@@ -58,15 +62,19 @@ beforeAll(() => {
 }, 120000);
 
 beforeEach(async () => {
+    await database.learningPathStep.deleteMany();
+    await database.learningPath.deleteMany();
+    await database.knowledgeMastery.deleteMany();
     await database.errorItem.deleteMany();
     await database.learner.deleteMany();
     await database.user.deleteMany();
 
+    const passwordHash = await bcrypt.hash('ParentPass123!', 10);
     await database.user.create({
         data: {
             id: 'parent-1',
             email: 'parent@example.com',
-            password: 'hashed-password',
+            password: passwordHash,
             personas: JSON.stringify(['parent']),
             activePersona: 'parent',
             personasConfirmedAt: new Date(),
@@ -83,6 +91,9 @@ beforeEach(async () => {
         data: { id: 'child-a', userId: 'parent-1', kind: 'child', name: '小宝' },
     });
     await database.learner.create({
+        data: { id: 'child-b', userId: 'parent-1', kind: 'child', name: '二宝' },
+    });
+    await database.learner.create({
         data: { id: 'child-other', userId: 'other-parent', kind: 'child', name: '别人家孩子' },
     });
     await database.errorItem.create({
@@ -92,6 +103,15 @@ beforeEach(async () => {
             learnerId: 'child-a',
             originalImageUrl: 'data:image/png;base64,dGVzdA==',
             questionText: '1 + 1 = ?',
+        },
+    });
+    await database.errorItem.create({
+        data: {
+            id: 'err-b',
+            userId: 'parent-1',
+            learnerId: 'child-b',
+            originalImageUrl: 'data:image/png;base64,dGVzdA==',
+            questionText: '2 + 2 = ?',
         },
     });
 });
@@ -212,5 +232,82 @@ describe('孩子专注做题受限模式集成测试', () => {
         }));
         expect(unlockOkRes.status).toBe(200);
         expect(unlockOkRes.headers.get('set-cookie')).toContain('Max-Age=0');
+    });
+
+    it('proxy 拦截非白名单 API、放行路线强绑定 child-a、并发错误 PIN 严格锁定，且可用账户密码重置 PIN', async () => {
+        await SET_PIN(new Request('http://127.0.0.1/api/parent/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: '2580' }),
+        }));
+        const enableRes = await ENABLE_KID_MODE(new Request('http://127.0.0.1/api/parent/kid-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ learnerId: 'child-a' }),
+        }));
+        const cookieToken = extractCookieToken(enableRes.headers.get('set-cookie'));
+        const cookieHeader = `${KID_MODE_COOKIE_NAME}=${cookieToken}`;
+
+        // 1. proxy 拦截非白名单 API（包括仅使用 getCurrentUser 的 /api/exams）
+        const apiBlocked = await proxy(new NextRequest('http://127.0.0.1/api/exams', {
+            method: 'POST',
+            headers: { cookie: `next-auth.session-token=fake; ${cookieHeader}` },
+        }));
+        expect(apiBlocked?.status).toBe(403);
+        expect(await apiBlocked?.json()).toMatchObject({ code: 'KID_MODE_RESTRICTED' });
+
+        // 无专注锁时 /api/exams 直接直通
+        const apiAllowedWithoutLock = await proxy(new NextRequest('http://127.0.0.1/api/exams', {
+            method: 'POST',
+            headers: { cookie: 'next-auth.session-token=fake' },
+        }));
+        expect(apiAllowedWithoutLock?.status).toBe(200);
+        expect(apiAllowedWithoutLock?.headers.get('x-middleware-next')).toBe('1');
+
+        // 2. 锁定 child-a 时无法访问 child-b 错题与学习路径
+        const errBRes = await GET_ERROR_ITEM(
+            new Request('http://127.0.0.1/api/error-items/err-b', { headers: { cookie: cookieHeader } }),
+            { params: Promise.resolve({ id: 'err-b' }) },
+        );
+        expect(errBRes.status).toBe(403);
+
+        const pathRes = await GET_LEARNING_PATH(
+            new Request('http://127.0.0.1/api/learning-path?studentKey=child-b&language=zh', { headers: { cookie: cookieHeader } }),
+        );
+        expect(pathRes.status).toBe(200);
+        const pathData = await pathRes.json();
+        expect(pathData.studentKey).toBe('child-a');
+
+        if (pathData.steps?.[0]?.id) {
+            const skipBlocked = await PATCH_STEP(
+                new Request(`http://127.0.0.1/api/learning-path/steps/${pathData.steps[0].id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+                    body: JSON.stringify({ action: 'skip' }),
+                }),
+                { params: Promise.resolve({ id: pathData.steps[0].id }) },
+            );
+            expect(skipBlocked.status).toBe(403);
+        }
+
+        // 3. 并发 8 次错误 PIN 请求：串行锁确保第 5 次起必触发 429
+        const burst = await Promise.all(
+            Array.from({ length: 8 }, () => UNLOCK_KID_MODE(new Request('http://127.0.0.1/api/parent/kid-mode/unlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+                body: JSON.stringify({ pin: '0000' }),
+            }))),
+        );
+        const statuses = burst.map((r) => r.status);
+        expect(statuses.filter((s) => s === 403)).toHaveLength(4);
+        expect(statuses.filter((s) => s === 429)).toHaveLength(4);
+
+        // 4. 忘记 PIN 且处于锁定期间时，可用账户登录密码重置 PIN
+        const resetByPwd = await SET_PIN(new Request('http://127.0.0.1/api/parent/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: '1357', accountPassword: 'ParentPass123!' }),
+        }));
+        expect(resetByPwd.status).toBe(200);
     });
 });

@@ -87,9 +87,12 @@ export function verifyKidModeToken(
 }
 
 export function isRequestHttps(req: Request): boolean {
-    const proto = req.headers.get('x-forwarded-proto');
-    if (proto) {
-        return proto.split(',')[0].trim().toLowerCase() === 'https';
+    const mode = process.env.TRUST_PROXY?.trim().toLowerCase();
+    if (mode === 'true' || mode === 'cloudflare') {
+        const proto = req.headers.get('x-forwarded-proto');
+        if (proto) {
+            return proto.split(',')[0].trim().toLowerCase() === 'https';
+        }
     }
     return req.url.startsWith('https://');
 }
@@ -156,6 +159,8 @@ export function isKidModeAllowedPagePath(pathname: string): boolean {
 /** 专注做题模式下允许调用的 API 路由规则（拒绝一切删题、切号、改设置、改 PIN 等写操作） */
 export function isApiAllowedInKidMode(pathname: string, method: string): boolean {
     const upperMethod = method.toUpperCase();
+    if (pathname === '/api/auth/session' && upperMethod === 'GET') return true;
+    if (pathname === '/api/auth/csrf' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode/unlock' && upperMethod === 'POST') return true;
 
@@ -163,9 +168,11 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
     if (pathname.startsWith('/api/learning-path/steps/') && upperMethod === 'PATCH') return true;
     if (pathname === '/api/review/due' && upperMethod === 'GET') return true;
 
+    if (pathname === '/api/practice/generate' && (upperMethod === 'GET' || upperMethod === 'POST')) {
+        return true;
+    }
     if (
-        (pathname === '/api/practice/generate' ||
-            pathname === '/api/practice/grade' ||
+        (pathname === '/api/practice/grade' ||
             pathname === '/api/practice/record') &&
         upperMethod === 'POST'
     ) {
@@ -183,4 +190,30 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
     if (pathname === '/api/health' || pathname === '/api/version') return true;
 
     return false;
+}
+
+const pinLockGlobal = globalThis as typeof globalThis & { __wnPinLocks?: Map<string, Promise<unknown>> };
+const pinLockQueue: Map<string, Promise<unknown>> = (pinLockGlobal.__wnPinLocks ??= new Map());
+
+/**
+ * 按 userId 串行化 4 位家长 PIN 校验与失败计数更新，消除并发请求绕过 5 次防爆破上限的 TOCTOU 窗口。
+ */
+export async function withParentPinLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = pinLockQueue.get(userId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const tail = prev.catch(() => undefined).then(() => current);
+    pinLockQueue.set(userId, tail);
+
+    await prev.catch(() => undefined);
+    try {
+        return await fn();
+    } finally {
+        release();
+        if (pinLockQueue.get(userId) === tail) {
+            pinLockQueue.delete(userId);
+        }
+    }
 }

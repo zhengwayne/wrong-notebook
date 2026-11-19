@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { homeHrefForPersona, navItemsForPersona, type NavItem } from "@/lib/nav-items";
+import { withChildParam } from "@/lib/current-child";
 import type { Persona } from "@/lib/personas";
 import { OPEN_SETTINGS_EVENT } from "@/lib/settings-events";
 import { useCurrentChild } from "@/lib/use-current-child";
@@ -124,11 +125,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <nav aria-label={t.nav.primaryNav} className="ml-4 hidden items-center gap-1 md:flex">
                         {visibleNavItems.map((item) => {
                             const active = item.match(pathname);
+                            const itemHref = kidLocked && kidMode?.learnerId
+                                ? withChildParam(item.href, kidMode.learnerId)
+                                : hrefWithChild(item.href);
                             return (
                                 <NavLink
                                     key={item.key}
                                     item={item}
-                                    href={hrefWithChild(item.href)}
+                                    href={itemHref}
                                     pathname={pathname}
                                     persona={activePersona}
                                     className={cn(
@@ -201,14 +205,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
 
-            {!kidLocked && (
-                <MobileNav
-                    pathname={pathname}
-                    isAdmin={isAdmin}
-                    activePersona={activePersona}
-                    hrefWithChild={hrefWithChild}
-                />
-            )}
+            <MobileNav
+                pathname={pathname}
+                isAdmin={isAdmin}
+                activePersona={activePersona}
+                hrefWithChild={hrefWithChild}
+                kidModeLearnerId={kidLocked ? (kidMode?.learnerId ?? null) : null}
+            />
         </div>
     );
 }

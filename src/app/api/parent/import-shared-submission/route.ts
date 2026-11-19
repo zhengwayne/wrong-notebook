@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { notFound } from '@/lib/api-errors';
 import { isWrong, parseJsonStringArray } from '@/lib/grading';
 import { resolveCroppedGradingItemImage } from '@/lib/grading-bbox-and-pool';
-import { hashShareToken } from '@/lib/grading-share-tokens';
+import { hashShareToken, withBridgeMutex } from '@/lib/grading-share-tokens';
 import { inferSubjectFromName } from '@/lib/knowledge-tags';
 import { LEARNER_KIND } from '@/lib/learners';
 import { isNotebookSubject, stageFromEducationStage } from '@/lib/notebook-scope';
@@ -40,14 +40,19 @@ export const POST = defineApiRoute(
         const submission = await prisma.gradingSubmission.findFirst({
             where: { shareTokenHash: tokenHash },
             include: {
-                task: true,
+                task: { include: { user: { select: { isActive: true } } } },
                 results: {
                     include: { keyQuestion: true },
                     orderBy: { keyQuestion: { order: 'asc' } },
                 },
             },
         });
-        if (!submission || (submission.shareExpiresAt && submission.shareExpiresAt.getTime() < Date.now())) {
+        if (
+            !submission
+            || submission.task.user.isActive === false
+            || (submission.status !== 'graded' && submission.status !== 'confirmed')
+            || (submission.shareExpiresAt && submission.shareExpiresAt.getTime() < Date.now())
+        ) {
             return notFound('反馈链接无效或已过期');
         }
 
@@ -69,91 +74,99 @@ export const POST = defineApiRoute(
         const inferredKey = inferSubjectFromName(subjectName);
         const tagSubjectKey = inferredKey || 'other';
 
-        const resultSummary = await prisma.$transaction(async (tx) => {
-            const notebook = await tx.subject.upsert({
-                where: { name_userId: { name: subjectName, userId: user.id } },
-                update: {},
-                create: {
-                    name: subjectName,
-                    userId: user.id,
-                    stage: stageFromEducationStage(user.educationStage),
-                    subjectKey: isNotebookSubject(inferredKey) ? inferredKey : null,
-                },
-                select: { id: true },
-            });
-
-            let importedCount = 0;
-            let skippedCount = 0;
-
-            for (const res of wrongResults) {
-                const sourceQuestionId = `${learner.id}:${res.id}`;
-                const existingImport = await tx.sourceImport.findUnique({
-                    where: {
-                        userId_sourceKind_sourceQuestionId: {
-                            userId: user.id,
-                            sourceKind: 'shared_submission',
-                            sourceQuestionId,
-                        },
-                    },
-                    select: { errorItemId: true },
-                });
-                if (existingImport) {
-                    skippedCount += 1;
-                    continue;
-                }
-
-                const kps = parseJsonStringArray(res.keyQuestion.knowledgePoints);
-                const tagIds: Array<{ id: string }> = [];
-                for (const kp of kps) {
-                    const foundTag = await tx.knowledgeTag.findFirst({
-                        where: {
-                            name: kp,
-                            subject: tagSubjectKey,
-                            OR: [{ isSystem: true }, { userId: user.id }],
-                        },
-                        select: { id: true },
-                    });
-                    const tag = foundTag || await tx.knowledgeTag.create({
-                        data: { name: kp, subject: tagSubjectKey, isSystem: false, userId: user.id },
-                        select: { id: true },
-                    });
-                    tagIds.push({ id: tag.id });
-                }
-
-                const noteParts = [submission.teacherComment, res.comment].filter(Boolean);
-                const createdItem = await tx.errorItem.create({
-                    data: {
-                        shortId: await generateUniqueShortId(tx),
+        const resultSummary = await withBridgeMutex(`import:${user.id}:${submission.id}:${learner.id}`, () =>
+            prisma.$transaction(async (tx) => {
+                const notebook = await tx.subject.upsert({
+                    where: { name_userId: { name: subjectName, userId: user.id } },
+                    update: {},
+                    create: {
+                        name: subjectName,
                         userId: user.id,
-                        learnerId: learner.id,
-                        subjectId: notebook.id,
-                        originalImageUrl: croppedMap.get(res.id) || '',
-                        questionText: res.keyQuestion.questionText || `（${submission.task.title} 第 ${res.keyQuestion.number} 题）`,
-                        answerText: res.keyQuestion.answer,
-                        wrongAnswerText: res.studentAnswer || null,
-                        mistakeAnalysis: res.reason || null,
-                        mistakeStatus: res.verdict === 'blank' ? 'not_attempted' : 'wrong_attempt',
-                        source: submission.task.title,
-                        userNotes: noteParts.length > 0 ? noteParts.join(' · ') : null,
-                        ...(tagIds.length > 0 ? { tags: { connect: tagIds } } : {}),
+                        stage: stageFromEducationStage(user.educationStage),
+                        subjectKey: isNotebookSubject(inferredKey) ? inferredKey : null,
                     },
                     select: { id: true },
                 });
 
-                await tx.sourceImport.create({
-                    data: {
-                        userId: user.id,
-                        sourceKind: 'shared_submission',
-                        sourceId: submission.id,
-                        sourceQuestionId,
-                        errorItemId: createdItem.id,
-                    },
-                });
-                importedCount += 1;
-            }
+                let importedCount = 0;
+                let skippedCount = 0;
 
-            return { importedCount, skippedCount };
-        });
+                for (const res of wrongResults) {
+                    const sourceQuestionId = `${learner.id}:${res.id}`;
+                    const existingImport = await tx.sourceImport.findUnique({
+                        where: {
+                            userId_sourceKind_sourceQuestionId: {
+                                userId: user.id,
+                                sourceKind: 'shared_submission',
+                                sourceQuestionId,
+                            },
+                        },
+                        select: { errorItemId: true },
+                    });
+                    if (existingImport) {
+                        skippedCount += 1;
+                        continue;
+                    }
+
+                    const kps = Array.from(
+                        new Set(
+                            parseJsonStringArray(res.keyQuestion.knowledgePoints)
+                                .map((kp) => kp.trim())
+                                .filter(Boolean),
+                        ),
+                    );
+                    const tagIds: Array<{ id: string }> = [];
+                    for (const kp of kps) {
+                        const foundTag = await tx.knowledgeTag.findFirst({
+                            where: {
+                                name: kp,
+                                subject: tagSubjectKey,
+                                OR: [{ isSystem: true }, { userId: user.id }],
+                            },
+                            select: { id: true },
+                        });
+                        const tag = foundTag || await tx.knowledgeTag.create({
+                            data: { name: kp, subject: tagSubjectKey, isSystem: false, userId: user.id },
+                            select: { id: true },
+                        });
+                        tagIds.push({ id: tag.id });
+                    }
+
+                    const noteParts = [submission.teacherComment, res.comment].filter(Boolean);
+                    const createdItem = await tx.errorItem.create({
+                        data: {
+                            shortId: await generateUniqueShortId(tx),
+                            userId: user.id,
+                            learnerId: learner.id,
+                            subjectId: notebook.id,
+                            originalImageUrl: croppedMap.get(res.id) || '',
+                            questionText: res.keyQuestion.questionText || `（${submission.task.title} 第 ${res.keyQuestion.number} 题）`,
+                            answerText: res.keyQuestion.answer,
+                            wrongAnswerText: res.studentAnswer || null,
+                            mistakeAnalysis: res.reason || null,
+                            mistakeStatus: res.verdict === 'blank' ? 'not_attempted' : 'wrong_attempt',
+                            source: submission.task.title,
+                            userNotes: noteParts.length > 0 ? noteParts.join(' · ') : null,
+                            ...(tagIds.length > 0 ? { tags: { connect: tagIds } } : {}),
+                        },
+                        select: { id: true },
+                    });
+
+                    await tx.sourceImport.create({
+                        data: {
+                            userId: user.id,
+                            sourceKind: 'shared_submission',
+                            sourceId: submission.id,
+                            sourceQuestionId,
+                            errorItemId: createdItem.id,
+                        },
+                    });
+                    importedCount += 1;
+                }
+
+                return { importedCount, skippedCount };
+            }),
+        );
 
         return NextResponse.json({
             ...resultSummary,

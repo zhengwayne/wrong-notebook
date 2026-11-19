@@ -31,6 +31,7 @@ export const GET = defineApiRoute({ auth: 'public' }, async (req, { params }) =>
                     title: true,
                     subjectName: true,
                     scoringMode: true,
+                    user: { select: { isActive: true } },
                     questions: { select: { id: true, maxScore: true } },
                 },
             },
@@ -40,7 +41,7 @@ export const GET = defineApiRoute({ auth: 'public' }, async (req, { params }) =>
             },
         },
     });
-    if (!submission) {
+    if (!submission || submission.task.user.isActive === false || (submission.status !== 'graded' && submission.status !== 'confirmed')) {
         return notFound('反馈链接无效或已过期');
     }
     if (submission.shareExpiresAt && submission.shareExpiresAt.getTime() < Date.now()) {

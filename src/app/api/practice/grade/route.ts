@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAIService } from "@/lib/ai";
 import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
-import { internalError, notFound, validationError } from "@/lib/api-errors";
+import { internalError, kidModeRestricted, notFound, validationError } from "@/lib/api-errors";
 import { parseLastPractice } from "@/lib/last-practice";
 import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:practice:grade');
 
@@ -33,8 +34,12 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
 
         const item = await prisma.errorItem.findUnique({
             where: { id: errorItemId },
-            select: { userId: true, lastPractice: true },
+            select: { userId: true, learnerId: true, lastPractice: true },
         });
+        const kidLearnerId = getKidModeLearnerId();
+        if (item && item.userId === user.id && kidLearnerId && (item.learnerId ?? null) !== kidLearnerId) {
+            return kidModeRestricted();
+        }
         const practice = item && item.userId === user.id ? parseLastPractice(item.lastPractice) : null;
         if (!practice) {
             return notFound("Practice question not found");

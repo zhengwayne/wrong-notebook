@@ -281,5 +281,22 @@ describe('persona confirmation and child learners', () => {
             children: [expect.objectContaining({ name: '新名', itemCount: 0 })],
         });
         await expect(deleteChildLearner(db, user.id, 'missing')).rejects.toThrow('LEARNER_NOT_FOUND');
+
+        // 彻底删除孩子档案时，同时清除该孩子名下的巩固试卷（不混入本人 learnerId: null）
+        await db.examPaper.create({
+            data: {
+                id: 'child-exam-1',
+                userId: user.id,
+                learnerId: id,
+                title: '孩子专属练习卷',
+                status: 'ready',
+                scope: 'all',
+                difficulty: 'medium',
+                requestedCount: 1,
+                subjectIds: '[]',
+            },
+        });
+        await deleteChildLearner(db, user.id, id, { deleteQuestions: true });
+        expect(await db.examPaper.findUnique({ where: { id: 'child-exam-1' } })).toBeNull();
     });
 });

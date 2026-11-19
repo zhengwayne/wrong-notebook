@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { forbidden, notFound, badRequest, internalError, kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -9,6 +9,7 @@ import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
 import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:error-items:id');
 
@@ -35,6 +36,10 @@ export const GET = defineApiRoute<Request, { id: string }>(
             // Ensure the user owns this item
             if (errorItem.userId !== user.id) {
                 return forbidden("Not authorized to access this item");
+            }
+            const kidLearnerId = getKidModeLearnerId();
+            if (kidLearnerId && errorItem.learnerId !== kidLearnerId) {
+                return kidModeRestricted();
             }
 
             const learning = await getErrorItemLearningContext(user.id, errorItem);

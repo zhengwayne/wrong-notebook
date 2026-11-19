@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { consumeAiQuota } from '@/lib/ai-quota';
 import { badRequest, conflict, notFound, tooManyRequests } from '@/lib/api-errors';
 import { imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER } from '@/lib/grading-api';
-import { ensureQuickStudentInClass } from '@/lib/grading-quick-key';
 import { loadTaskRoster, scheduleGrading } from '@/lib/grading-service';
 import {
     checkPublicTokenRateLimit,
     hashShareToken,
     resolveRequestClientIp,
+    withBridgeMutex,
 } from '@/lib/grading-share-tokens';
 import { prisma } from '@/lib/prisma';
 import { defineApiRoute } from '@/lib/server/api-route';
@@ -40,9 +40,11 @@ export const GET = defineApiRoute({ auth: 'public' }, async (req, { params }) =>
             title: true,
             subjectName: true,
             deadline: true,
+            taskMode: true,
+            user: { select: { isActive: true } },
         },
     });
-    if (!task) {
+    if (!task || task.user.isActive === false || task.taskMode === 'quick') {
         return notFound('交卷链接无效或已关闭');
     }
     if (task.deadline && task.deadline.getTime() < Date.now()) {
@@ -75,52 +77,33 @@ export const POST = defineApiRoute(
         const task = await prisma.gradingTask.findFirst({
             where: { submitTokenHash: tokenHash, allowSelfSubmit: true },
             include: {
-                user: { select: { id: true, role: true } },
+                user: { select: { id: true, role: true, isActive: true } },
                 _count: { select: { questions: true } },
             },
         });
-        if (!task) {
+        if (!task || task.user.isActive === false || task.taskMode === 'quick') {
             return notFound('交卷链接无效或已关闭');
         }
         if (task.deadline && task.deadline.getTime() < Date.now()) {
             return badRequest('本次作业交卷已截止');
         }
-        if (task._count.questions === 0 && task.taskMode !== 'quick') {
+        if (task._count.questions === 0) {
             return badRequest('老师尚未完成标准答案配置，请稍后提交');
         }
 
         const trimmedName = body.studentName.trim();
         const trimmedNo = body.studentNo?.trim() || '';
+        const roster = await loadTaskRoster(task);
+        const sameName = roster.filter((s) => s.name.trim() === trimmedName);
         let matchedStudentId: string | null = null;
-
-        if (task.taskMode === 'quick') {
-            const quickStudent = await ensureQuickStudentInClass(prisma, {
-                userId: task.userId,
-                classId: task.classId,
-                studentName: trimmedName,
-                studentNo: trimmedNo || null,
-            });
-            matchedStudentId = quickStudent.id;
+        if (sameName.length === 1 && !sameName[0].studentNo) {
+            matchedStudentId = sameName[0].id;
         } else {
-            const roster = await loadTaskRoster(task);
-            const sameName = roster.filter((s) => s.name.trim() === trimmedName);
-            if (sameName.length === 1 && !sameName[0].studentNo) {
-                matchedStudentId = sameName[0].id;
-            } else {
-                const exact = sameName.find((s) => (s.studentNo?.trim() || '') === trimmedNo && trimmedNo.length > 0);
-                matchedStudentId = exact?.id ?? null;
-            }
-            if (!matchedStudentId) {
-                return badRequest('学号与姓名核验未通过，请核对后重试');
-            }
+            const exact = sameName.find((s) => (s.studentNo?.trim() || '') === trimmedNo && trimmedNo.length > 0);
+            matchedStudentId = exact?.id ?? null;
         }
-
-        const duplicate = await prisma.gradingSubmission.findFirst({
-            where: { taskId: task.id, studentId: matchedStudentId },
-            select: { id: true },
-        });
-        if (duplicate) {
-            return conflict('该同学已提交过本次作业，如需重交请联系老师');
+        if (!matchedStudentId) {
+            return badRequest('学号与姓名核验未通过，请核对后重试');
         }
 
         let normalizedImages: string[];
@@ -135,26 +118,36 @@ export const POST = defineApiRoute(
             throw error;
         }
 
-        const quotaLimited = await consumeAiQuota(task.user, 'grade');
-        if (quotaLimited) {
-            return quotaLimited;
-        }
+        return withBridgeMutex(`submit:${task.id}:${matchedStudentId}`, async () => {
+            const duplicate = await prisma.gradingSubmission.findFirst({
+                where: { taskId: task.id, studentId: matchedStudentId },
+                select: { id: true },
+            });
+            if (duplicate) {
+                return conflict('该同学已提交过本次作业，如需重交请联系老师');
+            }
 
-        const submission = await prisma.gradingSubmission.create({
-            data: {
-                taskId: task.id,
-                studentId: matchedStudentId,
-                detectedName: trimmedName,
-                detectedStudentNo: trimmedNo || null,
-                matchStatus: 'manual',
-                matchConfidence: 1,
-                matchReason: JSON.stringify({ code: 'self_submit' }),
-                images: JSON.stringify(normalizedImages),
-            },
-            select: { id: true },
+            const quotaLimited = await consumeAiQuota(task.user, 'grade');
+            if (quotaLimited) {
+                return quotaLimited;
+            }
+
+            const submission = await prisma.gradingSubmission.create({
+                data: {
+                    taskId: task.id,
+                    studentId: matchedStudentId,
+                    detectedName: trimmedName,
+                    detectedStudentNo: trimmedNo || null,
+                    matchStatus: 'manual',
+                    matchConfidence: 1,
+                    matchReason: JSON.stringify({ code: 'self_submit' }),
+                    images: JSON.stringify(normalizedImages),
+                },
+                select: { id: true },
+            });
+
+            scheduleGrading([submission.id], body.language);
+            return NextResponse.json({ submitted: true, submissionId: submission.id }, { status: 202 });
         });
-
-        scheduleGrading([submission.id], body.language);
-        return NextResponse.json({ submitted: true, submissionId: submission.id }, { status: 202 });
     },
 );
