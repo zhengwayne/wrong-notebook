@@ -5,14 +5,14 @@
 Fresh installs have no default account. On first start the server generates a one-time setup link (`/initialize?token=…`); open it to choose the admin email and password:
 
 - Desktop and standalone Android apps: opened automatically on first launch.
-- Docker: `docker logs wrong-notebook 2>&1 | grep initialize`.
+- Docker: read the token with `docker exec wrong-notebook cat /app/config/setup-token`.
 - fnOS: set the admin email and password in the install wizard and sign in with them; no setup link is needed.
-- npm and source runs: printed in the terminal that started the server.
-- You can also read the token from `config/setup-token` in the data directory and open `http://server-address:port/initialize?token=<token>` yourself.
+- npm and source installations: read the file at the path in the startup log. The defaults are `~/.wrong-notebook/config/setup-token` for npm and `config/setup-token` in the project for source runs.
+- In your browser, enter the server address followed by `/initialize?token=`, paste the token after the equals sign, and open the page.
 
 If the link host is `localhost`, replace it with the server IP or domain when opening it from another device. The link works only once and stops working after the admin is created; until then, the sign-in page shows these instructions.
 
-Instances installed with earlier versions have the default admin `admin@localhost` with password `123456`; signing in with the default password requires changing it before any other page can be used. When an existing database is upgraded with `PRESERVE_EXISTING_DATA=true`, the startup script skips admin seeding and keeps account state. If you forget the password, see [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js) in the repository, and back up first.
+Instances installed with earlier versions have the default admin `admin@localhost`. If that account still uses the legacy default password, change it when prompted after signing in. Startup and upgrades preserve the roles and activation status of existing accounts. If you forget the password, see [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js) in the repository, and back up first.
 
 ## Sign-in bounces back to the login page, or fails behind a reverse proxy?
 

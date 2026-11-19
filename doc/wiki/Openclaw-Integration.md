@@ -104,6 +104,8 @@ curl --fail-with-body http://localhost:3000/api/openclaw/batch-upload \
 
 录入年级遵循目标用户在「设置 → 通用」保存的规则。固定模式使用所选值，未指定时按账户当前年级计算；AI 模式使用识别结果中的 `gradeSemester`（如「四年级上」「初二下」），无法确定时可返回 `null`。省略该字段时，错题本会为非重复题补充一次 AI 年级识别，计入目标用户的每日 AI 用量；达到上限或识别失败时，该题返回失败，需读取逐项结果。
 
+在源码目录运行 `node scripts/test-openclaw.js` 可执行离线集成测试。若要检查已部署实例，请在当前终端设置 `WRONG_NOTEBOOK_URL`（目标 HTTP 或 HTTPS 地址）和 `OPENCLAW_TEST_USER`（测试账号，API Key 模式填邮箱），并按服务端的 `OPENCLAW_AUTH_MODE` 提供 `OPENCLAW_TEST_PASSWORD` 或 `OPENCLAW_INTEGRATION_API_KEY`。默认只校验认证；传入测试图片路径时会向该账号实际导入一题。
+
 ## 结果判断
 
 | 结果 | 判断方式 |

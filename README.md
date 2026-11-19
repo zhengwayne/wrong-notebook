@@ -160,7 +160,7 @@
 - **📈 掌握概率**：根据举一反三和试卷的作答历史，由 AI 评估每道题的已掌握概率。错题分为三种状态：没有举一反三记录的为「待复习」，有记录且掌握概率低于已掌握阈值的为「复习中」，达到阈值的为「已掌握」。阈值默认 50%，每个用户可在设置中单独调整。
 - **📅 今日复习**：默认策略（`ebbinghaus-v1`）按 **0（录入当天）、1、2、4、7、15、30 天**共 7 轮艾宾浩斯间隔安排每道错题的复习（连续做对 7 次毕业），做对进入下一轮间隔，做错从第 0 档重新开始；可在「设置 → 通用」切换为逐题记忆模型灰度（`fsrs-v1`）。导航栏「复习」页与学习路径共用同一到期口径，首页显示今日待复习数量。
 - **🧾 错题试卷**：按错题本、知识点和掌握情况随机抽题，用举一反三生成一套可打印的试卷；做完后可按题录入结果，结果计入原题的作答历史。
-- **🖨️ 错题打印**：筛选后打印错题，可选打印题目文字或原图、答案、解析、知识点，调节图片比例，可直接打印或保存为 PDF。
+- **🖨️ 错题打印**：筛选后打印错题，可选打印题目文字或原图、答案、解析、知识点，调节图片比例，可直接打印或保存为 PDF。超过 200 道题时可翻页分批打印，每次打印当前页勾选的题目。
 
 ### 老师收卷改卷与家长日常督学
 
@@ -179,11 +179,11 @@
 - **🔍 多维度筛选**：按掌握状态、时间范围、知识点、年级学期、试卷等级等条件筛选，支持批量操作和两题相似度比较。
 - **📊 数据统计**：错题与练习的掌握率、月度趋势和学科分布；管理员还可通过只读诊断接口 `GET /api/admin/metrics` 查看异步任务成功率、AI 队列饱和度与溯源修改率。
 - **⏳ 后台任务**：页面右下角的按钮可查看识别、AI 生成、动画语音生成、批量标注、组卷等耗时事务的进度；任务状态持久化保存在数据库，离开页面后仍在服务器上继续。
-- **💾 数据导入导出与每日快照**：在「设置 → 危险」导出或导入 **v3 流式 ZIP 备份**（支持 AES-256-GCM 口令加密，完整包含错题本、多孩子与班级学生档案、家长试卷、教师改卷名册与答卷、随机试卷、个人偏好、变式审核阶段、掌握度、学习路径和云端语音；兼容旧版 JSON 导入），账户凭据和 AI 配置不在备份中；同时支持迁移前自动备份与服务端每日 `VACUUM INTO` 一致性快照。
+- **💾 数据导入导出与每日快照**：在「设置 → 危险」导出或导入 **v3 流式 ZIP 备份**（支持 AES-256-GCM 口令加密，完整包含错题本、多孩子与班级学生档案、家长试卷、教师改卷名册与答卷、随机试卷、个人偏好、变式审核阶段、掌握度、学习路径和云端语音；兼容旧版 JSON 导入），账户凭据和 AI 配置不在备份中；同时支持迁移前自动备份与服务端每日 `VACUUM INTO` 一致性快照。全用户备份请由管理员选择「导入全部」。
 - **🛡️ 隐私告知与自助注销**：「设置 → 关于」透明告知当前视觉、文本与语音 AI 提供商及端点类型（云端 / 本地端点），图片入库与发送前均会在服务端剥离 EXIF 元数据；普通用户在「设置 → 危险」可输入当前密码完成单事务自助销户（`DELETE /api/user`）。
 - **🌗 深色模式**：顶部导航栏的主题按钮可在「自动（跟随系统）」「浅色」「深色」之间切换，默认自动。偏好按用户保存在账号中，换设备登录也保持一致。
 - **🕒 应用时区**：默认北京时间，管理员可修改，日期显示与统计都按应用时区计算，详见 [时区说明](doc/TIME_ZONE.md)。
-- **🔑 一次性初始化链接**：全新安装不再预置固定密码的管理员。服务首次启动时生成只能使用一次的初始化链接，打开后自行设置管理员邮箱和密码：桌面版、安卓单机版自动打开；飞牛OS 直接在安装向导中填写管理员邮箱和密码；Docker、npm、源码运行打印在启动日志中（也可在数据目录的 `config/setup-token` 中找到令牌）。从旧版本升级的实例保留原有账号。
+- **🔑 首次创建管理员**：桌面版和安卓单机版会自动打开管理员创建页，飞牛OS 在安装向导中设置账号。Docker、npm 和源码部署者从配置目录的 `setup-token` 文件读取一次性令牌。旧版本升级保留原有账号。
 - **🧭 安装向导**：管理员首次登录时进入向导：修改默认密码（仅旧版本的默认管理员需要）→ 配置 AI 渠道（推荐免费的 MiniMax Code）→ 创建第一个错题本，后两步可跳过；可在「设置 → 用户管理」中重新运行。已在使用的实例升级后不会自动弹出。
 - **🔐 多用户与管理后台**：支持注册、登录，数据按用户隔离；新用户注册默认关闭（关闭时登录页不显示注册入口，改为提示联系管理员），管理员可在「设置 → 用户管理」中开启，并可限制每人每天的 AI 使用次数、查看今日用量；管理员可在「设置 → 用户管理」进入管理后台，查看使用统计，启用/禁用或删除用户。登录和注册带失败次数限制，防止暴力破解密码。
 - **🐞 调试日志**：遇到问题时，管理员在「设置 → 用户管理」中打开调试模式，复现问题后导出调试日志（JSON）发给作者。调试模式下记录包括 debug 级别在内的全部服务端日志和前端错误，导出时自动去除 API Key、密码和令牌；日志只保存在内存中，24 小时后自动关闭，服务重启后清空。
@@ -191,7 +191,7 @@
 
 ## 🚀 快速开始
 
-按上手难度从易到难排列。全新安装没有默认账号：首次启动时会生成一次性初始化链接，打开后设置管理员邮箱和密码，再进入安装向导配置 AI 渠道、创建第一个错题本。桌面版、安卓单机版会自动打开该链接；Docker 用 `docker logs wrong-notebook 2>&1 | grep initialize` 查看；npm、源码运行打印在终端里。链接中的主机为 `localhost` 时，从其他设备访问需换成服务器地址（或设置 `NEXTAUTH_URL`）。尚未创建管理员时，登录页也会显示这些说明。
+首次启动后，桌面版和安卓单机版会自动打开管理员创建页。Docker 可运行 `docker exec wrong-notebook cat /app/config/setup-token` 读取一次性令牌。npm 和源码运行时按启动日志显示的路径读取文件（npm 默认 `~/.wrong-notebook/config/setup-token`，源码默认 `config/setup-token`）。在浏览器地址栏输入服务地址和 `/initialize?token=`，在等号后粘贴令牌，再打开页面设置管理员邮箱和密码。随后可通过安装向导配置 AI 渠道和第一个错题本。
 
 ### 方式一：安装包（Windows / macOS / Linux / 飞牛OS / 安卓 / npm）
 
@@ -215,7 +215,7 @@ Windows 的 [Code signing policy（代码签名政策）](doc/CODE_SIGNING.md)�
 > codesign --force --deep --sign - /Applications/WrongNotebook.app
 > ```
 
-也可以通过 npm 安装（Node.js 22 及以上）：
+也可以通过 npm 安装（Node.js 22.15 及以上）：
 
 ```bash
 npm install -g wrong-notebook
@@ -239,7 +239,8 @@ wrong-notebook --port 3000
    ```bash
    mkdir -p wrong-notebook/data wrong-notebook/config
    cd wrong-notebook
-   openssl rand -base64 32   # 生成的字符串用作 NEXTAUTH_SECRET
+   # 新部署执行一次。已有实例保留原密钥。
+   (umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
    ```
 
 2. **启动容器**（任选一种）：
@@ -247,7 +248,7 @@ wrong-notebook --port 3000
    ```bash
    docker run -d --name wrong-notebook \
      --restart always \
-     -e NEXTAUTH_SECRET="上一步生成的密钥" \
+     --env-file .env \
      -e NEXTAUTH_URL="http://你的IP或域名:3000" \
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
@@ -255,9 +256,9 @@ wrong-notebook --port 3000
      ghcr.io/margrop/wrong-notebook:latest
    ```
 
-   或下载仓库中的 [`docker-compose.yml`](docker-compose.yml) 放到当前目录，修改 `NEXTAUTH_SECRET`（及 `NEXTAUTH_URL`）后执行 `docker compose up -d`。
+   或下载仓库中的 [`docker-compose.yml`](docker-compose.yml) 放到当前目录，Compose 会读取同目录的 `.env`。可在其中设置 `NEXTAUTH_URL`，然后执行 `docker compose up -d`。
 
-3. **登录**：访问 `http://你的IP或域名:3000`。
+3. **初始化与登录**：全新部署首次启动后，运行 `docker exec wrong-notebook cat /app/config/setup-token`（使用 Compose 时运行 `docker compose exec -T wrong-notebook cat /app/config/setup-token`）读取一次性令牌，访问 `http://你的IP或域名:3000/initialize?token=<令牌>` 设置管理员邮箱和密码；之后访问 `http://你的IP或域名:3000` 登录。
 
 4. **升级**：拉取新镜像并重建容器，数据保留在挂载目录中，启动时只执行数据库迁移。升级前建议先备份 `data/` 目录。
 
@@ -272,7 +273,7 @@ wrong-notebook --port 3000
 
 ### 方式三：本地源码运行
 
-1. **环境准备**：Node.js 22 及以上（推荐 24）和 npm。
+1. **环境准备**：Node.js 24.15+（24.x，推荐），也支持 22.22.2+（22.x）或 26 及以上。需安装 npm。
 2. **克隆并安装依赖**：
 
    ```bash
@@ -282,7 +283,7 @@ wrong-notebook --port 3000
    cp .env.example .env   # 按「环境变量」一节填写
    ```
 
-3. **初始化数据库**：创建表结构和管理员账户，再导入系统知识点（与 Docker 构建时相同）：
+3. **初始化数据库**：创建表结构、检查管理员状态，再导入系统知识点（与 Docker 构建时相同）：
 
    ```bash
    npx prisma migrate dev
@@ -298,9 +299,13 @@ wrong-notebook --port 3000
 
 ```bash
 docker build -t wrong-notebook:local .
+```
 
+完成构建后，进入方式二创建的部署目录，使用其中的 `.env` 和持久化目录启动容器。
+
+```bash
 docker run -d --name wrong-notebook \
-  -e NEXTAUTH_SECRET="your_secret_key" \
+  --env-file .env \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/config:/app/config" \
@@ -436,6 +441,7 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `LOG_AI_PAYLOADS` | 生产输出 AI 调试载荷 | `false` | 生产环境默认不向 stdout 打印完整提示词与学生答案；设为 `true` 时输出脱敏并截断后的载荷 |
 | `DEBUG_DB` | SQL 日志 | `false` | 为 `true` 时输出数据库查询日志 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 代理 | 无 | 访问 AI 服务时使用的代理 |
+| `BACKUP_MAX_UPLOAD_BYTES` | 备份导入上传上限（字节） | `2147483648`（2 GiB） | 导入备份时的上传体积上限（解压总量另有 2 GiB 上限）；表单上传按 `Content-Length` 提前拒绝，超限返回 413 |
 | `ALLOW_REGISTRATION` | 允许注册 | `false` | 为 `true` 时默认开放注册；管理员在「设置 → 用户管理」中保存的开关优先 |
 | `AI_DAILY_LIMIT` | 每人每日 AI 次数 | `0`（不限制） | 普通用户每天可发起的 AI 操作次数，管理员不受限制；「设置 → 用户管理」中保存的值优先 |
 | `AI_CONCURRENCY_LIMIT` | 同一模型 AI 并发上限 | `5` | 同一渠道、地址和模型同时进行的 AI 调用数量（1～100），超出的调用排队等待，避免服务商返回 429；「设置 → 用户管理」中保存的值优先 |
@@ -484,6 +490,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `OPENCLAW_AUTH_MODE` | 认证方式 | `credentials` | `credentials`（用户名密码）或 `apikey` |
 | `OPENCLAW_INTEGRATION_API_KEY` | 本系统 API 密钥 | 无 | 仅 `apikey` 模式需要，供 Openclaw 调用本系统，可用 `openssl rand -hex 32` 生成 |
 
+在源码目录运行 `node scripts/test-openclaw.js` 可执行离线集成测试。若要检查已部署实例，请在当前终端设置 `WRONG_NOTEBOOK_URL`（目标 HTTP 或 HTTPS 地址）和 `OPENCLAW_TEST_USER`（测试账号，API Key 模式填邮箱），并按服务端的 `OPENCLAW_AUTH_MODE` 提供 `OPENCLAW_TEST_PASSWORD` 或 `OPENCLAW_INTEGRATION_API_KEY`。默认只校验认证；传入测试图片路径时会向该账号实际导入一题。
+
 新增环境变量时需同步更新 `.env.example`。
 
 </details>
@@ -521,8 +529,8 @@ npm run test:unit           # 单元测试
 npm run test:integration    # 集成测试
 npm test                    # 全部 Vitest 测试
 npm run test:coverage       # 测试覆盖率（低于最低要求时失败）
-npm run test:e2e            # Playwright E2E（先运行 node scripts/prepare-e2e.js 准备测试账号）
-bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构建）
+npm run test:e2e            # Playwright E2E（自动创建临时数据库、配置和测试账号）
+bash scripts/ci.sh          # 完整 CI（使用上述源码开发环境和 Python 3，含生产构建）
 ```
 
 修改 `prisma/schema.prisma` 后使用 `npx prisma migrate dev --name <名称>` 生成正式迁移并提交；迁移须兼容已有数据。更多开发约定见 [AGENTS.md](AGENTS.md)。
@@ -532,7 +540,7 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 `scripts/` 目录下提供维护和调试脚本，例如：
 
 - **重置密码**：`node scripts/reset-password.js <邮箱> <新密码>`
-- **恢复默认管理员角色**：`node scripts/seed-admin.js`（只为已有的 `admin@localhost` 恢复管理员角色并启用；没有任何管理员时，重启服务会在日志中打印新的初始化链接）
+- **恢复默认管理员角色**：`node scripts/seed-admin.js`（只为已有的 `admin@localhost` 恢复管理员角色并启用；没有任何管理员时，重启服务后按启动提示从配置目录读取初始化令牌）
 - **重建系统知识点**：`npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts`（保留自定义标签和题目关联；生产环境操作前请先备份）
 - **检查数据库**：`node scripts/check-db-users.js`、`node scripts/check-db-data.js`
 

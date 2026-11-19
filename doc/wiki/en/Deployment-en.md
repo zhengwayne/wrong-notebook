@@ -19,13 +19,13 @@ Create a deployment directory:
 ```bash
 mkdir -p wrong-notebook/data wrong-notebook/config
 cd wrong-notebook
-openssl rand -base64 32
+# Run once on a new deployment. Keep the existing secret on upgrades.
+(umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
 ```
 
-Write the generated secret and the actual access URL to `.env` in this directory:
+Add the public access URL on a separate line in the generated `.env`:
 
 ```dotenv
-NEXTAUTH_SECRET=replace-with-the-generated-secret
 NEXTAUTH_URL=http://localhost:3000
 ```
 
@@ -58,13 +58,13 @@ docker compose ps
 curl --fail http://localhost:3000/api/health
 ```
 
-A fresh deployment has no default account; the startup log prints a one-time setup link:
+After Docker starts for the first time, run this command on the host to read the one-time admin setup token.
 
 ```bash
-docker compose logs wrong-notebook | grep initialize
+docker compose exec -T wrong-notebook cat /app/config/setup-token
 ```
 
-Open the link in a browser (its host matches `NEXTAUTH_URL`), choose the admin email and password, and continue in the setup wizard. The link works only once; the token is also stored in `config/setup-token`.
+Enter the server address followed by `/initialize?token=` in your browser, paste the token after the equals sign, and open the page to set the admin email and password. Successful setup removes the token file.
 
 A healthy endpoint returns `status: "ok"` together with `version` and `revision`. It queries the database but does not test the AI; sign in, test the connection in the AI settings, and recognize a real question as well.
 
@@ -78,7 +78,9 @@ For the default account of a fresh install, see [Quick Start](Quick-Start-en).
 | `/app/config` | AI configuration, prompts and global settings saved from the web UI | Mount persistently; backups contain sensitive credentials |
 | `/app/certs` | Certificates for the built-in HTTPS | Mount and back up when used |
 
-The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup flushes the WAL checkpoint and creates a pre-migration backup under `backups/pre-migrate-*` (keeping the latest 3) before running formal migrations, skipping admin seeding and system tag rebuilding so existing accounts and links are preserved. When the data directory sits on NAS NFS/CIFS shares lacking cross-node shared memory locks, set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE`.
+When overriding `DATABASE_URL`, use an absolute path or a path relative to `/app/prisma` in the container. Mount the selected directory and grant the application user (UID 1001) write access. Pre-migration backups are stored in the `backups` subdirectory of the database directory (default `/app/data/backups`), where `.app_version` is also stored.
+
+The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup flushes the WAL checkpoint and creates a pre-migration backup under `backups/pre-migrate-*` (keeping the latest 3) before running formal migrations and retaining the existing system tags and their links. Startup preserves account roles and activation status regardless of this setting. When the data directory sits on NAS NFS/CIFS shares lacking cross-node shared memory locks, set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE`.
 
 ## HTTPS and reverse proxies
 

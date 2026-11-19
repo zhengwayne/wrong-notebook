@@ -19,13 +19,13 @@
 ```bash
 mkdir -p wrong-notebook/data wrong-notebook/config
 cd wrong-notebook
-openssl rand -base64 32
+# 新部署执行一次，已有实例沿用原密钥。
+(umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
 ```
 
-将生成的密钥和实际访问地址写入当前目录的 `.env`：
+在生成的 `.env` 中另加一行实际访问地址：
 
 ```dotenv
-NEXTAUTH_SECRET=替换为生成的密钥
 NEXTAUTH_URL=http://localhost:3000
 ```
 
@@ -58,13 +58,13 @@ docker compose ps
 curl --fail http://localhost:3000/api/health
 ```
 
-全新部署没有默认账号，启动日志中会打印一次性初始化链接：
+Docker 首次启动后，在宿主机运行以下命令读取管理员的一次性初始化令牌。
 
 ```bash
-docker compose logs wrong-notebook | grep initialize
+docker compose exec -T wrong-notebook cat /app/config/setup-token
 ```
 
-在浏览器中打开该链接（链接主机与 `NEXTAUTH_URL` 一致），设置管理员邮箱和密码后进入安装向导。链接只能使用一次；令牌也保存在 `config/setup-token`。
+在浏览器地址栏输入实际服务地址和 `/initialize?token=`，在等号后粘贴令牌，再打开页面设置管理员邮箱和密码。创建成功后令牌文件即删除。
 
 健康接口正常时返回 `status: "ok"`，并包含 `version`、`revision`。接口会执行数据库查询，但不会测试 AI；还需登录后在 AI 设置中测试连接，再识别一道实际题目。
 
@@ -78,7 +78,9 @@ docker compose logs wrong-notebook | grep initialize
 | `/app/config` | 网页保存的 AI 配置、提示词和全局设置 | 持久挂载，备份中包含敏感凭据 |
 | `/app/certs` | 使用内置 HTTPS 时的证书 | 按需挂载并备份 |
 
-镜像默认设置 `PRESERVE_EXISTING_DATA=true`。检测到已有数据库时，启动流程先将 WAL 刷盘并在 `backups/pre-migrate-*` 生成迁移前备份（保留最近 3 份），随后执行正式迁移，跳过管理员播种和系统标签重建，以保留已有账户、标签及关联；若数据目录挂载于不支持共享内存锁的 NAS NFS/CIFS 网络存储，请配置环境变量 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE`。
+自定义 `DATABASE_URL` 时，绝对路径直接使用，相对路径从容器的 `/app/prisma` 解析。请挂载相应目录，并为容器内的应用用户（UID 1001）授予目录写权限。迁移前备份写入数据库所在目录的 `backups` 子目录（默认 `/app/data/backups`），版本标记 `.app_version` 也保存在该目录下。
+
+镜像默认设置 `PRESERVE_EXISTING_DATA=true`。检测到已有数据库时，启动流程先将 WAL 刷盘并在 `backups/pre-migrate-*` 生成迁移前备份（保留最近 3 份），随后执行正式迁移并保留已有系统标签及关联。无论该变量如何设置，启动都会保留已有账户的角色和启用状态。若数据目录挂载于不支持共享内存锁的 NAS NFS/CIFS 网络存储，请配置环境变量 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE`。
 
 ## HTTPS 与反向代理
 

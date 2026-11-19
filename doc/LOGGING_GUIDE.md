@@ -395,8 +395,3 @@ frontendLogger.forceFlush();
 ---
 
 **文档更新时间**: 2026-10-31
-
-## 📚 相关文档
-
-- [日志迁移报告](./LOGGING_MIGRATION_FINAL_REPORT.md)
-- [项目健康报告](./PROJECT_HEALTH_REPORT.md)

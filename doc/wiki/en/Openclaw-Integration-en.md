@@ -104,6 +104,8 @@ It may also return `wrongAnswerText`, `mistakeAnalysis`, `subject`, `errorType` 
 
 The target user’s grade rule under **Settings → General** applies. Fixed mode uses the selected value, or the current account grade when unset. AI mode uses `gradeSemester` from the recognition result, stored in Chinese (for example, `四年级上` or `初二下`); return `null` when uncertain. If the field is omitted, the app makes one short AI grade request for a non-duplicate question, counted toward that user’s daily limit. A quota or recognition failure fails that item; inspect the per-item results.
 
+Run `node scripts/test-openclaw.js` in the source directory for the offline integration tests. To check a deployed instance, set `WRONG_NOTEBOOK_URL` (the target HTTP or HTTPS URL) and `OPENCLAW_TEST_USER` (the test account, or its email in API key mode) in the current shell. Match the server’s `OPENCLAW_AUTH_MODE` and supply either `OPENCLAW_TEST_PASSWORD` or `OPENCLAW_INTEGRATION_API_KEY`. The command checks authentication by default. Passing a test image path imports one question into that account.
+
 ## Interpreting results
 
 | Result | How to tell |

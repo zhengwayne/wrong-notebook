@@ -39,7 +39,7 @@ npm run test:integration
 npm run test:e2e
 ```
 
-E2E 用例以非默认密码登录管理员：运行前先执行 `node scripts/prepare-e2e.js`，它创建（或重置）`admin@localhost` 并把密码设为 `E2E_ADMIN_PASSWORD`（默认 `e2e-admin-pass`），并创建仍用默认密码的 `setup-admin@localhost`。本机 3000 端口被占用时，可另起开发服务器并用 `E2E_BASE_URL` 指定地址。
+Playwright 会在系统临时目录创建本轮专用的数据库、配置和测试账号，再启动本机服务。默认地址为 `http://127.0.0.1:3100`，可通过 `E2E_BASE_URL` 指定其他空闲本机端口。端口占用时测试会停止。全站重置用例只操作本轮测试数据。
 
 CI 会运行 `npm run lint`，出现任何 ESLint 错误或警告都会失败。
 
@@ -47,7 +47,7 @@ CI 会运行 `npm run lint`，出现任何 ESLint 错误或警告都会失败。
 
 `npm test` 运行全部 Vitest 测试。E2E 的环境要求与启动方式以仓库中的 [`playwright.config.ts`](https://github.com/margrop/wrong-notebook/blob/main/playwright.config.ts) 为准。
 
-完整 CI 要求 Node.js 22 及以上、Python 3，并包含依赖安装、Prisma Client 生成、ESLint、Vitest、公开发布检查、脚本语法检查和生产构建：
+完整 CI 需要[快速开始](Quick-Start)列出的 Node.js 开发环境和 Python 3，检查内容包括依赖安装、Prisma Client 生成、ESLint、Vitest、公开发布检查、脚本语法检查和生产构建：
 
 ```bash
 bash scripts/ci.sh

@@ -5,14 +5,14 @@
 全新安装没有默认账号。服务首次启动时生成一次性初始化链接（`/initialize?token=…`），打开后设置管理员邮箱和密码：
 
 - 桌面版、安卓单机版：首次启动自动打开。
-- Docker：`docker logs wrong-notebook 2>&1 | grep initialize`。
+- Docker：运行 `docker exec wrong-notebook cat /app/config/setup-token` 读取令牌。
 - 飞牛OS：安装向导中直接设置管理员邮箱和密码，装好后用它登录，不需要初始化链接。
-- npm、源码运行：链接打印在启动服务的终端里。
-- 也可以读取数据目录中 `config/setup-token` 的令牌，自行打开 `http://服务器地址:端口/initialize?token=令牌`。
+- npm、源码运行：从启动日志提示的文件路径读取令牌。默认分别为 `~/.wrong-notebook/config/setup-token` 和项目的 `config/setup-token`。
+- 在浏览器中输入服务地址和 `/initialize?token=`，在等号后粘贴读取的令牌，再打开页面。
 
 链接中的主机为 `localhost` 时，从其他设备打开需换成服务器的 IP 或域名。链接只能使用一次，创建管理员后失效；尚未创建管理员时，登录页会显示上述说明。
 
-旧版本安装的实例默认管理员为 `admin@localhost`，密码 `123456`，用默认密码登录时必须先修改密码才能使用其他页面。已有数据库在 `PRESERVE_EXISTING_DATA=true` 下升级时，启动脚本跳过管理员播种，保留账户状态。忘记密码可参考仓库的 [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js)，操作前先备份。
+旧版本安装的实例默认管理员为 `admin@localhost`。仍使用旧版默认密码的管理员登录时必须先修改密码才能使用其他页面。启动或升级都会保留已有账户的角色和启用状态。忘记密码可参考仓库的 [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js)，操作前先备份。
 
 ## 登录后跳回登录页，或反向代理下登录失败？
 

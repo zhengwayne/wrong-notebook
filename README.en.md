@@ -160,7 +160,7 @@ Practice statistics show total practice, accuracy and active months, with distri
 - **📈 Mastery probability**: AI estimates how likely you have mastered each question from the answer history of practice and exams. Questions fall into three states: **To Review** (no practice records yet), **Reviewing** (has records, probability below the mastered threshold) and **Mastered** (has records, probability at or above the threshold). The threshold is 50% by default and each user can adjust it in settings.
 - **📅 Daily review**: by default (`ebbinghaus-v1`), each question follows **7 Ebbinghaus intervals of 0 (same day), 1, 2, 4, 7, 15, and 30 days** (graduating after 7 consecutive correct answers), advancing on correct answers and resetting to day 0 on wrong answers; switchable to the `fsrs-v1` per-item memory rollout under **Settings → General**. The **Review** page shares this computation with learning paths, and the home page shows how many are due.
 - **🧾 Mistake exams**: draw questions at random by notebook, knowledge point and mastery, and turn them into a printable exam of similar questions. After finishing, enter results per question; they are added to the original question's answer history.
-- **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF.
+- **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF. For more than 200 questions, move through the pages and print the selected questions on each page.
 
 ### Teacher grading and parent study supervision
 
@@ -179,11 +179,11 @@ Practice statistics show total practice, accuracy and active months, with distri
 - **🔍 Filters**: filter by mastery, date range, knowledge point, grade and term, paper level and more; supports bulk actions and comparing the similarity of two questions.
 - **📊 Statistics**: mastery rate, monthly trend and subject distribution for both mistakes and practice; admins can also query `GET /api/admin/metrics` for read-only job success rates, AI queue saturation, and provenance edit rates.
 - **⏳ Background tasks**: the button at the bottom right shows the progress of long-running jobs such as recognition, AI generation, animation voice, bulk tagging and exam generation, persisted across navigation.
-- **💾 Import, export and daily snapshots**: export or import **v3 streaming ZIP backups** under **Settings → Danger** (with optional AES-256-GCM passphrase encryption), covering notebooks, child and class learner profiles, parent papers, teacher rosters and grading records, exam papers, personal preferences, variant stage logs, mastery, learning paths, and synthesized cloud voice (while keeping legacy JSON import compatible; account credentials and AI keys are excluded). Paired with automatic pre-migration backups and daily `VACUUM INTO` snapshots.
+- **💾 Import, export and daily snapshots**: export or import **v3 streaming ZIP backups** under **Settings → Danger** (with optional AES-256-GCM passphrase encryption), covering notebooks, child and class learner profiles, parent papers, teacher rosters and grading records, exam papers, personal preferences, variant stage logs, mastery, learning paths, and synthesized cloud voice (while keeping legacy JSON import compatible; account credentials and AI keys are excluded). Paired with automatic pre-migration backups and daily `VACUUM INTO` snapshots. Administrators must choose **Import All** to restore an all-users backup.
 - **🛡️ Privacy disclosure and self-service deletion**: **Settings → About** discloses active AI providers and endpoint locality (cloud vs. local) for vision, text, and cloud voice, and uploaded images have EXIF metadata stripped on the server; users can delete their own account and data in one transaction via **Settings → Danger** after confirming their password (`DELETE /api/user`).
 - **🌗 Dark mode**: the theme button in the top navigation bar switches between Auto (follow system), Light and Dark; Auto is the default. The choice is saved per account, so it carries over when you sign in on another device.
 - **🕒 Application time zone**: Beijing time by default and changeable by administrators; dates and statistics follow the application time zone. See [TIME_ZONE.md](doc/TIME_ZONE.md) (Chinese).
-- **🔑 One-time setup link**: fresh installs no longer ship an admin with a fixed password. On first start the server generates a setup link that works only once; open it to choose the admin email and password. The desktop and standalone Android apps open it automatically; on fnOS you enter the admin email and password in the install wizard instead; Docker, npm and source runs print it in the startup log (the token is also in `config/setup-token` in the data directory). Instances upgraded from earlier versions keep their accounts.
+- **🔑 First admin account**: desktop and standalone Android apps open the setup page automatically. On fnOS, create the account in the installation wizard. For Docker, npm and source installations, read the one-time token from the `setup-token` file in the configuration directory. Upgrades preserve existing accounts.
 - **🧭 Setup wizard**: on first sign-in the admin goes through a wizard: change the default password (only for the default admin of earlier versions) → set up an AI provider (free MiniMax Code recommended) → create the first notebook. The last two steps can be skipped, and the wizard can be run again from **Settings → User Management**. Instances already in use are not interrupted after upgrading.
 - **🔐 Multiple users and admin console**: sign-up and sign-in, with data isolated per user. New sign-ups are off by default (the sign-in page then hides the sign-up link and asks visitors to contact the administrator) and can be turned on under **Settings → User Management**, where admins can also cap daily AI use per user and see today's usage. Administrators open the admin console from **Settings → User Management** to view usage statistics and enable, disable or delete users. Sign-in and sign-up limit repeated failures to block password guessing.
 - **🐞 Debug logs**: when something goes wrong, an admin turns on debug mode under "Settings → User Management", reproduces the problem, then exports the debug log (JSON) and sends it to the author. Debug mode records every server log, including `debug` level, plus frontend errors; API keys, passwords and tokens are removed on export. The log lives in memory only, debug mode turns off after 24 hours, and a restart clears it.
@@ -191,7 +191,7 @@ Practice statistics show total practice, accuracy and active months, with distri
 
 ## 🚀 Quick Start
 
-Ordered from easiest to most hands-on. Fresh installs have no default account: the first start generates a one-time setup link where you choose the admin email and password, then the setup wizard helps you set up an AI provider and create your first notebook. The desktop and standalone Android apps open the link automatically; for Docker run `docker logs wrong-notebook 2>&1 | grep initialize`; npm and source runs print it in the terminal. If the link host is `localhost`, replace it with the server address when opening it from another device (or set `NEXTAUTH_URL`). Until an admin exists, the sign-in page shows these instructions too.
+On first launch, desktop and standalone Android apps open the admin setup page automatically. For Docker, read the one-time token with `docker exec wrong-notebook cat /app/config/setup-token`. For npm or source installations, read the file at the path in the startup log (default `~/.wrong-notebook/config/setup-token` for npm, `config/setup-token` for source runs). Enter the server address followed by `/initialize?token=` in your browser, paste the token after the equals sign, and open the page to choose the admin email and password. The setup wizard then helps you configure an AI provider and create your first notebook.
 
 ### Option 1: Installers (Windows / macOS / Linux / fnOS / Android / npm)
 
@@ -241,7 +241,8 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
    ```bash
    mkdir -p wrong-notebook/data wrong-notebook/config
    cd wrong-notebook
-   openssl rand -base64 32   # use the output as NEXTAUTH_SECRET
+   # Run once on a new deployment. Keep the existing secret on upgrades.
+   (umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
    ```
 
 2. **Start the container** (either way):
@@ -249,7 +250,7 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
    ```bash
    docker run -d --name wrong-notebook \
      --restart always \
-     -e NEXTAUTH_SECRET="secret-from-previous-step" \
+     --env-file .env \
      -e NEXTAUTH_URL="http://your-ip-or-domain:3000" \
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
@@ -257,9 +258,9 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
      ghcr.io/margrop/wrong-notebook:latest
    ```
 
-   Or download [`docker-compose.yml`](docker-compose.yml) into the current directory, set `NEXTAUTH_SECRET` (and `NEXTAUTH_URL`), then run `docker compose up -d`.
+   Or download [`docker-compose.yml`](docker-compose.yml) into the current directory, where Compose reads the deployment’s `.env`. Set `NEXTAUTH_URL` there if needed, then run `docker compose up -d`.
 
-3. **Sign in**: open `http://your-ip-or-domain:3000`.
+3. **Initialize and sign in**: on a fresh deployment, read the one-time setup token with `docker exec wrong-notebook cat /app/config/setup-token` (or `docker compose exec -T wrong-notebook cat /app/config/setup-token` with Compose) and open `http://your-ip-or-domain:3000/initialize?token=<token>` to set up the admin account; then visit `http://your-ip-or-domain:3000` to sign in.
 
 4. **Upgrade**: pull the new image and recreate the container. Data stays in the mounted directories; on startup only database migrations run. Back up the `data/` directory before upgrading.
 
@@ -274,7 +275,7 @@ Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings s
 
 ### Option 3: Run from source
 
-1. **Requirements**: Node.js 22 or later (24 recommended) and npm.
+1. **Requirements**: Node.js 24.15+ on the 24.x line (recommended), 22.22.2+ on the 22.x line, or 26 and later, with npm.
 2. **Clone and install dependencies**:
 
    ```bash
@@ -284,7 +285,7 @@ Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings s
    cp .env.example .env   # fill it in as described in Environment variables
    ```
 
-3. **Initialize the database**: create the schema and the admin account, then import the system knowledge points (same as the Docker build):
+3. **Initialize the database**: create the schema, check administrator status, then import the system knowledge points (same as the Docker build):
 
    ```bash
    npx prisma migrate dev
@@ -300,9 +301,13 @@ Build it yourself if you change the code or need unreleased changes. The build r
 
 ```bash
 docker build -t wrong-notebook:local .
+```
 
+After the build, switch to the deployment directory prepared in Option 2 and use its `.env` and persistent volumes to start the container.
+
+```bash
 docker run -d --name wrong-notebook \
-  -e NEXTAUTH_SECRET="your_secret_key" \
+  --env-file .env \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/config:/app/config" \
@@ -438,6 +443,7 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `LOG_AI_PAYLOADS` | Print AI payloads in production | `false` | By default production stdout omits prompts and student answers; set to `true` for redacted and truncated payload logs |
 | `DEBUG_DB` | SQL logs | `false` | When `true`, logs database queries |
 | `HTTP_PROXY` / `HTTPS_PROXY` | Proxy | None | Proxy for requests to AI services |
+| `BACKUP_MAX_UPLOAD_BYTES` | Backup import upload limit (bytes) | `2147483648` (2 GiB) | Caps the upload size when importing a backup (total uncompressed size has a separate 2 GiB cap); form uploads are rejected early by `Content-Length`, over-limit requests get 413 |
 | `ALLOW_REGISTRATION` | Allow sign-ups | `false` | When `true`, registration is open by default; the switch saved by an admin under **Settings → User Management** takes precedence |
 | `AI_DAILY_LIMIT` | Daily AI limit per user | `0` (unlimited) | AI actions each regular user can start per day; admins are not limited. The value saved under **Settings → User Management** takes precedence |
 | `AI_CONCURRENCY_LIMIT` | AI concurrency per model | `5` | How many AI calls the same provider, address and model may run at once (1–100). Further calls wait in a queue, avoiding 429 errors from the provider. The value saved under **Settings → User Management** takes precedence |
@@ -486,6 +492,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `OPENCLAW_AUTH_MODE` | Auth mode | `credentials` | `credentials` (username and password) or `apikey` |
 | `OPENCLAW_INTEGRATION_API_KEY` | This app's API key | None | Only for `apikey` mode, used by Openclaw to call this app. Generate with `openssl rand -hex 32` |
 
+Run `node scripts/test-openclaw.js` in the source directory for the offline integration tests. To check a deployed instance, set `WRONG_NOTEBOOK_URL` (the target HTTP or HTTPS URL) and `OPENCLAW_TEST_USER` (the test account, or its email in API key mode) in the current shell. Match the server’s `OPENCLAW_AUTH_MODE` and supply either `OPENCLAW_TEST_PASSWORD` or `OPENCLAW_INTEGRATION_API_KEY`. The command checks authentication by default. Passing a test image path imports one question into that account.
+
 When adding environment variables, update `.env.example` as well.
 
 </details>
@@ -523,8 +531,8 @@ npm run test:unit           # Unit tests
 npm run test:integration    # Integration tests
 npm test                    # All Vitest tests
 npm run test:coverage       # Test coverage (fails below the minimum thresholds)
-npm run test:e2e            # Playwright E2E (run node scripts/prepare-e2e.js first to set up test accounts)
-bash scripts/ci.sh          # Full CI (Node.js 22+, Python 3, includes production build)
+npm run test:e2e            # Playwright E2E with its own temporary database, configuration and accounts
+bash scripts/ci.sh          # Full CI (source development environment above and Python 3, includes production build)
 ```
 
 After changing `prisma/schema.prisma`, create a migration with `npx prisma migrate dev --name <name>` and commit it; migrations must be compatible with existing data. See [AGENTS.md](AGENTS.md) for more development conventions.
@@ -534,7 +542,7 @@ After changing `prisma/schema.prisma`, create a migration with `npx prisma migra
 The `scripts/` directory contains maintenance and debugging scripts, for example:
 
 - **Reset a password**: `node scripts/reset-password.js <email> <new-password>`
-- **Restore the default admin role**: `node scripts/seed-admin.js` (only restores the admin role and re-enables an existing `admin@localhost`; when no admin exists, restarting the server prints a new setup link in the log)
+- **Restore the default admin role**: `node scripts/seed-admin.js` (only restores the admin role and re-enables an existing `admin@localhost`; when no admin exists, restart the server and read the one-time token from the file listed in its startup log)
 - **Rebuild system knowledge points**: `npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts` (keeps custom tags and question links; back up before running in production)
 - **Inspect the database**: `node scripts/check-db-users.js`, `node scripts/check-db-data.js`
 

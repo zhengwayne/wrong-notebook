@@ -39,7 +39,7 @@ npm run test:integration
 npm run test:e2e
 ```
 
-E2E tests sign in as admin with a non-default password. Run `node scripts/prepare-e2e.js` first: it creates (or resets) `admin@localhost` with the password `E2E_ADMIN_PASSWORD` (default `e2e-admin-pass`) and creates `setup-admin@localhost`, which still uses the default password. If port 3000 is busy, start a dev server elsewhere and point `E2E_BASE_URL` at it.
+Playwright creates a temporary database, configuration and test accounts, then starts a local server. The default address is `http://127.0.0.1:3100`. Use `E2E_BASE_URL` to select another free loopback port. An occupied port stops the run. The full-reset test operates on this run’s temporary data.
 
 CI runs `npm run lint` and fails on any ESLint error or warning.
 
@@ -47,7 +47,7 @@ CI runs `npm run lint` and fails on any ESLint error or warning.
 
 `npm test` runs all Vitest tests. The E2E environment and startup are defined in the repository's [`playwright.config.ts`](https://github.com/margrop/wrong-notebook/blob/main/playwright.config.ts).
 
-The full CI needs Node.js 22 or later and Python 3, and covers dependency installation, Prisma Client generation, lint, Vitest, publication checks, script syntax checks and the production build:
+Full CI needs the Node.js development environment listed in [Quick Start](Quick-Start-en) and Python 3. It covers dependency installation, Prisma Client generation, lint, Vitest, publication checks, script syntax checks and the production build:
 
 ```bash
 bash scripts/ci.sh

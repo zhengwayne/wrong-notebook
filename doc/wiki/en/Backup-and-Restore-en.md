@@ -15,8 +15,9 @@ Web exports **never** include user password hashes or server-side AI credentials
 ## Web export and import (ZIP v3 and legacy compatibility)
 
 1. Trigger export under **Settings → Danger → Data Management**. The server streams cursor-paged database records into `data/*.ndjson`, splits `data:` images into SHA-256 deduplicated `media/<sha256>` entries and cloud audio into `tts/<id>.mp3`, and appends `manifest.json` with counts and per-entry digests.
-2. Regular users can only import backups matching their own account email; admins using **Export All / Import All** preserve per-user ownership mappings across accounts.
+2. Regular users can only import backups matching their own account email; an administrator must choose **Import All** for an **Export All** backup to preserve each account’s data ownership.
 3. On import, the server verifies the manifest format version, every entry's byte size and SHA-256 digest, and remaps IDs across learners, parents' papers, teacher grading, variant stage logs, mastery states, and learning paths.
+   Children with the same name and classmates who share a name and have no student number keep separate profiles. If the destination already has a same-name profile whose identity cannot be matched, import rolls back and asks you to check the profiles. New exports identify tags by subject and full curriculum path. Older exports may need you to resolve names that match multiple tags.
 4. **Legacy notes**:
    - v1/v2 `.json` files remain accepted on `/api/import`, with warnings noting that newer multi-learner/grading/path tables are absent from legacy files;
    - The legacy `ReviewSchedule` table is no longer used by application logic (review due dates are computed from `PracticeRecord`). v3 import ignores legacy `ReviewSchedule` rows and returns a notice.

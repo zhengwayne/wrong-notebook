@@ -40,7 +40,7 @@ npm run test:integration
 npm test                    # 全部 Vitest 测试
 npm run test:coverage       # 覆盖率，低于 vitest.config.mts 中的阈值时失败
 npm run test:e2e            # Playwright
-bash scripts/ci.sh          # 完整 CI（要求 Node.js 22 及以上，含生产构建）
+bash scripts/ci.sh          # 完整 CI（推荐使用 .nvmrc 对应的最新 24.x，含生产构建）
 ```
 
 默认 registry 设为国内镜像（如 npmmirror）时，新发布的包下载很慢，镜像地址还会被写进 `package-lock.json`。安装或升级依赖时指定官方源（`--registry=https://registry.npmjs.org`，运行 `scripts/ci.sh` 时设置 `npm_config_registry`），提交前确认锁文件中没有 `npmmirror`。

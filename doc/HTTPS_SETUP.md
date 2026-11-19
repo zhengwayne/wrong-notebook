@@ -57,7 +57,13 @@
 
 ### 快速开始
 
-1. **修改配置文件**
+1. **准备密钥与配置文件**
+
+新部署先在部署目录运行以下命令生成本实例的 `.env`。已有实例沿用保存的 `NEXTAUTH_SECRET`。
+
+```bash
+(umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
+```
 
 ```yaml
 # docker-compose.https.yml
@@ -69,7 +75,7 @@ services:
       - HTTPS_ENABLED=true
       - CERT_DOMAIN=YOUR_IP_OR_DOMAIN  # 替换为你的 IP 或域名
       - NEXTAUTH_URL=https://YOUR_IP_OR_DOMAIN
-      - NEXTAUTH_SECRET=your_secret_key
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in the deployment .env}
       - AUTH_TRUST_HOST=true
     volumes:
       - ./certs:/app/certs  # 证书持久化
