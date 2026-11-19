@@ -41,6 +41,41 @@ function extractBalancedSvg(raw: string): string | null {
     return null;
 }
 
+// 属性值都带引号的开始标签；不带引号的写法不处理，原样保留
+const START_TAG = /<([a-zA-Z][\w:.-]*)((?:\s+[^\s=>/"']+\s*=\s*(?:"[^"]*"|'[^']*'))+)\s*(\/?)>/g;
+const ATTRIBUTE = /([^\s=>/"']+)\s*=\s*("[^"]*"|'[^']*')/g;
+
+/**
+ * 修复同一元素中重复出现的属性。XML 不允许重复属性，<img> 加载这样的 SVG 时整张图都不显示。
+ * 模型画折线时常把 <line> 写成 x1 y1 x2 y2 x2 y2…，此时按原意改成 <polyline>；其他重复属性只保留第一个。
+ * Ported from margrop/wrong-notebook 5ff2a675 (MIT).
+ */
+export function repairDuplicateSvgAttributes(svg: string): string {
+    return svg.replace(START_TAG, (tag: string, name: string, attrText: string, selfClosing: string) => {
+        const attributes = [...attrText.matchAll(ATTRIBUTE)].map(([, key, value]) => ({ key, value }));
+        const counts = new Map<string, number>();
+        for (const { key } of attributes) counts.set(key, (counts.get(key) ?? 0) + 1);
+        if (![...counts.values()].some((count) => count > 1)) return tag;
+
+        const close = selfClosing ? '/>' : '>';
+        const kept = new Map<string, string>();
+        for (const { key, value } of attributes) {
+            if (!kept.has(key)) kept.set(key, value);
+        }
+        const unquote = (value: string) => value.slice(1, -1).trim();
+        const xs = attributes.filter((attr) => attr.key === 'x2').map((attr) => unquote(attr.value));
+        const ys = attributes.filter((attr) => attr.key === 'y2').map((attr) => unquote(attr.value));
+        if (name.toLowerCase() === 'line' && xs.length > 1 && xs.length === ys.length && kept.has('x1') && kept.has('y1')) {
+            const points = [`${unquote(kept.get('x1')!)},${unquote(kept.get('y1')!)}`, ...xs.map((x, i) => `${x},${ys[i]}`)];
+            const rest = [...kept].filter(([key]) => !['x1', 'y1', 'x2', 'y2', 'fill'].includes(key));
+            // line 本身没有填充，改成折线后要显式不填充，否则默认填成黑色
+            const attrs = [`points="${points.join(' ')}"`, 'fill="none"', ...rest.map(([key, value]) => `${key}=${value}`)];
+            return `<polyline ${attrs.join(' ')}${close}`;
+        }
+        return `<${name} ${[...kept].map(([key, value]) => `${key}=${value}`).join(' ')}${close}`;
+    });
+}
+
 /**
  * 从 AI 回复中取出 <svg>…</svg> 并净化；没有有效 SVG、超长或净化后为空时返回 null
  */
@@ -74,6 +109,8 @@ export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_S
 
     if (CONTAINER_ESCAPE_PREFIX.test(svg)) return null;
 
+    svg = repairDuplicateSvgAttributes(svg);
+
     if (!/<svg[^>]*\sxmlns\s*=/i.test(svg)) {
         svg = svg.replace(/<svg/i, `<svg xmlns="${SVG_NS}"`);
     }
@@ -82,7 +119,7 @@ export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_S
     return svg;
 }
 
-/** 用于 <img src> 的 data URI */
+/** 用于 <img src> 的 data URI；同时修复已保存配图中的重复属性，旧数据不必重新生成 */
 export function figureSvgToDataUri(svg: string): string {
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(repairDuplicateSvgAttributes(svg))}`;
 }
