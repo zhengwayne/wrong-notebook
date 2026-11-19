@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { conflict, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { parseJsonStringArray } from "@/lib/grading";
 import { keyQuestionData, loadTaskRoster, scheduleGrading, taskClassIds, toKeyQuestion } from "@/lib/grading-service";
 import { parseCandidates, parseMatchReason } from "@/lib/grading-match-json";
 import { keyQuestionsSchema } from "@/lib/grading-api";
@@ -32,12 +31,20 @@ export async function GET(_req: Request, { params }: Params) {
                     id: true, studentId: true, detectedName: true, detectedClass: true, detectedStudentNo: true,
                     matchStatus: true, matchConfidence: true, matchReason: true, matchCandidates: true, status: true,
                     reviewBucket: true, handwritingLevel: true, neatnessLevel: true, attitudeLevel: true,
-                    totalScore: true, error: true, importedCount: true, images: true, createdAt: true,
+                    totalScore: true, error: true, importedCount: true, createdAt: true,
                 },
             },
         },
     });
     if (!task) return notFound("Grading task not found");
+    const pageCountRows = typeof prisma.$queryRaw === "function"
+        ? await prisma.$queryRaw<Array<{ id: string; pageCount: bigint | number }>>`
+            SELECT id, CASE WHEN json_valid(images) THEN json_array_length(images) ELSE 0 END AS pageCount
+            FROM GradingSubmission
+            WHERE taskId = ${id}
+        `
+        : [];
+    const pageCountById = new Map(pageCountRows.map((row) => [row.id, Number(row.pageCount ?? 0)]));
     const roster = await loadTaskRoster(task);
     const classes = await prisma.gradingClass.findMany({ where: { id: { in: taskClassIds(task) }, userId: user.id }, select: { id: true, name: true } });
     return NextResponse.json({
@@ -54,11 +61,11 @@ export async function GET(_req: Request, { params }: Params) {
         classNames: classes.map((item) => item.name),
         students: roster,
         questions: task.questions.map(toKeyQuestion),
-        submissions: task.submissions.map(({ images, matchReason, matchCandidates, ...submission }) => ({
+        submissions: task.submissions.map(({ matchReason, matchCandidates, ...submission }) => ({
             ...submission,
             matchReason: parseMatchReason(matchReason),
             matchCandidates: parseCandidates(matchCandidates),
-            pageCount: parseJsonStringArray(images).length,
+            pageCount: pageCountById.get(submission.id) ?? 0,
         })),
     });
 }

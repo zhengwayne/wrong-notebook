@@ -25,6 +25,7 @@ import type { StepType } from "@/lib/learning-path/types";
 import type { SourceQuestionSummary } from "@/lib/learning-path/service";
 import { SourceQuestionList } from "@/components/source-question-list";
 import { StepNoteEditor } from "@/components/learn/step-note-editor";
+import { useKidModeState } from "@/components/parent/kid-mode-lock-bar";
 
 type Tab = "today" | "path" | "class";
 
@@ -92,6 +93,8 @@ function LearnPage() {
     const params = useSearchParams();
     usePageTitle(t.learn.title);
     const { isParent, learnerId, setLearner, hrefWithChild } = useCurrentChild();
+    const { state: kidMode } = useKidModeState(true);
+    const kidLocked = Boolean(kidMode?.active);
 
     const initialTab = (params.get("tab") as Tab) || "today";
     const [tab, setTab] = useState<Tab>(initialTab === "class" && isParent ? "today" : initialTab);
@@ -158,14 +161,16 @@ function LearnPage() {
         void loadClass(classId || undefined);
     }, [effectiveTab, classId, loadClass]);
 
-    const patch = async (stepId: string, body: Record<string, unknown>) => {
+    const patch = async (stepId: string, body: Record<string, unknown>): Promise<boolean> => {
         setBusy(true);
         try {
             const next = await apiClient.patch<PathView>(`/api/learning-path/steps/${stepId}`, body);
             setPath(next);
+            return true;
         } catch (err) {
             frontendLogger.error("[Learn]", "Failed to update step", { error: err });
             setError(getApiErrorMessage(err) || t.learn.loadError);
+            return false;
         } finally {
             setBusy(false);
         }
@@ -239,14 +244,18 @@ function LearnPage() {
                     </Badge>
                 )}
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                    <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={handleSuggest} loading={busy} loadingText={t.common.pleaseWait}>
-                        <Sparkles className="h-4 w-4" aria-hidden="true" />
-                        {t.learn.suggestOrder}
-                    </Button>
-                    <Button type="button" size="sm" className="w-full sm:w-auto" onClick={handleReplan} loading={busy} loadingText={t.common.pleaseWait}>
-                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                        {t.learn.replan}
-                    </Button>
+                    {!kidLocked && (
+                        <>
+                            <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={handleSuggest} loading={busy} loadingText={t.common.pleaseWait}>
+                                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                                {t.learn.suggestOrder}
+                            </Button>
+                            <Button type="button" size="sm" className="w-full sm:w-auto" onClick={handleReplan} loading={busy} loadingText={t.common.pleaseWait}>
+                                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                {t.learn.replan}
+                            </Button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -323,7 +332,7 @@ function LearnPage() {
                                                 {step.sourceQuestions && step.sourceQuestions.length > 0 && (
                                                     <SourceQuestionList questions={step.sourceQuestions} />
                                                 )}
-                                                {step.id ? (
+                                                {step.id && !kidLocked ? (
                                                     <StepNoteEditor
                                                         note={step.teacherNote}
                                                         onSave={(note) => patch(step.id!, { action: "note", teacherNote: note })}
@@ -343,7 +352,7 @@ function LearnPage() {
                                                             {t.learn.complete}
                                                         </Button>
                                                     )}
-                                                    {tab === "path" && step.id && (
+                                                    {tab === "path" && step.id && !kidLocked && (
                                                         <>
                                                             <Button type="button" size="sm" variant="ghost" onClick={() => patch(step.id!, { action: step.locked ? "unlock" : "lock" })}>
                                                                 {step.locked ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     readExamPaper: vi.fn(),
     reanswerQuestion: vi.fn(),
+    miniMaxState: {} as { account?: { accessToken: string; invalid?: boolean } },
 }));
 
 vi.mock('@/lib/ai', () => ({
@@ -11,6 +12,9 @@ vi.mock('@/lib/ai', () => ({
             ? { readExamPaper: mocks.readExamPaper }
             : { reanswerQuestion: mocks.reanswerQuestion }
     )),
+}));
+vi.mock('@/lib/minimax-code/store', () => ({
+    readMiniMaxCodeState: vi.fn(() => mocks.miniMaxState),
 }));
 
 import { computeAiReadiness } from '@/lib/ai-readiness';
@@ -54,6 +58,21 @@ describe('Task 2.1: AI 就绪检测、等级制评分与随堂无答案速批流
             visionProvider: 'openai',
         });
         expect(JSON.stringify(readyOpenAi)).not.toContain('sk-');
+
+        // openai 缺少有效 activeInstanceId 时不回fallback instances[0]，视为未就绪
+        expect(computeAiReadiness({
+            aiProvider: 'openai',
+            openai: {
+                activeInstanceId: '',
+                instances: [{ id: 'i1', name: 'Main', apiKey: 'sk-secret-123', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' }],
+            },
+        } as AppConfig).ready).toBe(false);
+
+        // minimax-code 未登录或 token 失效时为未就绪
+        mocks.miniMaxState = {};
+        expect(computeAiReadiness({ aiProvider: 'minimax-code' } as AppConfig).ready).toBe(false);
+        mocks.miniMaxState = { account: { accessToken: 'tok', invalid: false } };
+        expect(computeAiReadiness({ aiProvider: 'minimax-code' } as AppConfig).ready).toBe(true);
     });
 
     it('等级制与数值分双向折算准确且满足半分精度', () => {

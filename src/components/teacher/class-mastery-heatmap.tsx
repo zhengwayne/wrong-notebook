@@ -58,7 +58,7 @@ export function ClassMasteryHeatmap({
                             {matrix.knowledgePoints.map((kp) => (
                                 <th key={kp} className="min-w-24 px-2.5 py-2.5 text-center font-medium">
                                     <Link
-                                        href={`/variants?classId=${encodeURIComponent(classId)}&topic=${encodeURIComponent(kp)}`}
+                                        href={`/variants?tab=weakness&classId=${encodeURIComponent(classId)}&topic=${encodeURIComponent(kp)}`}
                                         className="line-clamp-2 hover:text-primary hover:underline"
                                         title={kp}
                                     >

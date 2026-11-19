@@ -77,7 +77,10 @@ export default function GradingReviewPage() {
         }
         setSaving(true);
         try {
-            const result = await apiClient.post<{ importedCount: number }>(`/api/grading/submissions/${submissionId}/confirm`, {});
+            const result = await apiClient.post<{ importedCount: number }>(
+                `/api/grading/submissions/${submissionId}/confirm`,
+                submission.version !== undefined ? { expectedVersion: submission.version } : {},
+            );
             const name = task.students.find((student) => student.id === submission.studentId)?.name || "";
             toast.success(t.grading.confirmed.replace("{count}", String(result.importedCount)).replace("{name}", name));
             goNext();

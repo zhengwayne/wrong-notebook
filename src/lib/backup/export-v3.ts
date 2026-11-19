@@ -330,7 +330,7 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
             }),
             async (row) => {
                 const keyImageUrl = await stripMediaField(row.keyImageUrl);
-                await gtEntry.writeLine({ ...row, keyImageUrl, submitTokenHash: null });
+                await gtEntry.writeLine({ ...row, keyImageUrl, submitTokenHash: null, allowSelfSubmit: false });
             },
             MEDIA_PAGE_SIZE,
         );

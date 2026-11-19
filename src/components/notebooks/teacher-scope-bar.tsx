@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import type { StoredTeacherScope } from "@/lib/current-child";
 import { useActiveLearnerScope } from "@/lib/use-active-learner-scope";
 
 interface RosterStudentItem {
@@ -30,6 +32,9 @@ export interface TeacherScopeBarProps {
  */
 export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScopeBarProps) {
     const { t } = useLanguage();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { isTeacher, classId, learnerId, setTeacherScope } = useActiveLearnerScope();
     const [classes, setClasses] = useState<GradingClassItem[]>([]);
 
@@ -56,9 +61,26 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
     const studentsWithLearner = (currentClass?.students ?? []).filter((stu): stu is RosterStudentItem & { learnerId: string } => Boolean(stu.learnerId));
     const labels = t.notebooks.teacherScope;
 
+    const commitScope = (next: StoredTeacherScope | null) => {
+        // 先同步刷新 URL query（并立即同步 window.location），避免事件广播时读回旧的 ?learnerId= 参数引发状态回弹
+        if (searchParams.has("learnerId") || searchParams.has("studentKey")) {
+            const nextParams = new URLSearchParams(searchParams.toString());
+            nextParams.delete("studentKey");
+            if (next?.learnerId) nextParams.set("learnerId", next.learnerId);
+            else nextParams.delete("learnerId");
+            const query = nextParams.toString();
+            const targetUrl = query ? `${pathname}?${query}` : pathname;
+            if (typeof window !== "undefined") {
+                window.history.replaceState(window.history.state, "", targetUrl);
+            }
+            router.replace(targetUrl, { scroll: false });
+        }
+        setTeacherScope(next);
+    };
+
     const handleClassChange = (nextClassId: string) => {
         if (!nextClassId) {
-            setTeacherScope(null);
+            commitScope(null);
             return;
         }
         const targetCls = classes.find((cls) => cls.id === nextClassId);
@@ -66,20 +88,20 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
         if (requireStudentForStats && targetCls) {
             const firstStu = targetCls.students.find((s) => Boolean(s.learnerId));
             if (firstStu?.learnerId) {
-                setTeacherScope({ classId: nextClassId, learnerId: firstStu.learnerId, name: firstStu.name });
+                commitScope({ classId: nextClassId, learnerId: firstStu.learnerId, name: firstStu.name });
                 return;
             }
         }
-        setTeacherScope({ classId: nextClassId, learnerId: null });
+        commitScope({ classId: nextClassId, learnerId: null });
     };
 
     const handleStudentChange = (nextLearnerId: string) => {
         if (!nextLearnerId) {
-            setTeacherScope(currentClass ? { classId: currentClass.id, learnerId: null } : null);
+            commitScope(currentClass ? { classId: currentClass.id, learnerId: null } : null);
             return;
         }
         const stu = studentsWithLearner.find((s) => s.learnerId === nextLearnerId);
-        setTeacherScope({
+        commitScope({
             classId: currentClass?.id ?? null,
             learnerId: nextLearnerId,
             name: stu?.name,
@@ -125,7 +147,7 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setTeacherScope(null)}
+                    onClick={() => commitScope(null)}
                     className="h-8 px-2 text-xs text-muted-foreground"
                 >
                     <X className="mr-1 h-3.5 w-3.5" />

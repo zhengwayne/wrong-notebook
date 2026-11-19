@@ -409,16 +409,13 @@ export async function confirmSubmission(
     const firstImage = pages[0] || '';
     const subjectKey = inferSubjectFromName(task.subjectName) || 'other';
 
-    // 在数据库写事务之外预先按单题 bbox 裁出清晰单题图，避免图像解码阻塞 SQLite 写锁
+    // 在数据库写事务之外以有界并发（2 路）按单题 bbox 裁出清晰单题图，避免图像解码打满内存与 SQLite 写锁
     const croppedImageByResultId = new Map<string, string>();
-    await Promise.all(
-        submission.results
-            .filter((res) => isWrong(res.verdict) && !res.errorItemId)
-            .map(async (res) => {
-                const img = await resolveCroppedGradingItemImage(pages, res.bbox);
-                croppedImageByResultId.set(res.id, img || firstImage);
-            }),
-    );
+    const wrongResults = submission.results.filter((res) => isWrong(res.verdict) && !res.errorItemId);
+    await runBoundedConcurrency(wrongResults, 2, async (res) => {
+        const img = await resolveCroppedGradingItemImage(pages, res.bbox);
+        croppedImageByResultId.set(res.id, img || firstImage);
+    });
 
     const imported = await prisma.$transaction(async (tx) => {
         // 先用 status + version CAS 条件更新抢占确认所有权

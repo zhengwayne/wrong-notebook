@@ -113,7 +113,12 @@ export const POST = defineApiRoute({ auth: 'admin' }, async (req) => {
         const unmaskedBody = unmaskAppConfigSecrets(body as Partial<AppConfig>, currentConfig);
 
         const updatedConfig = updateAppConfig(unmaskedBody);
-        return NextResponse.json(maskAppConfigSecrets(updatedConfig));
+        return NextResponse.json({
+            ...maskAppConfigSecrets(updatedConfig),
+            securityPosture: getSecurityPosture(updatedConfig),
+            dataFlow: buildDataFlowSummary(updatedConfig),
+            aiReadiness: computeAiReadiness(updatedConfig),
+        });
     } catch (error) {
         logger.error({ error }, 'Failed to update settings');
         return internalError("Failed to update settings");

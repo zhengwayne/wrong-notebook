@@ -790,27 +790,20 @@ export async function patchStep(userId: string, stepId: string, patch: {
     return attachSourceQuestions(presentPath(refreshed, mastery), sourceItems);
 }
 
-/** 班级学习总览：整班一次批量加载证据、路径与提交记录，在内存中计算，避免每名学生 N+1 查询 */
-export async function listClassPaths(userId: string, classId: string, language: "zh" | "en") {
-    const cls = await prisma.gradingClass.findFirst({
-        where: { id: classId, userId },
-        include: { students: { orderBy: { order: "asc" } } },
-    });
-    if (!cls) return null;
-    if (cls.students.length === 0) {
-        return {
-            classId: cls.id,
-            className: cls.name,
-            students: [],
-            classWeaknesses: [],
-            topicBrief: classTopicBrief([]),
-        };
-    }
+interface ClassStudentSeed {
+    id: string;
+    name: string;
+    studentNo: string | null;
+}
 
-    const studentIds = cls.students.map((s) => s.id);
-    const [userRow, graph, studentLearners, allSubmissions, existingPaths] = await Promise.all([
+async function prepareClassStudents(
+    userId: string,
+    classId: string | null,
+    rawStudents: ClassStudentSeed[],
+) {
+    const studentIds = rawStudents.map((s) => s.id);
+    const [userRow, studentLearners, allSubmissions, existingPaths] = await Promise.all([
         prisma.user.findUnique({ where: { id: userId }, select: { masteryThreshold: true, reviewAlgorithmVersion: true } }),
-        loadTagGraph(userId),
         prisma.learner.findMany({ where: { userId, gradingStudentId: { in: studentIds } }, select: { id: true, gradingStudentId: true } }),
         prisma.gradingSubmission.findMany({
             where: { studentId: { in: studentIds }, task: { userId }, status: { in: ["graded", "confirmed"] } },
@@ -837,7 +830,7 @@ export async function listClassPaths(userId: string, classId: string, language: 
     }
 
     const allLearnerIds = [...new Set(
-        cls.students
+        rawStudents
             .map((student) => learnerByStudentId.get(student.id))
             .filter((lid): lid is string => typeof lid === "string" && lid.length > 0),
     )];
@@ -864,7 +857,7 @@ export async function listClassPaths(userId: string, classId: string, language: 
     const timeZone = getAppTimeZone();
     const now = new Date();
     const preparedStudents: Array<{
-        student: (typeof cls.students)[number];
+        student: ClassStudentSeed;
         resolved: ResolvedStudent;
         mastery: ReturnType<typeof buildMasteryMap>;
         existing: PersistedLearningPath | null;
@@ -875,12 +868,12 @@ export async function listClassPaths(userId: string, classId: string, language: 
     }> = [];
     const profiles: Array<{ studentKey: string; profile: ReturnType<typeof buildWeaknessProfile> }> = [];
 
-    for (const student of cls.students) {
+    for (const student of rawStudents) {
         const learnerId = learnerByStudentId.get(student.id) ?? null;
         const resolved: ResolvedStudent = {
             studentKey: student.id,
             studentName: student.name,
-            classId: cls.id,
+            classId,
             subjectIds: [],
             kind: "student",
             learnerId,
@@ -918,6 +911,79 @@ export async function listClassPaths(userId: string, classId: string, language: 
             dueItemIds,
         });
     }
+
+    return { preparedStudents, profiles };
+}
+
+/** 老师首页只读班级学情总览：一次批量加载全部学生证据与学习路径（接入 fsrs-v1），零 N+1 查询 */
+export async function computeClassMasteryOverview(
+    userId: string,
+    classId: string | null,
+    rawStudents: ClassStudentSeed[],
+) {
+    if (rawStudents.length === 0) {
+        return {
+            profiles: [] as Array<{ studentKey: string; profile: ReturnType<typeof buildWeaknessProfile> }>,
+            masteryByStudent: new Map<string, Map<string, number>>(),
+            students: [] as Array<{
+                studentId: string;
+                name: string;
+                studentNo: string | null;
+                weakCount: number;
+                averageMastery: number;
+                nextStep: { id?: string; title: string; type: string } | null;
+            }>,
+        };
+    }
+
+    const { preparedStudents, profiles } = await prepareClassStudents(userId, classId, rawStudents);
+    const masteryByStudent = new Map<string, Map<string, number>>();
+    const students = preparedStudents.map((entry) => {
+        const studentScoreMap = new Map<string, number>();
+        for (const [kp, mRow] of entry.mastery.entries()) {
+            studentScoreMap.set(kp, mRow.score);
+        }
+        masteryByStudent.set(entry.student.id, studentScoreMap);
+        const scores = [...entry.mastery.values()].map((row) => row.score);
+        const path = entry.existing ? presentPath(entry.existing, entry.mastery) : null;
+        const weak = (path?.mastery ?? [...entry.mastery.values()].map((row) => ({ score: row.score })))
+            .filter((row) => row.score < 0.7);
+        return {
+            studentId: entry.student.id,
+            name: entry.student.name,
+            studentNo: entry.student.studentNo,
+            weakCount: weak.length,
+            averageMastery: scores.length
+                ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 100) / 100
+                : 1,
+            nextStep: path?.today[0] ?? path?.steps.find((step) => step.status === "pending" || step.status === "in_progress") ?? null,
+        };
+    });
+
+    return { profiles, masteryByStudent, students };
+}
+
+/** 班级学习总览：整班一次批量加载证据、路径与提交记录，在内存中计算，避免每名学生 N+1 查询 */
+export async function listClassPaths(userId: string, classId: string, language: "zh" | "en") {
+    const cls = await prisma.gradingClass.findFirst({
+        where: { id: classId, userId },
+        include: { students: { orderBy: { order: "asc" } } },
+    });
+    if (!cls) return null;
+    if (cls.students.length === 0) {
+        return {
+            classId: cls.id,
+            className: cls.name,
+            students: [],
+            classWeaknesses: [],
+            topicBrief: classTopicBrief([]),
+        };
+    }
+
+    const [graph, { preparedStudents, profiles }] = await Promise.all([
+        loadTagGraph(userId),
+        prepareClassStudents(userId, cls.id, cls.students),
+    ]);
 
     // 所有需要新建或重排的学生在单事务中统一物化，缓存命中的学生不写库
     const needUpdate = preparedStudents.filter((entry) => !entry.existing || entry.existing.evidenceHash !== entry.evidenceHashValue);

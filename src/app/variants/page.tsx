@@ -61,7 +61,10 @@ function VariantsContent() {
     const v = t.variants;
     usePageTitle(v.title);
     const search = useSearchParams();
-    const [tab, setTab] = useState<Tab>((search.get("tab") as Tab) || "queue");
+    const initialClassId = search.get("classId") || "";
+    const initialTopic = search.get("topic") || "";
+    const explicitTab = search.get("tab") as Tab | null;
+    const [tab, setTab] = useState<Tab>(explicitTab || (initialClassId || initialTopic ? "weakness" : "queue"));
     const [runs, setRuns] = useState<Run[] | null>(null);
     const [selected, setSelected] = useState<string | null>(search.get("run"));
     const [run, setRun] = useState<Run | null>(null);
@@ -98,7 +101,15 @@ function VariantsContent() {
                         onReviewed={() => { void loadRuns(); if (selected) apiClient.get<{ run: Run }>(`/api/variants/runs/${selected}`).then((data) => setRun(data.run)); }}
                         setBusy={setBusy} />
                 )}
-                {tab === "weakness" && <WeaknessPanel v={v} language={language} onStarted={() => { setTab("queue"); void loadRuns(); }} />}
+                {tab === "weakness" && (
+                    <WeaknessPanel
+                        v={v}
+                        language={language}
+                        initialClassId={initialClassId}
+                        initialTopic={initialTopic}
+                        onStarted={() => { setTab("queue"); void loadRuns(); }}
+                    />
+                )}
                 {tab === "compare" && <ComparePanel v={v} />}
             </div>
         </main>
@@ -208,9 +219,21 @@ function ItemCard({ item, v, busy, setBusy, onReviewed }: { item: RunItem; v: Re
     );
 }
 
-function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLanguage>["t"]["variants"]; language: "zh" | "en"; onStarted: () => void }) {
+function WeaknessPanel({
+    v,
+    language,
+    initialClassId = "",
+    initialTopic = "",
+    onStarted,
+}: {
+    v: ReturnType<typeof useLanguage>["t"]["variants"];
+    language: "zh" | "en";
+    initialClassId?: string;
+    initialTopic?: string;
+    onStarted: () => void;
+}) {
     const [classes, setClasses] = useState<GradingClassInfo[]>([]);
-    const [classId, setClassId] = useState("");
+    const [classId, setClassId] = useState(initialClassId);
     const [studentId, setStudentId] = useState("");
     const [count, setCount] = useState(5);
     const [data, setData] = useState<{ classWeaknesses?: Array<{ knowledgePoint: string; studentCount: number; averageScore: number }>; students?: Array<{ studentId: string; name: string; profile: { weaknesses: Array<{ knowledgePoint: string; score: number; itemCount: number; unmasteredCount: number }>; suggestedDifficulty: string; itemCount: number } }>; profile?: { weaknesses: Array<{ knowledgePoint: string; score: number; itemCount: number; unmasteredCount: number }>; suggestedDifficulty: string; itemCount: number }; topicBrief?: { knowledgePoints: string[]; reason: string } } | null>(null);
@@ -247,6 +270,11 @@ function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLan
                 </NativeSelect>
                 <Input type="number" min={3} max={8} value={count} onChange={(event) => setCount(Math.min(8, Math.max(3, Number(event.target.value) || 5)))} aria-label={v.count} />
             </div>
+            {initialTopic && (
+                <p className="text-xs text-primary">
+                    {v.kind.topic}：{initialTopic}
+                </p>
+            )}
             <div className="flex flex-wrap gap-2">
                 {studentId && <Button disabled={busy} onClick={() => start("personalized_set")}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}{v.generateSet}</Button>}
                 {studentId && <Button variant="secondary" disabled={busy} onClick={() => start("topic")}>{v.generateTopic}</Button>}

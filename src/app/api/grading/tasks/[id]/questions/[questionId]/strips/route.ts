@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { notFound, validationError } from "@/lib/api-errors";
 import { applyTeacherOverride, GRADING_VERDICTS, parseJsonStringArray, totalScore } from "@/lib/grading";
-import { parseStoredGradingBbox } from "@/lib/grading-bbox-and-pool";
+import { parseStoredGradingBbox, resolveCroppedGradingItemImage, runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
 import { toKeyQuestion } from "@/lib/grading-service";
 import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
@@ -50,11 +50,14 @@ export const GET = defineApiRoute({ auth: "user" }, async (_req, { user, params 
         orderBy: { submission: { createdAt: "asc" } },
     });
 
-    const strips = results.map((res) => {
+    const strips = new Array(results.length);
+    await runBoundedConcurrency(results, 2, async (res, index) => {
         const pages = parseJsonStringArray(res.submission.images);
         const bbox = parseStoredGradingBbox(res.bbox, pages.length);
-        const pageImageUrl = bbox ? (pages[bbox.pageIndex] || pages[0] || "") : (pages[0] || "");
-        return {
+        const fallbackImageUrl = bbox ? (pages[bbox.pageIndex] || pages[0] || "") : (pages[0] || "");
+        const cropped = bbox ? await resolveCroppedGradingItemImage(pages, res.bbox) : null;
+        const hasCroppedStrip = Boolean(cropped && cropped !== fallbackImageUrl);
+        strips[index] = {
             resultId: res.id,
             submissionId: res.submission.id,
             submissionStatus: res.submission.status,
@@ -66,8 +69,8 @@ export const GET = defineApiRoute({ auth: "user" }, async (_req, { user, params 
             aiScore: res.aiScore,
             reason: res.reason,
             comment: res.comment,
-            bbox,
-            pageImageUrl,
+            bbox: hasCroppedStrip ? null : bbox,
+            pageImageUrl: hasCroppedStrip ? cropped! : fallbackImageUrl,
         };
     });
 

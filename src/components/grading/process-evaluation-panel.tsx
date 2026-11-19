@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,15 +40,32 @@ export function ProcessEvaluationPanel({
     const pe = t.grading.processEval;
     const capsules = getProcessCapsules(language);
     const [commentDraft, setCommentDraft] = useState(value.teacherComment ?? "");
+    const latestValueRef = useRef(value);
+    useEffect(() => {
+        latestValueRef.current = value;
+    }, [value]);
+    const initialAuto = synthesizeTeacherComment({
+        handwritingLevel: value.handwritingLevel,
+        neatnessLevel: value.neatnessLevel,
+        attitudeLevel: value.attitudeLevel,
+        capsuleKeys: value.processTags,
+    }, language);
+    const lastAutoCommentRef = useRef<string | null>(
+        !value.teacherComment?.trim() || value.teacherComment === initialAuto
+            ? (value.teacherComment ?? "")
+            : null,
+    );
 
     const applyUpdate = (patch: Partial<ProcessEvaluationValue>) => {
+        const current = latestValueRef.current;
         const merged: ProcessEvaluationValue = {
-            handwritingLevel: patch.handwritingLevel !== undefined ? patch.handwritingLevel : value.handwritingLevel,
-            neatnessLevel: patch.neatnessLevel !== undefined ? patch.neatnessLevel : value.neatnessLevel,
-            attitudeLevel: patch.attitudeLevel !== undefined ? patch.attitudeLevel : value.attitudeLevel,
-            processTags: patch.processTags !== undefined ? patch.processTags : value.processTags,
+            handwritingLevel: patch.handwritingLevel !== undefined ? patch.handwritingLevel : current.handwritingLevel,
+            neatnessLevel: patch.neatnessLevel !== undefined ? patch.neatnessLevel : current.neatnessLevel,
+            attitudeLevel: patch.attitudeLevel !== undefined ? patch.attitudeLevel : current.attitudeLevel,
+            processTags: patch.processTags !== undefined ? patch.processTags : current.processTags,
             teacherComment: commentDraft,
         };
+        latestValueRef.current = merged;
         const synthesized = synthesizeTeacherComment(
             {
                 handwritingLevel: merged.handwritingLevel,
@@ -58,13 +75,20 @@ export function ProcessEvaluationPanel({
             },
             language,
         );
-        setCommentDraft(synthesized);
-        void onSave({ ...merged, teacherComment: synthesized || null });
+        const shouldAutoFill = !commentDraft.trim() || commentDraft === lastAutoCommentRef.current;
+        const nextComment = shouldAutoFill ? synthesized : commentDraft;
+        if (shouldAutoFill) {
+            lastAutoCommentRef.current = synthesized;
+            setCommentDraft(synthesized);
+        }
+        latestValueRef.current = { ...merged, teacherComment: nextComment || null };
+        void onSave({ ...merged, teacherComment: nextComment.trim() || null });
     };
 
     const toggleCapsule = (key: string) => {
-        const exists = value.processTags.includes(key);
-        const nextTags = exists ? value.processTags.filter((k) => k !== key) : [...value.processTags, key];
+        const currentTags = latestValueRef.current.processTags;
+        const exists = currentTags.includes(key);
+        const nextTags = exists ? currentTags.filter((k) => k !== key) : [...currentTags, key];
         applyUpdate({ processTags: nextTags });
     };
 
@@ -155,7 +179,13 @@ export function ProcessEvaluationPanel({
                     disabled={disabled}
                     value={commentDraft}
                     placeholder={pe.commentPlaceholder}
-                    onChange={(e) => setCommentDraft(e.target.value)}
+                    onChange={(e) => {
+                        const nextText = e.target.value;
+                        if (nextText !== lastAutoCommentRef.current) {
+                            lastAutoCommentRef.current = null;
+                        }
+                        setCommentDraft(nextText);
+                    }}
                     className="text-xs"
                 />
                 {!disabled && commentDraft !== (value.teacherComment ?? "") && (

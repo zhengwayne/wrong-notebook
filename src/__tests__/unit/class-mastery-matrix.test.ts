@@ -52,4 +52,21 @@ describe('buildClassMasteryMatrix 班级「学生 × 知识点」热力矩阵聚
             },
         ]);
     });
+
+    it('统一对知识点键名去首尾空白并过滤 NaN 非法分数', () => {
+        const matrix = buildClassMasteryMatrix({
+            students: [{ studentId: 's1', name: '李四' }],
+            masteryByStudent: new Map([
+                [
+                    's1',
+                    new Map([
+                        ['  方程 ', 0.4],
+                        ['无效点', Number.NaN],
+                    ]),
+                ],
+            ]),
+        });
+        expect(matrix.knowledgePoints).toEqual(['方程']);
+        expect(matrix.rows[0].cells).toEqual([0.4]);
+    });
 });

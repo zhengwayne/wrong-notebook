@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,8 +14,18 @@ import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
 
-export default function LoginPage() {
+function resolveSafeCallbackUrl(raw: string | null): string {
+    if (!raw) return "/";
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.startsWith("/\\")) return "/";
+    if (trimmed === "/login" || trimmed.startsWith("/login?") || trimmed.startsWith("/login/")) return "/";
+    return trimmed;
+}
+
+function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const callbackUrl = resolveSafeCallbackUrl(searchParams.get("callbackUrl"));
     const { t } = useLanguage();
     usePageTitle(t.pageTitle.login);
     const [email, setEmail] = useState("");
@@ -60,7 +70,7 @@ export default function LoginPage() {
             } else if (result?.error) {
                 setError(t.auth?.login?.failed || 'Login failed');
             } else {
-                router.push("/");
+                router.push(callbackUrl);
                 router.refresh();
             }
         } catch {
@@ -120,5 +130,13 @@ export default function LoginPage() {
                 </CardContent>
             </Card>
         </AuthShell>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<AuthShell><div className="h-72 w-full rounded-2xl border bg-card/50" /></AuthShell>}>
+            <LoginForm />
+        </Suspense>
     );
 }

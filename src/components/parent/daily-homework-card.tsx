@@ -58,9 +58,26 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
     }, [learnerId]);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换孩子时加载当日全科作业清单
-        void load();
-    }, [load]);
+        if (!learnerId) return;
+        let cancelled = false;
+        apiClient.get<HomeworkListResponse>(
+            `/api/parent/homeworks?learnerId=${encodeURIComponent(learnerId)}`,
+        )
+            .then((res) => {
+                if (!cancelled) {
+                    setError(null);
+                    setData(res);
+                }
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setError(getApiErrorMessage(err) || "操作失败");
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [learnerId]);
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();

@@ -33,7 +33,7 @@ export interface HorizontalQuestionGraderProps {
 }
 
 function quickScoreSteps(maxScore: number): number[] {
-    if (maxScore <= 2) return [0, Math.round(maxScore) / 2, maxScore];
+    if (maxScore <= 2) return Array.from(new Set([0, Math.round(maxScore) / 2, maxScore])).sort((a, b) => b - a);
     const half = Math.round(maxScore) / 2;
     const high = Math.round(maxScore * 0.8 * 2) / 2;
     return Array.from(new Set([0, half, high, maxScore])).sort((a, b) => b - a);
@@ -47,8 +47,8 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
     const defaultQuestion = questions.find((q) => q.type === "subjective") ?? questions[0] ?? null;
     const [questionId, setQuestionId] = useState(defaultQuestion?.id ?? "");
     const [strips, setStrips] = useState<QuestionStripItem[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [savingId, setSavingId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(Boolean(defaultQuestion?.id));
+    const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
 
     const activeQuestion = questions.find((q) => q.id === questionId) ?? defaultQuestion;
 
@@ -86,7 +86,7 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
     }
 
     const handleScore = async (strip: QuestionStripItem, score: number) => {
-        setSavingId(strip.resultId);
+        setSavingIds((prev) => new Set(prev).add(strip.resultId));
         try {
             await apiClient.patch(`/api/grading/tasks/${taskId}/questions/${activeQuestion.id}/strips`, {
                 updates: [{ resultId: strip.resultId, score }],
@@ -98,7 +98,11 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
         } catch (error) {
             toast.error(error);
         } finally {
-            setSavingId(null);
+            setSavingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(strip.resultId);
+                return next;
+            });
         }
     };
 
@@ -164,7 +168,7 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
                                                 type="button"
                                                 size="sm"
                                                 variant={strip.score === val ? "default" : "outline"}
-                                                disabled={locked || savingId === strip.resultId}
+                                                disabled={locked || savingIds.has(strip.resultId)}
                                                 onClick={() => handleScore(strip, val)}
                                                 className="h-7 px-2.5 font-mono text-xs"
                                             >

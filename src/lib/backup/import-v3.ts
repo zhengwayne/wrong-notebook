@@ -472,7 +472,15 @@ async function importCoreLearningRecords(
             ? String(row.difficulty)
             : 'medium';
         const oldLearnerId = asOptionalString(row.learnerId);
-        const mappedLearnerId = oldLearnerId ? (ctx.learnerIdMap.get(oldLearnerId) ?? null) : null;
+        let mappedLearnerId: string | null = null;
+        if (oldLearnerId) {
+            const hit = ctx.learnerIdMap.get(oldLearnerId);
+            if (!hit) {
+                ctx.warnings.add('ORPHAN_EXAM_PAPER_SKIPPED');
+                return;
+            }
+            mappedLearnerId = hit;
+        }
         const created = await ctx.tx.examPaper.create({
             data: {
                 userId: targetUserId,
@@ -481,7 +489,7 @@ async function importCoreLearningRecords(
                 status: safeStatus,
                 scope,
                 difficulty,
-                requestedCount: Math.max(0, asOptionalNumber(row.requestedCount) ?? 0),
+                requestedCount: Math.max(0, Math.trunc(asOptionalNumber(row.requestedCount) ?? 0)),
                 subjectIds: mapStringArrayIds(row.subjectIds, ctx.subjectIdMap),
                 tagNames: typeof row.tagNames === 'string' ? row.tagNames : null,
                 resultsRecordedAt: safeParseDate(row.resultsRecordedAt) ?? null,
@@ -609,6 +617,8 @@ async function importPapersGradingVariantsPaths(
         const mappedLearnerId = ctx.learnerIdMap.get(asRequiredString(row.learnerId));
         if (!oldId || !targetUserId || !mappedLearnerId) return;
 
+        const rawStatus = asRequiredString(row.status, 'pending_confirmation');
+        const safePaperStatus = rawStatus === 'recognizing' ? 'failed' : rawStatus;
         const answerKeyImages = await restoreMediaInJsonArray(asOptionalString(row.answerKeyImages), loadMedia);
         const created = await ctx.tx.parentPaper.create({
             data: {
@@ -616,7 +626,7 @@ async function importPapersGradingVariantsPaths(
                 learnerId: mappedLearnerId,
                 title: asOptionalString(row.title),
                 subjectKey: asOptionalString(row.subjectKey),
-                status: asRequiredString(row.status, 'pending_confirmation'),
+                status: safePaperStatus,
                 answerKeyImages,
                 hasAnswerKey: Boolean(row.hasAnswerKey),
                 handwritingLevel: asOptionalString(row.handwritingLevel),
@@ -702,7 +712,7 @@ async function importPapersGradingVariantsPaths(
                 taskMode: asRequiredString(row.taskMode, 'standard'),
                 scoringMode: asRequiredString(row.scoringMode, 'numeric'),
                 deadline: safeParseDate(row.deadline) ?? null,
-                allowSelfSubmit: Boolean(row.allowSelfSubmit),
+                allowSelfSubmit: false,
                 examPaperId: oldExamPaperId ? (ctx.examPaperIdMap.get(oldExamPaperId) ?? null) : null,
                 keyImageUrl,
                 extraClassIds: mapNullableStringArrayIds(row.extraClassIds, ctx.classIdMap),
@@ -761,6 +771,8 @@ async function importPapersGradingVariantsPaths(
             }
         }
 
+        const rawSubStatus = asRequiredString(row.status, 'pending');
+        const safeSubStatus = rawSubStatus === 'grading' || rawSubStatus === 'pending' ? 'failed' : rawSubStatus;
         const created = await ctx.tx.gradingSubmission.create({
             data: {
                 taskId: mappedTaskId,
@@ -773,7 +785,7 @@ async function importPapersGradingVariantsPaths(
                 matchReason: asOptionalString(row.matchReason),
                 matchCandidates,
                 images,
-                status: asRequiredString(row.status, 'pending'),
+                status: safeSubStatus,
                 reviewBucket: asRequiredString(row.reviewBucket, 'yellow'),
                 handwritingLevel: asOptionalString(row.handwritingLevel),
                 neatnessLevel: asOptionalString(row.neatnessLevel),
@@ -1101,16 +1113,19 @@ async function importPapersGradingVariantsPaths(
         const mappedLearnerId = ctx.learnerIdMap.get(asRequiredString(row.learnerId));
         const dateKey = asOptionalString(row.dateKey);
         const title = asOptionalString(row.title);
-        if (!targetUserId || !mappedLearnerId || !dateKey || !title) return;
+        if (!targetUserId || !mappedLearnerId || !dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !title) return;
 
         const category = asRequiredString(row.category, 'written');
         const subjectKey = asRequiredString(row.subjectKey, 'math');
         const existing = await ctx.tx.dailyHomeworkItem.findFirst({
-            where: { userId: targetUserId, learnerId: mappedLearnerId, dateKey, category, title },
+            where: { userId: targetUserId, learnerId: mappedLearnerId, dateKey, subjectKey, category, title },
             select: { id: true },
         });
         if (existing) return;
 
+        const rawEstimated = asOptionalNumber(row.estimatedMinutes);
+        const rawActual = asOptionalNumber(row.actualMinutes);
+        const rawOrder = asOptionalNumber(row.order);
         await ctx.tx.dailyHomeworkItem.create({
             data: {
                 userId: targetUserId,
@@ -1119,11 +1134,11 @@ async function importPapersGradingVariantsPaths(
                 subjectKey,
                 category,
                 title,
-                estimatedMinutes: asOptionalNumber(row.estimatedMinutes) ?? null,
-                actualMinutes: asOptionalNumber(row.actualMinutes) ?? null,
+                estimatedMinutes: rawEstimated !== null && Number.isFinite(rawEstimated) ? Math.trunc(rawEstimated) : null,
+                actualMinutes: rawActual !== null && Number.isFinite(rawActual) ? Math.trunc(rawActual) : null,
                 completed: asOptionalBoolean(row.completed) ?? false,
                 completedAt: safeParseDate(row.completedAt) ?? null,
-                order: asOptionalNumber(row.order) ?? 0,
+                order: rawOrder !== null && Number.isFinite(rawOrder) ? Math.trunc(rawOrder) : 0,
                 ...(safeParseDate(row.createdAt) ? { createdAt: safeParseDate(row.createdAt) } : {}),
             },
         });

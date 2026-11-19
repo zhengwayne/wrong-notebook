@@ -24,7 +24,7 @@ function childFromWindow(): StoredChild | null {
 function readInitialChild(userId?: string | null): StoredChild | null {
     if (typeof window === "undefined") return null;
     const fromUrl = childFromWindow();
-    const fromStore = readStoredChild(userId);
+    const fromStore = userId ? readStoredChild(userId) : null;
     if (fromUrl) {
         const merged: StoredChild = {
             id: fromUrl.id,
@@ -49,13 +49,15 @@ export function useCurrentChild() {
     const isTeacher = activePersona === "teacher";
 
     const [child, setChild] = useState<StoredChild | null>(() => readInitialChild(userId));
-    const [teacherScope, setTeacherScopeState] = useState<StoredTeacherScope | null>(() => readStoredTeacherScope(userId));
+    const [teacherScope, setTeacherScopeState] = useState<StoredTeacherScope | null>(() => (
+        userId ? readStoredTeacherScope(userId) : null
+    ));
 
     useEffect(() => {
         const sync = () => {
             const fromUrl = childFromWindow();
             if (isTeacher) {
-                const stored = readStoredTeacherScope(userId);
+                const stored = userId ? readStoredTeacherScope(userId) : null;
                 if (fromUrl) {
                     const next: StoredTeacherScope = {
                         classId: stored?.classId ?? null,
@@ -68,13 +70,13 @@ export function useCurrentChild() {
                 }
                 return;
             }
-            const fromStore = readStoredChild(userId);
+            const fromStore = userId ? readStoredChild(userId) : null;
             if (fromUrl) {
                 const merged: StoredChild = {
                     id: fromUrl.id,
                     name: fromStore?.id === fromUrl.id ? fromStore.name : undefined,
                 };
-                writeStoredChild(merged, userId);
+                if (userId) writeStoredChild(merged, userId);
                 setChild(merged);
                 return;
             }
@@ -92,7 +94,7 @@ export function useCurrentChild() {
         const stored: StoredChild | null = typeof next === "string"
             ? (isUsableChildId(next) ? { id: next, name } : null)
             : next;
-        writeStoredChild(stored, userId);
+        if (userId) writeStoredChild(stored, userId);
         setChild(stored);
         if (typeof window !== "undefined" && typeof CustomEvent === "function") {
             window.dispatchEvent(new CustomEvent("xueji:learner-scope-change"));
@@ -100,7 +102,7 @@ export function useCurrentChild() {
     }, [userId]);
 
     const setTeacherScope = useCallback((next: StoredTeacherScope | null) => {
-        writeStoredTeacherScope(next, userId);
+        if (userId) writeStoredTeacherScope(next, userId);
         setTeacherScopeState(next);
     }, [userId]);
 

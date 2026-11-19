@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { buildGradingHandoutDocx, escapeOoXmlText } from '@/lib/docx/grading-handout-docx';
 
 describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防注入转义', () => {
-    it('escapeOoXmlText 严格转义 XML 特殊字符并剥离非法控制字符', () => {
-        const malicious = '标题\x00\x07 <script>&"bad\'</script>';
+    it('escapeOoXmlText 严格转义 XML 特殊字符并剥离非法控制字符与非合法 Unicode 代理项', () => {
+        const malicious = '标题\x00\x07\uFFFE\uFFFF\uD800 <script>&"bad\'</script>';
         expect(escapeOoXmlText(malicious)).toBe('标题 &lt;script&gt;&amp;&quot;bad&apos;&lt;/script&gt;');
     });
 
@@ -35,6 +35,15 @@ describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防�
                     answeredCount: 40,
                     sampleMistakes: ['忘记检验最简公分母为0'],
                 },
+                {
+                    number: '99',
+                    questionText: '全对题不应进入讲评',
+                    answer: 'A',
+                    errorRate: 0,
+                    wrongCount: 0,
+                    answeredCount: 40,
+                    sampleMistakes: [],
+                },
             ],
             topN: 5,
         });
@@ -49,10 +58,11 @@ describe('Task 2.4: 零依赖 OOXML Word (.docx) 错题讲评讲义生成与防�
         expect(archive['word/document.xml']).toBeDefined();
 
         const docXml = strFromU8(archive['word/document.xml']);
-        // 确认恶意或数学尖括号未破坏 XML 标签且高错误率第12题排在第5题之前
+        // 确认恶意或数学尖括号未破坏 XML 标签且高错误率第12题排在第5题之前，且 0 错题已被过滤
         expect(docXml).toContain('初二3班 &lt;分式与全等&gt; 随堂测');
         expect(docXml).toContain('求 m 的值 &amp; 讨论 &lt;边界&gt;');
         expect(docXml).not.toContain('<边界>');
+        expect(docXml).not.toContain('全对题不应进入讲评');
         expect(docXml.indexOf('第 12 题')).toBeLessThan(docXml.indexOf('第 5 题'));
     });
 });

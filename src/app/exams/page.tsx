@@ -22,12 +22,13 @@ export default function ExamsPage() {
     const { timeZone } = useTimeZone();
     const { t } = useLanguage();
     usePageTitle(t.exam.title);
-    const { isParent, learnerId, hrefWithChild } = useCurrentChild();
+    const { isParent, isTeacher, learnerId, hrefWithChild } = useCurrentChild();
+    const isScopedPersona = isParent || (isTeacher && Boolean(learnerId));
     const [papers, setPapers] = useState<ExamPaperSummary[] | null>(null);
     const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
-        const url = isParent
+        const url = isScopedPersona
             ? `/api/exams?learnerId=${encodeURIComponent(learnerId ?? "self")}`
             : "/api/exams";
         apiClient.get<ExamPaperSummary[]>(url)
@@ -36,7 +37,7 @@ export default function ExamsPage() {
                 if (data.length === 0) setShowForm(true);
             })
             .catch(() => setPapers([]));
-    }, [isParent, learnerId]);
+    }, [isScopedPersona, learnerId]);
 
     const difficultyLabels = t.practice.difficulty as Record<string, string>;
 

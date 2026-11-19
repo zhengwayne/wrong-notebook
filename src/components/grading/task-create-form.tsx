@@ -51,6 +51,12 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
 
     const isQuickAuto = source === "ai_auto";
     const qg = t.grading.quickGrading;
+    const handleSourceChange = (nextSource: KeySource) => {
+        setSource(nextSource);
+        if (nextSource !== "ai_auto" && !classId && classes.length > 0) {
+            setClassId(classes[0].id);
+        }
+    };
 
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -138,7 +144,7 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
 
                     <div className="space-y-2">
                         <Label>{t.grading.keySource}</Label>
-                        <SegmentedControl<KeySource> value={source} onChange={setSource} options={[
+                        <SegmentedControl<KeySource> value={source} onChange={handleSourceChange} options={[
                             { value: "ai_auto", label: qg.keyAiAuto, icon: Zap },
                             { value: "quick", label: t.grading.keyQuick, icon: Keyboard },
                             { value: "exam", label: t.grading.keyExam, icon: FileText },
@@ -154,8 +160,8 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
                                     onChange={(event) => setKeyText(event.target.value)} className="font-mono" />
                                 <div className="flex items-center gap-2">
                                     <Label htmlFor="grading-default-score" className="shrink-0">{t.grading.defaultScore}</Label>
-                                    <Input id="grading-default-score" type="number" min={0} step={0.5} className="w-24" value={defaultScore}
-                                        onChange={(event) => setDefaultScore(Number(event.target.value) || 0)} />
+                                    <Input id="grading-default-score" type="number" min={0.5} step={0.5} className="w-24" value={defaultScore}
+                                        onChange={(event) => setDefaultScore(Math.max(0.5, Number(event.target.value) || 0.5))} />
                                 </div>
                             </div>
                         )}

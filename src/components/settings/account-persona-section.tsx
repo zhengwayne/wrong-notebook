@@ -21,8 +21,11 @@ export function AccountPersonaSection() {
     const [personas, setPersonas] = useState<Persona[]>([]);
     const [savingPersonas, setSavingPersonas] = useState(false);
     const [personasLoaded, setPersonasLoaded] = useState(false);
+    const [loadError, setLoadError] = useState(false);
 
-    useEffect(() => {
+    const fetchPersonas = () => {
+        setLoadError(false);
+        setPersonasLoaded(false);
         apiClient.get<{ personas: Persona[]; confirmed: boolean }>("/api/persona")
             .then((personaState) => {
                 if (personaState.confirmed) setPersonas(personaState.personas);
@@ -30,8 +33,28 @@ export function AccountPersonaSection() {
             })
             .catch((error) => {
                 frontendLogger.error("[AccountSettings]", "Failed to fetch personas", { error });
+                setLoadError(true);
                 setPersonasLoaded(true);
             });
+    };
+
+    useEffect(() => {
+        let cancelled = false;
+        apiClient.get<{ personas: Persona[]; confirmed: boolean }>("/api/persona")
+            .then((personaState) => {
+                if (cancelled) return;
+                if (personaState.confirmed) setPersonas(personaState.personas);
+                setPersonasLoaded(true);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                frontendLogger.error("[AccountSettings]", "Failed to fetch personas", { error });
+                setLoadError(true);
+                setPersonasLoaded(true);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     if (!personasLoaded) {
@@ -44,6 +67,17 @@ export function AccountPersonaSection() {
                     <Skeleton className="h-16 w-full rounded-lg" />
                     <Skeleton className="h-16 w-full rounded-lg" />
                 </div>
+            </div>
+        );
+    }
+
+    if (loadError) {
+        return (
+            <div className="space-y-3 border rounded-lg p-4 bg-muted/30 text-sm">
+                <p className="text-destructive">{t.common.messages?.loadFailed || "加载失败"}</p>
+                <Button type="button" size="sm" variant="outline" onClick={fetchPersonas}>
+                    {t.common.retry}
+                </Button>
             </div>
         );
     }

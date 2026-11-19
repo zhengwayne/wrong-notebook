@@ -27,7 +27,8 @@ export interface GradingHandoutInput {
 export function escapeOoXmlText(value: string | null | undefined): string {
     if (!value) return "";
     return value
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uFFFE\uFFFF]/g, "")
+        .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -71,6 +72,7 @@ const ROOT_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 export function buildGradingHandoutDocx(input: GradingHandoutInput): Uint8Array {
     const limit = Math.max(1, Math.min(50, input.topN ?? 10));
     const sortedQuestions = [...input.questions]
+        .filter((q) => q.wrongCount > 0)
         .sort((a, b) => b.errorRate - a.errorRate)
         .slice(0, limit);
 

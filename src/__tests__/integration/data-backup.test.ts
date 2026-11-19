@@ -422,8 +422,15 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         const task = await database.gradingTask.create({
             data: {
                 id: 'gt-v3', userId: 'user-1', classId: cls.id, title: '月考', subjectName: '数学', keyImageUrl: urlB,
+                allowSelfSubmit: true,
                 questions: { create: { id: 'gkq-v3', order: 0, number: '1', answer: '3' } },
             },
+        });
+        await database.dailyHomeworkItem.createMany({
+            data: [
+                { userId: 'user-1', learnerId: childActive.id, dateKey: '2026-11-18', subjectKey: 'math', category: 'written', title: '练习册P1' },
+                { userId: 'user-1', learnerId: childActive.id, dateKey: '2026-11-18', subjectKey: 'english', category: 'written', title: '练习册P1' },
+            ],
         });
         const sub = await database.gradingSubmission.create({
             data: {
@@ -548,6 +555,12 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
             lapses: 0,
             algorithmVersion: 'fsrs-v1',
         });
+
+        // 剥离 token 后 allowSelfSubmit 自动复位为 false，且不同学科同名日常作业不误去重
+        const restoredTask = await database.gradingTask.findFirstOrThrow({ where: { title: '月考' } });
+        expect(restoredTask.allowSelfSubmit).toBe(false);
+        const restoredHomeworks = await database.dailyHomeworkItem.findMany({ where: { userId: 'user-1' } });
+        expect(restoredHomeworks.map((h) => h.subjectKey).sort()).toEqual(['english', 'math']);
     });
 
     it('exportAll / importAll 多用户恢复时，VariantRun.userId 正确映射回各自用户而非硬编码管理员（R05）', async () => {

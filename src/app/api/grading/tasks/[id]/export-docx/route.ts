@@ -23,13 +23,29 @@ export const GET = defineApiRoute({ auth: "user" }, async (req, { user, params }
 
     const task = await prisma.gradingTask.findFirst({
         where: { id: taskId, userId: user.id },
-        include: {
+        select: {
+            id: true,
+            title: true,
+            subjectName: true,
             class: { select: { name: true } },
             questions: { orderBy: { order: "asc" } },
             submissions: {
-                include: {
+                where: { status: { in: ["graded", "confirmed"] } },
+                select: {
+                    id: true,
+                    detectedName: true,
+                    status: true,
+                    totalScore: true,
                     student: { select: { name: true } },
-                    results: true,
+                    results: {
+                        select: {
+                            keyQuestionId: true,
+                            verdict: true,
+                            score: true,
+                            reason: true,
+                            studentAnswer: true,
+                        },
+                    },
                 },
             },
         },
@@ -55,7 +71,10 @@ export const GET = defineApiRoute({ auth: "user" }, async (req, { user, params }
     for (const sub of task.submissions) {
         for (const res of sub.results) {
             if (res.verdict === "correct") continue;
-            const snippet = res.reason?.trim() || (res.studentAnswer?.trim() ? `错答示例：${res.studentAnswer.trim().slice(0, 40)}` : "");
+            const clippedAnswer = res.studentAnswer?.trim()
+                ? Array.from(res.studentAnswer.trim()).slice(0, 40).join("")
+                : "";
+            const snippet = res.reason?.trim() || (clippedAnswer ? `错答示例：${clippedAnswer}` : "");
             if (!snippet) continue;
             const list = sampleReasonsByQId.get(res.keyQuestionId) || [];
             if (list.length < 3 && !list.includes(snippet)) {
@@ -72,23 +91,26 @@ export const GET = defineApiRoute({ auth: "user" }, async (req, { user, params }
         gradedCount: summary.gradedCount,
         averageScore: summary.averageScore,
         weakPoints: summary.weakPoints.map((w) => ({ name: w.name, errorRate: w.errorRate })),
-        questions: summary.questions.map((sq) => {
-            const fullQ = keyById.get(sq.id);
-            return {
-                number: sq.number,
-                questionText: fullQ?.questionText ?? null,
-                answer: fullQ?.answer ?? null,
-                errorRate: sq.errorRate,
-                wrongCount: sq.wrong,
-                answeredCount: sq.answered,
-                sampleMistakes: sampleReasonsByQId.get(sq.id) || [],
-            };
-        }),
+        questions: summary.questions
+            .filter((sq) => sq.wrong > 0)
+            .map((sq) => {
+                const fullQ = keyById.get(sq.id);
+                return {
+                    number: sq.number,
+                    questionText: fullQ?.questionText ?? null,
+                    answer: fullQ?.answer ?? null,
+                    errorRate: sq.errorRate,
+                    wrongCount: sq.wrong,
+                    answeredCount: sq.answered,
+                    sampleMistakes: sampleReasonsByQId.get(sq.id) || [],
+                };
+            }),
         topN,
     });
 
     const encodedName = encodeURIComponent(`${task.title}_讲评讲义.docx`);
-    const asciiFallback = `${safeAsciiFileName(task.title)}_handout.docx`;
+    const safeAscii = safeAsciiFileName(task.title);
+    const asciiFallback = safeAscii === "grading_handout" ? "grading_handout.docx" : `${safeAscii}_handout.docx`;
 
     return new NextResponse(Buffer.from(docxBytes), {
         status: 200,

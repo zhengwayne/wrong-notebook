@@ -603,20 +603,27 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
 export async function createExamFromApproved(userId: string, runId: string, title?: string) {
     const run = await prisma.variantRun.findFirst({
         where: { id: runId, userId },
-        include: { items: { where: { status: 'approved' }, orderBy: { index: 'asc' } } },
+        include: {
+            items: { where: { status: 'approved' }, orderBy: { index: 'asc' } },
+            student: { select: { learner: { select: { id: true } } } },
+        },
     });
     if (!run) return null;
     if (run.items.length === 0) return { error: 'NO_APPROVED' as const };
     const sourceIds = [...new Set(run.items.map((item) => item.sourceItemId).filter((id): id is string => !!id))];
     const sources = sourceIds.length
-        ? await prisma.errorItem.findMany({ where: { id: { in: sourceIds }, userId }, select: { id: true, shortId: true } })
+        ? await prisma.errorItem.findMany({ where: { id: { in: sourceIds }, userId }, select: { id: true, shortId: true, learnerId: true } })
         : [];
     const shortIdBySource = new Map(sources.map((item) => [item.id, item.shortId]));
+    const sourceLearnerIds = [...new Set(sources.map((s) => s.learnerId).filter((id): id is string => Boolean(id)))];
+    const resolvedLearnerId = run.student?.learner?.id
+        ?? (sourceLearnerIds.length === 1 ? sourceLearnerIds[0] : null);
 
     const paper = await prisma.$transaction(async (tx) => {
         const created = await tx.examPaper.create({
             data: {
                 userId,
+                learnerId: resolvedLearnerId,
                 title: title || run.title || '个性化练习卷',
                 status: 'ready',
                 scope: 'all',

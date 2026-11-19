@@ -6,11 +6,9 @@
 import { prisma } from '@/lib/prisma';
 import { getItemTags } from '@/lib/item-tags';
 import { LEARNER_KIND } from '@/lib/learners';
-import { collectEvidence, getOrReplanPath, presentPath, resolveStudent } from '@/lib/learning-path/service';
-import { buildMasteryMap } from '@/lib/learning-path/mastery-model';
+import { collectEvidence, computeClassMasteryOverview, getOrReplanPath } from '@/lib/learning-path/service';
 import { buildClassMasteryMatrix } from '@/lib/class-mastery-matrix';
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief } from '@/lib/variant/weakness-profile';
-import { getAppTimeZone } from '@/lib/config';
 import {
     UNLABELED_CAUSE,
     UNLABELED_POINT,
@@ -137,7 +135,7 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
         ? []
         : await prisma.errorItem.findMany({
             where: { userId, learnerId: { in: learnerIds } },
-            include: { tags: { select: { name: true, parentId: true } } },
+            select: { learnerId: true, errorType: true },
             orderBy: { createdAt: 'desc' },
         });
 
@@ -150,51 +148,7 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
         UNLABELED_CAUSE,
     );
 
-    const profiles = [];
-    const students = [];
-    const masteryByStudent = new Map<string, Map<string, number>>();
-    for (const student of cls.students) {
-        const resolved = await resolveStudent(userId, student.id);
-        if (!resolved) {
-            students.push({
-                studentId: student.id,
-                name: student.name,
-                studentNo: student.studentNo,
-                weakCount: 0,
-                averageMastery: 1,
-                nextStep: null as { id?: string; title: string; type: string } | null,
-            });
-            continue;
-        }
-        const { profileItems, evidence } = await collectEvidence(userId, resolved);
-        const profile = buildWeaknessProfile(profileItems);
-        if (profileItems.length > 0) {
-            profiles.push({ studentKey: student.id, profile });
-        }
-        const mastery = buildMasteryMap(evidence, { timeZone: getAppTimeZone() });
-        const studentScoreMap = new Map<string, number>();
-        for (const [kp, mRow] of mastery.entries()) {
-            studentScoreMap.set(kp, mRow.score);
-        }
-        masteryByStudent.set(student.id, studentScoreMap);
-        const scores = [...mastery.values()].map((row) => row.score);
-        const existing = await prisma.learningPath.findUnique({
-            where: { userId_studentKey: { userId, studentKey: student.id } },
-            include: { steps: { orderBy: { position: 'asc' } } },
-        });
-        const path = existing ? presentPath(existing, mastery) : null;
-        const weak = (path?.mastery ?? [...mastery.values()].map((row) => ({ score: row.score }))).filter((row) => row.score < 0.7);
-        students.push({
-            studentId: student.id,
-            name: student.name,
-            studentNo: student.studentNo,
-            weakCount: weak.length,
-            averageMastery: scores.length
-                ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 100) / 100
-                : 1,
-            nextStep: path?.today[0] ?? path?.steps.find((step) => step.status === 'pending' || step.status === 'in_progress') ?? null,
-        });
-    }
+    const { profiles, masteryByStudent, students } = await computeClassMasteryOverview(userId, cls.id, cls.students);
 
     const weaknesses = buildClassWeaknesses(profiles);
     const matrix = buildClassMasteryMatrix({
@@ -255,7 +209,14 @@ export async function getTeacherStudentProfile(userId: string, studentId: string
         ? []
         : await prisma.errorItem.findMany({
             where: { userId, learnerId: learner.id },
-            include: { tags: { select: { name: true } } },
+            select: {
+                id: true,
+                questionText: true,
+                errorType: true,
+                knowledgePoints: true,
+                createdAt: true,
+                tags: { select: { name: true } },
+            },
             orderBy: { createdAt: 'desc' },
             take: RECENT_ITEM_LIMIT,
         });

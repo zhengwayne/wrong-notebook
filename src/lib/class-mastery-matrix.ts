@@ -22,18 +22,23 @@ export function buildClassMasteryMatrix(params: {
 }): ClassMasteryMatrix {
     const { students, masteryByStudent, habitsByStudent, maxColumns = 8 } = params;
 
+    const normalizedByStudent = new Map<string, Map<string, number>>();
     const pointAgg = new Map<string, { count: number; totalScore: number }>();
     for (const student of students) {
         const stuMap = masteryByStudent.get(student.studentId);
         if (!stuMap) continue;
+        const cleanMap = new Map<string, number>();
         for (const [kp, score] of stuMap.entries()) {
             const trimmed = kp.trim();
             if (!trimmed || trimmed === UNLABELED_POINT) continue;
+            if (typeof score !== 'number' || !Number.isFinite(score)) continue;
+            cleanMap.set(trimmed, score);
             const prev = pointAgg.get(trimmed) ?? { count: 0, totalScore: 0 };
             prev.count += 1;
             prev.totalScore += score;
             pointAgg.set(trimmed, prev);
         }
+        normalizedByStudent.set(student.studentId, cleanMap);
     }
 
     const knowledgePoints = [...pointAgg.entries()]
@@ -48,7 +53,7 @@ export function buildClassMasteryMatrix(params: {
         .map(([kp]) => kp);
 
     const rows: ClassMasteryMatrixRow[] = students.map((student) => {
-        const stuMap = masteryByStudent.get(student.studentId);
+        const stuMap = normalizedByStudent.get(student.studentId);
         const habits = habitsByStudent?.get(student.studentId);
         return {
             studentId: student.studentId,
@@ -56,7 +61,7 @@ export function buildClassMasteryMatrix(params: {
             studentNo: student.studentNo ?? null,
             cells: knowledgePoints.map((kp) => {
                 const val = stuMap?.get(kp);
-                return typeof val === 'number' ? Math.round(val * 100) / 100 : null;
+                return typeof val === 'number' && Number.isFinite(val) ? Math.round(val * 100) / 100 : null;
             }),
             handwritingLevel: habits?.handwritingLevel ?? null,
             attitudeLevel: habits?.attitudeLevel ?? null,

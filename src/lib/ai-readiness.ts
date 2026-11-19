@@ -1,4 +1,5 @@
 import { VENDOR_PROVIDER_IDS, type VendorProviderId } from "@/lib/ai/vendor-presets";
+import { readMiniMaxCodeState } from "@/lib/minimax-code/store";
 import type { AppConfig, TextAiConfig } from "@/types/api";
 
 export interface AiReadinessSummary {
@@ -23,15 +24,14 @@ function isProviderReady(
     }
     if (provider === "openai") {
         const instances = scope.openai?.instances ?? [];
-        if (instances.length === 0) return false;
-        const active = scope.openai?.activeInstanceId
-            ? instances.find((item) => item.id === scope.openai?.activeInstanceId)
-            : instances[0];
+        const activeId = scope.openai?.activeInstanceId;
+        if (!activeId || instances.length === 0) return false;
+        const active = instances.find((item) => item.id === activeId);
         return Boolean(active && hasKey(active.apiKey));
     }
     if (provider === "minimax-code") {
-        // minimax-code 采用服务端独立托管登录态，默认视为渠道可尝试调用
-        return true;
+        const account = readMiniMaxCodeState().account;
+        return Boolean(account && !account.invalid && hasKey(account.accessToken));
     }
     if ((VENDOR_PROVIDER_IDS as readonly string[]).includes(provider)) {
         const vendor = scope[provider as VendorProviderId] as { apiKey?: unknown } | undefined;

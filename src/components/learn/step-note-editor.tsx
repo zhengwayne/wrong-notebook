@@ -8,7 +8,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 
 export interface StepNoteEditorProps {
     note: string | null | undefined;
-    onSave: (note: string | null) => Promise<void> | void;
+    onSave: (note: string | null) => Promise<boolean | void> | boolean | void;
 }
 
 /**
@@ -19,6 +19,7 @@ export function StepNoteEditor({ note, onSave }: StepNoteEditorProps) {
     const pe = t.grading.processEval;
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(note ?? "");
+    const [saving, setSaving] = useState(false);
 
     if (!editing) {
         return (
@@ -54,14 +55,20 @@ export function StepNoteEditor({ note, onSave }: StepNoteEditorProps) {
                 type="button"
                 size="sm"
                 className="h-8 text-xs"
-                onClick={() => {
-                    void onSave(draft.trim() || null);
-                    setEditing(false);
+                disabled={saving}
+                onClick={async () => {
+                    setSaving(true);
+                    try {
+                        const ok = await onSave(draft.trim() || null);
+                        if (ok !== false) setEditing(false);
+                    } finally {
+                        setSaving(false);
+                    }
                 }}
             >
                 {t.common.save}
             </Button>
-            <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setEditing(false)}>
+            <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" disabled={saving} onClick={() => setEditing(false)}>
                 {t.common.cancel}
             </Button>
         </div>
