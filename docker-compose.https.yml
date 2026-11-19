@@ -25,7 +25,7 @@ services:
     restart: always
     ports:
       - "80:3000"    # HTTP（可选）
-      - "443:443"    # HTTPS
+      - "443:8443"    # HTTPS（容器内非特权端口 8443 映射至宿主 443）
     environment:
       # === 必须配置（请修改） ===
       # 替换为你的实际访问地址

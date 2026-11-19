@@ -154,6 +154,13 @@ if [ "$PREVIOUS_VERSION" != "$CURRENT_VERSION" ]; then
     echo "$CURRENT_VERSION" > "$VERSION_FILE"
 fi
 
+if [ "$(id -u)" = "0" ]; then
+    for dir in /app/data /app/config; do
+        mkdir -p "$dir"
+        chown -R nextjs:nodejs "$dir"
+    done
+fi
+
 # HTTPS Setup
 CERT_DIR="/app/certs"
 CERT_FILE="$CERT_DIR/cert.pem"
@@ -164,7 +171,9 @@ if [ "$HTTPS_ENABLED" = "true" ]; then
     
     # 确保证书目录存在
     mkdir -p "$CERT_DIR"
-    chown nextjs:nodejs "$CERT_DIR"
+    if [ "$(id -u)" = "0" ]; then
+        chown nextjs:nodejs "$CERT_DIR" 2>/dev/null || true
+    fi
     
     # 检查证书是否存在
     if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
@@ -174,27 +183,33 @@ if [ "$HTTPS_ENABLED" = "true" ]; then
         CERT_CN="${CERT_DOMAIN:-localhost}"
         
         # 生成自签名证书（有效期 10 年）
-        openssl req -x509 -newkey rsa:2048 \
+        if openssl req -x509 -newkey rsa:2048 \
             -keyout "$KEY_FILE" \
             -out "$CERT_FILE" \
             -days 3650 \
             -nodes \
             -subj "/CN=$CERT_CN" \
-            2>/dev/null
-        
-        if [ $? -eq 0 ]; then
+            2>/dev/null; then
             echo "[Entrypoint] 自签名证书生成成功: CN=$CERT_CN"
-            chown nextjs:nodejs "$CERT_FILE" "$KEY_FILE"
+            chmod 600 "$KEY_FILE"
+            if [ "$(id -u)" = "0" ]; then
+                chown nextjs:nodejs "$CERT_FILE" "$KEY_FILE"
+            fi
         else
             echo "[Entrypoint] 警告: 证书生成失败，HTTPS 将不可用"
         fi
     else
         echo "[Entrypoint] 使用已有证书: $CERT_FILE"
+        if [ "$(id -u)" = "0" ]; then
+            chown nextjs:nodejs "$CERT_FILE" "$KEY_FILE" 2>/dev/null || true
+        fi
+        chmod 600 "$KEY_FILE" 2>/dev/null || true
     fi
     
     # 启动 HTTPS 代理
     if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
-        echo "[Entrypoint] 启动 HTTPS 代理 (端口 443)..."
+        HTTPS_LISTEN_PORT="${HTTPS_PORT:-8443}"
+        echo "[Entrypoint] 启动 HTTPS 代理 (端口 ${HTTPS_LISTEN_PORT})..."
         drop_privs node /app/https-server.js &
     fi
 fi

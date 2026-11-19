@@ -32,13 +32,14 @@ const options = {
 };
 
 const port = parseInt(process.env.PORT || '3000', 10);
+const httpsPort = parseInt(process.env.HTTPS_PORT || '8443', 10);
 
 function normalizeRemoteIp(addr) {
     if (!addr) return '';
     return addr.startsWith('::ffff:') ? addr.slice(7) : addr;
 }
 
-console.log(`[HTTPS] 启动 HTTPS 代理，端口 443 -> HTTP ${port}`);
+console.log(`[HTTPS] 启动 HTTPS 代理，端口 ${httpsPort} -> HTTP ${port}`);
 console.log(`[HTTPS] 代理超时设置: ${PROXY_TIMEOUT / 1000} 秒`);
 
 const httpsServer = https.createServer(options, (req, res) => {
@@ -128,7 +129,7 @@ httpsServer.timeout = PROXY_TIMEOUT;
 httpsServer.keepAliveTimeout = 65000; // 65 秒 Keep-Alive
 httpsServer.headersTimeout = 66000;   // 略大于 keepAliveTimeout
 
-const httpsPort = parseInt(process.env.HTTPS_PORT || '443', 10);
+// 使用已解析的非特权 HTTPS 端口（默认 8443，由 Docker 映射为宿主 443）
 
 httpsServer.listen(httpsPort, '0.0.0.0', () => {
     console.log(`[HTTPS] HTTPS 服务器已启动，监听端口 ${httpsPort}`);

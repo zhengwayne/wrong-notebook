@@ -64,7 +64,7 @@
 services:
   wrong-notebook:
     ports:
-      - "443:443"           # HTTPS 端口
+      - "443:8443"          # HTTPS 端口映射（宿主机 443 -> 容器内非特权端口 8443）
     environment:
       - HTTPS_ENABLED=true
       - CERT_DOMAIN=YOUR_IP_OR_DOMAIN  # 替换为你的 IP 或域名
@@ -101,7 +101,7 @@ docker logs wrong-notebook | grep -i cert
 | `CERT_DOMAIN` | 否 | `localhost` | 证书的 CN（你的 IP 或域名） |
 | `NEXTAUTH_URL` | 是 | - | 完整访问地址 |
 | `AUTH_TRUST_HOST` | 是 | - | 设为 `true` |
-| `HTTPS_PORT` | 否 | `443` | HTTPS 监听端口 |
+| `HTTPS_PORT` | 否 | `8443` | 容器内 HTTPS 监听端口（通过端口映射对外暴露 443） |
 
 ### 使用自定义证书
 
