@@ -2204,4 +2204,13 @@ export const en = {
         noChildHint: "No child profile found yet. Create one in Parent Home first.",
         goParentHome: "Open Parent Home",
     },
+    classHeatmap: {
+        title: "Class Mastery & Habit Heatmap (Students × Knowledge Points)",
+        studentCol: "Student",
+        habitsCol: "Writing / Attitude",
+        empty: "Not enough graded knowledge-point data yet. Confirm submissions to populate the heatmap.",
+        legendLow: "<50% Needs Focus",
+        legendMid: "50%–79% Reviewing",
+        legendHigh: "≥80% Mastered",
+    },
 } satisfies Translations;

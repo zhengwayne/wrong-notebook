@@ -12,8 +12,10 @@ import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { CauseList, ErrorRateList, HomeSection, scoreLabel } from "@/components/home/home-panels";
+import { ClassMasteryHeatmap } from "@/components/teacher/class-mastery-heatmap";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import type { ClassMasteryMatrix } from "@/lib/class-mastery-matrix";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
@@ -37,6 +39,7 @@ interface TeacherHomeData {
             averageMastery: number;
             nextStep: { title: string } | null;
         }>;
+        matrix?: ClassMasteryMatrix;
     } | null;
 }
 
@@ -177,6 +180,12 @@ function TeacherHome() {
                                         </div>
                                     )}
                                 </HomeSection>
+
+                                {stats.matrix && (
+                                    <HomeSection title={t.classHeatmap.title}>
+                                        <ClassMasteryHeatmap classId={stats.classId} matrix={stats.matrix} />
+                                    </HomeSection>
+                                )}
 
                                 <HomeSection title={copy.students}>
                                     <ul className="divide-y rounded-2xl border border-border bg-card">

@@ -2200,4 +2200,13 @@ export const zh = {
         noChildHint: "您当前账号下尚未添加孩子档案，请先前往家长首页创建孩子。",
         goParentHome: "前往家长督学中心",
     },
+    classHeatmap: {
+        title: "班级「学生 × 知识点 × 习惯」掌握度热力矩阵",
+        studentCol: "学生",
+        habitsCol: "书写 / 态度",
+        empty: "暂无足够的知识点作答记录生成热力矩阵，批改确认答卷后将自动亮起。",
+        legendLow: "<50% 急需巩固",
+        legendMid: "50%~79% 待提升",
+        legendHigh: "≥80% 已掌握",
+    },
 };

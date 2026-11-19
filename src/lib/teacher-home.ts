@@ -8,6 +8,7 @@ import { getItemTags } from '@/lib/item-tags';
 import { LEARNER_KIND } from '@/lib/learners';
 import { collectEvidence, getOrReplanPath, presentPath, resolveStudent } from '@/lib/learning-path/service';
 import { buildMasteryMap } from '@/lib/learning-path/mastery-model';
+import { buildClassMasteryMatrix } from '@/lib/class-mastery-matrix';
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief } from '@/lib/variant/weakness-profile';
 import { getAppTimeZone } from '@/lib/config';
 import {
@@ -100,8 +101,11 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
                 status: { in: ['graded', 'confirmed'] },
                 task: { userId },
             },
+            orderBy: { createdAt: 'desc' },
             select: {
                 studentId: true,
+                handwritingLevel: true,
+                attitudeLevel: true,
                 results: {
                     select: {
                         verdict: true,
@@ -110,6 +114,15 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
                 },
             },
         });
+
+    const habitsByStudent = new Map<string, { handwritingLevel: string | null; attitudeLevel: string | null }>();
+    for (const sub of submissions) {
+        if (!sub.studentId) continue;
+        const prev = habitsByStudent.get(sub.studentId) ?? { handwritingLevel: null, attitudeLevel: null };
+        if (!prev.handwritingLevel && sub.handwritingLevel) prev.handwritingLevel = sub.handwritingLevel;
+        if (!prev.attitudeLevel && sub.attitudeLevel) prev.attitudeLevel = sub.attitudeLevel;
+        habitsByStudent.set(sub.studentId, prev);
+    }
 
     const gradedResults = submissions.flatMap((submission) =>
         submission.results.map((result) => ({
@@ -139,6 +152,7 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
 
     const profiles = [];
     const students = [];
+    const masteryByStudent = new Map<string, Map<string, number>>();
     for (const student of cls.students) {
         const resolved = await resolveStudent(userId, student.id);
         if (!resolved) {
@@ -158,6 +172,11 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
             profiles.push({ studentKey: student.id, profile });
         }
         const mastery = buildMasteryMap(evidence, { timeZone: getAppTimeZone() });
+        const studentScoreMap = new Map<string, number>();
+        for (const [kp, mRow] of mastery.entries()) {
+            studentScoreMap.set(kp, mRow.score);
+        }
+        masteryByStudent.set(student.id, studentScoreMap);
         const scores = [...mastery.values()].map((row) => row.score);
         const existing = await prisma.learningPath.findUnique({
             where: { userId_studentKey: { userId, studentKey: student.id } },
@@ -178,6 +197,11 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
     }
 
     const weaknesses = buildClassWeaknesses(profiles);
+    const matrix = buildClassMasteryMatrix({
+        students: cls.students.map((s) => ({ studentId: s.id, name: s.name, studentNo: s.studentNo })),
+        masteryByStudent,
+        habitsByStudent,
+    });
     return {
         classId: cls.id,
         className: cls.name,
@@ -186,6 +210,7 @@ async function classStats(userId: string, cls: Awaited<ReturnType<typeof listOwn
         classWeaknesses: weaknesses,
         topicBrief: classTopicBrief(weaknesses),
         students,
+        matrix,
     };
 }
 
