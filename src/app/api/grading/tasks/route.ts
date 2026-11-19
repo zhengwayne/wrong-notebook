@@ -83,7 +83,9 @@ export async function POST(req: Request) {
     } else if (body.keyText) {
         const { questions: parsedKey, errors } = parseQuickAnswerKey(body.keyText, body.defaultScore);
         if (errors.length) return validationError("Invalid answer key lines", { lines: errors });
-        questions = parsedKey;
+        const validated = keyQuestionsSchema.safeParse(parsedKey);
+        if (!validated.success) return validationError("Invalid parsed answer key", validated.error.issues);
+        questions = validated.data;
     }
 
     const task = await prisma.gradingTask.create({

@@ -116,8 +116,8 @@ export function validateQuestionBBox(raw: unknown, pageCount: number): QuestionB
     const values = [xRaw, yRaw, wRaw, hRaw];
     const max = Math.max(...values);
     let scale = 1;
-    if (max > 1 && max <= 100) scale = 100;
-    else if (max > 1) return null; // 像素或其他未知坐标系
+    if (max > 1.05 && max <= 100) scale = 100;
+    else if (max > 100) return null; // 像素或其他未知坐标系
 
     let x = xRaw / scale;
     let y = yRaw / scale;
@@ -137,10 +137,14 @@ export function clampNormalizedBBox(bbox: QuestionBBox): QuestionBBox | null {
     if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
     if (width < 0) { x += width; width = Math.abs(width); }
     if (height < 0) { y += height; height = Math.abs(height); }
-    x = Math.min(1, Math.max(0, x));
-    y = Math.min(1, Math.max(0, y));
-    width = Math.min(1 - x, Math.max(0, width));
-    height = Math.min(1 - y, Math.max(0, height));
+    const x2 = Math.min(1, Math.max(0, x + width));
+    const y2 = Math.min(1, Math.max(0, y + height));
+    const x1 = Math.min(1, Math.max(0, x));
+    const y1 = Math.min(1, Math.max(0, y));
+    x = x1;
+    y = y1;
+    width = x2 - x1;
+    height = y2 - y1;
     if (width < 0.01 || height < 0.01) return null;
     return {
         pageIndex,

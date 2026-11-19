@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { notFound, unauthorized, validationError } from "@/lib/api-errors";
+import { conflict, notFound, unauthorized, validationError } from "@/lib/api-errors";
 import { parseJsonStringArray } from "@/lib/grading";
-import { keyQuestionData, loadTaskRoster, taskClassIds, toKeyQuestion } from "@/lib/grading-service";
+import { keyQuestionData, loadTaskRoster, scheduleGrading, taskClassIds, toKeyQuestion } from "@/lib/grading-service";
 import { parseCandidates, parseMatchReason } from "@/lib/grading-match-json";
 import { keyQuestionsSchema } from "@/lib/grading-api";
 
@@ -46,7 +46,7 @@ export async function GET(_req: Request, { params }: Params) {
         subjectName: task.subjectName,
         taskMode: task.taskMode,
         scoringMode: task.scoringMode,
-        allowSelfSubmit: task.allowSelfSubmit,
+        allowSelfSubmit: Boolean(task.allowSelfSubmit && task.submitTokenHash),
         deadline: task.deadline,
         classId: task.classId,
         className: task.class.name,
@@ -63,7 +63,7 @@ export async function GET(_req: Request, { params }: Params) {
     });
 }
 
-/** PUT /api/grading/tasks/:id：修改标题、学科或替换答案（替换答案会清空已有判分，需要重新判分） */
+/** PUT /api/grading/tasks/:id：修改标题、学科或替换答案（若含已确认/判分中答卷则拒删答案；替换后自动重判待评答卷） */
 export async function PUT(req: Request, { params }: Params) {
     const { id } = await params;
     const user = await getCurrentUser();
@@ -74,14 +74,41 @@ export async function PUT(req: Request, { params }: Params) {
     if (!task) return notFound("Grading task not found");
 
     const { questions, ...fields } = parsed.data;
-    await prisma.$transaction(async (tx) => {
-        await tx.gradingTask.update({ where: { id }, data: fields });
+    const txOutcome = await prisma.$transaction(async (tx) => {
         if (questions) {
-            await tx.gradingKeyQuestion.deleteMany({ where: { taskId: id } });
-            await tx.gradingKeyQuestion.createMany({ data: questions.map((question, index) => ({ ...keyQuestionData(question, index), taskId: id })) });
-            await tx.gradingSubmission.updateMany({ where: { taskId: id, status: { in: ['graded', 'failed'] } }, data: { status: 'pending', totalScore: null } });
+            const lockedCount = await tx.gradingSubmission.count({
+                where: { taskId: id, status: { in: ["confirmed", "grading"] } },
+            });
+            if (lockedCount > 0) {
+                return { locked: true as const, resetIds: [] as string[] };
+            }
         }
+        await tx.gradingTask.update({ where: { id }, data: fields });
+        let resetIds: string[] = [];
+        if (questions) {
+            const resettable = await tx.gradingSubmission.findMany({
+                where: { taskId: id, status: { in: ["graded", "failed", "pending"] } },
+                select: { id: true },
+            });
+            resetIds = resettable.map((item) => item.id);
+            await tx.gradingKeyQuestion.deleteMany({ where: { taskId: id } });
+            await tx.gradingKeyQuestion.createMany({
+                data: questions.map((question, index) => ({ ...keyQuestionData(question, index), taskId: id })),
+            });
+            await tx.gradingSubmission.updateMany({
+                where: { taskId: id, status: { in: ["graded", "failed"] } },
+                data: { status: "pending", totalScore: null },
+            });
+        }
+        return { locked: false as const, resetIds };
     });
+
+    if (txOutcome.locked) {
+        return conflict("已有正在判分或已确认入库的答卷，无法全量替换标准答案");
+    }
+    if (txOutcome.resetIds.length > 0) {
+        scheduleGrading(txOutcome.resetIds, "zh");
+    }
     return NextResponse.json({ success: true });
 }
 

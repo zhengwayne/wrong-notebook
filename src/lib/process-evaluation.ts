@@ -69,7 +69,7 @@ export function getProcessCapsules(language: "zh" | "en" = "zh"): Record<Process
 export function visualAlertDefaultCapsules(alerts: readonly string[]): ProcessCapsuleKey[] {
     const out = new Set<ProcessCapsuleKey>();
     for (const alert of alerts) {
-        if (alert in ALERT_TO_CAPSULE) {
+        if (Object.hasOwn(ALERT_TO_CAPSULE, alert)) {
             out.add(ALERT_TO_CAPSULE[alert as VisualAlertKind]);
         }
     }
@@ -111,8 +111,8 @@ export function synthesizeTeacherComment(
         if (at) headerParts.push(`态度：${LEVEL_LABELS_ZH[at]}`);
     }
 
-    const sentences = (input.capsuleKeys ?? [])
-        .filter((k): k is ProcessCapsuleKey => k in capsules)
+    const sentences = Array.from(new Set(input.capsuleKeys ?? []))
+        .filter((k): k is ProcessCapsuleKey => Object.hasOwn(capsules, k))
         .map((k) => capsules[k].sentence);
 
     const prefix = headerParts.length > 0

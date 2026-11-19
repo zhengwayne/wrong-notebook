@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
     const tx = {
         gradingResult: { update: vi.fn(), findMany: vi.fn() },
-        gradingSubmission: { update: vi.fn() },
+        gradingSubmission: { update: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
     };
     return {
         tx,
@@ -56,7 +56,7 @@ describe('Task 2.3: 绿灯一键批量确认与按题号横向切题流 API', ()
         mocks.gradingSubmission.findMany.mockResolvedValue([{ id: 'sub-g1' }, { id: 'sub-g2' }]);
         mocks.confirmSubmission
             .mockResolvedValueOnce({ importedCount: 2 })
-            .mockResolvedValueOnce({ importedCount: 1 });
+            .mockResolvedValueOnce({ importedCount: 0, alreadyConfirmed: true });
 
         const res = await CONFIRM_BATCH(
             new Request('http://127.0.0.1/api/grading/tasks/task-1/confirm-batch', {
@@ -68,7 +68,7 @@ describe('Task 2.3: 绿灯一键批量确认与按题号横向切题流 API', ()
         );
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ confirmedCount: 2, importedCount: 3, skippedCount: 0 });
+        expect(await res.json()).toEqual({ confirmedCount: 1, importedCount: 2, skippedCount: 1 });
         expect(mocks.gradingSubmission.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({ taskId: 'task-1', status: 'graded', reviewBucket: 'green' }),
         }));
@@ -129,9 +129,33 @@ describe('Task 2.3: 绿灯一键批量确认与按题号横向切题流 API', ()
             { params: Promise.resolve({ id: 'task-1', questionId: 'kq-12' }) },
         );
         expect(patchRes.status).toBe(200);
+        expect(mocks.tx.gradingSubmission.updateMany).toHaveBeenCalledWith({
+            where: { id: 'sub-1', taskId: 'task-1', status: 'graded' },
+            data: { version: { increment: 1 } },
+        });
         expect(mocks.tx.gradingSubmission.update).toHaveBeenCalledWith({
             where: { id: 'sub-1' },
-            data: { totalScore: 14, version: { increment: 1 } },
+            data: { totalScore: 14 },
         });
+    });
+
+    it('横向切题流 PATCH 在并发 confirm 抢占失败时跳过修改已确认答卷', async () => {
+        mocks.gradingKeyQuestion.findFirst.mockResolvedValue({ id: 'kq-12', maxScore: 10 });
+        mocks.gradingResult.findMany.mockResolvedValueOnce([
+            { id: 'res-1', submissionId: 'sub-confirmed', score: 7, verdict: 'partial', source: 'ai' },
+        ]);
+        mocks.tx.gradingSubmission.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        const patchRes = await PATCH_STRIPS(
+            new Request('http://127.0.0.1/api/grading/tasks/task-1/questions/kq-12/strips', {
+                method: 'PATCH',
+                body: JSON.stringify({ updates: [{ resultId: 'res-1', score: 10 }] }),
+                headers: { 'Content-Type': 'application/json' },
+            }),
+            { params: Promise.resolve({ id: 'task-1', questionId: 'kq-12' }) },
+        );
+        expect(patchRes.status).toBe(200);
+        expect(await patchRes.json()).toEqual({ updatedCount: 0 });
+        expect(mocks.tx.gradingResult.update).not.toHaveBeenCalled();
     });
 });

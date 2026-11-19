@@ -114,4 +114,10 @@ describe('verifyComputable 与方程验算（OPT-09 + E7）', () => {
         expect(result.computable).toBe(false);
         expect(result.passed).toBe(false);
     });
+
+    it('避免物理单位吞掉代数变量，并防止自由变量退化为单点采样', () => {
+        expect(checkAnswers('2m', 'm + m').status).toBe('passed');
+        expect(checkAnswers('2米', 'm + m').status).toBe('failed');
+        expect(checkAnswers('2p', 'p + 1.87').status).toBe('failed');
+    });
 });

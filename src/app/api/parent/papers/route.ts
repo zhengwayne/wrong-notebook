@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, forbidden, badRequest, validationError, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { LearnerNotFoundError } from "@/lib/learners";
+import { runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
@@ -53,15 +54,23 @@ export async function POST(req: Request) {
     if (!requireParent(user)) return forbidden("Parent persona required");
     try {
         const body = createSchema.parse(await req.json());
-        const pages = await Promise.all(body.pages.map(async (page) => {
+        const pages: Array<{ imageUrl: string; originalImageUrl?: string | null }> = new Array(body.pages.length);
+        await runBoundedConcurrency(body.pages, 2, async (page, index) => {
             const upright = await uprightImageDataUrl(page.imageUrl);
             const cropped = await autoCropPaperImage(upright.dataUrl);
-            if (!cropped.cropped) return { imageUrl: upright.dataUrl };
-            return { imageUrl: cropped.imageUrl, originalImageUrl: upright.dataUrl };
-        }));
-        const answerKeyImages = body.answerKeyImages
-            ? await Promise.all(body.answerKeyImages.map(async (img) => (await normalizeImageDataUrl(img)).dataUrl))
-            : undefined;
+            pages[index] = {
+                imageUrl: cropped.cropped ? cropped.imageUrl : upright.dataUrl,
+                originalImageUrl: upright.dataUrl,
+            };
+        });
+        let answerKeyImages: string[] | undefined;
+        if (body.answerKeyImages) {
+            const normalizedKeys: string[] = new Array(body.answerKeyImages.length);
+            await runBoundedConcurrency(body.answerKeyImages, 2, async (img, index) => {
+                normalizedKeys[index] = (await normalizeImageDataUrl(img)).dataUrl;
+            });
+            answerKeyImages = normalizedKeys;
+        }
         const paper = await createParentPaper(prisma, user.id, { ...body, pages, answerKeyImages });
         return NextResponse.json(paper, { status: 201 });
     } catch (error) {

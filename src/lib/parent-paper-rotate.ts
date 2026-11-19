@@ -47,39 +47,50 @@ export async function rotateParentPaperPage(
     if (!paper) return null;
     const child = await getOwnedChildLearner(db, userId, paper.learnerId);
     if (!child) throw new LearnerNotFoundError();
+    if (paper.status === PARENT_PAPER_STATUS.confirmed) {
+        throw new ParentPaperStateError("ALREADY_CONFIRMED");
+    }
     if (paper.status === PARENT_PAPER_STATUS.recognizing) {
         throw new ParentPaperStateError("ALREADY_RECOGNIZING");
     }
     const page = paper.pages[params.pageIndex];
     if (!page) throw new ParentPaperValidationError("INVALID_PAGE_INDEX");
 
+    const snapshotVersion = paper.version;
     const rotated = await rotateImageDataUrl(page.imageUrl, params.degrees);
-    let rotatedOriginal: string | null = null;
-    if (page.originalImageUrl) {
-        rotatedOriginal = (await rotateImageDataUrl(page.originalImageUrl, params.degrees)).dataUrl;
-    }
+    const rotatedOriginal = page.originalImageUrl
+        ? (await rotateImageDataUrl(page.originalImageUrl, params.degrees)).dataUrl
+        : rotated.dataUrl;
 
     await db.$transaction(async (tx) => {
+        const claimed = await tx.parentPaper.updateMany({
+            where: {
+                id: paperId,
+                userId,
+                version: snapshotVersion,
+                status: { notIn: [PARENT_PAPER_STATUS.recognizing, PARENT_PAPER_STATUS.confirmed] },
+            },
+            data: { version: { increment: 1 } },
+        });
+        if (claimed.count === 0) {
+            throw new ParentPaperStateError("VERSION_CONFLICT");
+        }
         await tx.parentPaperPage.update({
             where: { id: page.id },
             data: {
                 imageUrl: rotated.dataUrl,
-                ...(page.originalImageUrl ? { originalImageUrl: rotatedOriginal } : {}),
+                originalImageUrl: rotatedOriginal,
             },
         });
         for (const question of paper.questions) {
             const bbox = parseBbox(question.bbox);
             if (!bbox || bbox.pageIndex !== params.pageIndex) continue;
             const next = transformNormalizedBBox(bbox, params.degrees);
-            await tx.parentPaperQuestion.update({
-                where: { id: question.id },
+            await tx.parentPaperQuestion.updateMany({
+                where: { id: question.id, paperId },
                 data: { bbox: JSON.stringify(next) },
             });
         }
-        await tx.parentPaper.update({
-            where: { id: paperId },
-            data: { version: { increment: 1 } },
-        });
     });
 
     return getParentPaper(db, userId, paperId);

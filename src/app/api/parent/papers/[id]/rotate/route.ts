@@ -33,6 +33,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         if (error instanceof LearnerNotFoundError) return notFound("Child not found");
         if (error instanceof ParentPaperStateError) {
             if (error.message === "ALREADY_RECOGNIZING") return conflict("Recognition already in progress");
+            if (error.message === "ALREADY_CONFIRMED") return conflict("Paper already confirmed");
+            if (error.message === "VERSION_CONFLICT") return conflict("Paper modified concurrently, please retry");
             return badRequest(error.message);
         }
         if (error instanceof ParentPaperValidationError) return badRequest(error.message);

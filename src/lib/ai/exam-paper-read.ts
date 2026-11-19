@@ -109,8 +109,9 @@ function cleanField(value: string | null): string | null {
 }
 
 function clampConfidence(raw: number | null | undefined): number | null {
-    if (raw === null || raw === undefined || !Number.isFinite(raw)) return null;
-    return Math.max(0, Math.min(1, raw));
+    if (raw === null || raw === undefined || !Number.isFinite(raw) || raw < 0 || raw > 100) return null;
+    const normalized = raw > 1 ? raw / 100 : raw;
+    return Math.max(0, Math.min(1, normalized));
 }
 
 /** 解析 AI 读卷回复（JSON，可带代码块） */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RotateCw } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { ZoomControls } from "@/components/zoom-controls";
@@ -61,8 +61,8 @@ export function ParentPaperOverlay({
     const { t } = useLanguage();
     const copy = t.parentPapers;
     const [manualPage, setManualPage] = useState<{ page: number; reveal: number } | null>(null);
-    const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState<QuestionBBox | null>(null);
+    const [editingPageId, setEditingPageId] = useState<string | null>(null);
+    const [draftState, setDraftState] = useState<{ pageId: string; box: QuestionBBox | null } | null>(null);
     const [exporting, setExporting] = useState(false);
     const [rotating, setRotating] = useState(false);
     const shellRef = useRef<HTMLDivElement | null>(null);
@@ -104,23 +104,28 @@ export function ParentPaperOverlay({
         : (manualPage?.page ?? 0);
     const safeIndex = Math.min(Math.max(0, rawIndex), Math.max(0, orderedPages.length - 1));
     const page = orderedPages[safeIndex];
+    const currentPageId = page?.id ?? "";
+    const editing = Boolean(currentPageId && editingPageId === currentPageId);
+    const draft = draftState && draftState.pageId === currentPageId ? draftState.box : null;
+    const setEditing = (next: boolean) => setEditingPageId(next && currentPageId ? currentPageId : null);
+    const setDraft = (next: QuestionBBox | null) => setDraftState(next && currentPageId ? { pageId: currentPageId, box: next } : null);
     const questionsOnPage = laidOutQuestions.filter((question) => question.bbox?.pageIndex === safeIndex);
     const badges = badgePlacements(questionsOnPage.filter((question) => question.bbox).map((question) => ({ id: question.id, bbox: question.bbox! })));
 
     const goToPage = (index: number) => {
         setManualPage({ page: index, reveal: revealToken });
-        setEditing(false);
-        setDraft(null);
+        setEditingPageId(null);
+        setDraftState(null);
         reset();
     };
 
-    const pageKeyRef = useRef(page?.id ?? "");
-    if (pageKeyRef.current !== (page?.id ?? "")) {
-        pageKeyRef.current = page?.id ?? "";
-        if (editing) setEditing(false);
-        if (draft) setDraft(null);
-        reset();
-    }
+    const pageKeyRef = useRef(currentPageId);
+    useEffect(() => {
+        if (pageKeyRef.current !== currentPageId) {
+            pageKeyRef.current = currentPageId;
+            reset();
+        }
+    }, [currentPageId, reset]);
 
     if (!page) return null;
 
@@ -222,6 +227,7 @@ export function ParentPaperOverlay({
         setRotating(true);
         try {
             await onRotatePage(safeIndex);
+            reset();
         } catch (error) {
             frontendLogger.error("[ParentPaperOverlay]", "Failed to rotate page", { error });
             toast.error(getApiErrorMessage(error) || copy.saveError);

@@ -36,9 +36,15 @@ describe('parseQuickAnswerKey', () => {
         expect(questions[9]).toMatchObject({ type: 'subjective', maxScore: 10, answer: '列方程求解' });
     });
 
-    it('返回无法识别的行号', () => {
+    it('返回无法识别的行号，保留带赋值公式的尾部数字与小写英文单词', () => {
         const { errors } = parseQuickAnswerKey('1-3 AB\n乱写\n\n4 C');
         expect(errors).toEqual([1, 2]);
+
+        const safeParsed = parseQuickAnswerKey('1 x = 2\n2 cafe 3分\n3 b 2');
+        expect(safeParsed.errors).toEqual([]);
+        expect(safeParsed.questions[0]).toMatchObject({ number: '1', answer: 'x = 2', maxScore: 1 });
+        expect(safeParsed.questions[1]).toMatchObject({ number: '2', answer: 'cafe', maxScore: 3 });
+        expect(safeParsed.questions[2]).toMatchObject({ number: '3', answer: 'B', maxScore: 2 });
     });
 });
 
@@ -59,6 +65,11 @@ describe('compareObjective', () => {
         expect(compareObjective('x=0.5', { answer: '\\frac{1}{2}' })).toBe('correct');
         expect(compareObjective('0.3', { answer: '\\frac{1}{3}' })).toBe('wrong');
         expect(compareObjective('(2, 1)', { answer: '(1, 2)' })).toBe('wrong');
+        expect(compareObjective('y = 2', { answer: 'x = 2' })).toBe('wrong');
+        expect(compareObjective('2x + 1', { answer: 'y = 2x + 1' })).toBe('wrong');
+        expect(compareObjective('face', { answer: 'cafe' })).toBe('wrong');
+        expect(compareObjective('dab', { answer: 'bad' })).toBe('wrong');
+        expect(compareObjective('dad', { answer: 'DA' })).toBe('wrong');
     });
 
     it('英语多词短语保留单词边界单空格，防止漏空格连写误判为正确', () => {

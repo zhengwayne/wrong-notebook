@@ -32,17 +32,15 @@ function grayFromRaw(data: Buffer, width: number, height: number, channels: numb
 export async function detectContentRotation(input: Buffer): Promise<ClockwiseRotation> {
     const { data, info } = await sharp(input, { failOn: "error", limitInputPixels: 40_000_000 })
         .rotate() // 若输入仍带 EXIF，先按方向转正再检测内容朝向
-        .resize({ width: ANALYZE_MAX_EDGE, height: ANALYZE_MAX_EDGE, fit: "inside", withoutEnlargement: false })
+        .resize({ width: ANALYZE_MAX_EDGE, height: ANALYZE_MAX_EDGE, fit: "inside", withoutEnlargement: true })
         .greyscale()
         .raw()
         .toBuffer({ resolveWithObject: true });
     return detectContentRotationFromGray(grayFromRaw(data, info.width, info.height, info.channels ?? 1));
 }
 
-export async function rotateImageDataUrl(dataUrl: string, clockwise: ClockwiseRotation): Promise<NormalizedImageResult> {
-    if (clockwise === 0) return normalizeImageDataUrl(dataUrl);
-    const current = await normalizeImageDataUrl(dataUrl);
-    const { data, info } = await sharp(current.buffer, { failOn: "error" })
+async function rotateBufferToResult(buffer: Buffer, clockwise: Exclude<ClockwiseRotation, 0>): Promise<NormalizedImageResult> {
+    const { data, info } = await sharp(buffer, { failOn: "error" })
         .rotate(clockwise)
         .jpeg({ quality: 90, mozjpeg: true })
         .toBuffer({ resolveWithObject: true });
@@ -58,6 +56,12 @@ export async function rotateImageDataUrl(dataUrl: string, clockwise: ClockwiseRo
     };
 }
 
+export async function rotateImageDataUrl(dataUrl: string, clockwise: ClockwiseRotation): Promise<NormalizedImageResult> {
+    if (clockwise === 0) return normalizeImageDataUrl(dataUrl);
+    const current = await normalizeImageDataUrl(dataUrl);
+    return rotateBufferToResult(current.buffer, clockwise);
+}
+
 /** 规范化（EXIF 转正+剥离）后再按内容朝向转正，保证送给模型和展示的图方向一致。 */
 export async function uprightImageDataUrl(dataUrl: string): Promise<UprightImageResult> {
     const normalized = await normalizeImageDataUrl(dataUrl);
@@ -65,6 +69,6 @@ export async function uprightImageDataUrl(dataUrl: string): Promise<UprightImage
     if (contentRotation === 0) {
         return { ...normalized, contentRotation };
     }
-    const rotated = await rotateImageDataUrl(normalized.dataUrl, contentRotation);
+    const rotated = await rotateBufferToResult(normalized.buffer, contentRotation);
     return { ...rotated, contentRotation };
 }

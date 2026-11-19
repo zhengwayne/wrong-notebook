@@ -13,6 +13,7 @@ import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
 import { ensureLearnerForGradingStudent } from "@/lib/learners";
 import { DEFAULT_GRADING_CONCURRENCY, resolveCroppedGradingItemImage, runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
+import { parseMatchReason } from "@/lib/grading-match-json";
 import { ensureQuickStudentInClass, inferAnswerKeyFromSampleImages } from "@/lib/grading-quick-key";
 import { computeSubmissionBucket } from "@/lib/grading-triage";
 import {
@@ -23,6 +24,70 @@ import type { AnswerSourceKind, KeyQuestion, KeyQuestionInput } from "@/lib/grad
 import { flagDuplicate, hasIdentity, matchStudent, type MatchResult, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
 
 const logger = createLogger('grading');
+
+const globalForGrading = globalThis as unknown as {
+    __wnQuickKeyInflight?: Map<string, Promise<void>>;
+    __wnActiveGrading?: Set<string>;
+};
+
+function getQuickKeyInflight(): Map<string, Promise<void>> {
+    if (!globalForGrading.__wnQuickKeyInflight) {
+        globalForGrading.__wnQuickKeyInflight = new Map();
+    }
+    return globalForGrading.__wnQuickKeyInflight;
+}
+
+function getActiveGradingSet(): Set<string> {
+    if (!globalForGrading.__wnActiveGrading) {
+        globalForGrading.__wnActiveGrading = new Set();
+    }
+    return globalForGrading.__wnActiveGrading;
+}
+
+export function isSubmissionQueued(submissionId: string): boolean {
+    return getActiveGradingSet().has(submissionId);
+}
+
+async function ensureQuickInferredKey(
+    taskId: string,
+    images: string[],
+    subjectName: string,
+    language: 'zh' | 'en',
+): Promise<KeyQuestion[]> {
+    const inflight = getQuickKeyInflight();
+    let job = inflight.get(taskId);
+    if (!job) {
+        job = (async () => {
+            const inferred = await inferAnswerKeyFromSampleImages(images, subjectName, language);
+            if (inferred.length === 0) {
+                throw new Error('QUICK_KEY_INFER_EMPTY');
+            }
+            await prisma.$transaction(async (tx) => {
+                const existingCount = await tx.gradingKeyQuestion.count({ where: { taskId } });
+                if (existingCount === 0) {
+                    await tx.gradingKeyQuestion.createMany({
+                        data: inferred.map((qItem, idx) => ({
+                            taskId,
+                            ...keyQuestionData(qItem, idx),
+                        })),
+                    });
+                }
+            });
+        })().finally(() => {
+            inflight.delete(taskId);
+        });
+        inflight.set(taskId, job);
+    }
+    await job;
+    const refreshed = await prisma.gradingKeyQuestion.findMany({
+        where: { taskId },
+        orderBy: { order: 'asc' },
+    });
+    if (refreshed.length === 0) {
+        throw new Error('QUICK_KEY_INFER_EMPTY');
+    }
+    return refreshed.map(toKeyQuestion);
+}
 
 type KeyQuestionRow = {
     id: string; order: number; number: string; type: string; maxScore: number; answer: string;
@@ -154,32 +219,21 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         include: { task: { include: { questions: { orderBy: { order: 'asc' } } } } },
     });
     if (!submission) return;
+    if (submission.status === 'confirmed' || submission.status === 'grading') return;
+
+    const claimed = await prisma.gradingSubmission.updateMany({
+        where: { id: submissionId, status: { notIn: ['confirmed', 'grading'] } },
+        data: { status: 'grading', error: null },
+    });
+    if (claimed.count === 0) return;
+
     let questions = submission.task.questions.map(toKeyQuestion);
-    await prisma.gradingSubmission.update({ where: { id: submissionId }, data: { status: 'grading', error: null } });
 
     try {
         const images = parseJsonStringArray(submission.images);
-        // 随堂无答案速批模式：若当前任务尚无标准答案，用首份样本卷三段解耦推导标准答案并落库复用
+        // 随堂无答案速批模式：若当前任务尚无标准答案，用按 taskId 去重的单飞流水线推导并落库复用
         if (questions.length === 0 && submission.task.taskMode === 'quick' && images.length > 0) {
-            const inferred = await inferAnswerKeyFromSampleImages(images, submission.task.subjectName, language);
-            if (inferred.length > 0) {
-                await prisma.$transaction(async (tx) => {
-                    const existingCount = await tx.gradingKeyQuestion.count({ where: { taskId: submission.taskId } });
-                    if (existingCount === 0) {
-                        await tx.gradingKeyQuestion.createMany({
-                            data: inferred.map((qItem, idx) => ({
-                                taskId: submission.taskId,
-                                ...keyQuestionData(qItem, idx),
-                            })),
-                        });
-                    }
-                });
-                const refreshed = await prisma.gradingKeyQuestion.findMany({
-                    where: { taskId: submission.taskId },
-                    orderBy: { order: 'asc' },
-                });
-                questions = refreshed.map(toKeyQuestion);
-            }
+            questions = await ensureQuickInferredKey(submission.taskId, images, submission.task.subjectName, language);
         }
         const read = await getAIService('vision').readExamPaper({
             mode: 'student',
@@ -199,8 +253,9 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             if (hasIdentity(identity) || submission.matchStatus === null) {
                 const roster = await loadTaskRoster(submission.task);
                 identityData = resolveMatch(identity, roster, await takenStudentIds(submission.taskId, submissionId));
-                // 随堂速批免花名册模式：若姓名清晰但花名册中无此学生，自动在任务班级补建学生档案
-                if (!identityData.studentId && submission.task.taskMode === 'quick' && identity.name?.trim()) {
+                const matchReasonCode = parseMatchReason(identityData.matchReason as string | null | undefined)?.code;
+                // 仅在完全查无此人 (not_found) 且姓名清晰时自动建档并置为黄灯核验，严禁覆盖重卷或冲突卷
+                if (!identityData.studentId && matchReasonCode === 'not_found' && submission.task.taskMode === 'quick' && identity.name?.trim()) {
                     const createdStu = await ensureQuickStudentInClass(prisma, {
                         userId: submission.task.userId,
                         classId: submission.task.classId,
@@ -211,7 +266,7 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
                         ...identityData,
                         studentId: createdStu.id,
                         matchStatus: 'auto',
-                        matchConfidence: 0.92,
+                        matchConfidence: 0.85,
                     };
                 }
             }
@@ -219,11 +274,12 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
 
         const provenanceId = await recordAiProvenance(prisma, { task: 'grade', role: 'vision' });
         const appearance = read.paperAppearance;
+        const uniqueVisualAlerts = Array.from(new Set(appearance?.visualAlerts ?? []));
         const appearanceData = appearance ? {
             ...(submission.handwritingLevel ? {} : { handwritingLevel: appearance.handwritingLevel }),
             ...(submission.neatnessLevel ? {} : { neatnessLevel: appearance.neatnessLevel }),
             ...(submission.attitudeLevel ? {} : { attitudeLevel: appearance.attitudeLevel }),
-            visualAlerts: appearance.visualAlerts.length > 0 ? JSON.stringify(appearance.visualAlerts) : null,
+            visualAlerts: uniqueVisualAlerts.length > 0 ? JSON.stringify(uniqueVisualAlerts) : null,
         } : {};
 
         const finalStudentId = (identityData.studentId as string | null | undefined) !== undefined
@@ -240,7 +296,8 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             studentId: finalStudentId,
             matchStatus: finalMatchStatus,
             matchConfidence: finalMatchConfidence,
-            visualAlertsCount: appearance?.visualAlerts.length ?? 0,
+            visualAlertsCount: uniqueVisualAlerts.length,
+            hasUnverifiedKey: questions.some((q) => q.answerSource === 'ai_inferred'),
             results: graded.map((res) => ({
                 type: questionTypeById.get(res.keyQuestionId) || 'objective',
                 verdict: res.verdict,
@@ -248,29 +305,50 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             })),
         });
 
-        await prisma.$transaction([
-            prisma.gradingResult.deleteMany({ where: { submissionId } }),
-            prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) }),
-            prisma.gradingSubmission.update({
-                where: { id: submissionId },
-                data: { status: 'graded', reviewBucket, totalScore: totalScore(graded), error: null, ...identityData, ...appearanceData },
-            }),
-        ]);
+        await prisma.$transaction(async (tx) => {
+            const finalized = await tx.gradingSubmission.updateMany({
+                where: { id: submissionId, status: { not: 'confirmed' } },
+                data: {
+                    status: 'graded',
+                    reviewBucket,
+                    totalScore: totalScore(graded),
+                    error: null,
+                    ...identityData,
+                    ...appearanceData,
+                    version: { increment: 1 },
+                },
+            });
+            if (finalized.count === 0) return;
+            await tx.gradingResult.deleteMany({ where: { submissionId } });
+            await tx.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) });
+        });
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');
     } catch (error) {
         logger.error({ error, submissionId }, '答卷判分失败');
-        await prisma.gradingSubmission.update({
-            where: { id: submissionId },
+        await prisma.gradingSubmission.updateMany({
+            where: { id: submissionId, status: { not: 'confirmed' } },
             data: { status: 'failed', error: getErrorMessage(error).slice(0, 500) },
         });
     }
 }
 
-/** 在后台按有界并发池（默认 3 路）判分，大幅缩短全班几十份试卷的等待时间且受控不打满并发 */
+/** 在后台按有界并发池（默认 3 路）判分，并对同 submissionId 去重避免重复调度 */
 export function scheduleGrading(submissionIds: string[], language: 'zh' | 'en'): void {
-    void runBoundedConcurrency(submissionIds, DEFAULT_GRADING_CONCURRENCY, async (id) => {
-        await gradeSubmission(id, language);
-    }).catch((error) => logger.error({ error }, '后台判分异常'));
+    const active = getActiveGradingSet();
+    const toRun = [...new Set(submissionIds)].filter((id) => !active.has(id));
+    if (toRun.length === 0) return;
+    for (const id of toRun) active.add(id);
+
+    void runBoundedConcurrency(toRun, DEFAULT_GRADING_CONCURRENCY, async (id) => {
+        try {
+            await gradeSubmission(id, language);
+        } finally {
+            active.delete(id);
+        }
+    }).catch((error) => {
+        for (const id of toRun) active.delete(id);
+        logger.error({ error }, '后台判分异常');
+    });
 }
 
 async function resolveStudentNotebook(tx: Prisma.TransactionClient, userId: string, name: string, subjectName: string) {
@@ -307,7 +385,7 @@ export async function confirmSubmission(
     submissionId: string,
     userId: string,
     options?: { expectedVersion?: number },
-): Promise<{ importedCount: number } | null> {
+): Promise<{ importedCount: number; alreadyConfirmed?: boolean } | null> {
     const submission = await prisma.gradingSubmission.findFirst({
         where: { id: submissionId, task: { userId } },
         include: { task: true, student: true, results: { include: { keyQuestion: true } } },
@@ -321,7 +399,7 @@ export async function confirmSubmission(
         throw new Error('VERSION_CONFLICT');
     }
     if (submission.status === 'confirmed') {
-        return { importedCount: 0 };
+        return { importedCount: 0, alreadyConfirmed: true };
     }
 
     const snapshotVersion = submission.version;
@@ -362,7 +440,7 @@ export async function confirmSubmission(
                 select: { status: true },
             });
             if (!latest) return null;
-            if (latest.status === 'confirmed') return 0;
+            if (latest.status === 'confirmed') return -1;
             if (latest.status === 'grading' || latest.status === 'failed') throw new Error('SUBMISSION_LOCKED');
             throw new Error('VERSION_CONFLICT');
         }
@@ -439,5 +517,6 @@ export async function confirmSubmission(
         return count;
     });
     if (imported === null) return null;
+    if (imported === -1) return { importedCount: 0, alreadyConfirmed: true };
     return { importedCount: imported };
 }

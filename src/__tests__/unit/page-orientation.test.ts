@@ -56,6 +56,23 @@ describe("detectContentRotationFromGray", () => {
         expect(detectContentRotationFromGray(await grayFrom(flipped))).toBe(180);
     });
 
+    it("keeps a half-filled upright worksheet with blank lower half at 0° instead of flipping 180°", async () => {
+        const width = 200, height = 280;
+        const raw = Buffer.alloc(width * height, 255);
+        for (let y = 30; y < 120; y += 10) {
+            for (let dy = 0; dy < 5; dy += 1) raw.fill(20, (y + dy) * width + 16, (y + dy) * width + (width - 16));
+        }
+        const halfFilled = await sharp(raw, { raw: { width, height, channels: 1 } }).jpeg({ quality: 95 }).toBuffer();
+        expect(detectContentRotationFromGray(await grayFrom(halfFilled))).toBe(0);
+    });
+
+    it("does not enlarge tiny images past MIN_SIDE during content orientation check", async () => {
+        const tiny = await sharp({
+            create: { width: 24, height: 16, channels: 3, background: "#ffffff" },
+        }).jpeg().toBuffer();
+        expect(await detectContentRotation(tiny)).toBe(0);
+    });
+
     it("does not rotate a nearly blank page", async () => {
         const blank = await sharp({
             create: { width: 160, height: 220, channels: 3, background: "#ffffff" },

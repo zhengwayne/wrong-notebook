@@ -101,51 +101,39 @@ async function normalizeAnswerKeyImages(images: string[] | undefined): Promise<s
 }
 
 
-async function ensurePagesAutoCropped(
+export async function ensurePagesAutoCropped(
     db: PrismaClient,
     pages: Array<{ id: string; position: number; imageUrl: string; originalImageUrl?: string | null }>,
 ): Promise<Array<{ id: string; position: number; imageUrl: string }>> {
     const prepared = [];
     for (const page of pages) {
         if (page.originalImageUrl) {
-            try {
-                const upright = await uprightImageDataUrl(page.originalImageUrl);
-                if (upright.contentRotation !== 0) {
-                    const recropped = await autoCropPaperImage(upright.dataUrl);
-                    const nextImage = recropped.cropped ? recropped.imageUrl : upright.dataUrl;
-                    await db.parentPaperPage.update({
-                        where: { id: page.id },
-                        data: { originalImageUrl: upright.dataUrl, imageUrl: nextImage },
-                    });
-                    prepared.push({ id: page.id, position: page.position, imageUrl: nextImage });
-                    continue;
-                }
-            } catch {
-                // 已有原图且无法转正时沿用当前展示图
-            }
+            // 已有 originalImageUrl 表示页面已完成初始转正或经家长手动旋转，不再重跑自动旋转以免覆盖
             prepared.push({ id: page.id, position: page.position, imageUrl: page.imageUrl });
             continue;
         }
         let cleanUrl = page.imageUrl;
+        let normalized = false;
         try {
             cleanUrl = (await uprightImageDataUrl(page.imageUrl)).dataUrl;
+            normalized = true;
         } catch {
             try {
                 cleanUrl = (await normalizeImageDataUrl(page.imageUrl)).dataUrl;
+                normalized = true;
             } catch {
                 // 若是特殊 mock/内联历史数据，保留原样由后续裁切处理
             }
         }
         const result = await autoCropPaperImage(cleanUrl);
-        if (result.cropped && result.imageUrl !== page.imageUrl) {
+        const nextImage = result.cropped ? result.imageUrl : cleanUrl;
+        if (normalized || nextImage !== page.imageUrl) {
             await db.parentPaperPage.update({
                 where: { id: page.id },
-                data: { originalImageUrl: cleanUrl, imageUrl: result.imageUrl },
+                data: { originalImageUrl: cleanUrl, imageUrl: nextImage },
             });
-            prepared.push({ id: page.id, position: page.position, imageUrl: result.imageUrl });
-        } else {
-            prepared.push({ id: page.id, position: page.position, imageUrl: cleanUrl });
         }
+        prepared.push({ id: page.id, position: page.position, imageUrl: nextImage });
     }
     return prepared;
 }

@@ -23,6 +23,15 @@ describe("validateQuestionBBox", () => {
         });
     });
 
+    it("keeps normalized boxes within 1.05 margin tolerance and deducts negative overflow from width/height", () => {
+        expect(validateQuestionBBox({ pageIndex: 0, x: 0.02, y: 0.1, width: 1.02, height: 0.2 }, pageCount)).toEqual({
+            pageIndex: 0, x: 0.02, y: 0.1, width: 0.98, height: 0.2,
+        });
+        expect(validateQuestionBBox({ pageIndex: 0, x: -0.05, y: 0.1, width: 0.5, height: 0.2 }, pageCount)).toEqual({
+            pageIndex: 0, x: 0, y: 0.1, width: 0.45, height: 0.2,
+        });
+    });
+
     it("accepts 0-100 percentages", () => {
         expect(validateQuestionBBox({ pageIndex: 0, x: 10, y: 20, width: 50, height: 25 }, pageCount)).toEqual({
             pageIndex: 0, x: 0.1, y: 0.2, width: 0.5, height: 0.25,

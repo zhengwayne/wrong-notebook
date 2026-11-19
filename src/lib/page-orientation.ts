@@ -111,6 +111,7 @@ export function detectContentRotationFromGray(image: GrayImage): ClockwiseRotati
         if (
             base.topInkRatio > base.botInkRatio * UPSIDE_DOWN_FACTOR
             && base.topInkRatio - base.botInkRatio > UPSIDE_DOWN_DELTA
+            && base.botInkRatio >= 0.03
         ) {
             return 180;
         }

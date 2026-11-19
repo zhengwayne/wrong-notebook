@@ -327,8 +327,11 @@ function expandPlusMinus(text: string): string[] | null {
     return [`${left}+${right}`, `${left}-${right}`];
 }
 
+const scalarMeta = new WeakMap<ParsedAnswer, { rawExpr?: string; asciiUnit?: boolean; assignedVar?: string }>();
+
 function parseSingleScalarOrText(raw: string): ParsedAnswer {
     let text = raw.trim();
+    let assignedVar: string | undefined;
     // 剥离单变量常数赋值前缀（如 "x = 3" 或 "v0 = 5"）
     const assignMatch = /^([a-zA-Z][a-zA-Z0-9_]*)\s*=\s*(.+)$/.exec(text);
     if (assignMatch && !ALLOWED_FUNCTIONS.has(assignMatch[1].toLowerCase()) && !MATH_CONSTANTS.has(assignMatch[1])) {
@@ -342,30 +345,48 @@ function parseSingleScalarOrText(raw: string): ParsedAnswer {
             isPureConstantRhs = TRAILING_UNIT_RE.test(rhs);
         }
         if (isPureConstantRhs) {
+            assignedVar = assignMatch[1].toLowerCase();
             text = rhs;
         }
     }
 
+    const rawBeforeUnit = text;
     let unit: string | undefined;
+    let rawUnitToken = '';
     const unitMatch = TRAILING_UNIT_RE.exec(text);
     if (unitMatch) {
         const valuePart = unitMatch[1].trim();
         const rawUnit = unitMatch[2].toLowerCase();
         unit = UNIT_ALIASES[rawUnit] || rawUnit;
+        rawUnitToken = rawUnit;
         text = valuePart;
     }
 
     const compact = text.replace(/\s+/g, '');
     if (/[\u4e00-\u9fff]/.test(compact) && !/[+\-*/^=()<>]/.test(compact)) {
-        return unit
+        const zhRes: ParsedAnswer = unit
             ? { kind: 'scalar', value: compact.toLowerCase(), unit }
             : { kind: 'text', value: compact.toLowerCase() };
+        if (assignedVar) scalarMeta.set(zhRes, { assignedVar });
+        return zhRes;
     }
-    return {
+    const result: ParsedAnswer = {
         kind: 'scalar',
         value: compact.toLowerCase(),
         ...(unit ? { unit } : {}),
     };
+    if ((unit && rawUnitToken) || assignedVar) {
+        scalarMeta.set(result, {
+            ...(unit && rawUnitToken
+                ? {
+                    rawExpr: rawBeforeUnit.replace(/\s+/g, '').toLowerCase(),
+                    asciiUnit: /^[a-z]+$/i.test(rawUnitToken),
+                }
+                : {}),
+            ...(assignedVar ? { assignedVar } : {}),
+        });
+    }
+    return result;
 }
 
 /** 将答案文本结构化解析为 scalar | tuple | set | parts | text */
@@ -491,9 +512,10 @@ function symbolicCheck(left: string, right: string, epsilon: number): CheckResul
         let allZero = true;
         let sampled = 0;
         const compiled = diffNode.compile();
-        for (const preset of SAMPLE_SCOPES) {
+        for (let roundIndex = 0; roundIndex < SAMPLE_SCOPES.length; roundIndex += 1) {
+            const preset = SAMPLE_SCOPES[roundIndex];
             const scope: Record<string, number> = { ...BUILTIN_EVAL_SCOPE };
-            let offset = 1.5;
+            let offset = 1.5 + roundIndex * 1.13;
             for (const name of freeVars) {
                 scope[name] = name in preset ? preset[name as keyof typeof preset] : (offset += 0.37);
             }
@@ -597,13 +619,33 @@ function compareParsed(left: ParsedAnswer, right: ParsedAnswer, options: Require
         return { status: 'failed', reason: '文本内容不一致' };
     }
 
-    // 5. 标量（含单位与数值/符号比较）
+    // 5. 标量（含变量赋值校验、单位与数值/符号比较）
+    const leftAssignVar = scalarMeta.get(left)?.assignedVar;
+    const rightAssignVar = scalarMeta.get(right)?.assignedVar;
+    if (leftAssignVar && rightAssignVar && leftAssignVar !== rightAssignVar) {
+        return { status: 'failed', reason: `赋值变量名称不一致（${leftAssignVar} vs ${rightAssignVar}）` };
+    }
     if (left.unit || right.unit) {
         if (left.unit && right.unit) {
             if (left.unit !== right.unit) {
                 return { status: 'failed', reason: `单位不一致（${left.unit} vs ${right.unit}）` };
             }
         } else if (!options.ignoreUnitIfOneSided) {
+            const withUnit = left.unit ? left : right;
+            const withoutUnit = left.unit ? right : left;
+            const meta = scalarMeta.get(withUnit);
+            // 当单边尾部仅是 ASCII 字母（如 2m）而另一侧含自由变量（如 m+m）时，按纯代数式回退比对
+            if (meta?.asciiUnit) {
+                const leftExpr = left.unit ? (scalarMeta.get(left)?.rawExpr ?? `${left.value}${left.unit}`) : left.value;
+                const rightExpr = right.unit ? (scalarMeta.get(right)?.rawExpr ?? `${right.value}${right.unit}`) : right.value;
+                try {
+                    if (collectFreeVariables(parseSafeNode(withoutUnit.value)).size > 0) {
+                        return symbolicCheck(leftExpr, rightExpr, options.epsilon);
+                    }
+                } catch {
+                    // 非法代数表达式则维持缺失单位判定
+                }
+            }
             return { status: 'failed', reason: '一方缺失单位' };
         }
     }
@@ -637,6 +679,17 @@ export function checkAnswers(expected: string, actual: string, options: CheckOpt
 /** 比较两个答案是否一致（仅在结构化比对明确通过时返回 true） */
 export function answersEquivalent(expected: string, actual: string, epsilon: number = DEFAULT_EPSILON): boolean {
     return checkAnswers(expected, actual, { epsilon }).status === 'passed';
+}
+
+/** 判断表达式（剔除单位后）是否不含任何未绑定自由变量，用于单边方程变量前缀剥离保护 */
+export function isConstantScalarExpression(raw: string): boolean {
+    const parsed = parseAnswer(raw);
+    if (parsed.kind !== 'scalar') return false;
+    try {
+        return collectFreeVariables(parseSafeNode(parsed.value)).size === 0;
+    } catch {
+        return false;
+    }
 }
 
 function extractCandidateRoots(target: string, freeVars: Set<string>, epsilon: number): Array<Record<string, number>> | null {

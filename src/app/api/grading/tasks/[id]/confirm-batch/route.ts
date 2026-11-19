@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { notFound, validationError } from "@/lib/api-errors";
 import { confirmSubmission } from "@/lib/grading-service";
+import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
 
+const logger = createLogger("api:grading:confirm-batch");
+const MAX_BATCH_CONFIRM = 100;
+
 const batchSchema = z.object({
-    submissionIds: z.array(z.string().min(1)).max(200).optional(),
+    submissionIds: z.array(z.string().min(1)).max(MAX_BATCH_CONFIRM).optional(),
 });
 
 /**
@@ -40,6 +44,7 @@ export const POST = defineApiRoute({ auth: "user" }, async (req, { user, params 
         },
         select: { id: true },
         orderBy: { createdAt: "asc" },
+        take: MAX_BATCH_CONFIRM,
     });
 
     let confirmedCount = 0;
@@ -49,13 +54,14 @@ export const POST = defineApiRoute({ auth: "user" }, async (req, { user, params 
     for (const candidate of candidates) {
         try {
             const res = await confirmSubmission(candidate.id, user.id);
-            if (res) {
+            if (res && !res.alreadyConfirmed) {
                 confirmedCount += 1;
                 importedCount += res.importedCount;
             } else {
                 skippedCount += 1;
             }
-        } catch {
+        } catch (error) {
+            logger.warn({ taskId, submissionId: candidate.id, error }, "批量确认单份答卷失败并跳过");
             skippedCount += 1;
         }
     }

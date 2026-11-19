@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     submissionCreate: vi.fn(),
     submissionFindFirst: vi.fn(),
     submissionUpdate: vi.fn(),
+    submissionUpdateMany: vi.fn(),
     resultUpdate: vi.fn(),
     studentFindFirst: vi.fn(),
     transaction: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         gradingClass: { findFirst: mocks.classFindFirst, count: mocks.classCount },
         gradingTask: { create: mocks.taskCreate, findFirst: mocks.taskFindFirst },
-        gradingSubmission: { create: mocks.submissionCreate, findFirst: mocks.submissionFindFirst, findMany: mocks.submissionFindMany, update: mocks.submissionUpdate },
+        gradingSubmission: { create: mocks.submissionCreate, findFirst: mocks.submissionFindFirst, findMany: mocks.submissionFindMany, update: mocks.submissionUpdate, updateMany: mocks.submissionUpdateMany },
         gradingResult: { update: mocks.resultUpdate },
         gradingStudent: { findFirst: mocks.studentFindFirst, findMany: mocks.studentFindMany },
         $transaction: mocks.transaction,
@@ -57,11 +58,11 @@ const keyRow = (id: string, number: string, maxScore: number) => ({
     id, number, maxScore, order: 0, type: 'objective', answer: 'A', acceptedAnswers: null, questionText: null, knowledgePoints: null,
 });
 const submissionRow = () => ({
-    id: 'p1', studentId: null, detectedName: null, status: 'graded', totalScore: 0, error: null, importedCount: 0, images: JSON.stringify([IMAGE]),
+    id: 'p1', studentId: null, detectedName: null, status: 'graded', version: 0, matchStatus: null, matchConfidence: null, visualAlerts: null, totalScore: 0, error: null, importedCount: 0, images: JSON.stringify([IMAGE]),
     task: { id: 't1', classId: 'c1', title: '单元测' }, student: null,
     results: [
-        { id: 'r1', score: 0, verdict: 'wrong', keyQuestion: keyRow('k1', '1', 2) },
-        { id: 'r2', score: 3, verdict: 'correct', keyQuestion: keyRow('k2', '2', 3) },
+        { id: 'r1', score: 0, verdict: 'wrong', confidence: 0.95, keyQuestion: keyRow('k1', '1', 2) },
+        { id: 'r2', score: 3, verdict: 'correct', confidence: 0.95, keyQuestion: keyRow('k2', '2', 3) },
     ],
 });
 
@@ -69,7 +70,17 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCurrentUser.mockResolvedValue({ id: 'u1', role: 'user' });
     mocks.consumeAiQuota.mockResolvedValue(null);
-    mocks.transaction.mockResolvedValue([]);
+    mocks.submissionUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.transaction.mockImplementation(async (arg: unknown) => {
+        if (typeof arg === 'function') {
+            return (arg as (tx: unknown) => Promise<unknown>)({
+                gradingSubmission: { findFirst: mocks.submissionFindFirst, updateMany: mocks.submissionUpdateMany, update: mocks.submissionUpdate },
+                gradingResult: { update: mocks.resultUpdate },
+                gradingStudent: { findFirst: mocks.studentFindFirst },
+            });
+        }
+        return Promise.all(arg as Promise<unknown>[]);
+    });
     mocks.classCount.mockResolvedValue(1);
     mocks.submissionFindMany.mockResolvedValue([]);
     mocks.studentFindMany.mockResolvedValue([
@@ -181,8 +192,12 @@ describe('PATCH /api/grading/submissions/:id', () => {
         mocks.submissionUpdate.mockReturnValue('update-p1');
         const response = await patchSubmission(json({ results: [{ id: 'r1', verdict: 'correct' }] }, 'PATCH'), params('p1'));
         expect(response.status).toBe(200);
+        expect(mocks.submissionUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'p1', version: 0, status: { notIn: ['confirmed', 'grading'] } },
+            data: { version: { increment: 1 } },
+        }));
         expect(mocks.resultUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { verdict: 'correct', score: 2, source: 'teacher' } });
-        expect(mocks.submissionUpdate).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { totalScore: 5, version: { increment: 1 } } });
+        expect(mocks.submissionUpdate).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { totalScore: 5, reviewBucket: 'yellow' } });
     });
 
     it('已确认或正在判分的答卷不允许修改，返回 409', async () => {

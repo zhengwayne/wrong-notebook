@@ -21,11 +21,15 @@ export const keyQuestionsSchema = z.array(keyQuestionSchema).max(MAX_GRADING_QUE
 
 export const languageSchema = z.enum(['zh', 'en']).catch('zh').default('zh');
 
-export const resultOverrideSchema = z.object({
+export const resultOverrideBaseSchema = z.object({
     id: z.string().min(1),
     verdict: z.enum(GRADING_VERDICTS).optional(),
     score: z.number().min(0).max(1000).optional(),
-}).refine((value) => value.verdict !== undefined || value.score !== undefined);
+});
+
+export const resultOverrideSchema = resultOverrideBaseSchema.refine(
+    (value) => value.verdict !== undefined || value.score !== undefined,
+);
 
 /** 拍照时识别出的卷头身份 */
 export const identitySchema = z.object({

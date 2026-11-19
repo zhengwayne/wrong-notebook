@@ -106,27 +106,40 @@ export const PATCH = defineApiRoute({ auth: "user" }, async (req, { user, params
         select: { id: true, submissionId: true, score: true, verdict: true, source: true },
     });
     const resultMap = new Map(existingResults.map((r) => [r.id, r]));
+    const updatesBySubmission = new Map<string, typeof parsed.data.updates>();
+    for (const upd of parsed.data.updates) {
+        const current = resultMap.get(upd.resultId);
+        if (!current) continue;
+        const list = updatesBySubmission.get(current.submissionId) || [];
+        list.push(upd);
+        updatesBySubmission.set(current.submissionId, list);
+    }
+
     const touchedSubmissionIds = new Set<string>();
 
     await prisma.$transaction(async (tx) => {
-        for (const upd of parsed.data.updates) {
-            const current = resultMap.get(upd.resultId);
-            if (!current) continue;
-            const hasScoreChange = upd.score !== undefined || upd.verdict !== undefined;
-            const overridden = hasScoreChange
-                ? applyTeacherOverride(keyQuestion.maxScore, { score: upd.score, verdict: upd.verdict })
-                : null;
-            await tx.gradingResult.update({
-                where: { id: current.id },
-                data: {
-                    ...(overridden ?? {}),
-                    ...(upd.comment !== undefined ? { comment: upd.comment } : {}),
-                },
+        for (const [subId, subUpdates] of updatesBySubmission) {
+            const claimed = await tx.gradingSubmission.updateMany({
+                where: { id: subId, taskId, status: "graded" },
+                data: { version: { increment: 1 } },
             });
-            touchedSubmissionIds.add(current.submissionId);
-        }
+            if (claimed.count === 0) continue;
 
-        for (const subId of touchedSubmissionIds) {
+            for (const upd of subUpdates) {
+                const current = resultMap.get(upd.resultId)!;
+                const hasScoreChange = upd.score !== undefined || upd.verdict !== undefined;
+                const overridden = hasScoreChange
+                    ? applyTeacherOverride(keyQuestion.maxScore, { score: upd.score, verdict: upd.verdict })
+                    : null;
+                await tx.gradingResult.update({
+                    where: { id: current.id },
+                    data: {
+                        ...(overridden ?? {}),
+                        ...(upd.comment !== undefined ? { comment: upd.comment } : {}),
+                    },
+                });
+            }
+
             const allRes = await tx.gradingResult.findMany({
                 where: { submissionId: subId },
                 select: { score: true },
@@ -135,9 +148,9 @@ export const PATCH = defineApiRoute({ auth: "user" }, async (req, { user, params
                 where: { id: subId },
                 data: {
                     totalScore: totalScore(allRes),
-                    version: { increment: 1 },
                 },
             });
+            touchedSubmissionIds.add(subId);
         }
     });
 

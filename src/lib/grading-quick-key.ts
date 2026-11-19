@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
 import { MAX_GRADING_QUESTIONS, type KeyQuestionInput } from "@/lib/grading";
+import { runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
+import { withBridgeMutex } from "@/lib/grading-share-tokens";
 import { ensureLearnerForGradingStudent } from "@/lib/learners";
 import { createLogger } from "@/lib/logger";
 
@@ -11,55 +13,113 @@ const logger = createLogger("grading-quick-key");
 
 export const DEFAULT_QUICK_CLASS_NAME = "随堂速批班";
 
+function hasTransactionSupport(db: Db): boolean {
+    return "$transaction" in db && typeof (db as PrismaClient).$transaction === "function";
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+    return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2002";
+}
+
 /**
  * 免花名册开箱即用：当老师尚未创建任何班级便直接发起「随堂速批」时，自动创建或复用默认随堂班级。
  */
 export async function ensureDefaultQuickClass(db: Db, userId: string): Promise<{ id: string; name: string }> {
-    const existing = await db.gradingClass.findFirst({
-        where: { userId, name: DEFAULT_QUICK_CLASS_NAME },
-        select: { id: true, name: true },
-    });
-    if (existing) return existing;
-    return db.gradingClass.create({
-        data: { userId, name: DEFAULT_QUICK_CLASS_NAME },
-        select: { id: true, name: true },
-    });
+    const run = async () => {
+        const existing = await db.gradingClass.findFirst({
+            where: { userId, name: DEFAULT_QUICK_CLASS_NAME },
+            select: { id: true, name: true },
+        });
+        if (existing) return existing;
+        try {
+            return await db.gradingClass.create({
+                data: { userId, name: DEFAULT_QUICK_CLASS_NAME },
+                select: { id: true, name: true },
+            });
+        } catch (error) {
+            if (isUniqueConstraintError(error)) {
+                const retry = await db.gradingClass.findFirst({
+                    where: { userId, name: DEFAULT_QUICK_CLASS_NAME },
+                    select: { id: true, name: true },
+                });
+                if (retry) return retry;
+            }
+            throw error;
+        }
+    };
+    return hasTransactionSupport(db) ? withBridgeMutex(`quick-class:${userId}`, run) : run();
 }
 
 /**
  * 随堂速批免名册自动建档：当卷头识别出清晰姓名但在任务班级花名册中不存在时，自动补建该生与 Learner。
+ * 严格按姓名+学号隔离查找，严禁用跨人 OR 把不同学生误合并。
  */
 export async function ensureQuickStudentInClass(
     db: Db,
     options: { userId: string; classId: string; studentName: string; studentNo?: string | null },
 ): Promise<{ id: string; name: string }> {
     const cleanName = options.studentName.trim().slice(0, 50);
-    const cleanNo = options.studentNo?.trim().slice(0, 30) || null;
-    const existing = await db.gradingStudent.findFirst({
-        where: {
-            classId: options.classId,
-            ...(cleanNo ? { OR: [{ studentNo: cleanNo }, { name: cleanName }] } : { name: cleanName }),
-        },
-        select: { id: true, name: true },
-    });
-    if (existing) return existing;
+    let cleanNo = options.studentNo?.trim().slice(0, 30) || null;
 
-    const count = await db.gradingStudent.count({ where: { classId: options.classId } });
-    const created = await db.gradingStudent.create({
-        data: {
-            classId: options.classId,
-            name: cleanName,
-            studentNo: cleanNo,
-            order: count,
-        },
-        select: { id: true, name: true },
-    });
-    await ensureLearnerForGradingStudent(db, {
-        userId: options.userId,
-        gradingStudentId: created.id,
-        name: created.name,
-    });
-    return created;
+    const run = async () => {
+        const existingExact = await db.gradingStudent.findFirst({
+            where: {
+                classId: options.classId,
+                name: cleanName,
+                ...(cleanNo ? { studentNo: cleanNo } : {}),
+            },
+            select: { id: true, name: true },
+        });
+        if (existingExact) return existingExact;
+
+        if (cleanNo) {
+            // 若该学号已被同班另一姓名学生占用，则剥离冲突学号独立建档以免触发 P2002 或错并档案
+            const noTakenByOther = await db.gradingStudent.findFirst({
+                where: { classId: options.classId, studentNo: cleanNo },
+                select: { id: true },
+            });
+            if (noTakenByOther) {
+                cleanNo = null;
+            }
+        }
+
+        const count = await db.gradingStudent.count({ where: { classId: options.classId } });
+        const created = await db.gradingStudent.create({
+            data: {
+                classId: options.classId,
+                name: cleanName,
+                studentNo: cleanNo,
+                order: count,
+            },
+            select: { id: true, name: true },
+        });
+        await ensureLearnerForGradingStudent(db, {
+            userId: options.userId,
+            gradingStudentId: created.id,
+            name: created.name,
+        });
+        return created;
+    };
+
+    return hasTransactionSupport(db) ? withBridgeMutex(`quick-student:${options.classId}`, run) : run();
+}
+
+const CHOICE_ANSWER_PREFIX_RE = /^(?:选择|选|正确答案(?:是|为)?|答案(?:是|为)?|故选|choose|answer\s*(?:is|:)?)\s*[\[(（]?([A-Ha-h]{1,6})[\])）]?[.。!！\s]*$/i;
+
+function normalizeInferredAnswer(rawAnswer: string, isLikelyChoice: boolean): string {
+    const trimmed = rawAnswer.trim();
+    if (!trimmed) return "";
+    const prefixMatch = trimmed.match(CHOICE_ANSWER_PREFIX_RE);
+    if (prefixMatch && (isLikelyChoice || prefixMatch[0].length > prefixMatch[1].length)) {
+        return prefixMatch[1].toUpperCase();
+    }
+    if (/^[A-Ha-h]$/.test(trimmed)) {
+        return trimmed.toUpperCase();
+    }
+    if (isLikelyChoice && /^[A-Ha-h]{1,6}$/.test(trimmed)) {
+        return trimmed.toUpperCase();
+    }
+    return trimmed;
 }
 
 /**
@@ -75,27 +135,35 @@ export async function inferAnswerKeyFromSampleImages(
 ): Promise<Array<KeyQuestionInput & { answerSource: "ai_inferred" }>> {
     const visionRead = await getAIService("vision").readExamPaper({
         mode: "answer_key",
-        images: images.slice(0, 4).map((img) => splitDataUrl(img)),
+        images: images.slice(0, 8).map((img) => splitDataUrl(img)),
         language,
     });
 
     const rawQuestions = visionRead.questions.slice(0, MAX_GRADING_QUESTIONS);
-    const inferred: Array<KeyQuestionInput & { answerSource: "ai_inferred" }> = [];
+    const inferred: Array<KeyQuestionInput & { answerSource: "ai_inferred" }> = new Array(rawQuestions.length);
 
-    for (const q of rawQuestions) {
+    await runBoundedConcurrency(rawQuestions, 3, async (q, index) => {
         const stem = q.questionText?.trim() || "";
-        let reliableAnswer = q.answer?.trim() || "";
+        const isLikelyChoice = q.type !== "subjective"
+            && (/^[A-Ha-h]{1,6}$/.test(q.answer?.trim() || "") || /[A-D][.、．)\s]/.test(stem));
+        let reliableAnswer = normalizeInferredAnswer(q.answer || "", isLikelyChoice);
         if (stem) {
             try {
-                const solved = await getAIService("text").reanswerQuestion(stem, language, subjectName);
-                if (solved.answerText.trim()) {
-                    reliableAnswer = solved.answerText.trim();
+                const promptText = isLikelyChoice
+                    ? (language === "en"
+                        ? `${stem}\n(For multiple-choice, reply with option letters only, e.g. B or AC.)`
+                        : `${stem}\n（若为选择题请只输出大写选项字母，例如 B 或 AC，不要附带解释文字）`)
+                    : stem;
+                const solved = await getAIService("text").reanswerQuestion(promptText, language, subjectName);
+                const normalized = normalizeInferredAnswer(solved.answerText || "", isLikelyChoice);
+                if (normalized) {
+                    reliableAnswer = normalized;
                 }
             } catch (error) {
                 logger.warn({ number: q.number, error }, "Text model independent solving failed, falling back to vision draft");
             }
         }
-        inferred.push({
+        inferred[index] = {
             number: q.number,
             type: q.type === "subjective" ? "subjective" : "objective",
             maxScore: q.maxScore && q.maxScore > 0 ? q.maxScore : (q.type === "subjective" ? 5 : 2),
@@ -103,8 +171,8 @@ export async function inferAnswerKeyFromSampleImages(
             answerSource: "ai_inferred",
             questionText: stem || null,
             knowledgePoints: (q.knowledgePoints || []).map((p) => p.trim()).filter(Boolean).slice(0, 5),
-        });
-    }
+        };
+    });
 
     return inferred;
 }

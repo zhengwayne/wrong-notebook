@@ -27,6 +27,7 @@ import { GET, POST } from "@/app/api/parent/papers/route";
 import { POST as ROTATE } from "@/app/api/parent/papers/[id]/rotate/route";
 import { detectContentRotation } from "@/lib/server/page-orientation";
 import { transformNormalizedBBox } from "@/lib/parent-paper-bbox";
+import { ensurePagesAutoCropped } from "@/lib/parent-paper-recognize";
 
 let directory: string;
 let db: PrismaClient;
@@ -250,5 +251,48 @@ describe("parent papers API", () => {
         expect(after.width).toBe(before.height);
         expect(after.height).toBe(before.width);
         expect(after.orientation).toBeUndefined();
+
+        // 已手动旋转（带 originalImageUrl）的页面再次识别时，不会被启发式检测重翻扭歪
+        const pageRow = await db.parentPaperPage.findFirstOrThrow({ where: { paperId: paper.id } });
+        expect(pageRow.originalImageUrl).toBeTruthy();
+        const prepared = await ensurePagesAutoCropped(db, [pageRow]);
+        expect(prepared[0].imageUrl).toBe(pageRow.imageUrl);
+
+        // 已确认试卷禁止再旋转（返回 409）
+        await db.parentPaper.update({ where: { id: paper.id }, data: { status: "confirmed" } });
+        const confirmedRotate = await ROTATE(new Request(`http://localhost/api/parent/papers/${paper.id}/rotate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pageIndex: 0, degrees: 90 }),
+        }), { params: Promise.resolve({ id: paper.id }) });
+        expect(confirmedRotate.status).toBe(409);
+    });
+
+    it("persists upright pixels even when auto-crop skips a full-bleed sideways page without originalImageUrl", async () => {
+        // 构造满屏横向条纹后顺时针歪斜 90° 的铺满页，使 autoCrop 不裁边但 upright 发生 270° 旋转
+        const width = 200, height = 280;
+        const raw = Buffer.alloc(width * height, 255);
+        for (let y = 10; y < height - 10; y += 10) {
+            for (let dy = 0; dy < 5; dy += 1) raw.fill(20, (y + dy) * width + 6, (y + dy) * width + (width - 6));
+        }
+        const upright = await sharp(raw, { raw: { width, height, channels: 1 } }).jpeg({ quality: 95 }).toBuffer();
+        const sideways = await sharp(upright).rotate(90).jpeg({ quality: 95 }).toBuffer();
+        const sidewaysUrl = `data:image/jpeg;base64,${sideways.toString("base64")}`;
+
+        const paper = await db.parentPaper.create({
+            data: {
+                userId: "parent-1",
+                learnerId: "child-a",
+                title: "满幅侧拍无原图草稿",
+                pages: { create: [{ position: 0, imageUrl: sidewaysUrl, originalImageUrl: null }] },
+            },
+            include: { pages: true },
+        });
+        const prepared = await ensurePagesAutoCropped(db, paper.pages);
+        const updatedPage = await db.parentPaperPage.findFirstOrThrow({ where: { id: paper.pages[0].id } });
+        expect(updatedPage.originalImageUrl).toBeTruthy();
+        expect(updatedPage.imageUrl).toBe(prepared[0].imageUrl);
+        const storedMeta = await sharp(Buffer.from(updatedPage.imageUrl.split(",")[1], "base64")).metadata();
+        expect(storedMeta.height).toBeGreaterThan(storedMeta.width ?? 0);
     });
 });

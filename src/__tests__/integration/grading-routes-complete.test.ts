@@ -231,10 +231,32 @@ describe("教师批改 API 完整路由集成测试", () => {
         expect(detailRes.status).toBe(200);
         expect((await detailRes.json()).submissions).toHaveLength(1);
 
+        // 已有 confirmed 答卷时拒绝全量替换答案（409），仅改标题允许（200）
         expect((await PUT_TASK(jsonReq({
             title: "期中数学(更新)",
             questions: [{ number: "1", type: "objective", maxScore: 4, answer: "D" }],
-        }, "PUT"), paramsOf(t1.id))).status).toBe(200);
+        }, "PUT"), paramsOf(t1.id))).status).toBe(409);
+        expect((await PUT_TASK(jsonReq({ title: "期中数学(更新)" }, "PUT"), paramsOf(t1.id))).status).toBe(200);
+
+        // 无已确认答卷的任务替换答案时自动重置已判答卷并重新入队判分
+        const tReplaceRes = await POST_TASK(jsonReq({
+            title: "随堂测验",
+            classId: cls.id,
+            keyText: "1 A 2",
+        }));
+        const tReplace = await tReplaceRes.json();
+        const subReplace = await db.gradingSubmission.create({
+            data: {
+                taskId: tReplace.id,
+                images: JSON.stringify([SAMPLE_JPEG_DATA_URL]),
+                status: "graded",
+                totalScore: 2,
+            },
+        });
+        expect((await PUT_TASK(jsonReq({
+            questions: [{ number: "1", type: "objective", maxScore: 5, answer: "B" }],
+        }, "PUT"), paramsOf(tReplace.id))).status).toBe(200);
+        expect(mocks.scheduleGrading).toHaveBeenCalledWith([subReplace.id], "zh");
 
         mocks.currentUser = { id: "teacher-b", email: "tb@example.com", role: "user" };
         expect((await GET_TASK(new Request("http://localhost"), paramsOf(t1.id))).status).toBe(404);
@@ -299,6 +321,14 @@ describe("教师批改 API 完整路由集成测试", () => {
         expect(patched.matchStatus).toBe("manual");
         expect(patched.totalScore).toBe(2);
         expect(patched.version).toBe(1);
+
+        // 仅修改单题批注（不传 score/verdict）允许通过
+        const commentOnlyRes = await PATCH_SUBMISSION(
+            jsonReq({ results: [{ id: sub1.results[0].id, comment: "书写规范" }] }, "PATCH"),
+            paramsOf(sub1.id),
+        );
+        expect(commentOnlyRes.status).toBe(200);
+        expect((await commentOnlyRes.json()).results[0].comment).toBe("书写规范");
 
         // 清空学生回到 review 状态
         const cleared = await (await PATCH_SUBMISSION(jsonReq({ studentId: null }, "PATCH"), paramsOf(sub1.id))).json();
