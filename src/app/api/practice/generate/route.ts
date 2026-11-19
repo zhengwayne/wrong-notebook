@@ -76,8 +76,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
 
         const targetDifficulty = DIFFICULTIES.find(d => d === difficulty) ?? 'medium';
 
-        // 默认走分阶段规划-验算-审核；设置中可切回原来的一次生成，便于对比
-        if (user.variantPipelineEnabled !== false) {
+        // 默认走分阶段规划-验算-审核；儿童专注模式无法访问 /variants 审核页，直接生成练习题
+        if (!kidLearnerId && user.variantPipelineEnabled !== false) {
             const started = await startItemPipeline(user, errorItemId, language || 'zh', targetDifficulty, { skipQuota: true });
             if (!started) return notFound("Item not found");
             const run = await prisma.variantRun.findFirst({ where: { id: started.id, userId: user.id }, include: { items: { orderBy: { index: 'asc' } } } });

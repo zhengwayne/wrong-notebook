@@ -28,16 +28,40 @@ vi.mock('next-auth', () => ({ getServerSession: vi.fn(async () => mocks.session)
 vi.mock('next-auth/jwt', () => ({ getToken: vi.fn(async () => mocks.token) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
+vi.mock('@/lib/variant/service', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/variant/service')>();
+    return {
+        ...actual,
+        startItemPipeline: vi.fn(async () => ({ id: 'pipeline-run-should-not-be-called' })),
+        startLegacyRun: vi.fn(async () => ({
+            questionText: '2 + 3 = ?',
+            answerText: '5',
+            analysis: '加法',
+            subject: '数学',
+            knowledgePoints: ['加法'],
+            wrongAnswerText: '',
+            mistakeAnalysis: '',
+            mistakeStatus: 'unknown',
+            requiresImage: false,
+            generatedAt: '2026-11-20T00:00:00.000Z',
+        })),
+    };
+});
 
 import { POST as SET_PIN, GET as GET_PIN } from '@/app/api/parent/pin/route';
 import { POST as ENABLE_KID_MODE, GET as GET_KID_MODE } from '@/app/api/parent/kid-mode/route';
 import { POST as UNLOCK_KID_MODE } from '@/app/api/parent/kid-mode/unlock/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
 import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
+import { PUT as REPLACE_IMAGE } from '@/app/api/error-items/[id]/image/route';
 import { GET as LIST_ITEMS } from '@/app/api/error-items/list/route';
 import { GET as GET_HISTORY } from '@/app/api/error-items/[id]/practice-records/route';
 import { GET as GET_LEARNING_PATH } from '@/app/api/learning-path/route';
 import { PATCH as PATCH_STEP } from '@/app/api/learning-path/steps/[id]/route';
+import { POST as GENERATE_PRACTICE } from '@/app/api/practice/generate/route';
+import { POST as SAVE_PRACTICE_RECORD } from '@/app/api/practice/record/route';
+import { DELETE as DELETE_PRACTICE_RECORD } from '@/app/api/practice/record/[id]/route';
+import { startItemPipeline, startLegacyRun } from '@/lib/variant/service';
 import { proxy } from '@/proxy';
 import { KID_MODE_COOKIE_NAME } from '@/lib/kid-mode-lock';
 import bcrypt from 'bcryptjs';
@@ -333,5 +357,70 @@ describe('孩子专注做题受限模式集成测试', () => {
             body: JSON.stringify({ pin: '1357', accountPassword: 'ParentPass123!' }),
         }));
         expect(resetByPwd.status).toBe(200);
+    });
+
+    it('专注模式下练习出题直接返回题目（不跳变式审核），并拦截手动伪造记录、删记录与替换原图', async () => {
+        await SET_PIN(new Request('http://127.0.0.1/api/parent/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: '2580' }),
+        }));
+        const enableRes = await ENABLE_KID_MODE(new Request('http://127.0.0.1/api/parent/kid-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ learnerId: 'child-a' }),
+        }));
+        const cookieHeader = `${KID_MODE_COOKIE_NAME}=${extractCookieToken(enableRes.headers.get('set-cookie'))}`;
+
+        // 1. 默认开启 variantPipelineEnabled 时，专注模式仍直接走即时练习返回题目
+        vi.mocked(startItemPipeline).mockClear();
+        vi.mocked(startLegacyRun).mockClear();
+        const genRes = await GENERATE_PRACTICE(new Request('http://127.0.0.1/api/practice/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+            body: JSON.stringify({ errorItemId: 'err-1', language: 'zh', difficulty: 'medium' }),
+        }));
+        expect(genRes.status).toBe(200);
+        const genData = await genRes.json();
+        expect(genData.pipeline).toBe(false);
+        expect(genData.questionText).toBe('2 + 3 = ?');
+        expect(startLegacyRun).toHaveBeenCalledTimes(1);
+        expect(startItemPipeline).not.toHaveBeenCalled();
+
+        // 2. 禁止专注模式下手动录入虚假练习记录，但允许正常练习提交
+        const manualRes = await SAVE_PRACTICE_RECORD(new Request('http://127.0.0.1/api/practice/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+            body: JSON.stringify({ errorItemId: 'err-1', result: 'correct', source: 'manual' }),
+        }));
+        expect(manualRes.status).toBe(403);
+
+        const practiceRes = await SAVE_PRACTICE_RECORD(new Request('http://127.0.0.1/api/practice/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+            body: JSON.stringify({ errorItemId: 'err-1', result: 'correct', source: 'practice' }),
+        }));
+        expect(practiceRes.status).toBe(200);
+        const savedRecord = await practiceRes.json();
+
+        // 3. 路由层拦截删除练习记录与替换原图
+        const delRecRes = await DELETE_PRACTICE_RECORD(
+            new Request(`http://127.0.0.1/api/practice/record/${savedRecord.id}`, {
+                method: 'DELETE',
+                headers: { cookie: cookieHeader },
+            }),
+            { params: Promise.resolve({ id: savedRecord.id }) },
+        );
+        expect(delRecRes.status).toBe(403);
+
+        const imgRes = await REPLACE_IMAGE(
+            new Request('http://127.0.0.1/api/error-items/err-1/image', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+                body: JSON.stringify({ imageDataUrl: 'data:image/png;base64,dGVzdA==' }),
+            }),
+            { params: Promise.resolve({ id: 'err-1' }) },
+        );
+        expect(imgRes.status).toBe(403);
     });
 });

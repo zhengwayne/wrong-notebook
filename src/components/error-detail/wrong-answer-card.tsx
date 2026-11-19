@@ -17,10 +17,11 @@ interface WrongAnswerCardProps {
     item: ErrorItemDetail;
     saveFields: (fields: Partial<ErrorItemDetail>) => Promise<void>;
     onEnlarge: (src: string) => void;
+    readOnly?: boolean;
 }
 
 /** 我的答案：作答状态与错误解答原文，填写原文时作答状态自动改为做错了 */
-export function WrongAnswerCard({ item, saveFields, onEnlarge }: WrongAnswerCardProps) {
+export function WrongAnswerCard({ item, saveFields, onEnlarge, readOnly = false }: WrongAnswerCardProps) {
     const { t, language } = useLanguage();
     const [showImage, setShowImage] = useState(false);
     const field = useEditableField({
@@ -31,9 +32,9 @@ export function WrongAnswerCard({ item, saveFields, onEnlarge }: WrongAnswerCard
 
     return (
         <Card>
-            <CardHeader><SectionHeader title={<CardTitle>{t.editor?.wrongAnswerText || "Wrong Answer / Work"}</CardTitle>} actions={!field.editing && <EditButton onClick={field.start} />} /></CardHeader>
+            <CardHeader><SectionHeader title={<CardTitle>{t.editor?.wrongAnswerText || "Wrong Answer / Work"}</CardTitle>} actions={!readOnly && !field.editing && <EditButton onClick={field.start} />} /></CardHeader>
             <CardContent className="space-y-4">
-                {field.editing ? (
+                {field.editing && !readOnly ? (
                     <div className="space-y-4">
                         <div className="space-y-2"><label className="text-sm text-muted-foreground">{t.editor?.mistakeStatus || "Attempt Status"}</label><Select value={field.value.status} onValueChange={(status) => field.setValue({ ...field.value, status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="not_attempted">{t.editor?.mistakeStatuses?.notAttempted || "Not attempted"}</SelectItem><SelectItem value="wrong_attempt">{t.editor?.mistakeStatuses?.wrongAttempt || "Wrong attempt"}</SelectItem><SelectItem value="unknown">{t.editor?.mistakeStatuses?.unknown || "Unknown"}</SelectItem></SelectContent></Select></div>
                         <div className="space-y-2"><label className="text-sm text-muted-foreground">{t.editor?.wrongAnswerText || "Wrong Answer / Work"}</label><MarkdownEditor value={field.value.text} onChange={text => field.setValue({ text, status: text.trim() ? "wrong_attempt" : field.value.status })} rows={5} className="w-full font-mono text-sm" /></div>

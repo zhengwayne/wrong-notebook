@@ -794,7 +794,7 @@ describe('/api/practice', () => {
         });
 
         it('未登录返回 401', async () => {
-            mocks.getCurrentUser.mockResolvedValue(null);
+            vi.mocked(getServerSession).mockResolvedValue(null);
 
             const response = await RECORD_DELETE(new Request('http://localhost'), params('record-1'));
 

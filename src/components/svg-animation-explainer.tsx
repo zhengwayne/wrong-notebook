@@ -26,6 +26,8 @@ interface SvgAnimationExplainerProps {
     hasOtherLanguage?: boolean;
     /** 生成或删除后回调该语言的新动画（删除后为 null） */
     onChange: (language: Language, svgAnimation: string | null) => void;
+    /** 只读模式（如儿童专注锁）：无动画时隐藏卡片，有动画时仅允许播放 */
+    readOnly?: boolean;
 }
 
 /**
@@ -33,7 +35,7 @@ interface SvgAnimationExplainerProps {
  * 未生成时显示生成入口；已生成时可播放/暂停、拖动进度、重新生成和删除（删除需二次确认，只删除当前语言的动画）。
  * 已有动画可单独补写或重写语音讲解稿，画面不变；使用云端语音时可重新生成讲解语音。
  */
-export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLanguage, onChange }: SvgAnimationExplainerProps) {
+export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLanguage, onChange, readOnly = false }: SvgAnimationExplainerProps) {
     const { t, language } = useLanguage();
     const [generating, setGenerating] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -98,6 +100,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLangu
     };
 
     if (!svgAnimation) {
+        if (readOnly) return null;
         return (
             <div className="rounded-lg border border-dashed p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -124,28 +127,30 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLangu
                     <span className="text-xs font-medium text-muted-foreground">{t.svgAnimation.title}</span>
                     {busy && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
-                <div className="flex flex-wrap items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs gap-1"
-                        onClick={handleNarration}
-                        disabled={busy}
-                        title={t.svgAnimation.narrationHint}
-                    >
-                        {narrating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
-                        <span>{narrating ? t.svgAnimation.narrationGenerating : hasNarration ? t.svgAnimation.narrationRegenerate : t.svgAnimation.narrationGenerate}</span>
-                    </Button>
-                    <RegenerateVoiceButton svg={svgAnimation} errorItemId={errorItemId} disabled={busy} onBusyChange={setVoicing} />
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleGenerate} disabled={busy}>
-                        {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        <span>{generating ? t.svgAnimation.generating : t.svgAnimation.regenerate}</span>
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive" onClick={handleDelete} disabled={busy}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>{t.svgAnimation.delete}</span>
-                    </Button>
-                </div>
+                {!readOnly && (
+                    <div className="flex flex-wrap items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs gap-1"
+                            onClick={handleNarration}
+                            disabled={busy}
+                            title={t.svgAnimation.narrationHint}
+                        >
+                            {narrating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
+                            <span>{narrating ? t.svgAnimation.narrationGenerating : hasNarration ? t.svgAnimation.narrationRegenerate : t.svgAnimation.narrationGenerate}</span>
+                        </Button>
+                        <RegenerateVoiceButton svg={svgAnimation} errorItemId={errorItemId} disabled={busy} onBusyChange={setVoicing} />
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleGenerate} disabled={busy}>
+                            {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            <span>{generating ? t.svgAnimation.generating : t.svgAnimation.regenerate}</span>
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive" onClick={handleDelete} disabled={busy}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>{t.svgAnimation.delete}</span>
+                        </Button>
+                    </div>
+                )}
             </div>
             {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
             <div className="p-2 sm:p-3">

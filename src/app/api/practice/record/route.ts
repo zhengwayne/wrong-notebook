@@ -47,6 +47,9 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
         const userId = user.id;
 
         const kidLearnerId = getKidModeLearnerId();
+        if (kidLearnerId && source === 'manual') {
+            return kidModeRestricted();
+        }
         let requestedScope: { userId: string; learnerId: string | null } | undefined;
         const targetLearnerParam = kidLearnerId ?? parsed.data.learnerId;
         if (targetLearnerParam !== undefined && targetLearnerParam !== null) {

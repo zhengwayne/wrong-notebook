@@ -28,10 +28,12 @@ interface QuestionCardProps {
     onUpdate: UpdateErrorItem;
     reload: () => Promise<void>;
     onEnlarge: (src: string) => void;
+    /** 只读模式（如儿童专注做题锁）：隐藏编辑、标签修改、换图、重裁与重绘配图入口 */
+    readOnly?: boolean;
 }
 
 /** 题目卡片：题干与配图、知识点标签、题目信息和原图 */
-export function QuestionCard({ item, educationStage, saveFields, onUpdate, reload, onEnlarge }: QuestionCardProps) {
+export function QuestionCard({ item, educationStage, saveFields, onUpdate, reload, onEnlarge, readOnly = false }: QuestionCardProps) {
     const { t } = useLanguage();
     const questionTextRef = useRef<HTMLTextAreaElement>(null);
     const [showImage, setShowImage] = useState(false);
@@ -43,9 +45,9 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
 
     return (
         <Card>
-            <CardHeader><SectionHeader title={<CardTitle>{t.detail.question}</CardTitle>} actions={!question.editing && <div className="flex flex-wrap items-center justify-end gap-1"><ReadAloudButton text={item.questionText} /><EditButton onClick={question.start} /></div>} /></CardHeader>
+            <CardHeader><SectionHeader title={<CardTitle>{t.detail.question}</CardTitle>} actions={!question.editing && <div className="flex flex-wrap items-center justify-end gap-1"><ReadAloudButton text={item.questionText} />{!readOnly && <EditButton onClick={question.start} />}</div>} /></CardHeader>
             <CardContent className="space-y-4">
-                {question.editing ? (
+                {question.editing && !readOnly ? (
                     <div className="space-y-3">
                         <MarkdownEditor value={question.value} onChange={question.setValue} textareaRef={questionTextRef} placeholder="Enter question text..." rows={8} className="w-full font-mono text-sm" />
                         <PinyinToolbar value={question.value} onChange={question.setValue} textareaRef={questionTextRef} subject={item.subject?.name} />
@@ -62,8 +64,8 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
                     </>
                 )}
 
-                <QuestionTags item={item} educationStage={educationStage} onChanged={reload} />
-                <QuestionMetadata item={item} onChanged={reload} />
+                <QuestionTags item={item} educationStage={educationStage} onChanged={reload} readOnly={readOnly} />
+                <QuestionMetadata item={item} onChanged={reload} readOnly={readOnly} />
 
                 <div className="pt-3">
                     <ToggleImage
@@ -75,7 +77,7 @@ export function QuestionCard({ item, educationStage, saveFields, onUpdate, reloa
                         visible={showImage}
                         onVisibleChange={setShowImage}
                         onEnlarge={onEnlarge}
-                        actions={<>
+                        actions={readOnly ? undefined : <>
                             <ReplaceQuestionImageButton
                                 errorItemId={item.id}
                                 hasImage={!!item.originalImageUrl}

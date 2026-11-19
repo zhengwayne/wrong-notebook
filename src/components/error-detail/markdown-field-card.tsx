@@ -25,10 +25,11 @@ interface MarkdownFieldCardProps {
     headerActions?: ReactNode;
     /** 显示在内容下方（编辑与查看状态都显示） */
     children?: ReactNode;
+    readOnly?: boolean;
 }
 
 /** 可编辑的 Markdown 字段卡片：答案、解析、错因分析等 */
-export function MarkdownFieldCard({ title, value, onSave, logLabel, rows, placeholder, editorLabel, emptyText, cardClassName, titleClassName, contentClassName, headerActions, children }: MarkdownFieldCardProps) {
+export function MarkdownFieldCard({ title, value, onSave, logLabel, rows, placeholder, editorLabel, emptyText, cardClassName, titleClassName, contentClassName, headerActions, children, readOnly = false }: MarkdownFieldCardProps) {
     const field = useEditableField({ read: () => value || "", save: onSave, logLabel });
     const editor = <MarkdownEditor value={field.value} onChange={field.setValue} placeholder={placeholder} rows={rows} className="w-full font-mono text-sm" />;
 
@@ -37,11 +38,11 @@ export function MarkdownFieldCard({ title, value, onSave, logLabel, rows, placeh
             <CardHeader>
                 <SectionHeader
                     title={<CardTitle className={titleClassName}>{title}</CardTitle>}
-                    actions={!field.editing && <div className="flex flex-wrap justify-end">{headerActions}<EditButton onClick={field.start} /></div>}
+                    actions={!field.editing && (headerActions || !readOnly) && <div className="flex flex-wrap justify-end">{headerActions}{!readOnly && <EditButton onClick={field.start} />}</div>}
                 />
             </CardHeader>
             <CardContent className="space-y-4">
-                {field.editing ? (
+                {field.editing && !readOnly ? (
                     <div className="space-y-3">
                         {editorLabel ? <div className="space-y-2"><label className="text-sm text-muted-foreground">{editorLabel}</label>{editor}</div> : editor}
                         <SaveCancelButtons onSave={field.submit} onCancel={field.cancel} />

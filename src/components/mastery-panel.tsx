@@ -18,12 +18,14 @@ interface MasteryPanelProps {
     errorItemId: string;
     /** 复习状态加载或被评估更新后回调，用于同步页面上的状态标签 */
     onMasteryStatusChange?: (status: MasteryStatus) => void;
+    /** 只读模式（如儿童专注锁）：隐藏 AI 重评、手动添加记录与删除记录入口 */
+    readOnly?: boolean;
 }
 
 const POLL_INTERVAL_MS = 4000;
 const MAX_POLLS = 20;
 
-export function MasteryPanel({ errorItemId, onMasteryStatusChange }: MasteryPanelProps) {
+export function MasteryPanel({ errorItemId, onMasteryStatusChange, readOnly = false }: MasteryPanelProps) {
     const { t } = useLanguage();
     const [data, setData] = useState<PracticeHistoryResponse | null>(null);
     const [expanded, setExpanded] = useState<string | null>(null);
@@ -97,7 +99,7 @@ export function MasteryPanel({ errorItemId, onMasteryStatusChange }: MasteryPane
                         <Sparkles className="h-4 w-4 text-primary" />
                         {t.mastery.probability}
                     </CardTitle>
-                    {data.records.length > 0 && (
+                    {!readOnly && data.records.length > 0 && (
                         <Button variant="outline" size="sm" onClick={handleAiEvaluate} disabled={evaluatingAi}>
                             {evaluatingAi ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
                             {evaluatingAi ? t.mastery.evaluatingWithAi : t.mastery.evaluateWithAi}
@@ -128,14 +130,14 @@ export function MasteryPanel({ errorItemId, onMasteryStatusChange }: MasteryPane
                 <div className="space-y-2 border-t pt-4">
                     <div className="flex items-center justify-between gap-2">
                         <h4 className="text-sm font-semibold">{t.mastery.history}</h4>
-                        {!adding && (
+                        {!readOnly && !adding && (
                             <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
                                 <Plus className="mr-1 h-4 w-4" />
                                 {t.mastery.addRecord}
                             </Button>
                         )}
                     </div>
-                    {adding && (
+                    {!readOnly && adding && (
                         <PracticeRecordForm
                             errorItemId={errorItemId}
                             onCancel={() => setAdding(false)}
@@ -149,7 +151,7 @@ export function MasteryPanel({ errorItemId, onMasteryStatusChange }: MasteryPane
                         records={data.records}
                         expanded={expanded}
                         onToggleExpand={setExpanded}
-                        onDelete={deleteRecord}
+                        onDelete={readOnly ? undefined : deleteRecord}
                     />
                 </div>
             </CardContent>

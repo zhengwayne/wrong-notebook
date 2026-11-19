@@ -175,11 +175,11 @@ export default function ErrorDetailPage() {
                     </div>
                 </div>
 
-                <QuestionCard item={item} educationStage={educationStage} saveFields={saveFields} onUpdate={updateItem} reload={reload} onEnlarge={setViewerImageUrl} />
+                <QuestionCard item={item} educationStage={educationStage} saveFields={saveFields} onUpdate={updateItem} reload={reload} onEnlarge={setViewerImageUrl} readOnly={kidLocked} />
 
                 <ErrorItemLearningCard item={item} />
 
-                <MasteryPanel errorItemId={item.id} onMasteryStatusChange={setMasteryStatus} />
+                <MasteryPanel errorItemId={item.id} onMasteryStatusChange={setMasteryStatus} readOnly={kidLocked} />
 
                 <div className="grid gap-6 lg:grid-cols-2">
                     <MarkdownFieldCard
@@ -192,6 +192,7 @@ export default function ErrorDetailPage() {
                         cardClassName="border-primary/20"
                         titleClassName="text-primary"
                         contentClassName="font-semibold"
+                        readOnly={kidLocked}
                         headerActions={!kidLocked ? <RegenerateAnswerButton errorItemId={item.id} onDone={(updated) => updateItem({ answerText: updated.answerText ?? "", analysis: updated.analysis ?? "" })} /> : undefined}
                     >
                         {item.referenceImageUrl && (
@@ -200,7 +201,7 @@ export default function ErrorDetailPage() {
                             </div>
                         )}
                     </MarkdownFieldCard>
-                    <WrongAnswerCard item={item} saveFields={saveFields} onEnlarge={setViewerImageUrl} />
+                    <WrongAnswerCard item={item} saveFields={saveFields} onEnlarge={setViewerImageUrl} readOnly={kidLocked} />
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -211,6 +212,7 @@ export default function ErrorDetailPage() {
                         logLabel="analysis"
                         rows={12}
                         placeholder="Enter analysis..."
+                        readOnly={kidLocked}
                         headerActions={<ReadAloudButton text={item.analysis} />}
                     />
                     <MarkdownFieldCard
@@ -221,6 +223,7 @@ export default function ErrorDetailPage() {
                         rows={8}
                         editorLabel={t.editor?.mistakeAnalysis || "Mistake Cause Analysis"}
                         emptyText={t.detail?.noMistakeAnalysis || "No mistake analysis yet."}
+                        readOnly={kidLocked}
                     />
                 </div>
 
@@ -233,12 +236,13 @@ export default function ErrorDetailPage() {
                             svgAnimation={language === 'en' ? item.svgAnimationEn : item.svgAnimation}
                             hasOtherLanguage={!!(language === 'en' ? item.svgAnimation : item.svgAnimationEn)}
                             onChange={handleSvgAnimationChange}
+                            readOnly={kidLocked}
                         />
                     )}
 
-                    {geogebraEnabled && <GeogebraSection errorItemId={item.id} commands={item.geogebraCommands} onUpdate={updateItem} />}
+                    {geogebraEnabled && <GeogebraSection errorItemId={item.id} commands={item.geogebraCommands} onUpdate={updateItem} readOnly={kidLocked} />}
 
-                    <NotesCard item={item} onUpdate={updateItem} />
+                    <NotesCard item={item} onUpdate={updateItem} readOnly={kidLocked} />
                 </div>
             </div>
 

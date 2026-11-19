@@ -11,10 +11,11 @@ import { useEditableField } from "./use-editable-field";
 interface NotesCardProps {
     item: ErrorItemDetail;
     onUpdate: UpdateErrorItem;
+    readOnly?: boolean;
 }
 
 /** 我的笔记（纯文本） */
-export function NotesCard({ item, onUpdate }: NotesCardProps) {
+export function NotesCard({ item, onUpdate, readOnly = false }: NotesCardProps) {
     const { t } = useLanguage();
     const field = useEditableField({
         read: () => item.userNotes || "",
@@ -28,9 +29,9 @@ export function NotesCard({ item, onUpdate }: NotesCardProps) {
 
     return (
         <Card>
-            <CardHeader><SectionHeader title={<CardTitle>{t.detail.yourNotes}</CardTitle>} actions={!field.editing && <EditButton onClick={field.start} label={t.detail.editNotes} />} /></CardHeader>
+            <CardHeader><SectionHeader title={<CardTitle>{t.detail.yourNotes}</CardTitle>} actions={!readOnly && !field.editing && <EditButton onClick={field.start} label={t.detail.editNotes} />} /></CardHeader>
             <CardContent>
-                {field.editing ? (
+                {field.editing && !readOnly ? (
                     <div className="space-y-3">
                         <Textarea value={field.value} onChange={e => field.setValue(e.target.value)} placeholder={t.detail.notesPlaceholder || "Enter your notes..."} rows={5} className="w-full" />
                         <SaveCancelButtons onSave={field.submit} onCancel={field.cancel} />

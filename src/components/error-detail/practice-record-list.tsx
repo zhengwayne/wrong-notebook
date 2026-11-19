@@ -20,7 +20,7 @@ interface PracticeRecordListProps {
     records: PracticeHistoryRecord[];
     expanded: string | null;
     onToggleExpand: (id: string | null) => void;
-    onDelete: (id: string) => void;
+    onDelete?: (id: string) => void;
 }
 
 /** 举一反三作答历史列表 */
@@ -57,15 +57,17 @@ export function PracticeRecordList({ records, expanded, onToggleExpand, onDelete
                                 </span>
                             )}
                         </button>
-                        <button
-                            type="button"
-                            aria-label={t.mastery.deleteRecord}
-                            title={t.mastery.deleteRecord}
-                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
-                            onClick={() => onDelete(record.id)}
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </button>
+                        {onDelete && (
+                            <button
+                                type="button"
+                                aria-label={t.mastery.deleteRecord}
+                                title={t.mastery.deleteRecord}
+                                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
+                                onClick={() => onDelete(record.id)}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </button>
+                        )}
                     </div>
                     {expanded === record.id && record.questionText && (
                         <div className="space-y-2 rounded-md bg-muted/40 p-3">
