@@ -9,7 +9,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { NativeSelect } from "@/components/grading/native-select";
 import { MatchPanel } from "@/components/grading/match-panel";
+import { ProcessEvaluationPanel, type ProcessEvaluationValue } from "@/components/grading/process-evaluation-panel";
 import { SubmissionBboxViewer } from "@/components/grading/submission-bbox-viewer";
+import type { ProcessLevel } from "@/lib/ai/exam-paper-read";
 import { scoreRatioToGradeLevel } from "@/lib/grading-grades";
 import { studentLabel } from "@/lib/grading-labels";
 import { ResultRow } from "@/components/grading/result-row";
@@ -47,7 +49,15 @@ export default function GradingReviewPage() {
     if (!submission || !task) return <PageLoading />;
     const confirmed = submission.status === "confirmed";
 
-    const patch = async (body: { studentId?: string | null; results?: { id: string; verdict?: GradingVerdict; score?: number }[] }) => {
+    const patch = async (body: {
+        studentId?: string | null;
+        handwritingLevel?: ProcessLevel | null;
+        neatnessLevel?: ProcessLevel | null;
+        attitudeLevel?: ProcessLevel | null;
+        processTags?: string[];
+        teacherComment?: string | null;
+        results?: { id: string; verdict?: GradingVerdict; score?: number }[];
+    }) => {
         try {
             setSubmission(await apiClient.patch<GradingSubmissionDetail>(`/api/grading/submissions/${submissionId}`, body));
         } catch (error) {
@@ -135,6 +145,19 @@ export default function GradingReviewPage() {
                         <MatchPanel info={submission} studentId={submission.studentId} students={task.students} multiClass={multiClass}
                             takenIds={new Set(task.submissions.filter((item) => item.id !== submission.id).map((item) => item.studentId).filter((sid): sid is string => !!sid))}
                             disabled={confirmed} onAssign={(studentId) => patch({ studentId })} />
+                        <ProcessEvaluationPanel
+                            key={submission.id}
+                            value={{
+                                handwritingLevel: (submission.handwritingLevel as ProcessLevel | null) ?? null,
+                                neatnessLevel: (submission.neatnessLevel as ProcessLevel | null) ?? null,
+                                attitudeLevel: (submission.attitudeLevel as ProcessLevel | null) ?? null,
+                                processTags: submission.processTags ?? [],
+                                teacherComment: submission.teacherComment ?? null,
+                            }}
+                            visualAlerts={submission.visualAlerts}
+                            disabled={confirmed}
+                            onSave={(next: ProcessEvaluationValue) => patch(next)}
+                        />
                         {grading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{t.grading.gradingInProgress}</p>}
                         {submission.status === "failed" && <p className="text-sm text-destructive">{t.grading.gradingFailed.replace("{error}", submission.error || "")}</p>}
                         {submission.results.map((result) => (

@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import type { StepType } from "@/lib/learning-path/types";
 import type { SourceQuestionSummary } from "@/lib/learning-path/service";
 import { SourceQuestionList } from "@/components/source-question-list";
+import { StepNoteEditor } from "@/components/learn/step-note-editor";
 
 type Tab = "today" | "path" | "class";
 
@@ -322,7 +323,14 @@ function LearnPage() {
                                                 {step.sourceQuestions && step.sourceQuestions.length > 0 && (
                                                     <SourceQuestionList questions={step.sourceQuestions} />
                                                 )}
-                                                {step.teacherNote && <p className="text-sm">{t.learn.teacherNote}：{step.teacherNote}</p>}
+                                                {step.id ? (
+                                                    <StepNoteEditor
+                                                        note={step.teacherNote}
+                                                        onSave={(note) => patch(step.id!, { action: "note", teacherNote: note })}
+                                                    />
+                                                ) : (
+                                                    step.teacherNote && <p className="text-sm">{t.learn.teacherNote}：{step.teacherNote}</p>
+                                                )}
                                                 <div className="flex flex-wrap gap-2 pt-1">
                                                     {cta && !done && (
                                                         <Button asChild size="sm">
