@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-    openaiOptions: [] as Array<{ apiKey?: string; baseURL?: string }>,
+    openaiOptions: [] as Array<{ apiKey?: string; baseURL?: string; fetch?: unknown }>,
     create: vi.fn(),
     getAppConfig: vi.fn(),
     getServerSession: vi.fn(),
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('openai', () => ({
     default: class MockOpenAI {
         chat = { completions: { create: mocks.create } };
-        constructor(options: { apiKey?: string; baseURL?: string }) {
+        constructor(options: { apiKey?: string; baseURL?: string; fetch?: unknown }) {
             mocks.openaiOptions.push(options);
         }
     },
@@ -31,6 +31,7 @@ vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUni
 vi.stubGlobal('fetch', mocks.fetch);
 
 import { getAIService } from '@/lib/ai';
+import { deadlineFetch } from '@/lib/ai/deadline';
 import { VENDOR_PRESETS, VENDOR_PROVIDER_IDS, getVendorName, isVendorProvider, resolveVendorConfig } from '@/lib/ai/vendor-presets';
 import type { VendorProviderId } from '@/lib/ai/vendor-presets';
 import { POST as listModels } from '@/app/api/ai/models/route';
@@ -101,6 +102,8 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
 
         expect(service.constructor.name).toBe('OpenAIProvider');
         expect(mocks.openaiOptions[0]).toMatchObject({ apiKey: 'vendor-key', baseURL: EXPECTED[id].baseUrl });
+        // OpenAI 兼容渠道同样受 AI 调用总时限约束
+        expect(mocks.openaiOptions[0].fetch).toBe(deadlineFetch);
         expect(mocks.create.mock.calls[0][0].model).toBe(EXPECTED[id].model);
     });
 

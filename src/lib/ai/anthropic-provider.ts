@@ -20,6 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { deadlineFetch } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:anthropic');
@@ -73,7 +74,7 @@ function isOfficialAnthropicHost(baseURL: string): boolean {
  * authToken（OAuth 登录的渠道）始终以 Authorization: Bearer 发送。
  */
 export function createAnthropicClient(baseURL: string, apiKey?: string, authToken?: string): Anthropic {
-    const options = { baseURL, timeout: REQUEST_TIMEOUT_MS };
+    const options = { baseURL, timeout: REQUEST_TIMEOUT_MS, fetch: deadlineFetch };
     if (isOfficialAnthropicHost(baseURL)) {
         return apiKey
             ? new Anthropic({ ...options, apiKey, authToken: null })

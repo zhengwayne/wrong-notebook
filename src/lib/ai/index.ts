@@ -6,6 +6,7 @@ import { AnthropicProvider } from "./anthropic-provider";
 import { MiniMaxCodeProvider } from "./minimax-code-provider";
 import { isVendorProvider, resolveVendorConfig, VENDOR_PRESETS } from "./vendor-presets";
 import { limitModelConcurrency } from "./concurrency";
+import { withAiCallDeadline } from "./deadline";
 import { getConfigForRole, type AiModelRole } from "./roles";
 
 export * from "./types";
@@ -33,7 +34,8 @@ function getActiveInstance(config: AppConfig): OpenAIInstance | undefined {
 /** 按角色返回当前配置的 AI 服务；文本角色在未单独配置时复用多模态配置 */
 export function getAIService(role: AiModelRole): AIService {
     const { service, key } = createAIService(getConfigForRole(getAppConfig(), role));
-    return limitModelConcurrency(service, key);
+    // 总时限放在并发限制之内：排队等待不计入，拿到名额后才开始计时
+    return limitModelConcurrency(withAiCallDeadline(service), key);
 }
 
 function createAIService(config: AppConfig): { service: AIService; key: string } {

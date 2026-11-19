@@ -20,6 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { deadlineFetch, withDeadlineSignal } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:openai');
@@ -65,6 +66,7 @@ export class OpenAIProvider implements AIService {
             defaultHeaders: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
+            fetch: deadlineFetch,
         });
 
         this.model = config?.model || DEFAULT_OPENAI_MODEL;
@@ -128,7 +130,7 @@ export class OpenAIProvider implements AIService {
                         messages: adapted,
                         max_tokens: maxTokens,
                     }),
-                    signal: AbortSignal.timeout(LONGCAT_FETCH_TIMEOUT_MS),
+                    signal: withDeadlineSignal(AbortSignal.timeout(LONGCAT_FETCH_TIMEOUT_MS)),
                 });
 
                 if (!res.ok) {

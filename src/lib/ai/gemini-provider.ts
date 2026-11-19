@@ -20,6 +20,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { isAiDeadlineExceeded } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:gemini');
@@ -87,7 +88,8 @@ export class GeminiProvider implements AIService {
                     msg.includes('econnrefused') ||  // Connection refused
                     msg.includes('unavailable');
 
-                if (!isRetryable || attempt === maxRetries) {
+                // 总时限已到时不再重试
+                if (!isRetryable || attempt === maxRetries || isAiDeadlineExceeded()) {
                     throw error;
                 }
 

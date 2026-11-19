@@ -19,6 +19,7 @@ import { normalizeAiQuestionTags } from './knowledge-points';
 import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
 import { getInitialMaxTokens } from './model-output-limits';
 import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { deadlineFetch } from './deadline';
 import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:azure');
@@ -65,6 +66,7 @@ export class AzureOpenAIProvider implements AIService {
             endpoint: endpoint,
             deployment: deployment,
             apiVersion: config?.apiVersion || '2024-02-15-preview',
+            fetch: deadlineFetch,
         });
 
         this.model = config?.model || deployment;
