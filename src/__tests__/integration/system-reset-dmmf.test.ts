@@ -164,6 +164,9 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         await db.parentPaperQuestion.create({
             data: { id: 'ppq-1', paperId: pp.id, position: 0, number: '1', verdict: 'wrong', provenanceId: prov.id },
         });
+        await db.dailyHomeworkItem.create({
+            data: { id: 'dhw-1', userId: admin.id, learnerId: learner.id, dateKey: '2026-11-19', title: '每日口算练习' },
+        });
         await db.sourceImport.create({
             data: { id: 'si-1', userId: admin.id, sourceKind: 'parent_paper', sourceId: pp.id, sourceQuestionId: 'ppq-1', errorItemId: errItem.id },
         });

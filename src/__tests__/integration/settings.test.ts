@@ -85,7 +85,7 @@ describe('/api/settings', () => {
 
             expect(response.status).toBe(200);
             expect(data.aiProvider).toBe('gemini');
-            expect(Object.keys(data).filter((key) => !['aiProvider', 'timeouts', 'timeZone', 'dataFlow'].includes(key))).toEqual([]);
+            expect(Object.keys(data).filter((key) => !['aiProvider', 'aiReadiness', 'timeouts', 'timeZone', 'dataFlow'].includes(key))).toEqual([]);
             expect(data.dataFlow).toMatchObject({ vision: { provider: 'gemini', endpointType: 'official' } });
             expect(data.timeZone).toBe('Asia/Shanghai');
             expect(JSON.stringify(data)).not.toContain('sk-test-key');

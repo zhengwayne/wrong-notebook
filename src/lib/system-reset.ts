@@ -38,10 +38,11 @@ export async function performSystemReset(
         await tx.learningPath.deleteMany({});
         await tx.knowledgeMastery.deleteMany({});
 
-        // 2. 家长试卷
+        // 2. 家长试卷与每日作业清单
         await tx.parentPaperQuestion.deleteMany({});
         await tx.parentPaperPage.deleteMany({});
         await tx.parentPaper.deleteMany({});
+        await tx.dailyHomeworkItem.deleteMany({});
 
         // 3. 教师拍照改卷与花名册
         await tx.gradingResult.deleteMany({});
