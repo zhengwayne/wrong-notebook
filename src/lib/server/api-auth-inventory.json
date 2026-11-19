@@ -106,6 +106,7 @@
     "setup": { "auth": "admin", "mechanism": "defineApiRoute" },
     "stats/practice": { "auth": "user", "mechanism": "defineApiRoute" },
     "stats/practice/clear": { "auth": "user", "mechanism": "defineApiRoute" },
+    "stats/repeated-mistakes": { "auth": "user", "mechanism": "defineApiRoute" },
     "system/snapshot-status": { "auth": "user_or_admin", "mechanism": "defineApiRoute" },
     "tags": { "auth": "user", "mechanism": "defineApiRoute" },
     "tags/stats": { "auth": "user", "mechanism": "getCurrentUser" },

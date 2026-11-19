@@ -896,6 +896,16 @@ export const zh = {
         completeFailed: "保存向导状态失败",
         rerun: "重新运行安装向导",
     },
+    repeatedMistakes: {
+        title: "反复错题榜",
+        subtitle: "做错 2 次及以上的题目，建议优先复习",
+        empty: "还没有做错 2 次及以上的题目。",
+        noPreview: "（无题干文字）",
+        wrongTimes: "错 {count} 次",
+        lastWrong: "最近出错 {date}",
+        loadFailed: "加载失败",
+        retry: "重试",
+    },
     stats: {
         title: "练习统计",
         headerTitle: "统计中心",

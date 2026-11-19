@@ -899,6 +899,16 @@ export const en = {
         completeFailed: "Failed to save setup status",
         rerun: "Run setup wizard again",
     },
+    repeatedMistakes: {
+        title: "Repeated mistakes",
+        subtitle: "Questions answered wrong 2 or more times — review these first",
+        empty: "No question has been answered wrong 2 or more times yet.",
+        noPreview: "(No question text)",
+        wrongTimes: "Wrong {count}×",
+        lastWrong: "Last wrong {date}",
+        loadFailed: "Failed to load",
+        retry: "Retry",
+    },
     stats: {
         title: "Practice Statistics",
         headerTitle: "Statistics Center",

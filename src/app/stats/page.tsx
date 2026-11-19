@@ -6,6 +6,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { WrongAnswerStats } from "@/components/wrong-answer-stats";
 import { PracticeStats } from "@/components/practice-stats";
+import { RepeatedMistakesCard } from "@/components/stats/repeated-mistakes-card";
 import { TeacherScopeBar } from "@/components/notebooks/teacher-scope-bar";
 import { TagUsageStats } from "@/components/tags/tag-usage-stats";
 import { TagManagement } from "@/components/tags/tag-management";
@@ -62,6 +63,7 @@ function StatsTabs() {
                 <WrongAnswerStats />
             </TabsContent>
             <TabsContent value="practice" className="space-y-4">
+                <RepeatedMistakesCard />
                 <PracticeStats />
             </TabsContent>
             <TabsContent value="tag-stats" className="space-y-4">
