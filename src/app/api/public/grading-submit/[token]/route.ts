@@ -94,7 +94,12 @@ export const POST = defineApiRoute(
         let matchedStudentId: string | null = null;
 
         if (task.taskMode === 'quick') {
-            const quickStudent = await ensureQuickStudentInClass(task.classId, trimmedName, trimmedNo || null);
+            const quickStudent = await ensureQuickStudentInClass(prisma, {
+                userId: task.userId,
+                classId: task.classId,
+                studentName: trimmedName,
+                studentNo: trimmedNo || null,
+            });
             matchedStudentId = quickStudent.id;
         } else {
             const roster = await loadTaskRoster(task);

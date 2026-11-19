@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { BookPlus, CheckCircle2, Loader2 } from "lucide-react";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { ProcessLevel } from "@/lib/ai/exam-paper-read";
@@ -40,7 +41,6 @@ interface SharedSubmissionCard {
 interface LearnerOption {
     id: string;
     name: string;
-    kind: string;
 }
 
 export default function SharedSubmissionFeedbackPage() {
@@ -66,7 +66,7 @@ export default function SharedSubmissionFeedbackPage() {
                 if (!cancelled) setCard(res);
             })
             .catch((err) => {
-                if (!cancelled) setLoadError(getApiErrorMessage(err));
+                if (!cancelled) setLoadError(getApiErrorMessage(err) || "加载失败");
             });
         return () => {
             cancelled = true;
@@ -77,10 +77,10 @@ export default function SharedSubmissionFeedbackPage() {
         if (status !== "authenticated") return;
         let cancelled = false;
         apiClient
-            .get<{ learners: LearnerOption[] }>("/api/learners")
+            .get<{ children?: LearnerOption[] }>("/api/learners")
             .then((res) => {
                 if (cancelled) return;
-                const kids = (res.learners ?? []).filter((l) => l.kind === "child");
+                const kids = res.children ?? [];
                 setChildren(kids);
                 if (kids[0]) setSelectedChildId(kids[0].id);
             })
@@ -105,7 +105,7 @@ export default function SharedSubmissionFeedbackPage() {
                     .replace("{skipped}", String(res.skippedCount)),
             );
         } catch (err) {
-            setImportErr(getApiErrorMessage(err));
+            setImportErr(getApiErrorMessage(err) || "导入失败");
         } finally {
             setImporting(false);
         }
@@ -237,7 +237,7 @@ export default function SharedSubmissionFeedbackPage() {
                                 <span>#{q.number}</span>
                                 <span className="text-xs text-muted-foreground">{q.score} / {q.maxScore}</span>
                             </div>
-                            <p className="whitespace-pre-wrap">{q.questionText}</p>
+                            <MarkdownRenderer content={q.questionText} variant="compact" />
                             <div className="text-xs text-destructive">{copy.studentAnswerLabel}{q.studentAnswer || "—"}</div>
                             <div className="text-xs text-emerald-700 dark:text-emerald-400">{copy.correctAnswerLabel}{q.correctAnswer}</div>
                             {q.reason && <p className="text-xs text-muted-foreground">{q.reason}</p>}

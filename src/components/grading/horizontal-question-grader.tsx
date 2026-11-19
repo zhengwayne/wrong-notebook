@@ -108,7 +108,7 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
                 <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{t.grading.quickGrading.horizontalTab}：</span>
+                    <span className="shrink-0 whitespace-nowrap text-sm font-medium">{t.grading.quickGrading.horizontalTab}：</span>
                     <NativeSelect value={activeQuestion.id} onChange={(e) => handleQuestionChange(e.target.value)}>
                         {questions.map((q) => (
                             <option key={q.id} value={q.id}>
@@ -142,13 +142,13 @@ export function HorizontalQuestionGrader({ taskId, questions, onChanged }: Horiz
                                         </span>
                                     </div>
                                     {strip.pageImageUrl && (
-                                        <div className="max-h-36 overflow-hidden rounded-lg border bg-muted/20">
+                                        <div className="h-40 overflow-hidden rounded-lg border bg-muted/20">
                                             <img
                                                 src={strip.pageImageUrl}
                                                 alt={`#${activeQuestion.number}`}
-                                                className="w-full object-cover"
+                                                className="h-full w-full object-cover"
                                                 style={strip.bbox ? {
-                                                    objectPosition: `center ${Math.round((strip.bbox.y + strip.bbox.height / 2) * 100)}%`,
+                                                    objectPosition: `center ${Math.min(100, Math.max(0, Math.round((strip.bbox.y + strip.bbox.height / 2) * 100)))}%`,
                                                 } : undefined}
                                             />
                                         </div>

@@ -75,7 +75,7 @@ export function ParentKidModeCard({ learnerId, learnerName }: { learnerId: strin
             notifyKidModeChanged();
             router.push(`/learn?studentKey=${encodeURIComponent(learnerId)}`);
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         } finally {
             setSubmitting(false);
         }
@@ -106,7 +106,7 @@ export function ParentKidModeCard({ learnerId, learnerName }: { learnerId: strin
             }
             setMessage(copy.pinSaved);
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         } finally {
             setSubmitting(false);
         }

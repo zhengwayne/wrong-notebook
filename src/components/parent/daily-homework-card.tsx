@@ -53,7 +53,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             );
             setData(res);
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         }
     }, [learnerId]);
 
@@ -81,7 +81,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             setMinutes("");
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         } finally {
             setSubmitting(false);
         }
@@ -94,7 +94,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             });
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         }
     };
 
@@ -103,7 +103,7 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
             await apiClient.delete(`/api/parent/homeworks/${id}`);
             await load();
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "操作失败");
         }
     };
 

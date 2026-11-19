@@ -40,7 +40,7 @@ export default function PublicSubmitHomeworkPage() {
                 if (!cancelled) setMeta(res);
             })
             .catch((err) => {
-                if (!cancelled) setLoadError(getApiErrorMessage(err));
+                if (!cancelled) setLoadError(getApiErrorMessage(err) || "链接无效或已过期");
             });
         return () => {
             cancelled = true;
@@ -61,7 +61,7 @@ export default function PublicSubmitHomeworkPage() {
             const compressed = await compressPaperImages(allowed);
             setImages((prev) => [...prev, ...compressed].slice(0, maxPages));
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "图片处理失败");
         } finally {
             setBusy(false);
         }
@@ -81,7 +81,7 @@ export default function PublicSubmitHomeworkPage() {
             });
             setSubmitted(true);
         } catch (err) {
-            setError(getApiErrorMessage(err));
+            setError(getApiErrorMessage(err) || "图片处理失败");
         } finally {
             setBusy(false);
         }

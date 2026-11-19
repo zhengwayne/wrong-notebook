@@ -144,8 +144,8 @@ export function getKidModeLockFromRequest(
     return verifyKidModeToken(raw, expected);
 }
 
-/** 专注做题模式下允许访问的页面路径前缀 */
-const ALLOWED_PAGE_PREFIXES = ['/learn', '/review', '/practice', '/login', '/register', '/initialize'];
+/** 专注做题模式下允许访问的页面路径前缀（包含只读查看错题解析页，写删操作已在 API 层阻断） */
+const ALLOWED_PAGE_PREFIXES = ['/learn', '/review', '/practice', '/error-items', '/login', '/register', '/initialize'];
 
 export function isKidModeAllowedPagePath(pathname: string): boolean {
     return ALLOWED_PAGE_PREFIXES.some(
@@ -175,6 +175,7 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
     if (pathname.startsWith('/api/variants/') && upperMethod === 'GET') return true;
 
     if (pathname.startsWith('/api/error-items/') && upperMethod === 'GET') return true;
+    if (pathname === '/api/user' && upperMethod === 'GET') return true;
     if (pathname.startsWith('/api/tts') && (upperMethod === 'GET' || upperMethod === 'POST')) return true;
     if (pathname.startsWith('/api/requests/') && upperMethod === 'GET') return true;
     if (pathname === '/api/logs/frontend' && upperMethod === 'POST') return true;

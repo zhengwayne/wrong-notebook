@@ -61,6 +61,7 @@ describe('kid-mode-lock 签名锁与路由收敛纯函数', () => {
         expect(isKidModeAllowedPagePath('/learn')).toBe(true);
         expect(isKidModeAllowedPagePath('/review')).toBe(true);
         expect(isKidModeAllowedPagePath('/practice')).toBe(true);
+        expect(isKidModeAllowedPagePath('/error-items/item-1')).toBe(true);
         expect(isKidModeAllowedPagePath('/login')).toBe(true);
 
         expect(isKidModeAllowedPagePath('/')).toBe(false);
@@ -80,7 +81,10 @@ describe('kid-mode-lock 签名锁与路由收敛纯函数', () => {
         expect(isApiAllowedInKidMode('/api/practice/grade', 'POST')).toBe(true);
         expect(isApiAllowedInKidMode('/api/practice/record', 'POST')).toBe(true);
         expect(isApiAllowedInKidMode('/api/error-items/item-1', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/user', 'GET')).toBe(true);
 
+        expect(isApiAllowedInKidMode('/api/user', 'DELETE')).toBe(false);
+        expect(isApiAllowedInKidMode('/api/user', 'PATCH')).toBe(false);
         expect(isApiAllowedInKidMode('/api/error-items/item-1/delete', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/error-items/batch-delete', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/error-items/clear', 'DELETE')).toBe(false);
