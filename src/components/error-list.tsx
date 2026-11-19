@@ -8,6 +8,7 @@ import { FilterMenu } from "@/components/error-list/filter-menu";
 import { PaperLevelFilter } from "@/components/error-list/paper-level-filter";
 import { ErrorListSelectionBar } from "@/components/error-list-selection-bar";
 import { KnowledgeFilter } from "@/components/knowledge-filter";
+import { MoveToNotebookDialog } from "@/components/move-to-notebook-dialog";
 import { ActiveFilterBar, type FilterChipItem } from "@/components/ui/active-filter-bar";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Button } from "@/components/ui/button";
@@ -212,6 +213,31 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId }: Err
         }
     };
 
+    const [moveOpen, setMoveOpen] = useState(false);
+    const [isMoving, setIsMoving] = useState(false);
+    const handleBatchMove = async (targetSubjectId: string) => {
+        if (selectedIds.size === 0 || !targetSubjectId) return;
+        setIsMoving(true);
+        try {
+            const result = await apiClient.post<{ moved: number; skipped: number }>("/api/error-items/batch-move", {
+                ids: Array.from(selectedIds),
+                subjectId: targetSubjectId,
+                ...(learnerId ? { learnerId } : {}),
+            });
+            toast.success(t.notebook.moveSuccess.replace("{count}", String(result.moved)));
+            if (result.skipped > 0) toast.warning(t.notebook.moveSkipped.replace("{count}", String(result.skipped)));
+            setMoveOpen(false);
+            setIsSelectMode(false);
+            setSelectedIds(new Set());
+            await fetchItems();
+        } catch (err) {
+            frontendLogger.error("[ErrorList]", "Batch move failed", { error: err });
+            toast.error(t.notebook.moveFailed);
+        } finally {
+            setIsMoving(false);
+        }
+    };
+
     const prevFiltersRef = useRef(filters);
     useEffect(() => {
         const filtersChanged = prevFiltersRef.current !== filters;
@@ -372,8 +398,18 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId }: Err
                     deleting={isDeleting}
                     onCancel={toggleSelectMode}
                     onDelete={handleBatchDelete}
+                    onMove={() => setMoveOpen(true)}
+                    moving={isMoving}
                 />
             )}
+            <MoveToNotebookDialog
+                open={moveOpen}
+                onOpenChange={setMoveOpen}
+                count={selectedIds.size}
+                currentSubjectId={subjectId}
+                moving={isMoving}
+                onMove={(target) => void handleBatchMove(target)}
+            />
         </div>
     );
 }

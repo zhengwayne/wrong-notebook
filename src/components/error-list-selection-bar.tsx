@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2, X } from "lucide-react";
+import { FolderInput, Trash2, X } from "lucide-react";
 import { QuestionSimilarityDialog } from "@/components/question-similarity-dialog";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -10,6 +10,9 @@ export interface ErrorListSelectionBarProps {
     deleting: boolean;
     onCancel: () => void;
     onDelete: () => void;
+    /** 提供时显示「移动到错题本」 */
+    onMove?: () => void;
+    moving?: boolean;
 }
 
 export function ErrorListSelectionBar({
@@ -17,6 +20,8 @@ export function ErrorListSelectionBar({
     deleting,
     onCancel,
     onDelete,
+    onMove,
+    moving = false,
 }: ErrorListSelectionBarProps) {
     const { t } = useLanguage();
     return (
@@ -34,7 +39,13 @@ export function ErrorListSelectionBar({
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <QuestionSimilarityDialog ids={selectedIds} />
-                    <Button type="button" variant="outline" onClick={onCancel} disabled={deleting}>
+                    {onMove && (
+                        <Button type="button" variant="outline" onClick={onMove} disabled={selectedIds.length === 0 || deleting} loading={moving}>
+                            <FolderInput className="h-4 w-4" aria-hidden="true" />
+                            {t.notebook.moveSelected}
+                        </Button>
+                    )}
+                    <Button type="button" variant="outline" onClick={onCancel} disabled={deleting || moving}>
                         <X className="h-4 w-4" aria-hidden="true" />
                         {t.notebook.cancelSelect}
                     </Button>

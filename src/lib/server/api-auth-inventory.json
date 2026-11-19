@@ -30,6 +30,7 @@
     "error-items/[id]/svg-animation": { "auth": "user", "mechanism": "getCurrentUser" },
     "error-items/[id]/svg-animation/narration": { "auth": "user", "mechanism": "getCurrentUser" },
     "error-items/batch-delete": { "auth": "user", "mechanism": "defineApiRoute" },
+    "error-items/batch-move": { "auth": "user", "mechanism": "defineApiRoute" },
     "error-items/clear": { "auth": "user", "mechanism": "defineApiRoute" },
     "error-items/list": { "auth": "user", "mechanism": "defineApiRoute" },
     "error-items/short/[shortId]": { "auth": "user", "mechanism": "getCurrentUser" },
