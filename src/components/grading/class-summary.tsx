@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
+import { Download, FileText, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLoading } from "@/components/ui/page-loading";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -45,6 +45,9 @@ export function ClassSummary({ taskId, version }: ClassSummaryProps) {
             <div className="flex flex-wrap gap-2 print:hidden">
                 <Button variant="outline" asChild>
                     <a href={`/api/grading/tasks/${taskId}/summary?format=csv&lang=${language}`}><Download className="h-4 w-4" />{t.grading.exportCsv}</a>
+                </Button>
+                <Button variant="outline" asChild>
+                    <a href={`/api/grading/tasks/${taskId}/export-docx?topN=10`}><FileText className="h-4 w-4" />{t.grading.quickGrading.exportDocx}</a>
                 </Button>
                 <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />{t.grading.print}</Button>
             </div>
