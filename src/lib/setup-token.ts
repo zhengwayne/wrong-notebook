@@ -4,16 +4,16 @@ import path from "node:path";
 
 /**
  * 一次性初始化令牌：全新安装（还没有管理员）时生成，保存在配置目录，
- * 只有能看到启动日志或数据目录的人才能拿到，用它打开 /initialize 创建管理员；创建后删除。
+ * 由部署者从文件读取，用它打开 /initialize 创建管理员，创建后删除。
  * 配置目录与 app-config.json 相同（安装包通过 CONFIG_DIR 指定，默认 ./config）
  */
-function tokenFilePath(): string {
-    return path.join(process.env.CONFIG_DIR || path.join(process.cwd(), "config"), "setup-token");
+export function setupTokenFilePath(): string {
+    return path.resolve(process.env.CONFIG_DIR || "config", "setup-token");
 }
 
 function readTokenFile(): string | null {
     try {
-        const token = fs.readFileSync(tokenFilePath(), "utf8").trim();
+        const token = fs.readFileSync(setupTokenFilePath(), "utf8").trim();
         return token || null;
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -26,7 +26,7 @@ export function ensureSetupToken(): string {
     const saved = readTokenFile();
     if (saved) return saved;
     const token = randomBytes(24).toString("base64url");
-    const file = tokenFilePath();
+    const file = setupTokenFilePath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     try {
         // wx：文件已存在时失败，不覆盖别的进程刚生成的令牌
@@ -41,7 +41,7 @@ export function ensureSetupToken(): string {
 }
 
 export function removeSetupToken(): void {
-    fs.rmSync(tokenFilePath(), { force: true });
+    fs.rmSync(setupTokenFilePath(), { force: true });
 }
 
 /** 比较前先取摘要，长度不同也走恒定时间比较 */
@@ -66,7 +66,7 @@ export interface SetupTokenClaim {
  */
 export function claimSetupToken(input: unknown): SetupTokenClaim | null {
     if (!verifySetupToken(input)) return null;
-    const file = tokenFilePath();
+    const file = setupTokenFilePath();
     const claimed = `${file}.${randomBytes(6).toString("hex")}.claimed`;
     try {
         fs.renameSync(file, claimed);

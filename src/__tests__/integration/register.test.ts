@@ -183,7 +183,7 @@ describe('/api/register', () => {
 
             const response = await POST(request);
 
-            expect(response.status).toBe(500); // Zod validation error caught as 500
+            expect(response.status).toBe(400);
         });
 
         it('应该拒绝太短的密码', async () => {
@@ -198,7 +198,7 @@ describe('/api/register', () => {
 
             const response = await POST(request);
 
-            expect(response.status).toBe(500); // Zod validation error
+            expect(response.status).toBe(400);
         });
 
         it('应该拒绝空用户名', async () => {
@@ -213,7 +213,13 @@ describe('/api/register', () => {
 
             const response = await POST(request);
 
-            expect(response.status).toBe(500); // Zod validation error
+            expect(response.status).toBe(400);
+        });
+
+        it('损坏的 JSON 返回客户端错误，不创建账户', async () => {
+            const response = await POST(new Request('http://localhost/api/register', { method: 'POST', body: '{' }));
+            expect(response.status).toBe(400);
+            expect(mocks.mockPrismaUser.create).not.toHaveBeenCalled();
         });
 
         it('配置中未指定注册开关时按关闭处理，返回 403', async () => {

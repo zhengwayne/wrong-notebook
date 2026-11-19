@@ -3,7 +3,7 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { badRequest, conflict, createErrorResponse, ErrorCode, forbidden, internalError, tooManyRequests, validationError } from "@/lib/api-errors";
-import { DEFAULT_ADMIN_PASSWORD } from "@/lib/default-admin";
+import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { isInitialized } from "@/lib/initialization";
 import { createLogger } from "@/lib/logger";
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit";
@@ -17,7 +17,7 @@ const initializeSchema = z.object({
     // 与注册一致，支持本地邮箱（如 admin@localhost），统一归一化为小写
     email: z.string().trim().toLowerCase().regex(/^[^\s@]+@[^\s@]+$/),
     name: z.string().trim().min(1).max(50),
-    password: z.string().min(6).refine((value) => value !== DEFAULT_ADMIN_PASSWORD),
+    password: z.string().min(6).refine((value) => !isDefaultAdminPassword("admin", value)),
 });
 
 /**

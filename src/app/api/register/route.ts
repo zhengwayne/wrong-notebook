@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
-import { tooManyRequests } from "@/lib/api-errors"
+import { tooManyRequests, validationError } from "@/lib/api-errors"
 import { getAppConfig } from "@/lib/config"
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit"
 import { defaultActivePersona, serializePersonas, uniquePersonas } from "@/lib/personas"
@@ -41,8 +41,9 @@ export async function POST(req: Request) {
             registerIpLimiter.hit(ip)
         }
 
-        const body = await req.json()
-        const { email: rawEmail, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = userSchema.parse(body)
+        const parsed = userSchema.safeParse(await req.json().catch(() => null))
+        if (!parsed.success) return validationError("Invalid registration data", parsed.error.flatten().fieldErrors)
+        const { email: rawEmail, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = parsed.data
         const email = normalizeEmail(rawEmail)
 
         const existingUser = await findUserByEmailInsensitive(prisma, email, { id: true })

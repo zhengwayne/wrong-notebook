@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { legacyAdminPasswordSample } from '../fixtures/legacy-admin';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,6 +89,21 @@ describe('改密递增 authVersion 后的当前会话重签逻辑', () => {
             configurable: true,
         });
         vi.unstubAllGlobals();
+    });
+
+    it('在浏览器内拒绝再次提交旧版通用密码', async () => {
+        const onDone = vi.fn();
+        await act(async () => root.render(<LanguageProvider><PasswordStep onDone={onDone} /></LanguageProvider>));
+        await act(async () => {
+            setInputValue(container.querySelector('#setup-new-password')!, legacyAdminPasswordSample);
+            setInputValue(container.querySelector('#setup-confirm-password')!, legacyAdminPasswordSample);
+        });
+        await act(async () => {
+            container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        });
+        expect(mocks.toastError).toHaveBeenCalledOnce();
+        expect(mocks.patch).not.toHaveBeenCalled();
+        expect(onDone).not.toHaveBeenCalled();
     });
 
     it('PasswordStep 修改默认密码后重签 credentials 会话再调用 update()，不触发自我吊销', async () => {

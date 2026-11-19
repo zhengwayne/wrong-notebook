@@ -2,6 +2,7 @@
  * /api/user API 集成测试
  * 测试用户信息获取和更新接口
  */
+import { legacyAdminPasswordSample } from '../fixtures/legacy-admin';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
@@ -39,7 +40,8 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 // Mock bcryptjs
-vi.mock('bcryptjs', () => ({
+vi.mock('bcryptjs', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('bcryptjs')>()),
     hash: vi.fn((password: string) => Promise.resolve(`hashed_${password}`)),
 }));
 
@@ -673,7 +675,7 @@ describe('/api/user', () => {
 
             const request = new Request('http://localhost/api/user', {
                 method: 'PATCH',
-                body: JSON.stringify({ password: '123456' }),
+                body: JSON.stringify({ password: legacyAdminPasswordSample }),
                 headers: { 'Content-Type': 'application/json' },
             });
 

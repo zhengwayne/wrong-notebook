@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
-import { DEFAULT_ADMIN_PASSWORD } from "@/lib/default-admin";
+import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { getApiErrorMessage } from "@/lib/error-message";
@@ -32,7 +32,7 @@ export function PasswordStep({ onDone }: PasswordStepProps) {
             toast.error(t.setup.password.tooShort);
             return;
         }
-        if (password === DEFAULT_ADMIN_PASSWORD) {
+        if (isDefaultAdminPassword("admin", password)) {
             toast.error(t.setup.password.sameAsDefault);
             return;
         }

@@ -111,7 +111,6 @@ export class AnthropicProvider implements AIService {
             provider: 'Anthropic',
             model: this.model,
             baseURL: this.baseURL,
-            apiKeyPrefix: apiKey ? apiKey.substring(0, 8) + '...' : 'bearer'
         }, 'AI Provider initialized');
     }
 

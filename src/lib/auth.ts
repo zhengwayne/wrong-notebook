@@ -4,7 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { prisma } from "@/lib/prisma"
 import { compare } from "bcryptjs"
 import { createLogger } from "@/lib/logger"
-import { DEFAULT_ADMIN_PASSWORD, isDefaultAdminPassword } from "@/lib/default-admin"
+import { isDefaultAdminPassword } from "@/lib/default-admin"
 import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors"
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit"
 import { isPersona, parsePersonas } from "@/lib/personas"
@@ -178,7 +178,6 @@ export const authOptions: NextAuthOptions = {
                             isActive: true,
                             authVersion: true,
                             role: true,
-                            password: true,
                             personas: true,
                             activePersona: true,
                             personasConfirmedAt: true,
@@ -205,12 +204,7 @@ export const authOptions: NextAuthOptions = {
                         if (typeof dbUser.role === 'string') {
                             next.role = dbUser.role;
                         }
-                        // 客户端改完密码后调用 update()，以数据库中的密码为准重新判断，不信任客户端传值
-                        if (trigger === "update" && token.mustChangePassword && typeof dbUser.password === 'string') {
-                            const stillDefault = await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password);
-                            logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password');
-                            next.mustChangePassword = stillDefault;
-                        }
+                        // 改密递增 authVersion 并通过重新登录签发新会话；普通 update() 保留原改密标记。
                         if (trigger === "update" || token.needsPersonaConfirmation === undefined) {
                             next.personas = parsePersonas(dbUser.personas);
                             next.activePersona = isPersona(dbUser.activePersona) ? dbUser.activePersona : null;

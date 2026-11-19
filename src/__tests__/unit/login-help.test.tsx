@@ -30,6 +30,8 @@ describe('登录页帮助', () => {
         const html = render(false);
         expect(html).toContain('首次使用？');
         expect(html).toContain('admin@localhost');
+        expect(html).toContain('setup-token');
+        expect(html).toContain('/initialize?token=');
         expect(html).not.toContain('github.com');
         expect(html).not.toContain('123456');
     });
@@ -41,7 +43,7 @@ describe('初始化链接指引', () => {
         const html = renderToStaticMarkup(<LanguageProvider><SetupGuide /></LanguageProvider>);
         expect(html).toContain('尚未创建管理员');
         expect(html).toContain('/initialize?token=');
-        expect(html).toContain('docker logs wrong-notebook');
+        expect(html).toContain('docker exec wrong-notebook cat /app/config/setup-token');
         expect(html).toContain('config/setup-token');
         expect(html).not.toContain('github.com');
         expect(html).not.toContain('123456');

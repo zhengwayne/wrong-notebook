@@ -12,7 +12,7 @@ export async function register() {
             const { startDailySnapshotScheduler } = await import('./lib/daily-snapshot');
             startDailySnapshotScheduler();
 
-            // 全新安装还没有管理员时，在启动日志中打印一次性初始化链接
+            // 全新安装还没有管理员时，在启动日志中提示初始化令牌的文件位置
             const { announceSetupLink } = await import('./lib/initialization');
             await announceSetupLink();
 
