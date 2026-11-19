@@ -937,7 +937,7 @@ export const zh = {
             desc: "学迹 - AI 驱动的学习助手",
             releaseNotes: "发行说明",
             feedback: "问题反馈",
-            copyright: "© 2026 margrop · margrop/wrong-notebook · MIT 许可证",
+            copyright: "© 2026 zhengwayne/wrong-notebook（基于 wttwins & margrop 开源项目演进）· MIT 许可证",
             androidServer: "服务器",
             changeServer: "更换服务器",
             androidStandalone: "在本机运行，数据只保存在这台设备上。",

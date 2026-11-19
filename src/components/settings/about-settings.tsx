@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Info, MessageSquareText, ScrollText, ShieldAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { GithubIcon } from "@/components/icons/github-icon";
+import { AlertTriangle, CheckCircle2, Info, ShieldAlert } from "lucide-react";
 import { AndroidAppSetting } from "@/components/settings/android-app-setting";
 import { DataFlowDisclosure } from "@/components/settings/data-flow-disclosure";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { PROJECT_REPO_URL } from "@/lib/constants/project";
 import type { DataFlowSummary, SecurityPosture } from "@/types/api";
 
 interface AboutSettingsProps {
@@ -16,7 +13,7 @@ interface AboutSettingsProps {
     dataFlow?: DataFlowSummary;
 }
 
-/** 关于：版本号、安卓 App、AI 数据流向告知、管理员安全态势提醒与项目链接 */
+/** 关于：版本号、安卓 App、AI 数据流向告知、管理员安全态势提醒与版权信息 */
 export function AboutSettings({ isAdmin = false, securityPosture, dataFlow }: AboutSettingsProps) {
     const { t } = useLanguage();
     const [version, setVersion] = useState("");
@@ -27,12 +24,6 @@ export function AboutSettings({ isAdmin = false, securityPosture, dataFlow }: Ab
             .then((data) => setVersion(data.version))
             .catch(() => {});
     }, []);
-
-    const links = [
-        { href: PROJECT_REPO_URL, icon: GithubIcon, label: t.settings?.about?.github || "GitHub Repository" },
-        { href: `${PROJECT_REPO_URL}/releases`, icon: ScrollText, label: t.settings?.about?.releaseNotes || "Release Notes" },
-        { href: `${PROJECT_REPO_URL}/issues`, icon: MessageSquareText, label: t.settings?.about?.feedback || "Feedback" },
-    ];
 
     const postureCopy = t.settings?.about?.securityPosture;
     const postureChecks = isAdmin && securityPosture
@@ -116,20 +107,8 @@ export function AboutSettings({ isAdmin = false, securityPosture, dataFlow }: Ab
                 </div>
             )}
 
-            <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-4 w-full sm:w-auto px-4 sm:px-0">
-                {links.map(({ href, icon: Icon, label }) => (
-                    <Button key={href} variant="outline" asChild className="gap-2 w-full sm:w-auto">
-                        <a href={href} target="_blank" rel="noopener noreferrer">
-                            <Icon className="h-4 w-4" />
-                            {label}
-                            <ExternalLink className="h-3 w-3 ml-1 opacity-50" />
-                        </a>
-                    </Button>
-                ))}
-            </div>
-
-            <p className="text-xs text-muted-foreground mt-8">
-                {t.settings?.about?.copyright || "© 2026 margrop · margrop/wrong-notebook · MIT License"}
+            <p className="text-xs text-muted-foreground mt-4">
+                {t.settings?.about?.copyright || "© 2026 zhengwayne/wrong-notebook (based on wttwins & margrop) · MIT License"}
             </p>
         </div>
     );

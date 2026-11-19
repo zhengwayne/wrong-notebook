@@ -940,7 +940,7 @@ export const en = {
             desc: "XueJi - AI-powered learning assistant",
             releaseNotes: "Release Notes",
             feedback: "Feedback",
-            copyright: "© 2026 margrop · margrop/wrong-notebook · MIT License",
+            copyright: "© 2026 zhengwayne/wrong-notebook (based on wttwins & margrop) · MIT License",
             androidServer: "Server",
             changeServer: "Change server",
             androidStandalone: "Running on this device. Data is stored only on this device.",
