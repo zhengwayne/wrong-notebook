@@ -44,10 +44,13 @@ function extractBalancedSvg(raw: string): string | null {
 // 属性值都带引号的开始标签；不带引号的写法不处理，原样保留
 const START_TAG = /<([a-zA-Z][\w:.-]*)((?:\s+[^\s=>/"']+\s*=\s*(?:"[^"]*"|'[^']*'))+)\s*(\/?)>/g;
 const ATTRIBUTE = /([^\s=>/"']+)\s*=\s*("[^"]*"|'[^']*')/g;
+// 合法 SVG 数值坐标（仅允许数字与科学计数法，防止单引号属性值中夹带双引号逃逸 points 属性）
+const SVG_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /**
  * 修复同一元素中重复出现的属性。XML 不允许重复属性，<img> 加载这样的 SVG 时整张图都不显示。
- * 模型画折线时常把 <line> 写成 x1 y1 x2 y2 x2 y2…，此时按原意改成 <polyline>；其他重复属性只保留第一个。
+ * 模型画折线时常把自闭合 <line/> 写成 x1 y1 x2 y2 x2 y2…，此时在坐标均为合法数值的前提下按原意改成 <polyline/>；
+ * 非自闭合 <line>...</line> 或其他重复属性只保留第一个，确保开闭标签匹配且不引入注入风险。
  * Ported from margrop/wrong-notebook 5ff2a675 (MIT).
  */
 export function repairDuplicateSvgAttributes(svg: string): string {
@@ -65,12 +68,16 @@ export function repairDuplicateSvgAttributes(svg: string): string {
         const unquote = (value: string) => value.slice(1, -1).trim();
         const xs = attributes.filter((attr) => attr.key === 'x2').map((attr) => unquote(attr.value));
         const ys = attributes.filter((attr) => attr.key === 'y2').map((attr) => unquote(attr.value));
-        if (name.toLowerCase() === 'line' && xs.length > 1 && xs.length === ys.length && kept.has('x1') && kept.has('y1')) {
-            const points = [`${unquote(kept.get('x1')!)},${unquote(kept.get('y1')!)}`, ...xs.map((x, i) => `${x},${ys[i]}`)];
-            const rest = [...kept].filter(([key]) => !['x1', 'y1', 'x2', 'y2', 'fill'].includes(key));
-            // line 本身没有填充，改成折线后要显式不填充，否则默认填成黑色
-            const attrs = [`points="${points.join(' ')}"`, 'fill="none"', ...rest.map(([key, value]) => `${key}=${value}`)];
-            return `<polyline ${attrs.join(' ')}${close}`;
+        if (selfClosing && name.toLowerCase() === 'line' && xs.length > 1 && xs.length === ys.length && kept.has('x1') && kept.has('y1')) {
+            const x1 = unquote(kept.get('x1')!);
+            const y1 = unquote(kept.get('y1')!);
+            if ([x1, y1, ...xs, ...ys].every((coord) => SVG_NUMBER.test(coord))) {
+                const points = [`${x1},${y1}`, ...xs.map((x, i) => `${x},${ys[i]}`)];
+                const rest = [...kept].filter(([key]) => !['x1', 'y1', 'x2', 'y2', 'fill'].includes(key));
+                // line 本身没有填充，改成折线后要显式不填充，否则默认填成黑色
+                const attrs = [`points="${points.join(' ')}"`, 'fill="none"', ...rest.map(([key, value]) => `${key}=${value}`)];
+                return `<polyline ${attrs.join(' ')}${close}`;
+            }
         }
         return `<${name} ${[...kept].map(([key, value]) => `${key}=${value}`).join(' ')}${close}`;
     });
@@ -105,11 +112,11 @@ export function sanitizeFigureSvg(raw: unknown, maxLength: number = MAX_FIGURE_S
         svg = svg.replace(/@import[^;]*;?/gi, '');
         svg = svg.replace(/url\(\s*(['"]?)(?!#)[^)]*\)/gi, 'none');
         svg = svg.replace(/(?:javascript|vbscript|data)\s*:/gi, '');
+        // 在净化循环内部修复重复属性，确保任何属性重写结果都会再经历完整清洗
+        svg = repairDuplicateSvgAttributes(svg);
     } while (svg !== previous);
 
     if (CONTAINER_ESCAPE_PREFIX.test(svg)) return null;
-
-    svg = repairDuplicateSvgAttributes(svg);
 
     if (!/<svg[^>]*\sxmlns\s*=/i.test(svg)) {
         svg = svg.replace(/<svg/i, `<svg xmlns="${SVG_NS}"`);

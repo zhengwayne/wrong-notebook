@@ -34,9 +34,28 @@ describe('repairDuplicateSvgAttributes', () => {
         expect(decodeURIComponent(figureSvgToDataUri(broken))).toContain('<polyline points="0,0 5,0 5,5"');
     });
 
-    it('修复后仍不允许事件属性', () => {
+    it('修复后仍不允许事件属性，并阻断通过单引号重复坐标绕过注入 onload 或外部 href', () => {
         const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect x="1" x="2" onload="alert(1)" width="3" height="3"/></svg>';
         expect(sanitizeFigureSvg(svg)).not.toMatch(/onload/i);
+
+        const xssPayload = `<svg xmlns="http://www.w3.org/2000/svg"><line x1='0' y1='0' x2='1' y2='1"' x2='onload="alert(1)//' y2='2" data-x="'/></svg>`;
+        const sanitizedXss = sanitizeFigureSvg(xssPayload);
+        expect(sanitizedXss).not.toBeNull();
+        expect(sanitizedXss).not.toMatch(/\sonload\s*=/i);
+        expect(sanitizedXss).not.toContain('<polyline');
+
+        const hrefPayload = `<svg xmlns="http://www.w3.org/2000/svg"><line x1='0' y1='0' x2='1' y2='1"' x2='href="https://evil.com/' y2='2"'/></svg>`;
+        const sanitizedHref = sanitizeFigureSvg(hrefPayload);
+        expect(sanitizedHref).not.toBeNull();
+        expect(sanitizedHref).not.toMatch(/\shref\s*=/i);
+        expect(sanitizedHref).not.toContain('<polyline');
+    });
+
+    it('非自闭合 <line>...</line> 只去重属性而不改写标签名，保持合法 XML', () => {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="5" y2="0" x2="5" y2="5" stroke="#000"></line></svg>';
+        const repaired = repairDuplicateSvgAttributes(svg);
+        expect(isValidXml(repaired)).toBe(true);
+        expect(repaired).toBe('<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="5" y2="0" stroke="#000"></line></svg>');
     });
 
     it('配图提示词要求合法 XML、折线用 polyline', () => {
