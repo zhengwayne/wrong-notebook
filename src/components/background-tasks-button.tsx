@@ -5,11 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { CheckCircle2, ListTodo, Loader2, XCircle } from "lucide-react";
+import { KID_MODE_CHANGED_EVENT, useKidModeState } from "@/components/parent/kid-mode-lock-bar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/date-time";
 import type { BackgroundTask } from "@/lib/background-tasks";
 
@@ -37,8 +38,12 @@ export function BackgroundTasksButton() {
     const [open, setOpen] = useState(false);
     const [tasks, setTasks] = useState<BackgroundTask[]>([]);
     const [now, setNow] = useState(() => Date.now());
+    const [disabledByForbidden, setDisabledByForbidden] = useState(false);
 
-    const hidden = status !== "authenticated" || HIDDEN_PATHS.some((pattern) => pattern.test(pathname || ""));
+    const isPathHidden = HIDDEN_PATHS.some((pattern) => pattern.test(pathname || ""));
+    const { state: kidMode } = useKidModeState(status === "authenticated" && !isPathHidden);
+    const kidLocked = Boolean(kidMode?.active);
+    const hidden = status !== "authenticated" || isPathHidden || kidLocked;
 
     const refresh = useCallback(async () => {
         if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -46,13 +51,23 @@ export function BackgroundTasksButton() {
             const result = await apiClient.get<{ tasks: BackgroundTask[] }>("/api/tasks");
             setTasks(result.tasks);
             setNow(Date.now());
-        } catch {
+        } catch (err) {
+            if (err instanceof ApiError && err.status === 403) {
+                setDisabledByForbidden(true);
+            }
             // 查询失败时保留上次结果，下次轮询再试
         }
     }, []);
 
     useEffect(() => {
-        if (hidden) return;
+        if (typeof window === "undefined") return;
+        const onKidModeChanged = () => setDisabledByForbidden(false);
+        window.addEventListener(KID_MODE_CHANGED_EVENT, onKidModeChanged);
+        return () => window.removeEventListener(KID_MODE_CHANGED_EVENT, onKidModeChanged);
+    }, []);
+
+    useEffect(() => {
+        if (hidden || disabledByForbidden) return;
         // 立即查询一次（放到下一轮事件循环，避免在 effect 中同步更新状态），之后定时刷新
         const first = setTimeout(refresh, 0);
         const timer = setInterval(refresh, open ? OPEN_POLL_MS : CLOSED_POLL_MS);
@@ -60,7 +75,7 @@ export function BackgroundTasksButton() {
             clearTimeout(first);
             clearInterval(timer);
         };
-    }, [hidden, open, refresh]);
+    }, [hidden, disabledByForbidden, open, refresh]);
 
     if (hidden) return null;
 

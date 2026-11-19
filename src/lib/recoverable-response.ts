@@ -2,7 +2,7 @@
  * 耗时请求的响应暂存，供请求被浏览器中断后取回。
  *
  * 结合进程内热缓存与 SQLite `AsyncOperation` 表（category = 'recoverable'）：
- * - 已完成响应按 `userId` 归属隔离（跨用户查询严格返回 404）；
+ * - 响应按账户和当前专注锁绑定的学习者隔离；
  * - 当 `AsyncOperation` 表可用时支持跨重启取回已完成响应。
  */
 import type { PrismaClient } from "@prisma/client";
@@ -10,6 +10,7 @@ import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { resolveActor } from "@/lib/server/actor";
 import { getRequestContext } from "@/lib/server/request-context";
+import { getKidModeLockFromRequest } from "@/lib/kid-mode-lock";
 
 const logger = createLogger("recoverable-response");
 
@@ -82,12 +83,19 @@ async function readBody(response: Response): Promise<unknown> {
     return text;
 }
 
-async function tryResolveUserId(): Promise<string | null> {
-    const fromCtx = getRequestContext()?.userId;
-    if (fromCtx) return fromCtx;
+function recoveryScope(userId: string, learnerId?: string): string {
+    return learnerId ? JSON.stringify([userId, learnerId]) : userId;
+}
+
+async function resolveRecoveryOwner(req: Request) {
+    const context = getRequestContext();
+    if (context?.userId) return { userId: context.userId, learnerId: context.kidModeLearnerId };
     try {
         const actor = await resolveActor();
-        return actor.kind === "authenticated" ? actor.user.id : null;
+        if (actor.kind !== "authenticated") return null;
+        const { id: userId, authVersion } = actor.user;
+        const lock = getKidModeLockFromRequest(req, { userId, authVersion });
+        return { userId, learnerId: lock?.learnerId };
     } catch {
         return null;
     }
@@ -101,10 +109,11 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
         const id = parseRequestId(req.headers.get(REQUEST_ID_HEADER));
         if (!id) return handler(req, ...args);
 
-        const ownerUserId = await tryResolveUserId();
-        if (!ownerUserId) return handler(req, ...args);
-        const scopeKey = ownerUserId;
-        const cacheKey = `${ownerUserId}:${id}`;
+        const owner = await resolveRecoveryOwner(req);
+        if (!owner) return handler(req, ...args);
+        const ownerUserId = owner.userId;
+        const scopeKey = recoveryScope(ownerUserId, owner.learnerId);
+        const cacheKey = `${scopeKey}:${id}`;
         const now = Date.now();
         prune(now);
         const entry: Entry = {
@@ -233,12 +242,13 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
 }
 
 /** 按请求编号查询：进行中、已结束（含响应），或不存在 / 跨用户无权（返回 null） */
-export async function getStoredResponse(id: string, viewerUserId: string): Promise<StoredResponse | null> {
+export async function getStoredResponse(id: string, viewerUserId: string, learnerId?: string): Promise<StoredResponse | null> {
     if (!viewerUserId) return null;
     const now = Date.now();
     prune(now);
 
-    const entry = entries.get(`${viewerUserId}:${id}`);
+    const scopeKey = recoveryScope(viewerUserId, learnerId);
+    const entry = entries.get(`${scopeKey}:${id}`);
     if (entry) {
         return entry.finishedAt === null ? { state: "running" } : { state: "done", status: entry.status, body: entry.body };
     }
@@ -249,7 +259,7 @@ export async function getStoredResponse(id: string, viewerUserId: string): Promi
     const record = await repo.findUnique({
         where: {
             scopeKey_category_kind_idempotencyKey: {
-                scopeKey: viewerUserId,
+                scopeKey,
                 category: RECOVERABLE_CATEGORY,
                 kind: RECOVERABLE_KIND,
                 idempotencyKey: id,

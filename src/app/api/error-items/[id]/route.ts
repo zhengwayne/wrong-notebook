@@ -10,6 +10,7 @@ import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
 import { defineApiRoute } from "@/lib/server/api-route";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
+import { studentKeyOf } from "@/lib/learners";
 
 const logger = createLogger('api:error-items:id');
 
@@ -25,6 +26,7 @@ export const GET = defineApiRoute<Request, { id: string }>(
                 },
                 include: {
                     subject: true,
+                    learner: { select: { id: true, kind: true, gradingStudentId: true } },
                     tags: true, // 包含标签关联
                 },
             });
@@ -42,8 +44,9 @@ export const GET = defineApiRoute<Request, { id: string }>(
                 return kidModeRestricted();
             }
 
-            const learning = await getErrorItemLearningContext(user.id, errorItem);
-            return NextResponse.json({ ...errorItem, learning });
+            const { learner, ...item } = errorItem;
+            const learning = await getErrorItemLearningContext(user.id, item, learner ? studentKeyOf(learner) : undefined);
+            return NextResponse.json({ ...item, learning });
         } catch (error) {
             logger.error({ error }, 'Error fetching item');
             return internalError("Failed to fetch error item");

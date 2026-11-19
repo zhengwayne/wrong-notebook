@@ -87,6 +87,9 @@ describe('kid-mode-lock 签名锁与路由收敛纯函数', () => {
         expect(isApiAllowedInKidMode('/api/auth/session', 'GET')).toBe(true);
         expect(isApiAllowedInKidMode('/api/auth/csrf', 'GET')).toBe(true);
         expect(isApiAllowedInKidMode('/api/practice/generate', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/variants/compare', 'GET')).toBe(false);
+        expect(isApiAllowedInKidMode('/api/variants/runs', 'GET')).toBe(false);
+        expect(isApiAllowedInKidMode('/api/error-items/item-1/practice-records', 'GET')).toBe(true);
         expect(isApiAllowedInKidMode('/api/auth/signout', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/auth/callback/credentials', 'POST')).toBe(false);
         expect(isApiAllowedInKidMode('/api/user', 'DELETE')).toBe(false);

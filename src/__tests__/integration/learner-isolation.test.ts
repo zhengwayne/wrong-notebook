@@ -494,7 +494,7 @@ describe('多孩子学习者全链路作用域隔离（OPT-07 + OPT-21）', () =
     });
 
     it('跨班同名学生在教师首页、档案、学习路径与变式弱点下严格隔离，花名册同步建档与录题不误串本人本', async () => {
-        await withTwoTenants(db, async ({ alice }) => {
+        await withTwoTenants(db, async ({ alice, bob }) => {
             mocks.session = alice.session;
 
             // 一班“张三”与二班“张三”历史上共享同一个同名“张三·数学”错题本
@@ -565,6 +565,26 @@ describe('多孩子学习者全链路作用域隔离（OPT-07 + OPT-21）', () =
                     },
                 ],
             });
+            const detail = (classId: string) => GET_NOTEBOOK(
+                new Request(`http://localhost/api/notebooks/${sharedNotebook.id}?classId=${classId}`),
+                { params: Promise.resolve({ id: sharedNotebook.id }) },
+            );
+            const list = (query: string) => LIST_ERROR_ITEMS(
+                new Request(`http://localhost/api/error-items/list?subjectId=${sharedNotebook.id}&${query}`),
+            );
+            for (const [classId, itemId] of [[alice.classes.classA.id, 'zhang-a-item'], [alice.classes.classB.id, 'zhang-b-item']]) {
+                const notebooks = await GET_NOTEBOOKS(new Request(`http://localhost/api/notebooks?classId=${classId}`));
+                expect(await notebooks.json()).toContainEqual(expect.objectContaining({ id: sharedNotebook.id, _count: { errorItems: 1 } }));
+                expect(await (await detail(classId)).json()).toMatchObject({ id: sharedNotebook.id, _count: { errorItems: 1 } });
+                for (const view of ['list', 'print']) {
+                    const result = await list(`classId=${classId}&view=${view}`);
+                    expect(await result.json()).toMatchObject({ total: 1, items: [{ id: itemId }] });
+                }
+            }
+            expectCrossScopeNotFound(await detail(bob.classes.classA.id));
+            expectCrossScopeNotFound(await list(`classId=${bob.classes.classA.id}&view=print`));
+            expectCrossScopeNotFound(await list(`classId=${alice.classes.classB.id}&learnerId=${alice.sameNameStudents.inClassA.learnerId}`));
+
             // 同班对某共享错题关联一条仅属二班张三的练习记录
             await db.practiceRecord.create({
                 data: {

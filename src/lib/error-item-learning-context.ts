@@ -22,11 +22,12 @@ export async function getErrorItemLearningContext(userId: string, item: {
     createdAt?: Date | string | null;
     tags?: { name: string }[];
     knowledgePoints?: string | null;
-}) {
+    learnerId?: string | null;
+}, studentKey = SELF_STUDENT_KEY) {
     const timeZone = getAppTimeZone();
     const [records, userRow] = await Promise.all([
         prisma.practiceRecord?.findMany?.({
-            where: { errorItemId: item.id, result: { not: null } },
+            where: { errorItemId: item.id, learnerId: item.learnerId ?? null, result: { not: null } },
             select: { result: true, createdAt: true },
             orderBy: { createdAt: "asc" },
         }) ?? Promise.resolve([]),
@@ -46,7 +47,7 @@ export async function getErrorItemLearningContext(userId: string, item: {
     );
 
     const path = await prisma.learningPath?.findUnique?.({
-        where: { userId_studentKey: { userId, studentKey: SELF_STUDENT_KEY } },
+        where: { userId_studentKey: { userId, studentKey } },
         include: { steps: { orderBy: { position: "asc" } } },
     }) ?? null;
     const pathSteps: ErrorItemPathStepSummary[] = (path?.steps ?? [])
@@ -70,7 +71,7 @@ export async function getErrorItemLearningContext(userId: string, item: {
     const knowledgeMastery = points.length === 0
         ? []
         : await prisma.knowledgeMastery?.findMany?.({
-            where: { userId, studentKey: SELF_STUDENT_KEY, knowledgePoint: { in: points } },
+            where: { userId, studentKey, knowledgePoint: { in: points } },
             select: {
                 knowledgePoint: true,
                 pKnown: true,

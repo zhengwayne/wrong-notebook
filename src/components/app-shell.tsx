@@ -70,9 +70,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const homeHref = homeHrefForPersona(activePersona);
     const { hrefWithChild } = useCurrentChild();
     const isBare = BARE_PATHS.some((pattern) => pattern.test(pathname));
-    useSetupRedirect(isAdmin && !isBare);
     const { state: kidMode } = useKidModeState(status === "authenticated" && !isBare);
     const kidLocked = Boolean(kidMode?.active);
+    useSetupRedirect(isAdmin && !isBare && !kidLocked);
     const visibleNavItems = kidLocked
         ? navItems.filter((item) => item.href === "/learn" || item.href === "/review")
         : navItems;

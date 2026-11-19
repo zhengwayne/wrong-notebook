@@ -179,12 +179,14 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
         return true;
     }
 
-    if (pathname.startsWith('/api/variants/') && upperMethod === 'GET') return true;
-
-    if (pathname.startsWith('/api/error-items/') && upperMethod === 'GET') return true;
+    // 学习页用到的错题读取入口都必须校验当前孩子；变式审核和班级报表只允许家长或教师查看。
+    if (/^\/api\/error-items\/[^/]+(?:\/practice-records)?$/.test(pathname) && upperMethod === 'GET') return true;
+    if (/^\/api\/error-items\/short\/[^/]+$/.test(pathname) && upperMethod === 'GET') return true;
     if (pathname === '/api/user' && upperMethod === 'GET') return true;
-    if (pathname.startsWith('/api/tts') && (upperMethod === 'GET' || upperMethod === 'POST')) return true;
-    if (pathname.startsWith('/api/requests/') && upperMethod === 'GET') return true;
+    if (pathname === '/api/tts' && (upperMethod === 'GET' || upperMethod === 'POST')) return true;
+    if ((pathname === '/api/tts/status' || pathname === '/api/tts/batch') && upperMethod === 'POST') return true;
+    if (/^\/api\/tts\/[a-f0-9]{64}$/.test(pathname) && upperMethod === 'GET') return true;
+    if (/^\/api\/requests\/[a-f0-9]{32}$/.test(pathname) && upperMethod === 'GET') return true;
     if (pathname === '/api/logs/frontend' && upperMethod === 'POST') return true;
     if (pathname === '/api/system/snapshot-status' && upperMethod === 'GET') return true;
     if (pathname === '/api/health' || pathname === '/api/version') return true;

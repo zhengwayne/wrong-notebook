@@ -190,10 +190,17 @@ describe('/api/error-items', () => {
         });
     });
 
+    // 列表先统计命中数，有命中时才查询本页内容；筛选参数断言需要覆盖这第二步。
+    function mockOneListMatch() {
+        mocks.mockPrismaErrorItem.count.mockResolvedValue(1);
+        mocks.mockPrismaErrorItem.findMany.mockResolvedValue([
+            { id: 'match', questionText: '匹配的题目', userId: mockUser.id, _count: { practiceRecords: 0 } },
+        ]);
+    }
+
     describe('GET /api/error-items/list 短 ID 搜索', () => {
         it('查询词为短 ID 时同时按短 ID 精确匹配', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?query=aB3xYz'));
 
@@ -202,8 +209,7 @@ describe('/api/error-items', () => {
         });
 
         it('普通查询词不按短 ID 匹配', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?query=' + encodeURIComponent('勾股定理')));
 
@@ -726,6 +732,14 @@ describe('/api/error-items', () => {
     });
 
     describe('GET /api/error-items/list (获取错题列表)', () => {
+        it.each([[0, 1], [1, 2]])('总数为 %i 时请求第 %i 页为空，跳过内容查询', async (total, page) => {
+            mocks.mockPrismaErrorItem.count.mockResolvedValue(total);
+            const response = await GET_LIST(new Request(`http://localhost/api/error-items/list?page=${page}`));
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({ total, page, items: [] });
+            expect(mocks.mockPrismaErrorItem.findMany).not.toHaveBeenCalled();
+        });
+
         it('应该返回用户的错题（分页响应）', async () => {
             const errorItems = [
                 { id: '1', questionText: '题目1', userId: 'user-123', _count: { practiceRecords: 0 } },
@@ -767,8 +781,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持搜索查询', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?query=方程');
             const response = await GET_LIST(request);
@@ -796,8 +809,7 @@ describe('/api/error-items', () => {
             }],
             ['mastered', { practiceRecords: { some: { result: { not: null } } }, masteryProbability: { gte: 0.5 } }],
         ])('应该支持按复习状态 %s 筛选', async (status, condition) => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request(`http://localhost/api/error-items/list?mastery=${status}`);
             const response = await GET_LIST(request);
@@ -826,8 +838,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按知识点标签筛选', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?tag=一元一次方程');
             const response = await GET_LIST(request);
@@ -848,8 +859,7 @@ describe('/api/error-items', () => {
         });
 
         it('按知识点筛选时不应把名称包含该词的其他标签算进来', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?tag=函数'));
 
@@ -862,8 +872,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按时间范围筛选（最近一周）', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?timeRange=week');
             const response = await GET_LIST(request);
@@ -881,8 +890,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按试卷等级筛选', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?paperLevel=A');
             const response = await GET_LIST(request);

@@ -34,6 +34,8 @@ import { POST as ENABLE_KID_MODE, GET as GET_KID_MODE } from '@/app/api/parent/k
 import { POST as UNLOCK_KID_MODE } from '@/app/api/parent/kid-mode/unlock/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
 import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
+import { GET as LIST_ITEMS } from '@/app/api/error-items/list/route';
+import { GET as GET_HISTORY } from '@/app/api/error-items/[id]/practice-records/route';
 import { GET as GET_LEARNING_PATH } from '@/app/api/learning-path/route';
 import { PATCH as PATCH_STEP } from '@/app/api/learning-path/steps/[id]/route';
 import { proxy } from '@/proxy';
@@ -270,6 +272,28 @@ describe('孩子专注做题受限模式集成测试', () => {
             { params: Promise.resolve({ id: 'err-b' }) },
         );
         expect(errBRes.status).toBe(403);
+
+        await database.errorItem.update({ where: { id: 'err-1' }, data: { knowledgePoints: '["分数"]' } });
+        await database.knowledgeMastery.createMany({ data: [
+            { userId: 'parent-1', studentKey: 'child-a', knowledgePoint: '分数', evidenceCount: 3 },
+            { userId: 'parent-1', studentKey: 'self', knowledgePoint: '分数', evidenceCount: 12 },
+        ] });
+        const ownItem = await GET_ERROR_ITEM(
+            new Request('http://127.0.0.1/api/error-items/err-1', { headers: { cookie: cookieHeader } }),
+            { params: Promise.resolve({ id: 'err-1' }) },
+        );
+        expect((await ownItem.json()).learning.knowledgeMastery).toMatchObject([{ evidenceCount: 3 }]);
+
+        const listRes = await LIST_ITEMS(new Request('http://127.0.0.1/api/error-items/list?learnerId=child-b&classId=another-class&view=print', {
+            headers: { cookie: cookieHeader },
+        }));
+        expect((await listRes.json()).items.map((item: { id: string }) => item.id)).toEqual(['err-1']);
+        for (const [id, status] of [['err-1', 200], ['err-b', 404]] as const) {
+            const history = await GET_HISTORY(new Request(`http://127.0.0.1/api/error-items/${id}/practice-records`, {
+                headers: { cookie: cookieHeader },
+            }), { params: Promise.resolve({ id }) });
+            expect(history.status).toBe(status);
+        }
 
         const pathRes = await GET_LEARNING_PATH(
             new Request('http://127.0.0.1/api/learning-path?studentKey=child-b&language=zh', { headers: { cookie: cookieHeader } }),
