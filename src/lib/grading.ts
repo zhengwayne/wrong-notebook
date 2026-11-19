@@ -14,11 +14,14 @@ export const GRADING_VERDICTS = ['correct', 'partial', 'wrong', 'blank'] as cons
 export type GradingVerdict = typeof GRADING_VERDICTS[number];
 export const MAX_GRADING_QUESTIONS = 100;
 
+export type AnswerSourceKind = 'manual' | 'exam_paper' | 'key_image' | 'ai_inferred';
+
 export interface KeyQuestionInput {
     number: string;
     type: GradingQuestionType;
     maxScore: number;
     answer: string;
+    answerSource?: AnswerSourceKind;
     acceptedAnswers?: string[];
     questionText?: string | null;
     knowledgePoints?: string[];

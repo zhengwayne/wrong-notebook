@@ -73,7 +73,7 @@ function GradingTaskView() {
                     { value: "summary", label: t.grading.tabs.summary, icon: BarChart3 },
                 ]} />
                 {tab === "key" && <KeyEditor key={task.questions.map((q) => q.id).join()} taskId={task.id} initial={task.questions} onSaved={load} />}
-                {tab === "capture" && (task.questions.length === 0
+                {tab === "capture" && (task.questions.length === 0 && task.taskMode !== "quick"
                     ? <p className="text-sm text-muted-foreground">{t.grading.noKey}</p>
                     : <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />)}
                 {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} multiClass={task.classIds.length > 1} onChanged={load} />}

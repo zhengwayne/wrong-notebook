@@ -11,6 +11,7 @@ import { VENDOR_PROVIDER_IDS } from "@/lib/ai/vendor-presets";
 import { assertSafeOutboundUrl, OutboundUrlError } from "@/lib/outbound-url";
 import { maskAppConfigSecrets, unmaskAppConfigSecrets } from "@/lib/settings-secrets";
 import { CLOUD_TTS_PROVIDERS, TTS_MODES } from "@/lib/tts/constants";
+import { computeAiReadiness } from "@/lib/ai-readiness";
 import { buildDataFlowSummary } from "@/lib/data-flow";
 import { getSecurityPosture } from "@/lib/security-posture";
 import { defineApiRoute } from "@/lib/server/api-route";
@@ -61,11 +62,12 @@ export const dynamic = 'force-dynamic';
 export const GET = defineApiRoute({ auth: 'user' }, async (_req, { user }) => {
     const config = getAppConfig();
     const dataFlow = buildDataFlowSummary(config);
+    const aiReadiness = computeAiReadiness(config);
     // 完整配置（含安全态势摘要，所有密钥字段脱敏）只给管理员；普通用户只需要非敏感字段与脱敏数据去向摘要
     if (!isAdmin(user)) {
-        return NextResponse.json({ aiProvider: config.aiProvider, timeouts: config.timeouts, timeZone: config.timeZone, dataFlow });
+        return NextResponse.json({ aiProvider: config.aiProvider, timeouts: config.timeouts, timeZone: config.timeZone, dataFlow, aiReadiness });
     }
-    return NextResponse.json({ ...maskAppConfigSecrets(config), securityPosture: getSecurityPosture(config), dataFlow });
+    return NextResponse.json({ ...maskAppConfigSecrets(config), securityPosture: getSecurityPosture(config), dataFlow, aiReadiness });
 });
 
 export const POST = defineApiRoute({ auth: 'admin' }, async (req) => {

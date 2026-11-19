@@ -324,20 +324,25 @@ model GradingStudent {
 
 // 一次改卷任务（某班某次考试）
 model GradingTask {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  classId     String
-  class       GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
-  title       String
-  subjectName String   @default("数学") // 导入错题时使用的学科名
-  examPaperId String?  // 从已有试卷生成答案时记录来源
-  keyImageUrl String?  // 拍照识别的答案卷（压缩后的 data URL）
-  extraClassIds String? // JSON 数组：同一次考试一起收卷的其他班级
-  questions   GradingKeyQuestion[]
-  submissions GradingSubmission[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId         String
+  class           GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title           String
+  subjectName     String    @default("数学") // 导入错题时使用的学科名
+  taskMode        String    @default("standard") // standard 标准答案模式 | quick 随堂无答案速批
+  scoringMode     String    @default("numeric")  // numeric 数值分制 | grade 等级制(优/良/合格/待订正)
+  deadline        DateTime?
+  allowSelfSubmit Boolean   @default(false)
+  submitTokenHash String?   @unique
+  examPaperId     String?   // 从已有试卷生成答案时记录来源
+  keyImageUrl     String?   // 拍照识别的答案卷（压缩后的 data URL）
+  extraClassIds   String?   // JSON 数组：同一次考试一起收卷的其他班级
+  questions       GradingKeyQuestion[]
+  submissions     GradingSubmission[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId, createdAt])
   @@index([classId])
@@ -353,6 +358,7 @@ model GradingKeyQuestion {
   type            String  @default("objective") // objective 客观题 | subjective 主观题
   maxScore        Float   @default(1)
   answer          String  @default("")
+  answerSource    String  @default("manual") // manual | exam_paper | key_image | ai_inferred
   acceptedAnswers String? // JSON 数组：其他可接受的答案写法
   questionText    String?
   knowledgePoints String? // JSON 数组
@@ -363,28 +369,37 @@ model GradingKeyQuestion {
 
 // 一位学生的一份答卷（可多页）
 model GradingSubmission {
-  id           String   @id @default(cuid())
-  taskId       String
-  task         GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  studentId    String?
-  student      GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  detectedName String?  // AI 从卷面读出的姓名
-  detectedClass String? // AI 从卷面读出的班级
-  detectedStudentNo String? // AI 从卷面读出的学号
-  matchStatus  String?  // auto 自动匹配 | review 待确认 | manual 老师指定
-  matchConfidence Float? // 自动匹配置信度 0~1
-  matchReason  String?  // JSON：匹配原因代码与参数
-  matchCandidates String? // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
-  images       String   // JSON 数组：压缩后的 data URL，每页一张
-  status       String   @default("pending") // pending | grading | graded | failed | confirmed
-  version      Int      @default(0) // 乐观锁版本号：修改判分、指定学生或确认入库时递增
-  totalScore   Float?
-  error        String?
-  confirmedAt  DateTime?
-  importedCount Int     @default(0) // 确认后导入错题本的题目数
-  results      GradingResult[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  taskId            String
+  task              GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  studentId         String?
+  student           GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  detectedName      String?   // AI 从卷面读出的姓名
+  detectedClass     String?   // AI 从卷面读出的班级
+  detectedStudentNo String?   // AI 从卷面读出的学号
+  matchStatus       String?   // auto 自动匹配 | review 待确认 | manual 老师指定
+  matchConfidence   Float?    // 自动匹配置信度 0~1
+  matchReason       String?   // JSON：匹配原因代码与参数
+  matchCandidates   String?   // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
+  images            String    // JSON 数组：压缩后的 data URL，每页一张
+  status            String    @default("pending") // pending | grading | graded | failed | confirmed
+  reviewBucket      String    @default("yellow")  // green 绿灯免检 | yellow 黄灯待复核
+  handwritingLevel  String?   // excellent | good | fair | needs_work
+  neatnessLevel     String?   // excellent | good | fair | needs_work
+  attitudeLevel     String?   // excellent | good | fair | needs_work
+  processTags       String?   // JSON 数组：快捷评价胶囊 key
+  visualAlerts      String?   // JSON 数组：AI 宏观视觉异常预警
+  teacherComment    String?   // 答卷级综合评语
+  shareTokenHash    String?   @unique
+  shareExpiresAt    DateTime?
+  version           Int       @default(0) // 乐观锁版本号：修改判分、指定学生或确认入库时递增
+  totalScore        Float?
+  error             String?
+  confirmedAt       DateTime?
+  importedCount     Int       @default(0) // 确认后导入错题本的题目数
+  results           GradingResult[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([taskId, createdAt])
   @@index([studentId])
@@ -401,7 +416,10 @@ model GradingResult {
   verdict       String  // correct | partial | wrong | blank
   score         Float   @default(0)
   aiScore       Float?  // AI 建议分（主观题）
+  confidence    Float?  // AI 识别与初判把握度 0~1
+  bbox          String? // 归一化题框 JSON：{ pageIndex, x, y, width, height }
   reason        String?
+  comment       String? // 老师单题文字批注
   source        String  @default("auto") // auto 本地比对 | ai | teacher 老师改判
   errorItemId   String? // 导入错题本后的错题 ID
   provenanceId  String?
@@ -567,6 +585,11 @@ model ParentPaper {
   /// 可选答案卷照片，JSON 数组（data URL）
   answerKeyImages String?
   hasAnswerKey    Boolean  @default(false)
+  handwritingLevel String?
+  neatnessLevel    String?
+  attitudeLevel    String?
+  processTags      String?
+  parentComment    String?
   errorMessage    String?
   recognizedAt    DateTime?
   confirmedAt     DateTime?

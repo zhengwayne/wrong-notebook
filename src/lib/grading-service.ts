@@ -12,21 +12,26 @@ import { generateUniqueShortId } from "@/lib/short-id";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
 import { ensureLearnerForGradingStudent } from "@/lib/learners";
+import { ensureQuickStudentInClass, inferAnswerKeyFromSampleImages } from "@/lib/grading-quick-key";
 import {
     gradeAnswers, isWrong, parseJsonStringArray, totalScore,
     MAX_GRADING_QUESTIONS,
 } from "@/lib/grading";
-import type { KeyQuestion, KeyQuestionInput } from "@/lib/grading";
+import type { AnswerSourceKind, KeyQuestion, KeyQuestionInput } from "@/lib/grading";
 import { flagDuplicate, hasIdentity, matchStudent, type MatchResult, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
 
 const logger = createLogger('grading');
 
 type KeyQuestionRow = {
     id: string; order: number; number: string; type: string; maxScore: number; answer: string;
+    answerSource?: string;
     acceptedAnswers: string | null; questionText: string | null; knowledgePoints: string | null;
 };
 
 export function toKeyQuestion(row: KeyQuestionRow): KeyQuestion {
+    const validSource = (['manual', 'exam_paper', 'key_image', 'ai_inferred'] as const).includes(row.answerSource as AnswerSourceKind)
+        ? (row.answerSource as AnswerSourceKind)
+        : 'manual';
     return {
         id: row.id,
         order: row.order,
@@ -34,6 +39,7 @@ export function toKeyQuestion(row: KeyQuestionRow): KeyQuestion {
         type: row.type === 'subjective' ? 'subjective' : 'objective',
         maxScore: row.maxScore,
         answer: row.answer,
+        answerSource: validSource,
         acceptedAnswers: parseJsonStringArray(row.acceptedAnswers),
         questionText: row.questionText,
         knowledgePoints: parseJsonStringArray(row.knowledgePoints),
@@ -48,6 +54,7 @@ export function keyQuestionData(question: KeyQuestionInput, order: number) {
         type: question.type,
         maxScore: question.maxScore,
         answer: question.answer.trim(),
+        answerSource: question.answerSource ?? 'manual',
         acceptedAnswers: question.acceptedAnswers?.length ? JSON.stringify(question.acceptedAnswers) : null,
         questionText: question.questionText?.trim() || null,
         knowledgePoints: question.knowledgePoints?.length ? JSON.stringify(question.knowledgePoints) : null,
@@ -145,11 +152,33 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         include: { task: { include: { questions: { orderBy: { order: 'asc' } } } } },
     });
     if (!submission) return;
-    const questions = submission.task.questions.map(toKeyQuestion);
+    let questions = submission.task.questions.map(toKeyQuestion);
     await prisma.gradingSubmission.update({ where: { id: submissionId }, data: { status: 'grading', error: null } });
 
     try {
         const images = parseJsonStringArray(submission.images);
+        // 随堂无答案速批模式：若当前任务尚无标准答案，用首份样本卷三段解耦推导标准答案并落库复用
+        if (questions.length === 0 && submission.task.taskMode === 'quick' && images.length > 0) {
+            const inferred = await inferAnswerKeyFromSampleImages(images, submission.task.subjectName, language);
+            if (inferred.length > 0) {
+                await prisma.$transaction(async (tx) => {
+                    const existingCount = await tx.gradingKeyQuestion.count({ where: { taskId: submission.taskId } });
+                    if (existingCount === 0) {
+                        await tx.gradingKeyQuestion.createMany({
+                            data: inferred.map((qItem, idx) => ({
+                                taskId: submission.taskId,
+                                ...keyQuestionData(qItem, idx),
+                            })),
+                        });
+                    }
+                });
+                const refreshed = await prisma.gradingKeyQuestion.findMany({
+                    where: { taskId: submission.taskId },
+                    orderBy: { order: 'asc' },
+                });
+                questions = refreshed.map(toKeyQuestion);
+            }
+        }
         const read = await getAIService('vision').readExamPaper({
             mode: 'student',
             images: images.map((image) => splitDataUrl(image)),
@@ -158,7 +187,7 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         });
         const graded = gradeAnswers(questions, read.questions);
         // 已由老师指定或已自动匹配的不再改动；否则用拍照时识别的身份，缺失的字段用整卷读出的补上
-        let identityData = {};
+        let identityData: Record<string, unknown> = {};
         if (!submission.studentId && submission.matchStatus !== 'manual') {
             const identity: PaperIdentity = {
                 className: submission.detectedClass || read.className,
@@ -168,6 +197,21 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             if (hasIdentity(identity) || submission.matchStatus === null) {
                 const roster = await loadTaskRoster(submission.task);
                 identityData = resolveMatch(identity, roster, await takenStudentIds(submission.taskId, submissionId));
+                // 随堂速批免花名册模式：若姓名清晰但花名册中无此学生，自动在任务班级补建学生档案
+                if (!identityData.studentId && submission.task.taskMode === 'quick' && identity.name?.trim()) {
+                    const createdStu = await ensureQuickStudentInClass(prisma, {
+                        userId: submission.task.userId,
+                        classId: submission.task.classId,
+                        studentName: identity.name,
+                        studentNo: identity.studentNo,
+                    });
+                    identityData = {
+                        ...identityData,
+                        studentId: createdStu.id,
+                        matchStatus: 'auto',
+                        matchConfidence: 0.92,
+                    };
+                }
             }
         }
 

@@ -330,7 +330,7 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
             }),
             async (row) => {
                 const keyImageUrl = await stripMediaField(row.keyImageUrl);
-                await gtEntry.writeLine({ ...row, keyImageUrl });
+                await gtEntry.writeLine({ ...row, keyImageUrl, submitTokenHash: null });
             },
             MEDIA_PAGE_SIZE,
         );
@@ -358,7 +358,7 @@ export function createBackupV3Stream(options: ExportV3Options): ReadableStream<U
             }),
             async (row) => {
                 const images = (await extractMediaFromJsonArray(row.images, emitMedia)) ?? '[]';
-                await gsEntry.writeLine({ ...row, images });
+                await gsEntry.writeLine({ ...row, images, shareTokenHash: null });
             },
             MEDIA_PAGE_SIZE,
         );

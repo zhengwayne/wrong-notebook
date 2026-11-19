@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         include: { _count: { select: { questions: true } } },
     });
     if (!task) return notFound("Grading task not found");
-    if (task._count.questions === 0) return badRequest("Answer key is empty");
+    if (task._count.questions === 0 && task.taskMode !== 'quick') return badRequest("Answer key is empty");
 
     const roster = await loadTaskRoster(task);
     const studentIds = new Set(roster.map((student) => student.id));
