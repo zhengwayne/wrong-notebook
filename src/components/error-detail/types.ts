@@ -26,6 +26,7 @@ export interface ErrorItemDetail {
     subject?: {
         id: string;
         name: string;
+        subjectKey?: string | null;
     } | null;
     gradeSemester?: string | null;
     paperLevel?: string | null;
