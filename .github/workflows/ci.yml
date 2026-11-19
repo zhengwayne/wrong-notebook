@@ -169,10 +169,6 @@ jobs:
     name: E2E Tests
     needs: build-check
     timeout-minutes: 60
-    env:
-      DATABASE_URL: "file:./e2e.db"
-      NEXTAUTH_SECRET: "ci-secret-value-123456"
-      NEXTAUTH_URL: "http://127.0.0.1:3000"
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -185,6 +181,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps

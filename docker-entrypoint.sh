@@ -3,15 +3,21 @@ set -e
 
 # Debian 镜像用 gosu，Alpine 镜像用 su-exec。
 # 注意：POSIX sh 的 exec 不能调用函数，所以特权降级命令必须放进变量。
-if command -v gosu >/dev/null 2>&1; then
-    DROP_PRIVS=gosu
-elif command -v su-exec >/dev/null 2>&1; then
-    DROP_PRIVS=su-exec
+# 非 root 身份启动时跳过降权直接执行，允许在只读/非特权容器环境中直接运行。
+if [ "$(id -u)" = "0" ]; then
+    if command -v gosu >/dev/null 2>&1; then
+        DROP_PRIVS=gosu
+    elif command -v su-exec >/dev/null 2>&1; then
+        DROP_PRIVS=su-exec
+    else
+        echo "[Entrypoint] gosu/su-exec not found" >&2
+        exit 1
+    fi
+    drop_privs() { "$DROP_PRIVS" nextjs:nodejs "$@"; }
 else
-    echo "[Entrypoint] gosu/su-exec not found" >&2
-    exit 1
+    DROP_PRIVS=""
+    drop_privs() { "$@"; }
 fi
-drop_privs() { "$DROP_PRIVS" nextjs:nodejs "$@"; }
 write_version_file() {
     drop_privs sh -c 'printf "%s\n" "$1" > "$2"' -- "$CURRENT_VERSION" "$VERSION_FILE"
 }
@@ -174,5 +180,8 @@ if [ "$HTTPS_ENABLED" = "true" ]; then
     fi
 fi
 
-# Execute the main container command as nextjs user
-exec "$DROP_PRIVS" nextjs:nodejs "$@"
+# Execute the main container command (drop privileges when started as root)
+if [ -n "$DROP_PRIVS" ]; then
+    exec "$DROP_PRIVS" nextjs:nodejs "$@"
+fi
+exec "$@"

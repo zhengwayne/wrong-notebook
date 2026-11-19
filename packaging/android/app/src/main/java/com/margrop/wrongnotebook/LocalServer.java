@@ -44,11 +44,15 @@ final class LocalServer {
     private LocalServer() {
     }
 
+    private static boolean isExpectedVersion(String expected, String live) {
+        return expected.isEmpty() ? live != null : expected.equals(live);
+    }
+
     /** 确保服务在运行；耗时操作（解压、迁移、启动），必须在后台线程调用 */
     static synchronized void ensureRunning(Context context, Listener listener) throws IOException {
         JSONObject runtime = readRuntimeInfo(context);
         String version = runtime.optString("version");
-        if (version.equals(healthyVersion())) return;
+        if (isExpectedVersion(version, healthyVersion())) return;
 
         File filesDir = context.getFilesDir();
         File serverDir = new File(filesDir, "server");
@@ -103,7 +107,7 @@ final class LocalServer {
                 throw new IOException("Server exited (" + process.exitValue() + ")\n" + tail(log));
             }
             String liveVersion = healthyVersion();
-            if (version.isEmpty() ? liveVersion != null : version.equals(liveVersion)) return;
+            if (isExpectedVersion(version, liveVersion)) return;
             try {
                 Thread.sleep(300);
             } catch (InterruptedException e) {

@@ -33,11 +33,14 @@ describe('E2E 测试数据隔离', () => {
 
             const db = new PrismaClient({ datasources: { db: { url: fixtureUrl } } });
             try {
-                const users = await db.user.findMany({ select: { email: true }, orderBy: { email: 'asc' } });
+                const users = await db.user.findMany({ select: { email: true, password: true }, orderBy: { email: 'asc' } });
                 expect(users.map(user => user.email)).toEqual(['admin@localhost', 'setup-admin@localhost']);
+                const { legacyAdminPasswordHash } = await import('@/lib/legacy-admin-password-hash.mjs');
+                expect(users[1].password).toBe(legacyAdminPasswordHash);
             } finally {
                 await db.$disconnect();
             }
+            expect(readFileSync('scripts/start-e2e.js', 'utf8')).not.toContain("'123456'");
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

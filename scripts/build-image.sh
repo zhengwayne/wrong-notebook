@@ -16,8 +16,8 @@ fi
 # 版本号取自最近的 v 开头标签（如 v2026.10.20 或 v2026.10.20-3-gabc1234）；没有标签时不传，运行时回退到 package.json
 version=$(git describe --tags --match 'v[0-9]*' "$head_revision" 2>/dev/null || true)
 revision="$head_revision"
-# 工作树存在未提交或未暂存改动时，为镜像 tag 与 APP_REVISION 追加 -dirty 后缀
-if ! git diff --quiet || ! git diff --cached --quiet; then
+# 工作树存在未提交、未暂存或未跟踪文件时，为镜像 tag 与 APP_REVISION 追加 -dirty 后缀
+if [[ -n $(git status --porcelain) ]]; then
     revision="${head_revision}-dirty"
 fi
 image="${IMAGE_REPOSITORY:-wrong-notebook}:$revision"

@@ -37,6 +37,7 @@ it("运维脚本只读检查数据库，改密会撤销旧会话并返回正确�
         const password = randomUUID();
         expect(run("reset-password").status).toBe(1);
         expect(run("reset-password", "   ", password).status).toBe(1);
+        expect(run("reset-password", email, "short").status).toBe(1);
         expect(run("reset-password", "absent@example.invalid", password).status).toBe(1);
         const reset = run("reset-password", `  ${email.toUpperCase()}  `, password);
         expect(reset.status).toBe(0);
@@ -45,6 +46,12 @@ it("运维脚本只读检查数据库，改密会撤销旧会话并返回正确�
         const updated = await db.user.findUniqueOrThrow({ where: { id: user.id } });
         expect(await compare(password, updated.password)).toBe(true);
         expect(updated.authVersion).toBe(4);
+
+        // 兼容历史库中含大写字母的邮箱
+        const mixedUser = await db.user.create({ data: { email: "MixedCase@Example.Invalid", password: original, authVersion: 1 } });
+        const mixedReset = run("reset-password", "mixedcase@example.invalid", password);
+        expect(mixedReset.status).toBe(0);
+        expect((await db.user.findUniqueOrThrow({ where: { id: mixedUser.id } })).authVersion).toBe(2);
     } finally {
         await cleanup();
     }
@@ -100,11 +107,12 @@ it.each([
 
 it.skipIf(process.platform === "win32")("build-image.sh 校验传入提交与 HEAD 一致，并在脏工作树自动标记 -dirty", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "build-image-test-"));
+    const outDir = mkdtempSync(path.join(tmpdir(), "build-image-out-"));
     try {
         mkdirSync(path.join(repo, "scripts"), { recursive: true });
         mkdirSync(path.join(repo, "bin"), { recursive: true });
         copyFileSync("scripts/build-image.sh", path.join(repo, "scripts/build-image.sh"));
-        const dockerArgsFile = path.join(repo, "bin/docker.args");
+        const dockerArgsFile = path.join(outDir, "docker.args");
         writeFileSync(
             path.join(repo, "bin/docker"),
             `#!/bin/sh\nprintf '%s\\n' "$@" > "${dockerArgsFile}"\n`,
@@ -142,6 +150,13 @@ it.skipIf(process.platform === "win32")("build-image.sh 校验传入提交与 HE
         expect(cleanArgs).toContain(`APP_REVISION=${headCommit}`);
         expect(cleanArgs).toContain(`wrong-notebook:${headCommit}`);
 
+        writeFileSync(path.join(repo, "untracked.txt"), "new\n");
+        const untrackedDirty = runBuild();
+        expect(untrackedDirty.status).toBe(0);
+        const untrackedArgs = readFileSync(dockerArgsFile, "utf8").split("\n");
+        expect(untrackedArgs).toContain(`APP_REVISION=${headCommit}-dirty`);
+        rmSync(path.join(repo, "untracked.txt"));
+
         writeFileSync(path.join(repo, "tracked.txt"), "v2-modified\n");
         const unstagedDirty = runBuild();
         expect(unstagedDirty.status).toBe(0);
@@ -157,6 +172,7 @@ it.skipIf(process.platform === "win32")("build-image.sh 校验传入提交与 HE
         expect(stagedArgs).toContain(`wrong-notebook:${headCommit}-dirty`);
     } finally {
         rmSync(repo, { recursive: true, force: true });
+        rmSync(outDir, { recursive: true, force: true });
     }
 });
 
@@ -168,6 +184,12 @@ it("build-docker 工作流与 ci.sh 包含公开历史检查、非 latest 默认
     expect(workflow).toContain("python3 scripts/check-public-history.py HEAD");
     expect(workflow).toContain("default: 'manual'");
     expect(workflow).toContain('"$INPUT_TAG" = "latest"');
+    expect(workflow).toContain("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$");
+
+    const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
+    const e2eSection = ciWorkflow.slice(ciWorkflow.indexOf("e2e-test:"));
+    expect(e2eSection).toContain("npx prisma generate");
+    expect(e2eSection).not.toContain("http://127.0.0.1:3000");
 
     const ciScript = readFileSync("scripts/ci.sh", "utf8");
     expect(ciScript).toContain("scripts/start-e2e.js");

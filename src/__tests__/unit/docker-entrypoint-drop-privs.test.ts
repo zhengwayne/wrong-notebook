@@ -79,9 +79,11 @@ describe("docker-entrypoint drop privileges", () => {
         }
     });
 
-    it.skipIf(process.platform === "win32")("非 root 身份启动时跳过 chown，不因无权限更改属主而失败", () => {
+    it.skipIf(process.platform === "win32")("非 root 身份启动时跳过 chown 与 gosu，不因无降权权限而失败", () => {
         const root = setupEntrypointSandbox("entrypoint-nonroot-", { prismaExitCode: 0, idUid: "1001", chownExitCode: 99 });
         try {
+            // 故意让 gosu 直接失败，验证非 root 路径完全不会调用 gosu
+            writeFileSync(path.join(root, "bin/gosu"), "#!/bin/sh\nexit 99\n", { mode: 0o755 });
             const database = path.join(root, "data", "dev.db");
             writeFileSync(database, "已有默认数据库");
             const result = spawnSync("sh", ["entrypoint.sh", "true"], {
