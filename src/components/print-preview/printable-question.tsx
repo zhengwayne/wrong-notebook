@@ -62,7 +62,7 @@ export function PrintableQuestion({ item, index, options, reserveAnswerSpace, de
                 )}
             </div>
 
-            {options.showQuestionText && item.questionText ? (
+            {(options.showQuestionText || !item.originalImageUrl) && item.questionText ? (
                 <div className="mb-4">
                     <MarkdownRenderer content={item.questionText} />
                     {item.figureSvg && options.showOriginalImage && item.originalImageUrl ? (

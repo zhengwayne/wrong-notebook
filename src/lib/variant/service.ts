@@ -371,6 +371,7 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
     studentId?: string;
     subjectId?: string;
     title?: string;
+    topic?: string;
 }) {
     const studentId = options.studentId;
     let classId: string | undefined;
@@ -413,17 +414,46 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
     if (items.length === 0) return { error: 'NO_ITEMS' as const };
 
     const count = Math.max(3, Math.min(MAX_VARIANTS_PER_RUN, options.count ?? (options.kind === 'topic' ? 4 : 5)));
+    const focusedTopic = options.kind === 'topic' ? options.topic?.trim() || '' : '';
     let topicSuggestion = undefined;
     if (options.kind === 'topic') {
-        const brief = classTopicBrief(profile.weaknesses.map((weakness) => ({
-            knowledgePoint: weakness.knowledgePoint, studentCount: 1, averageScore: weakness.score, totalItems: weakness.itemCount,
-        })));
+        const matchedWeakness = focusedTopic
+            ? profile.weaknesses.find((weakness) => weakness.knowledgePoint === focusedTopic)
+            : undefined;
+        // 若指定了热力图知识点，则优先围绕该知识点生成专题（存在统计时沿用统计摘要，否则直接聚焦该知识点）
+        const brief = focusedTopic
+            ? matchedWeakness
+                ? classTopicBrief([{
+                    knowledgePoint: matchedWeakness.knowledgePoint,
+                    studentCount: 1,
+                    averageScore: matchedWeakness.score,
+                    totalItems: matchedWeakness.itemCount,
+                }])
+                : { knowledgePoints: [focusedTopic], reason: focusedTopic }
+            : classTopicBrief(profile.weaknesses.map((weakness) => ({
+                knowledgePoint: weakness.knowledgePoint,
+                studentCount: 1,
+                averageScore: weakness.score,
+                totalItems: weakness.itemCount,
+            })));
         const topic = await suggestTopic({ ...brief, language: options.language });
         topicSuggestion = topic.data;
     }
-    const points = topicSuggestion?.knowledgePoints || profile.weaknesses.map((item) => item.knowledgePoint);
+    const basePoints = topicSuggestion?.knowledgePoints || profile.weaknesses.map((item) => item.knowledgePoint);
+    const points = focusedTopic
+        ? [focusedTopic, ...basePoints.filter((point) => point !== focusedTopic)]
+        : basePoints;
+    const matchedWeaknesses = focusedTopic
+        ? profile.weaknesses.filter((item) => item.knowledgePoint === focusedTopic)
+        : [];
+    const slotWeaknesses = matchedWeaknesses.length > 0
+        ? matchedWeaknesses
+        : [
+            ...profile.weaknesses.filter((item) => points.includes(item.knowledgePoint)),
+            ...profile.weaknesses.filter((item) => !points.includes(item.knowledgePoint)),
+        ];
     const slots = selectPracticeSlots(
-        { ...profile, weaknesses: profile.weaknesses.filter((item) => points.includes(item.knowledgePoint)).concat(profile.weaknesses) },
+        { ...profile, weaknesses: slotWeaknesses },
         toProfileItems(items, await userThreshold(user.id)),
         count,
     );
@@ -467,6 +497,7 @@ export async function startClassRuns(user: QuotaUser, options: {
     kind: 'personalized_set' | 'class_topic';
     language: 'zh' | 'en';
     count?: number;
+    topic?: string;
 }) {
     const cls = await prisma.gradingClass.findFirst({
         where: { id: options.classId, userId: user.id },
@@ -491,17 +522,35 @@ export async function startClassRuns(user: QuotaUser, options: {
 
     const classWeaknesses = buildClassWeaknesses(profiles);
     if (options.kind === 'class_topic') {
-        const brief = classTopicBrief(classWeaknesses);
+        const focusedTopic = options.topic?.trim() || '';
+        const matchedWeakness = focusedTopic
+            ? classWeaknesses.find((item) => item.knowledgePoint === focusedTopic)
+            : undefined;
+        // 教师从热力图带入指定知识点时直接构造 brief，不再因非前排共性薄弱项返回 NO_COMMON
+        const brief = focusedTopic
+            ? matchedWeakness
+                ? classTopicBrief([matchedWeakness])
+                : { knowledgePoints: [focusedTopic], reason: focusedTopic }
+            : classTopicBrief(classWeaknesses);
         if (brief.knowledgePoints.length === 0) return { error: 'NO_COMMON' as const, classWeaknesses };
         const topic = await suggestTopic({ ...brief, language: options.language, studentCount: profiles.length });
-        // 用班级共性知识点，从各学生精确 learnerId 错题中抽代表题作为来源
+        // 用班级共性或指定知识点，从各学生精确 learnerId 错题中抽代表题作为来源
         const { items, previous, profile } = await buildProfileForLearners(user.id, profiles.map((item) => item.learnerId));
+        const matchingWeaknesses = profile.weaknesses.filter((item) => brief.knowledgePoints.includes(item.knowledgePoint));
+        const slotWeaknesses = matchingWeaknesses.length > 0
+            ? matchingWeaknesses
+            : focusedTopic
+                ? profile.weaknesses
+                : [];
         const slots = selectPracticeSlots(
-            { ...profile, weaknesses: profile.weaknesses.filter((item) => brief.knowledgePoints.includes(item.knowledgePoint)) },
+            { ...profile, weaknesses: slotWeaknesses },
             toProfileItems(items, await userThreshold(user.id)),
             options.count ?? 5,
         );
         const itemById = new Map(items.map((item) => [item.id, item]));
+        const inputKnowledgePoints = focusedTopic
+            ? [focusedTopic, ...brief.knowledgePoints.filter((point) => point !== focusedTopic)]
+            : brief.knowledgePoints;
         const run = await startPipelineRun({
             user,
             kind: 'class_topic',
@@ -515,7 +564,7 @@ export async function startClassRuns(user: QuotaUser, options: {
             quotaKind: 'exam',
             input: {
                 originalQuestion: itemById.get(slots[0]?.sourceItemId)?.questionText || items[0]?.questionText || brief.reason,
-                knowledgePoints: brief.knowledgePoints,
+                knowledgePoints: inputKnowledgePoints,
                 targetDifficulty: 'medium',
                 language: options.language,
                 count: slots.length || 4,
@@ -637,7 +686,7 @@ export async function createExamFromApproved(userId: string, runId: string, titl
             const question = await tx.examQuestion.create({
                 data: {
                     paperId: created.id,
-                    order: index,
+                    order: index + 1,
                     errorItemId: item.sourceItemId,
                     sourceShortId: shortId,
                     status: 'ready',

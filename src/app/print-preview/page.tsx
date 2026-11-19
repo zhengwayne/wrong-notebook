@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, Suspense, useCallback, useRef } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams } from "next/navigation";
+import { ErrorState } from "@/components/ui/error-state";
+import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
 import { PrintItemPicker } from "@/components/print-preview/print-item-picker";
@@ -24,7 +26,15 @@ import {
 const PRINT_IMAGE_BATCH_SIZE = 20;
 
 function PrintPreviewContent() {
-    const searchParams = useSearchParams();
+    const query = useSearchParams().toString();
+    return <PrintPreviewResults key={query} query={query} />;
+}
+
+function PrintPreviewResults({ query }: { query: string }) {
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [failed, setFailed] = useState(false);
+    const [attempt, setAttempt] = useState(0);
     const { t } = useLanguage();
     const [items, setItems] = useState<PrintableErrorItem[]>([]);
     usePageTitle(t.printPreview.title);
@@ -42,29 +52,36 @@ function PrintPreviewContent() {
     const [visibleImageLimit, setVisibleImageLimit] = useState(PRINT_IMAGE_BATCH_SIZE);
     const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
 
-    const fetchItems = useCallback(async () => {
-        try {
-            const params = new URLSearchParams(searchParams.toString());
-            // 打印预览需要所有符合条件的数据，设置较大的 pageSize
-            params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
-            params.set("view", "print");
-            const response = await apiClient.get<PaginatedResponse<PrintableErrorItem>>(`/api/error-items/list?${params.toString()}`);
-            setItems(response.items);
-            setSelectedIds(new Set(response.items.map((item) => item.id)));
-        } catch (error) {
-            frontendLogger.error('[PrintPreview]', 'Failed to fetch items', { error });
-        } finally {
-            setLoading(false);
-        }
-    }, [searchParams]);
+    useEffect(() => {
+        let active = true;
+        const params = new URLSearchParams(query);
+        params.set("page", String(page));
+        params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+        params.set("view", "print");
+        apiClient.get<PaginatedResponse<PrintableErrorItem>>(`/api/error-items/list?${params}`)
+            .then(response => {
+                if (!active) return;
+                const lastPage = Math.max(1, response.totalPages);
+                if (page > lastPage) {
+                    setPage(lastPage);
+                    return;
+                }
+                setItems(response.items);
+                setSelectedIds(new Set(response.items.map(item => item.id)));
+                setTotal(response.total);
+                setLoading(false);
+            })
+            .catch(error => {
+                if (!active) return;
+                frontendLogger.error('[PrintPreview]', 'Failed to fetch items', { error });
+                setFailed(true);
+                setLoading(false);
+            });
+        return () => { active = false; };
+    }, [query, page, attempt]);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或条件变化时加载，请求前后更新加载状态和结果
-        fetchItems();
-    }, [fetchItems]);
-
-    useEffect(() => {
-        const expandAll = () => setVisibleImageLimit(Number.POSITIVE_INFINITY);
+        const expandAll = () => flushSync(() => setVisibleImageLimit(Number.POSITIVE_INFINITY));
         window.addEventListener("beforeprint", expandAll);
         return () => window.removeEventListener("beforeprint", expandAll);
     }, []);
@@ -112,6 +129,14 @@ function PrintPreviewContent() {
         setSelectedIds(new Set());
     };
 
+    if (failed) {
+        return <ErrorState onRetry={() => {
+            setLoading(true);
+            setFailed(false);
+            setAttempt(value => value + 1);
+        }} />;
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -137,6 +162,25 @@ function PrintPreviewContent() {
                     </div>
 
                     <PrintOptions options={options} onChange={updateOptions} />
+                    {total > PRINT_PREVIEW_PAGE_SIZE && (
+                        <div className="space-y-1">
+                            <p className="text-sm text-muted-foreground">{t.printPreview.batchHint}</p>
+                            <Pagination
+                                page={page}
+                                totalPages={Math.ceil(total / PRINT_PREVIEW_PAGE_SIZE)}
+                                total={total}
+                                pageSize={PRINT_PREVIEW_PAGE_SIZE}
+                                onPageChange={nextPage => {
+                                    if (nextPage === page) return;
+                                    setLoading(true);
+                                    setItems([]);
+                                    setSelectedIds(new Set());
+                                    setVisibleImageLimit(PRINT_IMAGE_BATCH_SIZE);
+                                    setPage(nextPage);
+                                }}
+                            />
+                        </div>
+                    )}
                     <PrintItemPicker
                         items={items}
                         selectedIds={selectedIds}

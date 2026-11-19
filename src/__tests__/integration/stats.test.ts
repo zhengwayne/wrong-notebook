@@ -17,7 +17,12 @@ const mocks = vi.hoisted(() => ({
     },
     mockPrismaErrorItem: {
         deleteMany: vi.fn(),
+        updateMany: vi.fn(),
     },
+    mockPrismaItemMemory: {
+        deleteMany: vi.fn(),
+    },
+    mockScheduleLearningPathReplan: vi.fn(),
     mockSession: {
         user: {
             id: 'user-123',
@@ -34,7 +39,18 @@ vi.mock('@/lib/prisma', () => ({
         user: mocks.mockPrismaUser,
         practiceRecord: mocks.mockPrismaPracticeRecord,
         errorItem: mocks.mockPrismaErrorItem,
+        itemMemory: mocks.mockPrismaItemMemory,
+        $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+            user: mocks.mockPrismaUser,
+            practiceRecord: mocks.mockPrismaPracticeRecord,
+            errorItem: mocks.mockPrismaErrorItem,
+            itemMemory: mocks.mockPrismaItemMemory,
+        })),
     },
+}));
+
+vi.mock('@/lib/learning-path/service', () => ({
+    scheduleLearningPathReplan: mocks.mockScheduleLearningPathReplan,
 }));
 
 // Mock next-auth
@@ -66,6 +82,8 @@ describe('/api/stats', () => {
             isActive: true,
             authVersion: 0,
         });
+        mocks.mockPrismaItemMemory.deleteMany.mockResolvedValue({ count: 0 });
+        mocks.mockPrismaErrorItem.updateMany.mockResolvedValue({ count: 0 });
     });
 
     describe('GET /api/stats/practice (获取练习统计)', () => {
