@@ -1270,7 +1270,6 @@ export const en = {
         importPassphrasePlaceholder: "Enter passphrase if this backup ZIP is encrypted",
         backupPassphraseRequired: "This backup is encrypted. Please enter its passphrase and try importing again.",
         backupAllUsersRequired: "This is an all-users backup. Sign in as an administrator and choose Import All.",
-        backupPersonAmbiguous: "The backup could not be matched to a unique child or student profile. Check the child names, classes and student numbers. No data was restored.",
         backupTagAmbiguous: "The backup tags could not be matched to the curriculum hierarchy. Check the knowledge tag tree in the destination. No data was restored.",
         backupInvalidPassphrase: "Incorrect backup passphrase. Please verify and try again.",
         backupTooLarge: "The backup archive or its extracted contents exceed the allowed size or entry limit.",

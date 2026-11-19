@@ -1266,7 +1266,6 @@ export const zh = {
         importPassphrasePlaceholder: "若为加密 ZIP 备份，请输入口令",
         backupPassphraseRequired: "该备份包已加密，请输入解密口令后重试导入。",
         backupAllUsersRequired: "这是全站备份。请使用管理员账户选择「导入全部数据」。",
-        backupPersonAmbiguous: "备份中的孩子或学生无法与现有档案唯一匹配。请核对孩子姓名、班级和学号。此次恢复未写入数据。",
         backupTagAmbiguous: "备份中的知识点层级无法与当前教材唯一匹配。请核对目标库的知识点树。此次恢复未写入数据。",
         backupInvalidPassphrase: "备份解密口令不正确，请核对后重试。",
         backupTooLarge: "备份压缩包或解压后的内容超过允许的大小或条目上限，请精简后重试。",

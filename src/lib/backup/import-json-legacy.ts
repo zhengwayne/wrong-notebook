@@ -45,6 +45,7 @@ export interface LegacyImportData {
         themePreference?: string;
         variantPipelineEnabled?: boolean;
     };
+    users?: Array<{ id: string; email: string }>;
     subjects?: Array<{
         id: string;
         name: string;
@@ -206,8 +207,42 @@ export async function importLegacyJsonBackup(options: {
     const masteryIds = new Set<string>();
     const evaluatedIds = new Set<string>();
     const tagWarnings = new Set<string>();
+    const backupUserEmailById = new Map<string, string>();
+    if (body.user?.id && body.user?.email) {
+        backupUserEmailById.set(body.user.id, body.user.email);
+    }
+    for (const u of (body.users ?? [])) {
+        if (typeof u?.id === 'string' && typeof u?.email === 'string') {
+            backupUserEmailById.set(u.id, u.email);
+        }
+    }
 
     await db.$transaction(async (tx) => {
+        const userIdMap = new Map<string, string | null>();
+        const resolveOwnerId = async (rawUserId: unknown): Promise<string | null> => {
+            if (!importAll) return currentUser.id;
+            const oldId = asOptionalString(rawUserId);
+            if (!oldId) return currentUser.id;
+            if (userIdMap.has(oldId)) return userIdMap.get(oldId) ?? null;
+
+            const backupEmail = backupUserEmailById.get(oldId);
+            if (backupEmail) {
+                const byEmail = await tx.user.findUnique({ where: { email: backupEmail }, select: { id: true } });
+                if (byEmail) {
+                    userIdMap.set(oldId, byEmail.id);
+                    return byEmail.id;
+                }
+            }
+            const byId = await tx.user.findUnique({ where: { id: oldId }, select: { id: true } });
+            if (byId) {
+                userIdMap.set(oldId, byId.id);
+                return byId.id;
+            }
+            userIdMap.set(oldId, null);
+            tagWarnings.add('MISSING_USERS_SKIPPED');
+            return null;
+        };
+
         const preferences = body.user.email === currentUser.email ? parseUserPreferences(body.user) : {};
         if (Object.keys(preferences).length > 0) {
             await tx.user.update({ where: { id: currentUser.id }, data: preferences });
@@ -216,7 +251,8 @@ export async function importLegacyJsonBackup(options: {
 
         const subjectIdMap = new Map<string, string>();
         for (const subject of (body.subjects || [])) {
-            const targetUserId = importAll ? subject.userId : currentUser.id;
+            const targetUserId = await resolveOwnerId(subject.userId);
+            if (!targetUserId) continue;
             const existing = await tx.subject.findFirst({ where: { name: subject.name, userId: targetUserId } });
             if (existing) {
                 subjectIdMap.set(subject.id, existing.id);
@@ -238,11 +274,12 @@ export async function importLegacyJsonBackup(options: {
             const rawSubject = asOptionalString(row.subject);
             const rawParentId = asOptionalString(row.parentId);
             const rawCode = asOptionalString(row.code);
-            const rawUserId = asOptionalString(row.userId);
+            const targetUserId = await resolveOwnerId(row.userId);
+            if (!targetUserId) continue;
             customTags.push({
                 id,
                 name,
-                userId: importAll && rawUserId ? rawUserId : currentUser.id,
+                userId: targetUserId,
                 subject: rawSubject || 'math',
                 parentId: rawParentId || null,
                 systemParentPath: row.systemParentPath,
@@ -277,7 +314,8 @@ export async function importLegacyJsonBackup(options: {
         const errorItemIdMap = new Map<string, string>();
         const errorItemOwnerMap = new Map<string, string>();
         for (const item of body.errorItems) {
-            const targetUserId = importAll ? item.userId : currentUser.id;
+            const targetUserId = await resolveOwnerId(item.userId);
+            if (!targetUserId) continue;
             errorItemOwnerMap.set(item.id, targetUserId);
             const newSubjectId = item.subjectId ? subjectIdMap.get(item.subjectId) : undefined;
 
@@ -374,7 +412,8 @@ export async function importLegacyJsonBackup(options: {
         const examQuestionOwnerMap = new Map<string, string>();
         const examPaperIdMap = new Map<string, string>();
         for (const paper of (body.examPapers || [])) {
-            const targetUserId = importAll ? paper.userId : currentUser.id;
+            const targetUserId = await resolveOwnerId(paper.userId);
+            if (!targetUserId) continue;
             const createdAt = safeParseDate(paper.createdAt);
             const existingPaper = createdAt
                 ? await tx.examPaper.findFirst({
@@ -435,7 +474,8 @@ export async function importLegacyJsonBackup(options: {
         }
 
         for (const record of (body.practiceRecords || [])) {
-            const targetUserId = importAll ? record.userId : currentUser.id;
+            const targetUserId = await resolveOwnerId(record.userId);
+            if (!targetUserId) continue;
             const errorItemId = record.errorItemId && errorItemOwnerMap.get(record.errorItemId) === targetUserId
                 ? errorItemIdMap.get(record.errorItemId)
                 : undefined;
@@ -470,10 +510,17 @@ export async function importLegacyJsonBackup(options: {
         }
 
         for (const run of body.variantRuns || []) {
-            const targetUserId = importAll && typeof run.userId === 'string' ? run.userId : currentUser.id;
+            const targetUserId = await resolveOwnerId(run.userId);
+            if (!targetUserId) continue;
+            const oldRunId = asOptionalString(run.id);
+            const sameRun = oldRunId
+                ? await tx.variantRun.findUnique({ where: { id: oldRunId }, select: { id: true, userId: true } })
+                : null;
+            if (sameRun?.userId === targetUserId) continue;
             const mappedErrorItemId = typeof run.errorItemId === 'string' ? errorItemIdMap.get(run.errorItemId) : undefined;
             const created = await tx.variantRun.create({
                 data: {
+                    ...(oldRunId && !sameRun ? { id: oldRunId } : {}),
                     userId: targetUserId,
                     kind: typeof run.kind === 'string' ? run.kind : 'practice',
                     mode: typeof run.mode === 'string' ? run.mode : 'pipeline',

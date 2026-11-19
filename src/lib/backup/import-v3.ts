@@ -59,6 +59,7 @@ interface ImportContext {
     userIdMap: Map<string, string | null>;
     classIdMap: Map<string, string>;
     studentIdMap: Map<string, string>;
+    studentClassMap: Map<string, string>;
     learnerIdMap: Map<string, string>;
     subjectIdMap: Map<string, string>;
     provenanceIdMap: Map<string, string>;
@@ -146,8 +147,8 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
         if (!oldId || !mappedClassId || !name) return;
 
         const studentNo = asOptionalString(row.studentNo);
-        // 同一老师名下按「同 ID 同班 > 本班同学号 > 同 ID 已转到老师其他班 > 本班同名无学号」顺序合并；
-        // 其他老师的同 ID 学生一律忽略，绝不跨账号映射。
+        // 同一老师名下按「同 ID 同班 > 同 ID 已转到老师其他班 > 本班同学号 > 本班同名无学号」顺序合并；
+        // 其他老师的同 ID 学生一律忽略，绝不跨账号映射；同学号匹配避开本包内其他学生 ID 防止抢占。
         const sameIdRow = await ctx.tx.gradingStudent.findUnique({
             where: { id: oldId }, select: { id: true, classId: true, class: { select: { userId: true } } },
         });
@@ -158,16 +159,19 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
         }
         const sameId = sameIdRow && classOwnerId && sameIdRow.class.userId === classOwnerId ? sameIdRow : null;
         const byNumber = studentNo ? await ctx.tx.gradingStudent.findUnique({
-            where: { classId_studentNo: { classId: mappedClassId, studentNo } }, select: { id: true },
+            where: { classId_studentNo: { classId: mappedClassId, studentNo } }, select: { id: true, classId: true },
         }) : null;
-        let existing: { id: string } | null = null;
-        if (sameId && sameId.classId === mappedClassId) existing = sameId;
-        else if (byNumber && !claimedStudentIds.has(byNumber.id)) existing = byNumber;
-        else if (sameId) existing = sameId;
-        else if (!studentNo) {
+        let existing: { id: string; classId: string } | null = null;
+        if (sameId && sameId.classId === mappedClassId && !claimedStudentIds.has(sameId.id)) {
+            existing = sameId;
+        } else if (sameId && !claimedStudentIds.has(sameId.id)) {
+            existing = sameId;
+        } else if (byNumber && !sourceStudentIds.has(byNumber.id) && !claimedStudentIds.has(byNumber.id)) {
+            existing = byNumber;
+        } else if (!studentNo) {
             const candidates = await ctx.tx.gradingStudent.findMany({
                 where: { classId: mappedClassId, name, studentNo: null },
-                select: { id: true },
+                select: { id: true, classId: true },
                 orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
             });
             existing = candidates.find((student) => !sourceStudentIds.has(student.id) && !claimedStudentIds.has(student.id)) ?? null;
@@ -175,6 +179,7 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
         if (existing) {
             claimedStudentIds.add(existing.id);
             ctx.studentIdMap.set(oldId, existing.id);
+            ctx.studentClassMap.set(existing.id, existing.classId);
             return;
         }
         const created = await ctx.tx.gradingStudent.create({
@@ -185,10 +190,11 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
                 studentNo,
                 order: asOptionalNumber(row.order) ?? 0,
             },
-            select: { id: true },
+            select: { id: true, classId: true },
         });
         claimedStudentIds.add(created.id);
         ctx.studentIdMap.set(oldId, created.id);
+        ctx.studentClassMap.set(created.id, created.classId);
         ctx.stats.gradingStudentsCreated++;
     });
 
@@ -215,6 +221,16 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
                 ctx.learnerIdMap.set(oldId, existing.id);
                 return;
             }
+        } else if (kind === LEARNER_KIND.student) {
+            // 未关联花名册的孤儿学生档案按同 ID 幂等复用，避免重复导入翻倍
+            const sameIdRow = await ctx.tx.learner.findUnique({
+                where: { id: oldId }, select: { id: true, userId: true, kind: true },
+            });
+            sameIdTaken = Boolean(sameIdRow);
+            if (sameIdRow && sameIdRow.userId === targetUserId && sameIdRow.kind === LEARNER_KIND.student) {
+                ctx.learnerIdMap.set(oldId, sameIdRow.id);
+                return;
+            }
         } else if (kind === LEARNER_KIND.self) {
             const existingSelf = await ctx.tx.learner.findFirst({
                 where: { userId: targetUserId, kind: LEARNER_KIND.self },
@@ -235,14 +251,15 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
                 ? sameIdRow
                 : null;
             if (!existingChild) {
-                // 新环境先手动建了同名孩子再恢复旧备份：并入该孩子而不是整包失败
+                // 新环境先手动建了同名孩子再恢复旧备份：按同活跃/归档状态合并，不把已归档旧孩子合并到新活跃孩子，也不静默复活已归档目标孩子
                 const candidates = await ctx.tx.learner.findMany({
                     where: { userId: targetUserId, kind: LEARNER_KIND.child, name },
                     select: { id: true, userId: true, kind: true, archivedAt: true },
                     orderBy: [{ archivedAt: 'asc' }, { createdAt: 'asc' }],
                 });
                 const free = candidates.filter((learner) => !sourceLearnerIds.has(learner.id) && !claimedLearnerIds.has(learner.id));
-                existingChild = free.find((learner) => learner.archivedAt === null) ?? free[0] ?? null;
+                const wantArchived = archivedAt !== null;
+                existingChild = free.find((learner) => (learner.archivedAt !== null) === wantArchived) ?? null;
             }
             if (existingChild && !claimedLearnerIds.has(existingChild.id)) {
                 if (archivedAt === null && existingChild.archivedAt !== null) {
@@ -257,9 +274,10 @@ async function importRosterAndLearners(ctx: ImportContext): Promise<void> {
             }
         }
 
+        const preserveOldId = (kind === LEARNER_KIND.child || (kind === LEARNER_KIND.student && !mappedGradingStudentId)) && !sameIdTaken;
         const created = await ctx.tx.learner.create({
             data: {
-                ...(kind === LEARNER_KIND.child && !sameIdTaken ? { id: oldId } : {}),
+                ...(preserveOldId ? { id: oldId } : {}),
                 userId: targetUserId,
                 kind,
                 name,
@@ -649,6 +667,8 @@ async function importPapersGradingVariantsPaths(
 ): Promise<void> {
     const skippedParentPaperIds = new Set<string>();
     const skippedVariantRunIds = new Set<string>();
+    const skippedGradingSubmissionIds = new Set<string>();
+    const skippedLearningPathIds = new Set<string>();
 
     await ctx.archive.readNdjson('data/parentPapers.ndjson', async (row) => {
         const oldId = asOptionalString(row.id);
@@ -828,11 +848,47 @@ async function importPapersGradingVariantsPaths(
         });
         if (sameId?.taskId === mappedTaskId) {
             ctx.gradingSubmissionIdMap.set(oldId, sameId.id);
+            skippedGradingSubmissionIds.add(sameId.id);
             return;
         }
 
         const oldStudentId = asOptionalString(row.studentId);
         const mappedStudentId = oldStudentId ? (ctx.studentIdMap.get(oldStudentId) ?? null) : null;
+        // 若映射到的学生已转到同老师的其他班级，则将其现属班级补入任务的 extraClassIds，避免答卷不可见
+        if (mappedStudentId) {
+            let studentClassId = ctx.studentClassMap.get(mappedStudentId);
+            if (!studentClassId) {
+                studentClassId = (await ctx.tx.gradingStudent.findUnique({
+                    where: { id: mappedStudentId },
+                    select: { classId: true },
+                }))?.classId;
+                if (studentClassId) ctx.studentClassMap.set(mappedStudentId, studentClassId);
+            }
+            if (studentClassId) {
+                const taskMeta = await ctx.tx.gradingTask.findUnique({
+                    where: { id: mappedTaskId },
+                    select: { classId: true, extraClassIds: true },
+                });
+                if (taskMeta && taskMeta.classId !== studentClassId) {
+                    let extras: string[] = [];
+                    if (taskMeta.extraClassIds) {
+                        try {
+                            const parsed: unknown = JSON.parse(taskMeta.extraClassIds);
+                            if (Array.isArray(parsed)) extras = parsed.filter((id): id is string => typeof id === 'string');
+                        } catch {
+                            // 忽略损坏的旧 JSON
+                        }
+                    }
+                    if (!extras.includes(studentClassId)) {
+                        extras.push(studentClassId);
+                        await ctx.tx.gradingTask.update({
+                            where: { id: mappedTaskId },
+                            data: { extraClassIds: JSON.stringify(extras) },
+                        });
+                    }
+                }
+            }
+        }
         const images = (await restoreMediaInJsonArray(asRequiredString(row.images, '[]'), loadMedia)) ?? '[]';
 
         let matchCandidates = asOptionalString(row.matchCandidates);
@@ -889,7 +945,7 @@ async function importPapersGradingVariantsPaths(
     await ctx.archive.readNdjson('data/gradingResults.ndjson', async (row) => {
         const mappedSubmissionId = ctx.gradingSubmissionIdMap.get(asRequiredString(row.submissionId));
         const mappedKeyQuestionId = ctx.gradingKeyQuestionIdMap.get(asRequiredString(row.keyQuestionId));
-        if (!mappedSubmissionId || !mappedKeyQuestionId) return;
+        if (!mappedSubmissionId || !mappedKeyQuestionId || skippedGradingSubmissionIds.has(mappedSubmissionId)) return;
         const oldItemId = asOptionalString(row.errorItemId);
         const oldProvId = asOptionalString(row.provenanceId);
 
@@ -1101,27 +1157,44 @@ async function importPapersGradingVariantsPaths(
 
         const oldClassId = asOptionalString(row.classId);
         const mappedClassId = oldClassId ? (ctx.classIdMap.get(oldClassId) ?? null) : null;
-        const upserted = await ctx.tx.learningPath.upsert({
+        const evidenceHash = asRequiredString(row.evidenceHash);
+        const existingPath = await ctx.tx.learningPath.findUnique({
             where: { userId_studentKey: { userId: targetUserId, studentKey } },
-            update: {
-                studentName,
-                classId: mappedClassId,
-                version: asOptionalNumber(row.version) ?? 1,
-                status: asRequiredString(row.status, 'active'),
-                evidenceHash: asRequiredString(row.evidenceHash),
-                planReason: asOptionalString(row.planReason),
-                aiSuggestCount: asOptionalNumber(row.aiSuggestCount) ?? 0,
-                aiSuggestedAt: safeParseDate(row.aiSuggestedAt) ?? null,
-                plannedAt: safeParseDate(row.plannedAt),
-            },
-            create: {
+            select: { id: true, evidenceHash: true },
+        });
+        if (existingPath) {
+            ctx.learningPathIdMap.set(oldId, existingPath.id);
+            if (existingPath.evidenceHash === evidenceHash) {
+                skippedLearningPathIds.add(existingPath.id);
+                return;
+            }
+            await ctx.tx.learningPath.update({
+                where: { id: existingPath.id },
+                data: {
+                    studentName,
+                    classId: mappedClassId,
+                    version: asOptionalNumber(row.version) ?? 1,
+                    status: asRequiredString(row.status, 'active'),
+                    evidenceHash,
+                    planReason: asOptionalString(row.planReason),
+                    aiSuggestCount: asOptionalNumber(row.aiSuggestCount) ?? 0,
+                    aiSuggestedAt: safeParseDate(row.aiSuggestedAt) ?? null,
+                    plannedAt: safeParseDate(row.plannedAt),
+                },
+            });
+            await ctx.tx.learningPathStep.deleteMany({ where: { pathId: existingPath.id } });
+            return;
+        }
+
+        const created = await ctx.tx.learningPath.create({
+            data: {
                 userId: targetUserId,
                 studentKey,
                 studentName,
                 classId: mappedClassId,
                 version: asOptionalNumber(row.version) ?? 1,
                 status: asRequiredString(row.status, 'active'),
-                evidenceHash: asRequiredString(row.evidenceHash),
+                evidenceHash,
                 planReason: asOptionalString(row.planReason),
                 aiSuggestCount: asOptionalNumber(row.aiSuggestCount) ?? 0,
                 aiSuggestedAt: safeParseDate(row.aiSuggestedAt) ?? null,
@@ -1129,14 +1202,13 @@ async function importPapersGradingVariantsPaths(
             },
             select: { id: true },
         });
-        await ctx.tx.learningPathStep.deleteMany({ where: { pathId: upserted.id } });
-        ctx.learningPathIdMap.set(oldId, upserted.id);
+        ctx.learningPathIdMap.set(oldId, created.id);
         ctx.stats.learningPathsCreated++;
     });
 
     await ctx.archive.readNdjson('data/learningPathSteps.ndjson', async (row) => {
         const mappedPathId = ctx.learningPathIdMap.get(asRequiredString(row.pathId));
-        if (!mappedPathId) return;
+        if (!mappedPathId || skippedLearningPathIds.has(mappedPathId)) return;
         const oldVarRunId = asOptionalString(row.variantRunId);
         let href = asOptionalString(row.href);
         // 规划器生成的题目链接必须与同一备份中的新主键一致。
@@ -1219,25 +1291,34 @@ async function importPapersGradingVariantsPaths(
     });
 
     await ctx.archive.readNdjson('data/dailyHomeworkItems.ndjson', async (row) => {
+        const oldId = asOptionalString(row.id);
         const targetUserId = await resolveOwnerId(ctx, row.userId);
         const mappedLearnerId = ctx.learnerIdMap.get(asRequiredString(row.learnerId));
         const dateKey = asOptionalString(row.dateKey);
         const title = asOptionalString(row.title);
         if (!targetUserId || !mappedLearnerId || !dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !title) return;
 
+        const sameId = oldId
+            ? await ctx.tx.dailyHomeworkItem.findUnique({ where: { id: oldId }, select: { id: true, userId: true } })
+            : null;
+        if (sameId?.userId === targetUserId) return;
+
         const category = asRequiredString(row.category, 'written');
         const subjectKey = asRequiredString(row.subjectKey, 'math');
-        const existing = await ctx.tx.dailyHomeworkItem.findFirst({
-            where: { userId: targetUserId, learnerId: mappedLearnerId, dateKey, subjectKey, category, title },
-            select: { id: true },
-        });
-        if (existing) return;
+        if (!oldId) {
+            const existing = await ctx.tx.dailyHomeworkItem.findFirst({
+                where: { userId: targetUserId, learnerId: mappedLearnerId, dateKey, subjectKey, category, title },
+                select: { id: true },
+            });
+            if (existing) return;
+        }
 
         const rawEstimated = asOptionalNumber(row.estimatedMinutes);
         const rawActual = asOptionalNumber(row.actualMinutes);
         const rawOrder = asOptionalNumber(row.order);
         await ctx.tx.dailyHomeworkItem.create({
             data: {
+                ...(oldId && !sameId ? { id: oldId } : {}),
                 userId: targetUserId,
                 learnerId: mappedLearnerId,
                 dateKey,
@@ -1335,6 +1416,7 @@ export async function importBackupV3(options: ImportV3Options): Promise<{
                 userIdMap: new Map(),
                 classIdMap: new Map(),
                 studentIdMap: new Map(),
+                studentClassMap: new Map(),
                 learnerIdMap: new Map(),
                 subjectIdMap: new Map(),
                 provenanceIdMap: new Map(),

@@ -738,12 +738,145 @@ describe('流式 ZIP 备份 v3 完整迁移与验证', () => {
         await database.gradingClass.create({ data: { id: 'class-a', name: '一班', userId } });
         await database.gradingClass.create({ data: { id: 'class-b', name: '二班', userId } });
         await database.gradingStudent.create({ data: { id: 'moving-stu', classId: 'class-a', name: '转班生', studentNo: '07' } });
+        await database.gradingTask.create({
+            data: {
+                id: 'task-transfer',
+                userId,
+                classId: 'class-a',
+                title: '期中测验',
+                subjectName: '数学',
+                submissions: {
+                    create: { id: 'sub-transfer', studentId: 'moving-stu', status: 'confirmed', images: '[]' },
+                },
+            },
+        });
         const zip = await exportZipBackup();
+        // 原学生转到二班，同时一班 07 号被新生复用；删除原任务后重新导入，答卷应仍归属原学生且任务自动补入二班
+        await database.gradingTask.delete({ where: { id: 'task-transfer' } });
         await database.gradingStudent.update({ where: { id: 'moving-stu' }, data: { classId: 'class-b' } });
+        await database.gradingStudent.create({ data: { id: 'new-stu-07', classId: 'class-a', name: '新生', studentNo: '07' } });
         const { response } = await importZipBackup(zip);
         expect(response.status).toBe(200);
         const students = await database.gradingStudent.findMany({ where: { name: '转班生' } });
         expect(students.map((stu) => [stu.id, stu.classId])).toEqual([['moving-stu', 'class-b']]);
+        const restoredSub = await database.gradingSubmission.findUniqueOrThrow({ where: { id: 'sub-transfer' } });
+        expect(restoredSub.studentId).toBe('moving-stu');
+        const restoredTask = await database.gradingTask.findUniqueOrThrow({ where: { id: 'task-transfer' } });
+        expect(JSON.parse(restoredTask.extraClassIds ?? '[]')).toContain('class-b');
+    });
+
+    it('孩子按姓名回退合并仅匹配同活跃/归档状态，且中文口令支持 Base64 请求头流式导入', async () => {
+        const userId = 'user-1';
+        const chineseSecret = '中文备份口令!2026';
+        await database.learner.create({
+            data: { id: 'bak-archived', userId, kind: 'child', name: '小美', archivedAt: new Date('2026-09-01T00:00:00Z') },
+        });
+        await database.learner.create({
+            data: { id: 'bak-active', userId, kind: 'child', name: '小刚', archivedAt: null },
+        });
+        const encRes = await EXPORT_POST(new Request('http://localhost/api/export', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ passphrase: chineseSecret }),
+        }));
+        expect(encRes.status).toBe(200);
+        const zipBytes = new Uint8Array(await encRes.arrayBuffer());
+        await clearUserData();
+
+        // 目标库：小美是新活跃孩子，小刚是旧已归档孩子
+        const targetActive = await database.learner.create({ data: { userId, kind: 'child', name: '小美', archivedAt: null } });
+        const targetArchived = await database.learner.create({
+            data: { userId, kind: 'child', name: '小刚', archivedAt: new Date('2026-08-01T00:00:00Z') },
+        });
+
+        const res = await IMPORT(new Request('http://localhost/api/import', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/zip',
+                'x-backup-passphrase-base64': Buffer.from(chineseSecret, 'utf8').toString('base64'),
+            },
+            body: zipBytes,
+        }));
+        expect(res.status).toBe(200);
+
+        const xiaomei = await database.learner.findMany({ where: { userId, kind: 'child', name: '小美' } });
+        const xiaogang = await database.learner.findMany({ where: { userId, kind: 'child', name: '小刚' } });
+        expect(xiaomei).toHaveLength(2);
+        expect(xiaomei.find((c) => c.id === targetActive.id)?.archivedAt).toBeNull();
+        expect(xiaogang).toHaveLength(2);
+        // 目标库已归档的旧小刚不应被同名活跃孩子静默复活
+        expect(xiaogang.find((c) => c.id === targetArchived.id)?.archivedAt).not.toBeNull();
+    });
+
+    it('孤儿学生档案、学习路径、已改分批改结果与带 ID 日常作业重复导入严格幂等', async () => {
+        const userId = 'user-1';
+        const orphanStu = await database.learner.create({
+            data: { id: 'orphan-stu-1', userId, kind: 'student', name: '独立学生', gradingStudentId: null },
+        });
+        const child = await database.learner.create({
+            data: { id: 'idem2-child', userId, kind: 'child', name: '幂等娃' },
+        });
+        await database.learningPath.create({
+            data: {
+                userId, studentKey: child.id, studentName: '幂等娃', evidenceHash: 'hash-idem',
+                steps: { create: { position: 0, type: 'review_explanation', title: '复习', reason: '错题', knowledgePoints: '[]' } },
+            },
+        });
+        await database.dailyHomeworkItem.createMany({
+            data: [
+                { id: 'hw-1', userId, learnerId: child.id, dateKey: '2026-11-19', subjectKey: 'math', category: 'written', title: '口算' },
+                { id: 'hw-2', userId, learnerId: child.id, dateKey: '2026-11-19', subjectKey: 'math', category: 'written', title: '口算' },
+            ],
+        });
+        const cls = await database.gradingClass.create({ data: { id: 'idem2-cls', userId, name: '二班' } });
+        const stu = await database.gradingStudent.create({ data: { id: 'idem2-stu', classId: cls.id, name: '王同学' } });
+        await database.gradingTask.create({
+            data: {
+                id: 'idem2-task', userId, classId: cls.id, title: '小测', subjectName: '数学',
+                questions: { create: { id: 'idem2-q', order: 0, number: '1', answer: 'A' } },
+                submissions: {
+                    create: {
+                        id: 'idem2-sub', studentId: stu.id, status: 'confirmed', images: '[]',
+                        results: { create: { id: 'idem2-res', keyQuestionId: 'idem2-q', verdict: 'wrong', score: 0 } },
+                    },
+                },
+            },
+        });
+
+        const zip = await exportZipBackup();
+        await clearUserData();
+        const first = await importZipBackup(zip);
+        expect(first.response.status).toBe(200);
+        expect(first.data.stats.learningPathsCreated).toBe(1);
+        expect(first.data.stats.dailyHomeworksCreated).toBe(2);
+
+        // 老师后续在目标库手动改了批改分数，再次重复导入同一备份不应被旧备份覆盖
+        await database.gradingResult.update({
+            where: { submissionId_keyQuestionId: { submissionId: 'idem2-sub', keyQuestionId: 'idem2-q' } },
+            data: { score: 5, verdict: 'correct' },
+        });
+
+        const second = await importZipBackup(zip);
+        expect(second.response.status).toBe(200);
+        expect(second.data.stats.learnersCreated).toBe(0);
+        expect(second.data.stats.learningPathsCreated).toBe(0);
+        expect(second.data.stats.dailyHomeworksCreated).toBe(0);
+        expect(await database.learner.count({ where: { id: orphanStu.id } })).toBe(1);
+        expect(await database.dailyHomeworkItem.count({ where: { learnerId: child.id } })).toBe(2);
+        const resultAfter = await database.gradingResult.findUniqueOrThrow({
+            where: { submissionId_keyQuestionId: { submissionId: 'idem2-sub', keyQuestionId: 'idem2-q' } },
+        });
+        expect(resultAfter).toMatchObject({ score: 5, verdict: 'correct' });
+    });
+
+    it('兜底 JSON 分支对超 50MB 的声明或分块请求返回 413 BACKUP_TOO_LARGE', async () => {
+        const res = await IMPORT(new Request('http://localhost/api/import', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'content-length': String(50 * 1024 * 1024 + 1) },
+            body: '{}',
+        }));
+        expect(res.status).toBe(413);
+        expect((await res.json()).code).toBe('BACKUP_TOO_LARGE');
     });
 
     it('同 ID 的孩子与学生属于其他账号时新建自己的档案，绝不跨账号映射', async () => {

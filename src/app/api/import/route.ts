@@ -13,6 +13,22 @@ const logger = createLogger('api:import');
 
 /** 表单上传除文件外还有分隔符与口令字段，留 1 MiB 余量 */
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+/** 旧版 JSON 备份最大体积（50 MiB） */
+const LEGACY_JSON_MAX_BYTES = 50 * 1024 * 1024;
+
+function readHeaderPassphrase(req: Request): string | undefined {
+    const encoded = req.headers.get('x-backup-passphrase-base64');
+    if (typeof encoded === 'string' && encoded.length > 0) {
+        try {
+            const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+            if (decoded.length > 0) return decoded;
+        } catch {
+            // 忽略非法 base64，回退纯文本头
+        }
+    }
+    const plain = req.headers.get('x-backup-passphrase');
+    return typeof plain === 'string' && plain.length > 0 ? plain : undefined;
+}
 
 function backupTooLarge(limit: number): BackupError {
     return new BackupError('BACKUP_TOO_LARGE', `Backup upload exceeds ${limit} bytes limit`, 413);
@@ -65,10 +81,7 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     let task: BackgroundTaskHandle | null = null;
     try {
         const contentType = (req.headers.get('content-type') || '').toLowerCase();
-        const headerPassphrase = req.headers.get('x-backup-passphrase');
-        let passphrase = typeof headerPassphrase === 'string' && headerPassphrase.length > 0
-            ? headerPassphrase
-            : undefined;
+        let passphrase = readHeaderPassphrase(req);
         task = startBackgroundTask({ userId: user.id, kind: 'data_import' });
 
         if (contentType.includes('multipart/form-data')) {
@@ -104,6 +117,9 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
                 task.succeed();
                 return NextResponse.json({ success: true, formatVersion: 3, stats, warnings });
             }
+            if (file.size > LEGACY_JSON_MAX_BYTES) {
+                throw backupTooLarge(LEGACY_JSON_MAX_BYTES);
+            }
             const body = JSON.parse(await file.text()) as LegacyImportData;
             const { stats, warnings } = await importLegacyJsonBackup({
                 db: prisma,
@@ -130,13 +146,18 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
             return NextResponse.json({ success: true, formatVersion: 3, stats, warnings });
         }
 
-        const contentLength = req.headers.get('content-length');
-        if (contentLength && parseInt(contentLength, 10) > 50 * 1024 * 1024) {
-            task.fail('Request body too large');
-            return badRequest("Request body too large (max 50MB)");
+        assertDeclaredSize(req, LEGACY_JSON_MAX_BYTES);
+        const limited = withBodyLimit(req, LEGACY_JSON_MAX_BYTES);
+        let rawBuf: Uint8Array;
+        try {
+            rawBuf = new Uint8Array(await limited.request.arrayBuffer());
+        } catch (error) {
+            if (limited.exceeded()) throw backupTooLarge(LEGACY_JSON_MAX_BYTES);
+            throw error;
         }
-
-        const rawBuf = new Uint8Array(await req.arrayBuffer());
+        if (rawBuf.byteLength > LEGACY_JSON_MAX_BYTES) {
+            throw backupTooLarge(LEGACY_JSON_MAX_BYTES);
+        }
         if (isZipMagic(rawBuf)) {
             const { stats, warnings } = await importBackupV3({
                 db: prisma,

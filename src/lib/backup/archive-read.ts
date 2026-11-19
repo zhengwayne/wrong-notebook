@@ -54,7 +54,7 @@ export async function unpackBackupZipStream(
     } = {},
 ): Promise<UnpackedBackupArchive> {
     const maxZipBytes = options.limits?.maxZipBytes ?? backupUploadLimitBytes();
-    const maxUncompressedBytes = options.limits?.maxUncompressedBytes ?? DEFAULT_MAX_UNCOMPRESSED_BYTES;
+    const maxUncompressedBytes = options.limits?.maxUncompressedBytes ?? Math.max(DEFAULT_MAX_UNCOMPRESSED_BYTES, maxZipBytes);
     const maxEntries = options.limits?.maxEntries ?? DEFAULT_MAX_ENTRIES;
 
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xueji-backup-unzip-'));

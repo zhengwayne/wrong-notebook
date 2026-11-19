@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackupPassphraseField } from "@/components/settings/backup-passphrase-field";
@@ -33,7 +33,6 @@ function getImportErrorToast(code: string | undefined, t: Translations): string 
         return t.settings?.backupInvalidPassphrase || "Incorrect backup passphrase. Please verify and retry.";
     }
     if (code === 'BACKUP_ALL_USERS_REQUIRED') return t.settings.backupAllUsersRequired;
-    if (code === 'BACKUP_PERSON_AMBIGUOUS') return t.settings.backupPersonAmbiguous;
     if (code === 'BACKUP_TAG_AMBIGUOUS') return t.settings.backupTagAmbiguous;
     if (code === 'BACKUP_TOO_LARGE') return t.settings.backupTooLarge;
     return t.settings?.importFailed || "Import failed";
@@ -65,6 +64,7 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
     const [importPassphrase, setImportPassphrase] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [importWarnings, setImportWarnings] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleExport = async (all: boolean) => {
         if (all && !(await confirmDialog(t.settings?.exportAllConfirm || "Export all users' data? This may take a while."))) {
@@ -103,10 +103,31 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
 
         setImporting(true);
         try {
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-            if (importPassphrase.length > 0) formData.append('passphrase', importPassphrase);
-            const res = await fetch(all ? '/api/import?all=true' : '/api/import', { method: 'POST', body: formData });
+            const url = all ? '/api/import?all=true' : '/api/import';
+            const isZip = selectedFile.name.toLowerCase().endsWith('.zip')
+                || selectedFile.type === 'application/zip'
+                || selectedFile.type === 'application/x-zip-compressed';
+            let res: Response;
+            if (isZip) {
+                // ZIP 直接以二进制流发送，避免服务端 req.formData() 全量缓冲大包进内存
+                const headers: Record<string, string> = { 'Content-Type': 'application/zip' };
+                if (importPassphrase.length > 0) {
+                    if (/^[\x20-\x7e]+$/.test(importPassphrase)) {
+                        headers['X-Backup-Passphrase'] = importPassphrase;
+                    } else {
+                        const bytes = new TextEncoder().encode(importPassphrase);
+                        let binary = '';
+                        for (const b of bytes) binary += String.fromCharCode(b);
+                        headers['X-Backup-Passphrase-Base64'] = btoa(binary);
+                    }
+                }
+                res = await fetch(url, { method: 'POST', headers, body: selectedFile });
+            } else {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                if (importPassphrase.length > 0) formData.append('passphrase', importPassphrase);
+                res = await fetch(url, { method: 'POST', body: formData });
+            }
             const payload = await res.json().catch(() => ({})) as {
                 stats?: ImportStats;
                 warnings?: string[];
@@ -125,6 +146,7 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
             setImportWarnings(warningMessages);
             setSelectedFile(null);
             setImportPassphrase('');
+            if (fileInputRef.current) fileInputRef.current.value = '';
             if (warningMessages.length === 0) {
                 window.location.reload();
             }
@@ -177,8 +199,8 @@ export function DataBackupSettings({ isAdmin }: { isAdmin: boolean }) {
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">{t.settings?.importData || "Import Data"}</span>
                     <div className="flex items-center gap-2">
-                        <input type="file" accept=".zip,.json" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? selectedFile)} className="hidden" id="import-file-input" disabled={importing} />
-                        <Button variant="outline" size="sm" onClick={() => document.getElementById('import-file-input')?.click()} disabled={importing} className="bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-800">
+                        <input ref={fileInputRef} type="file" accept=".zip,.json" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? selectedFile)} className="hidden" id="import-file-input" disabled={importing} />
+                        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={importing} className="bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-800">
                             {spinnerOr(importing, <Upload className="mr-2 h-4 w-4" />)}
                             {selectedFile?.name || t.settings?.selectFile || "Select File"}
                         </Button>
