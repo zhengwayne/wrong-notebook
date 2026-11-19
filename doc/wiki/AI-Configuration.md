@@ -74,7 +74,7 @@ MiniMax Code OAuth 用 MiniMax Code 账号登录后调用模型，不需要 API 
 
 ## 环境变量
 
-基础选择使用 `AI_PROVIDER`，默认 `minimax`，可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`anthropic`、`azure`、`openai`、`gemini`。
+基础选择使用 `AI_PROVIDER`，默认 `minimax`，可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`siliconflow`、`siliconflow-global`、`anthropic`、`azure`、`openai`、`gemini`。
 
 | 提供商 | 配置项 |
 | --- | --- |
@@ -89,6 +89,8 @@ MiniMax Code OAuth 用 MiniMax Code 账号登录后调用模型，不需要 API 
 | 火山引擎 Agent Plan | `VOLCENGINE_AGENT_API_KEY`、`VOLCENGINE_AGENT_BASE_URL`、`VOLCENGINE_AGENT_MODEL` |
 | 火山引擎 Coding Plan | `VOLCENGINE_CODING_API_KEY`、`VOLCENGINE_CODING_BASE_URL`、`VOLCENGINE_CODING_MODEL` |
 | 火山引擎（免费试用） | `VOLCENGINE_FREE_API_KEY`、`VOLCENGINE_FREE_BASE_URL`、`VOLCENGINE_FREE_MODEL` |
+| 硅基流动 SiliconFlow（中国站） | `SILICONFLOW_API_KEY`、`SILICONFLOW_BASE_URL`、`SILICONFLOW_MODEL` |
+| 硅基流动（国际站） | `SILICONFLOW_GLOBAL_API_KEY`、`SILICONFLOW_GLOBAL_BASE_URL`、`SILICONFLOW_GLOBAL_MODEL` |
 | 豆包语音（云端语音） | `VOLCENGINE_TTS_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL` |
 | Azure | `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_DEPLOYMENT`、`AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_MODEL` |

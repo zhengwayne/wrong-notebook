@@ -74,7 +74,7 @@ Animation narration is read by the browser's own voice (Web Speech) by default. 
 
 ## Environment variables
 
-`AI_PROVIDER` selects the provider. It defaults to `minimax` and accepts `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `anthropic`, `azure`, `openai` and `gemini`.
+`AI_PROVIDER` selects the provider. It defaults to `minimax` and accepts `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `siliconflow`, `siliconflow-global`, `anthropic`, `azure`, `openai` and `gemini`.
 
 | Provider | Variables |
 | --- | --- |
@@ -89,6 +89,8 @@ Animation narration is read by the browser's own voice (Web Speech) by default. 
 | Volcengine Agent Plan | `VOLCENGINE_AGENT_API_KEY`, `VOLCENGINE_AGENT_BASE_URL`, `VOLCENGINE_AGENT_MODEL` |
 | Volcengine Coding Plan | `VOLCENGINE_CODING_API_KEY`, `VOLCENGINE_CODING_BASE_URL`, `VOLCENGINE_CODING_MODEL` |
 | Volcengine (free trial) | `VOLCENGINE_FREE_API_KEY`, `VOLCENGINE_FREE_BASE_URL`, `VOLCENGINE_FREE_MODEL` |
+| SiliconFlow (China site) | `SILICONFLOW_API_KEY`, `SILICONFLOW_BASE_URL`, `SILICONFLOW_MODEL` |
+| SiliconFlow (international) | `SILICONFLOW_GLOBAL_API_KEY`, `SILICONFLOW_GLOBAL_BASE_URL`, `SILICONFLOW_GLOBAL_MODEL` |
 | Doubao Speech (cloud voice) | `VOLCENGINE_TTS_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL` |
 | Azure | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_MODEL` |

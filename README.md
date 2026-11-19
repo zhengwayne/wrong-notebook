@@ -348,6 +348,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | 火山引擎 Agent Plan | [Agent Plan](https://ark.volcengine.com/region:cn-beijing/docs/82379/2160841?lang=zh) 专属 Key，套餐含豆包语音合成 | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seed-evolving` |
 | 火山引擎 Coding Plan | [Coding Plan](https://www.volcengine.com/docs/82379/1928261)，方舟 API Key | `https://ark.cn-beijing.volces.com/api/coding/v3`（不要改成 `/api/v3`，否则不计入套餐） | `doubao-seed-evolving` |
 | 火山引擎（免费试用） | 新用户**免费推理额度**，见[下文](#火山引擎免费试用) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-evolving` |
+| 硅基流动 SiliconFlow | [硅基流动控制台](https://cloud.siliconflow.cn)，部分对话模型**免费**（仅文本，需实名认证） | `https://api.siliconflow.cn/v1` | `THUDM/GLM-Z1-9B-0414` |
+| 硅基流动（国际站） | [SiliconFlow 国际站](https://cloud.siliconflow.com)，独立账号，新用户有体验赠金 | `https://api.siliconflow.com/v1` | `Qwen/Qwen2.5-VL-7B-Instruct` |
 | Anthropic 及兼容接口 | [Claude Console](https://platform.claude.com/) | `https://api.anthropic.com`（不含 `/v1`） | `claude-sonnet-5-5` |
 | Azure OpenAI | Azure 门户 → OpenAI 资源 → 密钥和终结点 | 填写资源 Endpoint 和部署名称 | 部署名称 |
 | OpenAI 及兼容接口 | [OpenAI Platform](https://platform.openai.com/api-keys)，可添加多个配置并切换 | `https://api.openai.com/v1` | `gpt-6.1-sol` |
@@ -451,7 +453,7 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 
 | 环境变量 | 描述 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `AI_PROVIDER` | AI 提供商 | `minimax` | 可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`anthropic`、`azure`、`openai`、`gemini` |
+| `AI_PROVIDER` | AI 提供商 | `minimax` | 可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`siliconflow`、`siliconflow-global`、`anthropic`、`azure`、`openai`、`gemini` |
 | `MINIMAX_API_KEY` / `MINIMAX_BASE_URL` / `MINIMAX_MODEL` | MiniMax | 地址 `https://api.minimax.cn/v1`，模型 `MiniMax-M3.1-Flash` | 地址和模型可留空 |
 | `MINIMAX_CODE_MODEL` | MiniMax Code 模型 | `MiniMax-M3.1-Flash` | 账号在网页设置中登录，无需 API Key |
 | `MINIMAX_CODE_AUTO_CHECKIN` | MiniMax Code 每日自动签到 | `true` | 设为 `false` 关闭 |
@@ -464,6 +466,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `VOLCENGINE_AGENT_API_KEY` / `VOLCENGINE_AGENT_BASE_URL` / `VOLCENGINE_AGENT_MODEL` | 火山引擎 Agent Plan | 地址 `https://ark.cn-beijing.volces.com/api/plan/v3`，模型 `doubao-seed-evolving` | Agent Plan 管理页的专属 API Key；套餐含豆包语音合成 |
 | `VOLCENGINE_CODING_API_KEY` / `VOLCENGINE_CODING_BASE_URL` / `VOLCENGINE_CODING_MODEL` | 火山引擎 Coding Plan | 地址 `https://ark.cn-beijing.volces.com/api/coding/v3`，模型 `doubao-seed-evolving` | 方舟 API Key；不要改成 `/api/v3`（不计入套餐）；套餐不含语音合成 |
 | `VOLCENGINE_FREE_API_KEY` / `VOLCENGINE_FREE_BASE_URL` / `VOLCENGINE_FREE_MODEL` | 火山引擎（免费试用） | 地址 `https://ark.cn-beijing.volces.com/api/v3`，模型 `doubao-seed-evolving` | 新用户免费推理额度，开启「安心体验模式」后用完自动暂停 |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` / `SILICONFLOW_MODEL` | 硅基流动 SiliconFlow（中国站） | 地址 `https://api.siliconflow.cn/v1`，模型 `THUDM/GLM-Z1-9B-0414` | 部分对话模型免费（仅文本输入，需实名认证）；图片识别需付费视觉模型或其他渠道 |
+| `SILICONFLOW_GLOBAL_API_KEY` / `SILICONFLOW_GLOBAL_BASE_URL` / `SILICONFLOW_GLOBAL_MODEL` | 硅基流动（国际站） | 地址 `https://api.siliconflow.com/v1`，模型 `Qwen/Qwen2.5-VL-7B-Instruct` | 独立账号与 Key，新用户有体验赠金；默认模型支持图片 |
 | `VOLCENGINE_TTS_API_KEY` | 豆包语音 API Key | 无 | 云端语音选择火山引擎豆包语音时使用，与火山方舟的 Key 不同 |
 | `ANTHROPIC_API_KEY` | Anthropic API Key | 无 | 从 [Claude Console](https://platform.claude.com/) 获取 |
 | `ANTHROPIC_BASE_URL` | API 地址 | `https://api.anthropic.com` | 兼容服务填写不含 `/v1` 的地址 |

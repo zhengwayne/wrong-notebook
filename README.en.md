@@ -350,6 +350,8 @@ The official Chinese model channels call each vendor's OpenAI-compatible API, so
 | Volcengine Agent Plan | Dedicated [Agent Plan](https://ark.volcengine.com/region:cn-beijing/docs/82379/2160841?lang=zh) key; the plan includes Doubao speech synthesis | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seed-evolving` |
 | Volcengine Coding Plan | [Coding Plan](https://www.volcengine.com/docs/82379/1928261), Ark API key | `https://ark.cn-beijing.volces.com/api/coding/v3` (do not change it to `/api/v3`, which is not counted toward the plan) | `doubao-seed-evolving` |
 | Volcengine (free trial) | **Free inference quota** for new users; see [below](#volcengine-free-trial) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-evolving` |
+| SiliconFlow | [SiliconFlow console](https://cloud.siliconflow.cn); some chat models are **free** (text only, identity verification required) | `https://api.siliconflow.cn/v1` | `THUDM/GLM-Z1-9B-0414` |
+| SiliconFlow (international) | [SiliconFlow international](https://cloud.siliconflow.com); separate account, trial credit for new users | `https://api.siliconflow.com/v1` | `Qwen/Qwen2.5-VL-7B-Instruct` |
 | Anthropic and compatible APIs | [Claude Console](https://platform.claude.com/) | `https://api.anthropic.com` (without `/v1`) | `claude-sonnet-5-5` |
 | Azure OpenAI | Azure portal → OpenAI resource → Keys and Endpoint | Your resource endpoint and deployment name | Deployment name |
 | OpenAI and compatible APIs | [OpenAI Platform](https://platform.openai.com/api-keys); several configurations can be added and switched | `https://api.openai.com/v1` | `gpt-6.1-sol` |
@@ -453,7 +455,7 @@ The most common variables are below; see the collapsed table and [`.env.example`
 
 | Variable | Description | Default | Notes |
 | :--- | :--- | :--- | :--- |
-| `AI_PROVIDER` | AI provider | `minimax` | `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `anthropic`, `azure`, `openai` or `gemini` |
+| `AI_PROVIDER` | AI provider | `minimax` | `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `siliconflow`, `siliconflow-global`, `anthropic`, `azure`, `openai` or `gemini` |
 | `MINIMAX_API_KEY` / `MINIMAX_BASE_URL` / `MINIMAX_MODEL` | MiniMax | URL `https://api.minimax.cn/v1`, model `MiniMax-M3.1-Flash` | URL and model are optional |
 | `MINIMAX_CODE_MODEL` | MiniMax Code model | `MiniMax-M3.1-Flash` | The account signs in from the web settings; no API key needed |
 | `MINIMAX_CODE_AUTO_CHECKIN` | MiniMax Code daily auto check-in | `true` | Set to `false` to turn it off |
@@ -466,6 +468,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `VOLCENGINE_AGENT_API_KEY` / `VOLCENGINE_AGENT_BASE_URL` / `VOLCENGINE_AGENT_MODEL` | Volcengine Agent Plan | URL `https://ark.cn-beijing.volces.com/api/plan/v3`, model `doubao-seed-evolving` | The plan's dedicated API key from the Agent Plan page; the plan includes Doubao speech synthesis |
 | `VOLCENGINE_CODING_API_KEY` / `VOLCENGINE_CODING_BASE_URL` / `VOLCENGINE_CODING_MODEL` | Volcengine Coding Plan | URL `https://ark.cn-beijing.volces.com/api/coding/v3`, model `doubao-seed-evolving` | Ark API key; do not change it to `/api/v3` (not counted toward the plan); the plan does not include speech synthesis |
 | `VOLCENGINE_FREE_API_KEY` / `VOLCENGINE_FREE_BASE_URL` / `VOLCENGINE_FREE_MODEL` | Volcengine (free trial) | URL `https://ark.cn-beijing.volces.com/api/v3`, model `doubao-seed-evolving` | Free inference quota for new users; with worry-free trial mode on, calls pause when it runs out |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` / `SILICONFLOW_MODEL` | SiliconFlow (China site) | URL `https://api.siliconflow.cn/v1`, model `THUDM/GLM-Z1-9B-0414` | Some chat models are free (text only, identity verification required); image recognition needs a paid vision model or another channel |
+| `SILICONFLOW_GLOBAL_API_KEY` / `SILICONFLOW_GLOBAL_BASE_URL` / `SILICONFLOW_GLOBAL_MODEL` | SiliconFlow (international) | URL `https://api.siliconflow.com/v1`, model `Qwen/Qwen2.5-VL-7B-Instruct` | Separate account and key; trial credit for new users; the default model accepts images |
 | `VOLCENGINE_TTS_API_KEY` | Doubao Speech API key | None | Used when cloud voice is Volcengine Doubao Speech; different from the Volcengine Ark key |
 | `ANTHROPIC_API_KEY` | Anthropic API key | None | From the [Claude Console](https://platform.claude.com/) |
 | `ANTHROPIC_BASE_URL` | API URL | `https://api.anthropic.com` | For compatible services, use the URL without `/v1` |

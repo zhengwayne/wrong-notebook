@@ -1031,6 +1031,16 @@ export const zh = {
                 title: "免费试用",
                 body: "注册火山引擎即可获得每个模型的免费推理额度（官方文档为每个模型 50 万 tokens）。在火山方舟控制台的「开通管理」中开启「安心体验模式」后，调用只消耗免费额度，额度接近用完时自动暂停，不会产生费用。额度用完后如需继续使用，完成实名认证并改用「火山引擎 豆包」渠道。",
             },
+            siliconflowBaseUrlHint: "默认使用免费的 THUDM/GLM-Z1-9B-0414（仅文本输入）。免费对话模型不支持图片；识别题目时请改用同一 Key 下的付费视觉模型（以模型列表为准），或在「渠道分工」中把图片识别渠道设为其他渠道。使用国际站时请选「硅基流动（国际站）」渠道。",
+            siliconflowFree: {
+                title: "免费模型",
+                body: "硅基流动中国站对部分对话模型免费（如 THUDM/GLM-Z1-9B-0414 等），完成实名认证后可调用，免费额度有固定限速。免费对话模型只有文本输入：图片识别需改用付费视觉模型或其他渠道。价格与免费名单以官方价格页为准。",
+            },
+            siliconflowGlobalBaseUrlHint: "国际站地址固定为 https://api.siliconflow.com/v1（不要填中国站的 api.siliconflow.cn）。默认模型 Qwen/Qwen2.5-VL-7B-Instruct 支持图片输入。国际站与中国站的 API Key、账号和赠金互不通用。",
+            siliconflowGlobalFree: {
+                title: "新用户赠金",
+                body: "硅基流动国际站新用户注册可得体验赠金，按实时价格扣减；国际站没有长期免费的对话模型。默认的 Qwen/Qwen2.5-VL-7B-Instruct 单价较低且支持图片识别。赠金用完后充值即可继续使用；如需免费的文字模型，请改用「硅基流动 SiliconFlow」中国站渠道。价格以官方价格页为准。",
+            },
             qwenBaseUrlHint: "默认为阿里云百炼 Token Plan 专属地址（推荐，Key 以 sk-sp- 开头）；使用按量付费的 Key 时填写 https://dashscope.aliyuncs.com/compatible-mode/v1。",
             minimaxCode: {
                 title: "MiniMax Code 账号",
