@@ -151,6 +151,11 @@ describe("GET /api/error-items/list 全参数筛选", () => {
         expect(missingChapRes.total).toBe(0);
         const chapTagRes = await (await LIST_ITEMS(new Request("http://localhost/api/error-items/list?chapter=几何&tag=勾股定理"))).json();
         expect(chapTagRes.items.map((i: { id: string }) => i.id)).toEqual([item1.id]);
+        await db.knowledgeTag.create({ data: { id: "t-other-chapter", name: "代数", subject: "math", isSystem: true } });
+        const outside = await (await LIST_ITEMS(new Request("http://localhost/api/error-items/list?chapter=代数&tag=勾股定理"))).json();
+        expect(outside.total).toBe(0);
+        const invalidPage = await (await LIST_ITEMS(new Request("http://localhost/api/error-items/list?page=bad&pageSize=bad"))).json();
+        expect(invalidPage).toMatchObject({ page: 1, total: 2 });
         const tagOnlyRes = await (await LIST_ITEMS(new Request("http://localhost/api/error-items/list?tag=全等三角形"))).json();
         expect(tagOnlyRes.items.map((i: { id: string }) => i.id)).toEqual([item2.id]);
 

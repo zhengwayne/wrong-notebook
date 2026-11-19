@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { Camera, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { apiClient } from "@/lib/api-client";
 import { withChildParam } from "@/lib/current-child";
 import { getApiErrorMessage } from "@/lib/error-message";
@@ -36,50 +37,84 @@ interface PaperSummary {
 export default function ParentPapersPage() {
     const { t, language } = useLanguage();
     const copy = t.parentPapers;
+    const { timeZone } = useTimeZone();
     const { learnerId, childName, hrefWithChild } = useCurrentChild();
     usePageTitle(t.pageTitle.parentPapers);
     const [papers, setPapers] = useState<PaperSummary[] | null>(null);
+    const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [retryingId, setRetryingId] = useState<string | null>(null);
+    const requestSeqRef = useRef(0);
+    const activeLearnerRef = useRef<string | null>(learnerId);
 
     const load = useCallback(async (id: string, silent = false) => {
+        const seq = ++requestSeqRef.current;
         if (!silent) setError(null);
         try {
             const data = await apiClient.get<{ papers: PaperSummary[] }>(`/api/parent/papers?learnerId=${encodeURIComponent(id)}`);
+            if (seq !== requestSeqRef.current || activeLearnerRef.current !== id) return;
+            setLoadedFor(id);
             setPapers(data.papers);
         } catch (err) {
+            if (seq !== requestSeqRef.current || activeLearnerRef.current !== id) return;
             frontendLogger.error("[ParentPapers]", "Failed to list papers", { error: err });
             if (!silent) {
                 setError(getApiErrorMessage(err) || copy.loadError);
+                setLoadedFor(id);
                 setPapers([]);
             }
         }
     }, [copy.loadError]);
 
     useEffect(() => {
+        activeLearnerRef.current = learnerId;
+        requestSeqRef.current += 1;
+        // 切换孩子时立即清空旧娃试卷并作废在途请求与定时器回调，防止闪烁或旧数据覆盖
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换孩子时重置界面状态并拉取新孩子卷子列表
+        setPapers(null);
+        setLoadedFor(null);
+        setError(null);
+        setRetryingId(null);
         if (!learnerId) return;
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面或切换孩子时拉取卷子列表
         void load(learnerId);
+        return () => {
+            requestSeqRef.current += 1;
+        };
     }, [learnerId, load]);
 
     useEffect(() => {
-        if (!learnerId || !papers?.some((paper) => paper.status === PARENT_PAPER_STATUS.recognizing)) return;
-        const timer = window.setInterval(() => { void load(learnerId, true); }, 2000);
-        return () => window.clearInterval(timer);
-    }, [learnerId, papers, load]);
+        if (!learnerId || loadedFor !== learnerId || !papers?.some((paper) => paper.status === PARENT_PAPER_STATUS.recognizing)) return;
+        let cancelled = false;
+        const timer = window.setInterval(() => {
+            if (cancelled || activeLearnerRef.current !== learnerId) return;
+            void load(learnerId, true);
+        }, 2000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [learnerId, loadedFor, papers, load]);
 
     const retry = async (paperId: string, event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
+        const targetLearnerId = learnerId;
+        const seqAtStart = requestSeqRef.current;
         setRetryingId(paperId);
         try {
             await apiClient.post(`/api/parent/papers/${paperId}/recognize`, { language });
-            if (learnerId) await load(learnerId, true);
+            if (targetLearnerId && activeLearnerRef.current === targetLearnerId) {
+                await load(targetLearnerId, true);
+            }
         } catch (err) {
-            frontendLogger.error("[ParentPapers]", "Failed to retry recognition", { error: err });
-            setError(getApiErrorMessage(err) || copy.recognizeError);
+            if (activeLearnerRef.current === targetLearnerId && seqAtStart === requestSeqRef.current) {
+                frontendLogger.error("[ParentPapers]", "Failed to retry recognition", { error: err });
+                setError(getApiErrorMessage(err) || copy.recognizeError);
+            }
         } finally {
-            setRetryingId(null);
+            if (activeLearnerRef.current === targetLearnerId) {
+                setRetryingId(null);
+            }
         }
     };
 
@@ -94,9 +129,10 @@ export default function ParentPapersPage() {
         );
     }
 
-    if (!papers && !error) return <PageLoading />;
+    const visiblePapers = loadedFor === learnerId ? papers : null;
+    if (!visiblePapers && !error) return <PageLoading />;
 
-    const dateLabel = (value: string) => new Date(value).toLocaleString(language === "en" ? "en" : "zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const dateLabel = (value: string) => new Date(value).toLocaleString(language === "en" ? "en" : "zh-CN", { timeZone, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
     return (
         <PageContainer>
@@ -117,11 +153,11 @@ export default function ParentPapersPage() {
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
 
-                {!papers?.length ? (
+                {!visiblePapers?.length ? (
                     <EmptyState icon={FileText} title={copy.empty} description={copy.emptyHint} />
                 ) : (
                     <ul className="space-y-3">
-                        {papers.map((paper) => (
+                        {visiblePapers.map((paper) => (
                             <li key={paper.id}>
                                 <Link
                                     href={withChildParam(`/parent/papers/${paper.id}`, learnerId)}

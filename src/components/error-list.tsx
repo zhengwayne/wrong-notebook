@@ -22,6 +22,7 @@ import { buildErrorListParams } from "@/lib/error-list-filters";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
+import type { NotebookSubject } from "@/lib/notebook-scope";
 import { locateByShortId } from "@/lib/short-id-client";
 import { isShortId } from "@/lib/short-id-format";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
@@ -32,8 +33,9 @@ import { groupErrorItems, type ErrorListGroupMode } from "@/lib/error-list-group
 
 export interface ErrorListProps {
     subjectId?: string;
-    subjectName?: string;
+    subject?: NotebookSubject | null;
     learnerId?: string | null;
+    classId?: string | null;
 }
 
 interface KnowledgeFilterChange {
@@ -42,7 +44,7 @@ interface KnowledgeFilterChange {
     tag?: string | null;
 }
 
-export function ErrorList({ subjectId, subjectName, learnerId }: ErrorListProps = {}) {
+export function ErrorList({ subjectId, subject = null, learnerId, classId }: ErrorListProps = {}) {
     const { t } = useLanguage();
     const router = useRouter();
     const [items, setItems] = useState<ErrorItemSummary[]>([]);
@@ -82,7 +84,8 @@ export function ErrorList({ subjectId, subjectName, learnerId }: ErrorListProps 
         chapter: chapterFilter,
         paperLevel: paperLevelFilter,
         learnerId: learnerId || undefined,
-    }), [subjectId, debouncedSearch, masteryFilter, timeFilter, selectedTag, gradeFilter, chapterFilter, paperLevelFilter, learnerId]);
+        classId: classId || undefined,
+    }), [subjectId, debouncedSearch, masteryFilter, timeFilter, selectedTag, gradeFilter, chapterFilter, paperLevelFilter, learnerId, classId]);
 
     const handleFilterChange = (change: KnowledgeFilterChange) => {
         const { gradeSemester, chapter, tag } = change;
@@ -169,6 +172,11 @@ export function ErrorList({ subjectId, subjectName, learnerId }: ErrorListProps 
             params.append("pageSize", pageSize.toString());
             const response = await apiClient.get<PaginatedResponse<ErrorItemSummary>>(`/api/error-items/list?${params.toString()}`);
             if (seq !== requestSeqRef.current) return;
+            const lastPage = Math.max(1, response.totalPages);
+            if (page > lastPage) {
+                setPage(lastPage);
+                return;
+            }
             setItems(response.items);
             setTotal(response.total);
             setTotalPages(response.totalPages);
@@ -273,7 +281,8 @@ export function ErrorList({ subjectId, subjectName, learnerId }: ErrorListProps 
                         gradeSemester={gradeFilter}
                         tag={selectedTag}
                         onFilterChange={handleFilterChange}
-                        subjectName={subjectName}
+                        subject={subject}
+                        chapter={chapterFilter}
                     />
                 </div>
                 <PaperLevelFilter value={paperLevelFilter} onChange={setPaperLevelFilter} />

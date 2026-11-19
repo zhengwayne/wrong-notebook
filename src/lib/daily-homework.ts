@@ -18,13 +18,15 @@ export type HomeworkSubjectKey = (typeof HOMEWORK_SUBJECTS)[number];
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isValidDateKey(value: string | null | undefined): value is string {
-    return typeof value === 'string' && DATE_KEY_PATTERN.test(value);
+    if (typeof value !== 'string' || !DATE_KEY_PATTERN.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 export function shiftDateKey(dateKey: string, deltaDays: number): string {
-    const [yearStr, monthStr, dayStr] = dateKey.split('-');
-    const utc = new Date(Date.UTC(Number(yearStr), Number(monthStr) - 1, Number(dayStr) + deltaDays));
-    const y = utc.getUTCFullYear();
+    const utc = new Date(`${dateKey}T00:00:00.000Z`);
+    utc.setUTCDate(utc.getUTCDate() + deltaDays);
+    const y = String(utc.getUTCFullYear()).padStart(4, '0');
     const m = String(utc.getUTCMonth() + 1).padStart(2, '0');
     const d = String(utc.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
@@ -52,7 +54,7 @@ export function computeHomeworkStreak(activeDateKeys: Iterable<string>, todayKey
     }
 
     let streak = 0;
-    while (activeSet.has(cursor) && streak < 3660) {
+    while (activeSet.has(cursor)) {
         streak += 1;
         cursor = shiftDateKey(cursor, -1);
     }

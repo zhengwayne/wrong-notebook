@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { BookOpen, Plus } from "lucide-react";
 import { CreateNotebookDialog, type CreateNotebookInput } from "@/components/create-notebook-dialog";
 import { NotebookCard } from "@/components/notebook-card";
@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
@@ -20,17 +20,32 @@ import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import type { Notebook } from "@/types/api";
 
+function clearUrlLearnerParams() {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.has("learnerId") && !urlParams.has("studentKey")) return;
+    urlParams.delete("learnerId");
+    urlParams.delete("studentKey");
+    const nextQuery = urlParams.toString();
+    const targetUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.replaceState(window.history.state, "", targetUrl);
+}
+
 export default function NotebooksPage() {
     const { t } = useLanguage();
     usePageTitle(t.notebooks.title);
-    const { isParent, isTeacher, classId, learnerId, childName, hrefWithChild } = useCurrentChild();
+    const { isParent, isTeacher, classId, learnerId, childName, setTeacherScope, hrefWithChild } = useCurrentChild();
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
+    const requestSeqRef = useRef(0);
+    const healedScopeRef = useRef<string | null>(null);
 
     const fetchNotebooks = useCallback(async () => {
+        const seq = ++requestSeqRef.current;
+        setHasLoaded(false);
         setLoading(true);
         setError(null);
         try {
@@ -44,29 +59,45 @@ export default function NotebooksPage() {
             }
             const query = params.toString() ? `?${params.toString()}` : "";
             const data = await apiClient.get<Notebook[]>(`/api/notebooks${query}`);
+            if (seq !== requestSeqRef.current) return;
+            healedScopeRef.current = null;
             setNotebooks(data);
             setHasLoaded(true);
         } catch (err) {
+            if (seq !== requestSeqRef.current) return;
+            if (err instanceof ApiError && err.status === 404 && isTeacher && (classId || learnerId) && typeof setTeacherScope === "function") {
+                const scopeKey = `${classId ?? ""}:${learnerId ?? ""}`;
+                if (healedScopeRef.current !== scopeKey) {
+                    healedScopeRef.current = scopeKey;
+                    clearUrlLearnerParams();
+                    setTeacherScope(null);
+                    setError(getApiErrorMessage(err) || t.common.loadErrorDesc);
+                    return;
+                }
+            }
             frontendLogger.error("[Notebooks]", "Failed to fetch notebooks", { error: err });
             setError(getApiErrorMessage(err) || t.common.loadErrorDesc);
         } finally {
-            setLoading(false);
+            if (seq === requestSeqRef.current) setLoading(false);
         }
-    }, [t.common.loadErrorDesc, learnerId, isTeacher, isParent, classId]);
+    }, [t.common.loadErrorDesc, learnerId, isTeacher, isParent, classId, setTeacherScope]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面时拉取错题本列表并更新加载与错误状态
         fetchNotebooks();
+        return () => { requestSeqRef.current += 1; };
     }, [fetchNotebooks]);
 
     const handleCreate = async (input: CreateNotebookInput) => {
+        const seq = requestSeqRef.current;
         try {
             await apiClient.post("/api/notebooks", input);
-            await fetchNotebooks();
+            if (seq === requestSeqRef.current) await fetchNotebooks();
         } catch (err) {
             frontendLogger.error("[Notebooks]", "Failed to create notebook", { error: err });
             const message = getApiErrorMessage(err) || t.notebooks?.createError || "Failed to create";
             toast.error(message);
+            throw err;
         }
     };
 

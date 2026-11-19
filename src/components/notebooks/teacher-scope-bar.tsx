@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,31 +37,30 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
     const searchParams = useSearchParams();
     const { isTeacher, classId, learnerId, setTeacherScope } = useActiveLearnerScope();
     const [classes, setClasses] = useState<GradingClassItem[]>([]);
+    const [classesLoaded, setClassesLoaded] = useState(false);
 
     useEffect(() => {
         if (!isTeacher) return;
         let cancelled = false;
         apiClient.get<GradingClassItem[]>("/api/grading/classes")
             .then((data) => {
-                if (!cancelled) setClasses(data);
+                if (!cancelled) {
+                    setClasses(data);
+                    setClassesLoaded(true);
+                }
             })
             .catch(() => {
-                if (!cancelled) setClasses([]);
+                if (!cancelled) {
+                    setClasses([]);
+                    setClassesLoaded(false);
+                }
             });
         return () => {
             cancelled = true;
         };
     }, [isTeacher]);
 
-    if (!isTeacher || classes.length === 0) return null;
-
-    const currentClass = classes.find((cls) => cls.id === classId)
-        ?? classes.find((cls) => cls.students.some((stu) => stu.learnerId && stu.learnerId === learnerId))
-        ?? null;
-    const studentsWithLearner = (currentClass?.students ?? []).filter((stu): stu is RosterStudentItem & { learnerId: string } => Boolean(stu.learnerId));
-    const labels = t.notebooks.teacherScope;
-
-    const commitScope = (next: StoredTeacherScope | null) => {
+    const commitScope = useCallback((next: StoredTeacherScope | null) => {
         // 先同步刷新 URL query（并立即同步 window.location），避免事件广播时读回旧的 ?learnerId= 参数引发状态回弹
         if (searchParams.has("learnerId") || searchParams.has("studentKey")) {
             const nextParams = new URLSearchParams(searchParams.toString());
@@ -76,7 +75,23 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
             router.replace(targetUrl, { scroll: false });
         }
         setTeacherScope(next);
-    };
+    }, [pathname, router, searchParams, setTeacherScope]);
+
+    useEffect(() => {
+        // 班级被删除后自动清除失效的班级/学生缓存与 URL 参数，防止错题本页面 404 锁死
+        if (!isTeacher || !classesLoaded) return;
+        if (classId && !classes.some((cls) => cls.id === classId)) {
+            commitScope(null);
+        }
+    }, [isTeacher, classesLoaded, classId, classes, commitScope]);
+
+    if (!isTeacher || (classes.length === 0 && !classId && !learnerId)) return null;
+
+    const currentClass = classes.find((cls) => cls.id === classId)
+        ?? classes.find((cls) => cls.students.some((stu) => stu.learnerId && stu.learnerId === learnerId))
+        ?? null;
+    const studentsWithLearner = (currentClass?.students ?? []).filter((stu): stu is RosterStudentItem & { learnerId: string } => Boolean(stu.learnerId));
+    const labels = t.notebooks.teacherScope;
 
     const handleClassChange = (nextClassId: string) => {
         if (!nextClassId) {
@@ -142,7 +157,7 @@ export function TeacherScopeBar({ requireStudentForStats = false }: TeacherScope
                 </select>
             )}
 
-            {(currentClass || learnerId) && (
+            {(Boolean(classId) || Boolean(learnerId)) && (
                 <Button
                     type="button"
                     variant="ghost"

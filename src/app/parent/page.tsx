@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BookOpen, CalendarCheck, Camera, FileText, Route, Users } from "lucide-react";
@@ -49,19 +49,25 @@ function ParentHome() {
     const { setLearner, hrefWithChild } = useCurrentChild();
     const learnerId = params.get("learnerId") || "";
     const [data, setData] = useState<ParentHomeData | null>(null);
+    const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [managing, setManaging] = useState(false);
 
+    const requestSeq = useRef(0);
     const load = useCallback(async (id?: string) => {
+        const seq = ++requestSeq.current;
         setError(null);
         try {
             const query = new URLSearchParams({ language: language === "en" ? "en" : "zh" });
             if (id) query.set("learnerId", id);
             const result = await apiClient.get<ParentHomeData>(`/api/parent/home?${query}`);
+            if (seq !== requestSeq.current) return;
+            setLoadedFor(id || "");
             setData(result);
             if (result.child) setLearner({ id: result.child.id, name: result.child.name });
             else if (result.selectedLearnerId) setLearner(result.selectedLearnerId);
         } catch (err) {
+            if (seq !== requestSeq.current) return;
             frontendLogger.error("[ParentHome]", "Failed to load parent home", { error: err });
             setError(getApiErrorMessage(err) || copy.loadError);
         }
@@ -81,8 +87,8 @@ function ParentHome() {
     if (!data && !error) return <PageLoading />;
 
     const children = data?.children ?? [];
-    const child = data?.child;
-    const selectedId = data?.selectedLearnerId || learnerId || children[0]?.id || "";
+    const child = loadedFor === learnerId ? data?.child : null;
+    const selectedId = child?.id || learnerId || children[0]?.id || "";
     const followUps = child ? [
         { href: hrefWithChild("/review"), icon: CalendarCheck, title: copy.review, desc: copy.todayDesc },
         { href: hrefWithChild("/notebooks"), icon: BookOpen, title: copy.practice, desc: copy.practiceDesc },
@@ -134,8 +140,9 @@ function ParentHome() {
                             <h2 className="text-lg font-semibold">{children[0].name}</h2>
                         )}
 
+                        {!child && !error && loadedFor !== learnerId && <PageLoading />}
                         {child && (
-                            <div className="space-y-8">
+                            <div key={child.id} className="space-y-8">
                                 <ParentKidModeCard learnerId={child.id} learnerName={child.name} />
                                 <DailyHomeworkCard learnerId={child.id} />
                                 {child.latestPaper ? (

@@ -1,32 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { badRequest, notFound, conflict, internalError } from "@/lib/api-errors";
-import { LearnerNotFoundError } from "@/lib/learners";
-import { resolveLearningScope } from "@/lib/learning-scope";
+import { badRequest, conflict, internalError } from "@/lib/api-errors";
+import { resolveNotebookItemFilter } from "@/lib/server/notebook-item-filter";
 import { createLogger } from "@/lib/logger";
 import { isValidNotebookScope, stageFromEducationStage, STAGE_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
 import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:notebooks');
-
-function notebookListInclude(learnerFilter: string | string[] | null | undefined) {
-    if (Array.isArray(learnerFilter)) {
-        return {
-            _count: {
-                select: {
-                    errorItems: { where: { learnerId: { in: learnerFilter } } },
-                },
-            },
-        } as const;
-    }
-    return {
-        _count: {
-            select: {
-                errorItems: learnerFilter !== undefined ? { where: { learnerId: learnerFilter } } : true,
-            },
-        },
-    } as const;
-}
 
 /**
  * GET /api/notebooks?learnerId=&classId=&nonEmptyOnly=1
@@ -34,51 +14,23 @@ function notebookListInclude(learnerFilter: string | string[] | null | undefined
  */
 export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const searchParams = new URL(req.url).searchParams;
-    const rawLearnerId = searchParams.get("learnerId")?.trim();
     const rawClassId = searchParams.get("classId")?.trim();
     const nonEmptyOnly = searchParams.get("nonEmptyOnly") === "1";
 
     try {
-        let filterLearnerId: string | string[] | null | undefined;
-        let classLearnerIds: string[] | null = null;
-
-        if (rawLearnerId) {
-            try {
-                const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
-                filterLearnerId = scope.learnerId;
-            } catch (error) {
-                if (error instanceof LearnerNotFoundError) {
-                    return notFound("Learner not found");
-                }
-                throw error;
-            }
-        } else if (rawClassId) {
-            const cls = await prisma.gradingClass.findFirst({
-                where: { id: rawClassId, userId: user.id },
-                select: {
-                    id: true,
-                    students: { select: { learner: { select: { id: true } } } },
-                },
-            });
-            if (!cls) {
-                return notFound("Class not found");
-            }
-            classLearnerIds = cls.students
-                .map((s) => s.learner?.id)
-                .filter((id): id is string => Boolean(id));
-            filterLearnerId = classLearnerIds;
-        }
-
-        const whereClause = classLearnerIds !== null
-            ? {
-                userId: user.id,
-                errorItems: { some: { learnerId: { in: classLearnerIds } } },
-            }
-            : { userId: user.id };
+        const itemFilter = await resolveNotebookItemFilter(user.id, searchParams);
+        if (itemFilter instanceof Response) return itemFilter;
+        const whereClause = {
+            userId: user.id,
+            ...(rawClassId ? { errorItems: { some: itemFilter } } : {}),
+        };
+        const include = {
+            _count: { select: { errorItems: itemFilter.learnerId !== undefined ? { where: itemFilter } : true } },
+        } as const;
 
         let notebooks = await prisma.subject.findMany({
             where: whereClause,
-            include: notebookListInclude(filterLearnerId),
+            include,
             orderBy: {
                 createdAt: 'desc',
             },
@@ -106,7 +58,7 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 
             notebooks = await prisma.subject.findMany({
                 where: whereClause,
-                include: notebookListInclude(filterLearnerId),
+                include,
                 orderBy: {
                     createdAt: 'desc',
                 },

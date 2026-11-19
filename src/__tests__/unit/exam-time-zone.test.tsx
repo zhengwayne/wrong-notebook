@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ParentPapersPage from '@/app/parent/papers/page';
 import ExamDetailPage from '@/app/exams/[id]/page';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { TimeZoneProvider, useTimeZone } from '@/contexts/TimeZoneContext';
@@ -10,6 +11,7 @@ import { apiClient } from '@/lib/api-client';
 import { translations } from '@/lib/translations';
 
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'paper-1' }), useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('@/lib/use-current-child', () => ({ useCurrentChild: () => ({ learnerId: 'child-1', childName: '孩子', hrefWithChild: (href: string) => href }) }));
 vi.mock('next/link', () => ({ default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 vi.mock('@/components/ui/back-button', () => ({ BackButton: () => null }));
 vi.mock('@/components/exam/exam-question-card', () => ({
@@ -96,4 +98,17 @@ describe('试卷页面使用应用时区', () => {
         expect(container.textContent).toContain('2026-10-19 03:27');
         expect(container.textContent).not.toContain('2026-10-19 11:27');
     });
+});
+
+it('家长试卷列表按应用时区显示拍摄时间', async () => {
+    const zone = 'America/New_York';
+    vi.mocked(apiClient.get).mockResolvedValue({
+        papers: [{ id: 'parent-paper', title: '练习卷', createdAt: recordedAt, status: 'ready', pageCount: 1 }],
+    });
+    await act(async () => root.render(
+        <LanguageProvider><TimeZoneProvider initialTimeZone={zone}><ParentPapersPage /></TimeZoneProvider></LanguageProvider>,
+    ));
+    expect(container.textContent).toContain(new Date(recordedAt).toLocaleString('zh-CN', {
+        timeZone: zone, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    }));
 });

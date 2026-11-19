@@ -12,7 +12,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api-client";
-import { inferSubjectFromName } from "@/lib/knowledge-tags";
+import type { NotebookSubject } from "@/lib/notebook-scope";
 import { frontendLogger } from "@/lib/frontend-logger";
 
 interface TagTreeNode {
@@ -24,13 +24,14 @@ interface TagTreeNode {
 }
 
 interface KnowledgeFilterProps {
-    gradeSemester?: string;
-    tag?: string | null;
-    subjectName?: string;
+    gradeSemester: string;
+    chapter: string;
+    tag: string | null;
+    subject: NotebookSubject | null;
     onFilterChange: (filters: {
         gradeSemester?: string;
         chapter?: string;
-        tag?: string;
+        tag?: string | null;
     }) => void;
     className?: string;
 }
@@ -53,18 +54,15 @@ const GRADE_TO_SEMESTERS: Record<number, string[]> = {
 };
 
 export function KnowledgeFilter({
-    gradeSemester: initialGrade,
-    tag: initialTag,
-    subjectName,
+    gradeSemester,
+    chapter,
+    tag,
+    subject,
     onFilterChange,
     className
 }: KnowledgeFilterProps) {
     const { t } = useLanguage();
     const { timeZone } = useTimeZone();
-    const [gradeSemester, setGradeSemester] = useState<string>(initialGrade || "");
-    const [chapter, setChapter] = useState<string>("");
-    const [tag, setTag] = useState<string>(initialTag || "");
-
     // 从数据库加载的标签树
     const [tagTree, setTagTree] = useState<TagTreeNode[]>([]);
     const [loading, setLoading] = useState(true);
@@ -73,19 +71,6 @@ export function KnowledgeFilter({
 
     // 可用的年级学期选项 (根据用户信息过滤)
     const [availableGrades, setAvailableGrades] = useState<string[]>([]);
-
-    // Sync with props：在渲染时比较上一次的值，避免 effect 中多渲染一次
-    const [prevInitialGrade, setPrevInitialGrade] = useState(initialGrade);
-    if (initialGrade !== prevInitialGrade) {
-        setPrevInitialGrade(initialGrade);
-        if (initialGrade !== undefined) setGradeSemester(initialGrade);
-    }
-
-    const [prevInitialTag, setPrevInitialTag] = useState(initialTag);
-    if (initialTag !== prevInitialTag) {
-        setPrevInitialTag(initialTag);
-        if (initialTag !== undefined) setTag(initialTag || "");
-    }
 
     // 计算用户当前年级 (返回原始年级数值，不进行范围截断，以便判断由初升高等情况)
     const calculateCurrentGrade = useCallback((educationStage: string, enrollmentYear: number): number => {
@@ -157,9 +142,12 @@ export function KnowledgeFilter({
                 setAvailableGrades(grades);
 
                 // 3. 获取标签树 (所有科目)
-                const subject = subjectName ? inferSubjectFromName(subjectName) : 'math';
                 // 移除仅 math 的限制，尝试获取当前科目的标签
                 try {
+                    if (!subject) {
+                        setTagTree([]);
+                        return;
+                    }
                     const data = await apiClient.get<{ tags: TagTreeNode[] }>(`/api/tags?subject=${subject}`);
                     setTagTree(data.tags);
                 } catch (e) {
@@ -174,37 +162,7 @@ export function KnowledgeFilter({
         };
 
         fetchData();
-    }, [subjectName, generateAvailableGrades]);
-
-    const handleGradeChange = (val: string) => {
-        setGradeSemester(val);
-        setChapter("");
-        setTag("");
-        onFilterChange({
-            gradeSemester: val === "all" ? undefined : val,
-            chapter: undefined,
-            tag: undefined
-        });
-    };
-
-    const handleChapterChange = (val: string) => {
-        setChapter(val);
-        setTag("");
-        onFilterChange({
-            gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: val === "all" ? undefined : val,
-            tag: undefined
-        });
-    };
-
-    const handleTagChange = (val: string) => {
-        setTag(val);
-        onFilterChange({
-            gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: chapter === "all" ? undefined : chapter,
-            tag: val === "all" ? undefined : val
-        });
-    };
+    }, [subject, generateAvailableGrades]);
 
     // 从标签树中找到当前年级节点
     const currentGradeNode = tagTree.find(node => node.name === gradeSemester);
@@ -236,7 +194,7 @@ export function KnowledgeFilter({
 
     return (
         <div className={`flex gap-2 ${className}`}>
-            <Select value={gradeSemester} onValueChange={handleGradeChange} disabled={loading}>
+            <Select value={gradeSemester || "all"} onValueChange={value => onFilterChange({ gradeSemester: value === "all" ? "" : value, chapter: "", tag: null })} disabled={loading}>
                 <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder={t.filter?.gradeShort || "Grade"} />
                 </SelectTrigger>
@@ -248,7 +206,7 @@ export function KnowledgeFilter({
                 </SelectContent>
             </Select>
 
-            <Select value={chapter} onValueChange={handleChapterChange} disabled={!gradeSemester || gradeSemester === "all"}>
+            <Select value={chapter || "all"} onValueChange={value => onFilterChange({ chapter: value === "all" ? "" : value, tag: null })} disabled={!gradeSemester}>
                 <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder={t.filter?.chapter || "Chapter"} />
                 </SelectTrigger>
@@ -262,7 +220,7 @@ export function KnowledgeFilter({
                 </SelectContent>
             </Select>
 
-            <Select value={tag} onValueChange={handleTagChange} disabled={!chapter || chapter === "all"}>
+            <Select value={tag || "all"} onValueChange={value => onFilterChange({ tag: value === "all" ? null : value })} disabled={!chapter}>
                 <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder={t.filter?.knowledgePoint || "Tag"} />
                 </SelectTrigger>

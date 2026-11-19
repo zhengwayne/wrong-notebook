@@ -194,7 +194,9 @@ export function DailyHomeworkCard({ learnerId }: { learnerId: string }) {
                 </Button>
             </form>
 
-            {items.length === 0 ? (
+            {!data && !error ? (
+                <p className="text-sm text-muted-foreground" role="status">{t.common.loading}</p>
+            ) : items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{copy.empty}</p>
             ) : (
                 <ul className="divide-y divide-border/60">

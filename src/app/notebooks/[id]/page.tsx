@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -19,8 +19,20 @@ import { getApiErrorMessage } from "@/lib/error-message";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { useCurrentChild } from "@/lib/use-current-child";
+import { resolveNotebookScope } from "@/lib/notebook-scope";
 import { usePageTitle } from "@/lib/page-title";
 import type { Notebook } from "@/types/api";
+
+function clearUrlLearnerParams() {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.has("learnerId") && !urlParams.has("studentKey")) return;
+    urlParams.delete("learnerId");
+    urlParams.delete("studentKey");
+    const nextQuery = urlParams.toString();
+    const targetUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.replaceState(window.history.state, "", targetUrl);
+}
 
 export default function NotebookDetailPage() {
     const params = useParams();
@@ -34,41 +46,67 @@ export default function NotebookDetailPage() {
     const [renameDialogOpen, setRenameDialogOpen] = useState(false);
     // 批量重新生成知识点后递增，用于刷新题目列表
     const [listVersion, setListVersion] = useState(0);
+    const requestSeqRef = useRef(0);
+    const healedScopeRef = useRef<string | null>(null);
 
     const notebookId = typeof params.id === "string" ? params.id : "";
-    const { learnerId, hrefWithChild } = useCurrentChild();
+    const { isTeacher, isParent, learnerId, classId, setTeacherScope, setLearner, hrefWithChild } = useCurrentChild();
+    const classFilter = learnerId ? null : classId;
 
     const fetchNotebook = useCallback(async (id: string) => {
+        const seq = ++requestSeqRef.current;
+        setNotebook(null);
         setLoading(true);
         setLoadError(null);
         try {
-            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : "";
+            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}`
+                : classFilter ? `?classId=${encodeURIComponent(classFilter)}` : "";
             const data = await apiClient.get<Notebook>(`/api/notebooks/${id}${query}`);
+            if (seq !== requestSeqRef.current) return;
+            healedScopeRef.current = null;
             setNotebook(data);
         } catch (error) {
+            if (seq !== requestSeqRef.current) return;
             frontendLogger.error("[NotebookDetail]", "Failed to fetch notebook", { error });
             if (error instanceof ApiError && error.status === 404) {
+                const errorCode = error.code || getApiErrorMessage(error);
+                const isScopeNotFound = errorCode === "Class not found"
+                    || errorCode === "Learner not found"
+                    || (Boolean(classFilter || learnerId) && errorCode !== "Notebook not found");
+                if (isScopeNotFound) {
+                    const scopeKey = `${isTeacher ? "T" : "P"}:${classFilter ?? ""}:${learnerId ?? ""}`;
+                    const canHeal = isTeacher ? typeof setTeacherScope === "function" : (isParent && typeof setLearner === "function");
+                    if (healedScopeRef.current !== scopeKey && canHeal) {
+                        healedScopeRef.current = scopeKey;
+                        clearUrlLearnerParams();
+                        if (isTeacher) setTeacherScope(null);
+                        else if (isParent) setLearner(null);
+                    }
+                    setLoadError(getApiErrorMessage(error) || t.common.loadErrorDesc);
+                    return;
+                }
                 toast.error(t.notebooks.notFound);
-                router.push(hrefWithChild("/notebooks"));
+                router.push(learnerId ? hrefWithChild("/notebooks") : "/notebooks");
                 return;
             }
             setLoadError(getApiErrorMessage(error) || t.common.loadErrorDesc);
         } finally {
-            setLoading(false);
+            if (seq === requestSeqRef.current) setLoading(false);
         }
-    }, [router, t.common.loadErrorDesc, t.notebooks.notFound, learnerId, hrefWithChild]);
+    }, [router, t.common.loadErrorDesc, t.notebooks.notFound, isTeacher, isParent, learnerId, classFilter, setTeacherScope, setLearner, hrefWithChild]);
 
     useEffect(() => {
         if (notebookId) {
             // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或路由参数变化时加载错题本详情并同步加载态
             fetchNotebook(notebookId);
         }
+        return () => { requestSeqRef.current += 1; };
     }, [notebookId, fetchNotebook]);
 
     const handleRename = async (name: string) => {
         if (!notebook) return;
         const updated = await apiClient.put<Notebook>(`/api/notebooks/${notebook.id}`, { name });
-        setNotebook(updated);
+        setNotebook((previous) => previous?.id === updated.id ? { ...previous, name: updated.name } : previous);
     };
 
     const handleDelete = async () => {
@@ -164,7 +202,7 @@ export default function NotebookDetailPage() {
                 }
             />
 
-            <ErrorList key={`${listVersion}-${learnerId || "all"}`} subjectId={notebook.id} subjectName={notebook.name} learnerId={learnerId} />
+            <ErrorList key={`${listVersion}-${learnerId || classFilter || "all"}`} subjectId={notebook.id} subject={resolveNotebookScope(notebook).subject} learnerId={learnerId} classId={classFilter} />
 
             <RenameNotebookDialog
                 open={renameDialogOpen}

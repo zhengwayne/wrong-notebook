@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
-import { LearnerNotFoundError } from "@/lib/learners";
-import { resolveLearningScope } from "@/lib/learning-scope";
+import { resolveNotebookItemFilter } from "@/lib/server/notebook-item-filter";
 import { createLogger } from "@/lib/logger";
 import { defineApiRoute } from "@/lib/server/api-route";
 
@@ -18,44 +17,23 @@ export const GET = defineApiRoute<Request, { id: string }>(
         const { id } = await params;
 
         try {
-            const rawLearnerId = new URL(req.url).searchParams.get("learnerId")?.trim();
-        let filterLearnerId: string | null | undefined;
-        if (rawLearnerId) {
-            try {
-                const scope = await resolveLearningScope(prisma, user.id, rawLearnerId);
-                filterLearnerId = scope.learnerId;
-            } catch (error) {
-                if (error instanceof LearnerNotFoundError) {
-                    return notFound("Learner not found");
-                }
-                throw error;
-            }
-        }
-        const notebook = await prisma.subject.findUnique({
-            where: { id },
-            include: {
-                _count: {
-                    select: {
-                        errorItems: filterLearnerId !== undefined ? { where: { learnerId: filterLearnerId } } : true,
-                    },
+            const itemFilter = await resolveNotebookItemFilter(user.id, new URL(req.url).searchParams);
+            if (itemFilter instanceof Response) return itemFilter;
+            const notebook = await prisma.subject.findUnique({
+                where: { id },
+                include: {
+                    _count: { select: { errorItems: itemFilter.learnerId !== undefined ? { where: itemFilter } : true } },
                 },
-            },
-        });
-
-        if (!notebook) {
-            return notFound("Notebook not found");
+            });
+            if (!notebook) return notFound("Notebook not found");
+            if (notebook.userId !== user.id) return forbidden("Not authorized to access this notebook");
+            return NextResponse.json(notebook);
+        } catch (error) {
+            logger.error({ error }, 'Error fetching notebook');
+            return internalError("Failed to fetch notebook");
         }
-
-        if (notebook.userId !== user.id) {
-            return forbidden("Not authorized to access this notebook");
-        }
-
-        return NextResponse.json(notebook);
-    } catch (error) {
-        logger.error({ error }, 'Error fetching notebook');
-        return internalError("Failed to fetch notebook");
-    }
-});
+    },
+);
 
 /**
  * PUT /api/notebooks/[id]

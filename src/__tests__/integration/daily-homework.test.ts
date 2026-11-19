@@ -23,6 +23,7 @@ import { GET as LIST_HW, POST as CREATE_HW } from '@/app/api/parent/homeworks/ro
 import { PATCH as UPDATE_HW, DELETE as DELETE_HW } from '@/app/api/parent/homeworks/[id]/route';
 import { GET as EXPORT_ZIP } from '@/app/api/export/route';
 import { POST as IMPORT_ZIP } from '@/app/api/import/route';
+import { shiftDateKey } from '@/lib/daily-homework';
 
 let database: PrismaClient;
 let directory: string;
@@ -66,6 +67,21 @@ afterAll(async () => {
 });
 
 describe('家长每日全科作业清单与备份往返集成测试', () => {
+    it('历史日期和跨查询批次的连续打卡计入练习及作业', async () => {
+        const first = '2020-01-01';
+        await database.dailyHomeworkItem.createMany({ data: Array.from({ length: 75 }, (_, i) => ({
+            userId: 'parent-hw', learnerId: 'kid-1', dateKey: shiftDateKey(first, i), completed: true, title: '复习',
+        })) });
+        const last = shiftDateKey(first, 75);
+        await database.practiceRecord.create({ data: {
+            userId: 'parent-hw', learnerId: 'kid-1', result: 'correct', isCorrect: true,
+            createdAt: new Date(`${last}T01:00:00Z`),
+        } });
+        for (const day of [last, shiftDateKey(last, 1)]) {
+            const response = await LIST_HW(new Request(`http://localhost/api/parent/homeworks?learnerId=kid-1&dateKey=${day}`));
+            expect((await response.json()).summary.streakDays).toBe(76);
+        }
+    });
     it('支持增删改查、防跨户 IDOR、联动练习记录计算连续打卡并支持 v3 备份恢复', async () => {
         // 越权读取别人家孩子的作业返回 404
         const idorRes = await LIST_HW(new Request('http://127.0.0.1/api/parent/homeworks?learnerId=kid-stranger&dateKey=2026-11-19'));
