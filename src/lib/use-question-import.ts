@@ -80,6 +80,8 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     const [confirmBeforeImport, setConfirmBeforeImport] = useState(false);
     const [lastImported, setLastImported] = useState<ImportedQuestion | null>(null);
     const [batchBlobs, setBatchBlobs] = useState<Blob[] | null>(null);
+    // 一次选择多张图片时逐张排队裁剪，裁完后一起识别（Ported from margrop/wrong-notebook 4435a761, MIT）
+    const [imageQueue, setImageQueue] = useState<{ files: File[]; index: number; blobs: Blob[] } | null>(null);
     const [pendingItems, setPendingItems] = useState<{ items: ParsedQuestion[]; imageUrl: string | null; provenanceId?: string | null } | null>(null);
     const [savingItems, setSavingItems] = useState(false);
 
@@ -120,6 +122,39 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         setIsCropperOpen(false);
         setLastImported(null);
         setBatchBlobs(blobs);
+    };
+
+    /** 多张图片：逐张打开裁剪框；只选了一张时与单张流程一致 */
+    const selectImages = (files: File[]) => {
+        if (files.length === 0) return;
+        if (files.length === 1) {
+            setImageQueue(null);
+            selectImage(files[0]);
+            return;
+        }
+        setLastImported(null);
+        setImageQueue({ files, index: 0, blobs: [] });
+        setCroppingImage(URL.createObjectURL(files[0]));
+        setIsCropperOpen(true);
+    };
+
+    /** 当前图片处理完（裁剪得到的图片，取消时为空），打开下一张；全部完成后一起识别 */
+    const advanceQueue = (queue: { files: File[]; index: number; blobs: Blob[] }, added: Blob[]) => {
+        const blobs = [...queue.blobs, ...added];
+        const next = queue.index + 1;
+        if (next < queue.files.length) {
+            setImageQueue({ files: queue.files, index: next, blobs });
+            setCroppingImage(URL.createObjectURL(queue.files[next]));
+            setIsCropperOpen(true);
+            return;
+        }
+        setImageQueue(null);
+        setIsCropperOpen(false);
+        if (blobs.length > 1) {
+            startBatch(blobs);
+        } else if (blobs.length === 1) {
+            analyzeImage(new File([blobs[0]], "cropped-image.jpg", { type: "image/jpeg" }));
+        }
     };
 
     const itemsFromAnalyze = (data: ParsedQuestion | AnalyzeResponse): ParsedQuestion[] => {
@@ -229,9 +264,35 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
     };
 
     const cropComplete = (croppedBlob: Blob) => {
+        if (imageQueue) {
+            advanceQueue(imageQueue, [croppedBlob]);
+            return;
+        }
         setIsCropperOpen(false);
         analyzeImage(new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" }));
     };
+
+    /** 多题框选：排队中时把框出的各题并入队列，否则直接批量识别 */
+    const multiCropComplete = (blobs: Blob[]) => {
+        if (imageQueue) {
+            advanceQueue(imageQueue, blobs);
+            return;
+        }
+        startBatch(blobs);
+    };
+
+    /** 关闭裁剪框：排队中时跳过当前图片，继续下一张 */
+    const closeCropper = () => {
+        if (imageQueue) {
+            advanceQueue(imageQueue, []);
+            return;
+        }
+        setIsCropperOpen(false);
+    };
+
+    const cropQueueLabel = imageQueue
+        ? t.upload.multiCropProgress.replace("{n}", String(imageQueue.index + 1)).replace("{total}", String(imageQueue.files.length))
+        : undefined;
 
     /** 文字题目由 AI 解答后导入 */
     const submitText = async (questionText: string) => {
@@ -312,10 +373,10 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         step, cancelReview: () => { setStep("upload"); setPendingItems(null); },
         analysisStep, setAnalysisStep, isBusy: analysisStep !== 'idle',
         parsedData, currentImage, aiTimeout,
-        croppingImage, isCropperOpen, closeCropper: () => setIsCropperOpen(false),
+        croppingImage, isCropperOpen, closeCropper, cropQueueLabel,
         lastImported, dismissImported: () => setLastImported(null),
         batchBlobs, closeBatch: () => setBatchBlobs(null),
-        selectImage, cropComplete, startBatch, submitText, saveQuestion, saveReviewed,
+        selectImage, selectImages, cropComplete, multiCropComplete, startBatch, submitText, saveQuestion, saveReviewed,
         pendingItems, savingItems, savePendingItems, cancelPending,
     };
 }

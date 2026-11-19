@@ -93,7 +93,7 @@ export default function AddErrorPage() {
                                 onClose={flow.closeBatch}
                             />
                         ) : inputMode === "image" ? (
-                            <UploadZone onImageSelect={flow.selectImage} isAnalyzing={flow.isBusy} />
+                            <UploadZone onImageSelect={flow.selectImage} onImagesSelect={flow.selectImages} isAnalyzing={flow.isBusy} />
                         ) : (
                             <TextInputZone
                                 onSubmit={flow.submitText}
@@ -130,7 +130,8 @@ export default function AddErrorPage() {
                 open={flow.isCropperOpen}
                 onClose={flow.closeCropper}
                 onCropComplete={flow.cropComplete}
-                onMultiCropComplete={flow.startBatch}
+                onMultiCropComplete={flow.multiCropComplete}
+                    titleSuffix={flow.cropQueueLabel}
             />
         </main>
     );

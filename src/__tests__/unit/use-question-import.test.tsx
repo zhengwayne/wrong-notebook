@@ -140,4 +140,62 @@ describe('题目导入流程', () => {
         await act(async () => {});
         expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
     });
+
+    describe('一次选择多张图片（Ported from margrop/wrong-notebook 4435a761, MIT）', () => {
+        const file = (name: string) => new File([name], `${name}.png`, { type: 'image/png' });
+
+        beforeEach(() => {
+            let seq = 0;
+            vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => `blob:test-${++seq}`), revokeObjectURL: vi.fn() }));
+        });
+
+        it('逐张打开裁剪框并显示进度，全部裁完后一起进入批量识别', async () => {
+            await render();
+            await act(async () => flow.selectImages([file('a'), file('b'), file('c')]));
+            expect(flow.isCropperOpen).toBe(true);
+            expect(flow.croppingImage).toBe('blob:test-1');
+            expect(flow.cropQueueLabel).toBe('第 1/3 张');
+
+            await act(async () => flow.cropComplete(new Blob(['a'])));
+            expect(flow.croppingImage).toBe('blob:test-2');
+            expect(flow.cropQueueLabel).toBe('第 2/3 张');
+
+            // 第二张用多题框选，框出两题
+            await act(async () => flow.multiCropComplete([new Blob(['b1']), new Blob(['b2'])]));
+            expect(flow.cropQueueLabel).toBe('第 3/3 张');
+            expect(flow.batchBlobs).toBeNull();
+
+            await act(async () => flow.cropComplete(new Blob(['c'])));
+            expect(flow.isCropperOpen).toBe(false);
+            expect(flow.cropQueueLabel).toBeUndefined();
+            expect(flow.batchBlobs).toHaveLength(4);
+            expect(mocks.post).not.toHaveBeenCalledWith('/api/analyze', expect.anything(), expect.anything());
+        });
+
+        it('取消某一张时跳过它；只剩一张时按单张流程识别', async () => {
+            mocks.post.mockResolvedValueOnce(parsed);
+            await render({ analyzeSubjectId: 'nb-1', importSubjectId: 'nb-1' });
+            await act(async () => flow.selectImages([file('a'), file('b')]));
+            await act(async () => flow.closeCropper());
+            expect(flow.cropQueueLabel).toBe('第 2/2 张');
+            await act(async () => flow.cropComplete(new Blob(['b'])));
+            await act(async () => {});
+            expect(flow.batchBlobs).toBeNull();
+            expect(mocks.post).toHaveBeenCalledWith('/api/analyze', expect.objectContaining({ subjectId: 'nb-1' }), expect.anything());
+        });
+
+        it('全部取消时什么也不做；只选一张时与单张流程一致', async () => {
+            await render();
+            await act(async () => flow.selectImages([file('a'), file('b')]));
+            await act(async () => flow.closeCropper());
+            await act(async () => flow.closeCropper());
+            expect(flow.isCropperOpen).toBe(false);
+            expect(flow.batchBlobs).toBeNull();
+            expect(mocks.post).not.toHaveBeenCalled();
+
+            await act(async () => flow.selectImages([file('only')]));
+            expect(flow.isCropperOpen).toBe(true);
+            expect(flow.cropQueueLabel).toBeUndefined();
+        });
+    });
 });

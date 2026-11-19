@@ -143,7 +143,7 @@ function HomeContent() {
                                 onClose={flow.closeBatch}
                             />
                         ) : inputMode === "image" ? (
-                            <UploadZone onImageSelect={flow.selectImage} isAnalyzing={flow.isBusy} />
+                            <UploadZone onImageSelect={flow.selectImage} onImagesSelect={flow.selectImages} isAnalyzing={flow.isBusy} />
                         ) : inputMode === "text" ? (
                             <TextInputZone
                                 onSubmit={flow.submitText}
@@ -168,7 +168,8 @@ function HomeContent() {
                     open={flow.isCropperOpen}
                     onClose={flow.closeCropper}
                     onCropComplete={flow.cropComplete}
-                    onMultiCropComplete={flow.startBatch}
+                    onMultiCropComplete={flow.multiCropComplete}
+                    titleSuffix={flow.cropQueueLabel}
                 />
             )}
 

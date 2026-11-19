@@ -513,6 +513,9 @@ export const en = {
         activity: "Activity",
     },
     upload: {
+        multiHint: "Select up to {max} images at once; crop each in turn, then recognize them together",
+        multiTooMany: "You can select up to {max} images at once; the first {max} were kept",
+        multiCropProgress: "Image {n} of {total}",
         // dragDrop: "Click or drag image to upload", // Moved to app
         support: "Support JPG, PNG (Max 5MB)",
         analyze: "Analyze with AI",

@@ -23,12 +23,17 @@ declare global {
     }
 }
 
+/** 一次最多选择的图片数（Ported from margrop/wrong-notebook 4435a761, MIT） */
+export const MAX_IMAGE_SELECTION = 4;
+
 interface UploadZoneProps {
     onImageSelect: (file: File) => void;  // 改为传递 File 对象
+    /** 提供时允许一次选择多张图片（最多 4 张），由父组件逐张排队裁剪 */
+    onImagesSelect?: (files: File[]) => void;
     isAnalyzing: boolean;
 }
 
-export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
+export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: UploadZoneProps) {
     const { t } = useLanguage();
     const [isScreenshotting, setIsScreenshotting] = useState(false);
     // 确保只在客户端渲染屏幕截图功能
@@ -36,13 +41,20 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
 
     const onDrop = useCallback(
         (acceptedFiles: File[]) => {
+            if (onImagesSelect && acceptedFiles.length > 1) {
+                if (acceptedFiles.length > MAX_IMAGE_SELECTION) {
+                    toast.warning(t.upload.multiTooMany.replace("{max}", String(MAX_IMAGE_SELECTION)));
+                }
+                onImagesSelect(acceptedFiles.slice(0, MAX_IMAGE_SELECTION));
+                return;
+            }
             const file = acceptedFiles[0];
             if (file) {
                 // 直接传递 File 对象，让父组件处理压缩
                 onImageSelect(file);
             }
         },
-        [onImageSelect]
+        [onImageSelect, onImagesSelect, t]
     );
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -52,7 +64,9 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
             "image/heic": [".heic"],
             "image/heif": [".heif"],
         },
-        maxFiles: 1,
+        // 多选时不交给 dropzone 限制数量（超出会整批拒绝），由 onDrop 只取前 4 张并提示
+        multiple: Boolean(onImagesSelect),
+        maxFiles: onImagesSelect ? 0 : 1,
         disabled: isAnalyzing,
     });
     // 将剪贴板中的图片 Blob 转为 File 并交给父组件
@@ -277,6 +291,11 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
                         <p className="mt-2 text-xs text-muted-foreground">
                             {t.upload.support}
                         </p>
+                        {onImagesSelect && (
+                            <p className="text-xs text-muted-foreground">
+                                {t.upload.multiHint.replace("{max}", String(MAX_IMAGE_SELECTION))}
+                            </p>
+                        )}
                     </div>
                 </CardContent>
             </Card>
