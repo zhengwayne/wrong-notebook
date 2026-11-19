@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { badRequest, internalError } from "@/lib/api-errors";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { createLogger } from "@/lib/logger";
 import { defineApiRoute } from "@/lib/server/api-route";
 
@@ -37,13 +38,13 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
             select: {
                 id: true,
                 userId: true,
+                learnerId: true,
             },
         });
 
         // 过滤出属于当前用户的错题
-        const ownedIds = itemsToDelete
-            .filter(item => item.userId === user.id)
-            .map(item => item.id);
+        const ownedItems = itemsToDelete.filter(item => item.userId === user.id);
+        const ownedIds = ownedItems.map(item => item.id);
 
         const unauthorizedIds = ids.filter(id => !ownedIds.includes(id));
 
@@ -60,6 +61,11 @@ export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
                 },
             });
             deletedCount = result.count;
+            if (deletedCount > 0) {
+                for (const lid of new Set(ownedItems.map((item) => item.learnerId))) {
+                    scheduleLearningPathReplan(user.id, 'zh', lid);
+                }
+            }
         }
 
         logger.info({ deletedCount, requestedCount: ids.length, failedCount: unauthorizedIds.length }, 'Batch delete completed');

@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
+import type { FileRejection } from "react-dropzone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, Loader2, Monitor, ClipboardPaste } from "lucide-react";
@@ -25,6 +26,13 @@ declare global {
 
 /** 一次最多选择的图片数（Ported from margrop/wrong-notebook 4435a761, MIT） */
 export const MAX_IMAGE_SELECTION = 4;
+/** 单张图片大小上限（20MB，拍照原图后续会由前端压缩） */
+export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_FILE_MB = Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024));
+
+function isSupportedImageMime(type: string) {
+    return type.startsWith("image/") && type !== "image/svg+xml";
+}
 
 interface UploadZoneProps {
     onImageSelect: (file: File) => void;  // 改为传递 File 对象
@@ -57,13 +65,30 @@ export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: Uploa
         [onImageSelect, onImagesSelect, t]
     );
 
+    const onDropRejected = useCallback(
+        (rejections: FileRejection[]) => {
+            const codes = new Set(rejections.flatMap((item) => item.errors.map((err) => err.code)));
+            if (codes.has("file-too-large")) {
+                toast.warning(t.upload.fileTooLarge.replace("{max}", String(MAX_IMAGE_FILE_MB)));
+            } else {
+                toast.warning(t.upload.invalidFileType);
+            }
+        },
+        [t]
+    );
+
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
+        onDropRejected,
         accept: {
-            "image/*": [".jpeg", ".jpg", ".png", ".heic", ".heif"],
+            "image/jpeg": [".jpeg", ".jpg"],
+            "image/png": [".png"],
+            "image/webp": [".webp"],
+            "image/gif": [".gif"],
             "image/heic": [".heic"],
             "image/heif": [".heif"],
         },
+        maxSize: MAX_IMAGE_FILE_BYTES,
         // 多选时不交给 dropzone 限制数量（超出会整批拒绝），由 onDrop 只取前 4 张并提示
         multiple: Boolean(onImagesSelect),
         maxFiles: onImagesSelect ? 0 : 1,
@@ -94,7 +119,7 @@ export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: Uploa
             }
 
             const items = Array.from(event.clipboardData?.items ?? []);
-            const imageItem = items.find((item) => item.kind === "file" && item.type.startsWith("image/"));
+            const imageItem = items.find((item) => item.kind === "file" && isSupportedImageMime(item.type));
             const file = imageItem?.getAsFile();
             if (!file) return;
 
@@ -124,7 +149,7 @@ export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: Uploa
         try {
             const clipboardItems = await navigator.clipboard.read();
             for (const item of clipboardItems) {
-                const imageType = item.types.find((type) => type.startsWith("image/"));
+                const imageType = item.types.find((type) => isSupportedImageMime(type));
                 if (imageType) {
                     const blob = await item.getType(imageType);
                     selectClipboardImage(blob);

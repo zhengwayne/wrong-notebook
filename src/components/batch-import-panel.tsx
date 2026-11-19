@@ -6,6 +6,7 @@ import { CheckCircle, Loader2, RotateCcw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { withChildParam } from "@/lib/current-child";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { importQuestionImage } from "@/lib/question-import";
 import type { ImportedQuestion } from "@/lib/question-import";
@@ -14,6 +15,8 @@ interface BatchImportPanelProps {
     blobs: Blob[];
     /** 指定错题本；为空时按 AI 识别的学科匹配或新建错题本 */
     subjectId?: string | null;
+    /** 家长/教师身份下归属的学习者 */
+    learnerId?: string | null;
     timeout?: number;
     onClose: () => void;
 }
@@ -30,7 +33,7 @@ interface BatchItem {
 const CONCURRENCY = 3;
 
 /** 一图多题：逐框识别并直接导入错题本 */
-export function BatchImportPanel({ blobs, subjectId, timeout, onClose }: BatchImportPanelProps) {
+export function BatchImportPanel({ blobs, subjectId, learnerId, timeout, onClose }: BatchImportPanelProps) {
     const { t, language } = useLanguage();
     const [items, setItems] = useState<BatchItem[]>(() => blobs.map(() => ({ status: "pending" })));
     const startedRef = useRef(false);
@@ -45,6 +48,7 @@ export function BatchImportPanel({ blobs, subjectId, timeout, onClose }: BatchIm
             const imported = await importQuestionImage(blobs[index], {
                 language,
                 subjectId,
+                learnerId,
                 timeout,
                 onStage: (stage) => updateItem(index, { status: stage }),
             });
@@ -56,7 +60,7 @@ export function BatchImportPanel({ blobs, subjectId, timeout, onClose }: BatchIm
             updateItem(index, { status: "failed", error: typeof mapped === "string" ? mapped : backendError });
             frontendLogger.error('[BatchImport]', 'Question import failed', { index, error: backendError });
         }
-    }, [blobs, language, subjectId, timeout, t.errors, updateItem]);
+    }, [blobs, language, subjectId, learnerId, timeout, t.errors, updateItem]);
 
     const runAll = useCallback(async (indexes: number[]) => {
         const queue = [...indexes];
@@ -98,9 +102,13 @@ export function BatchImportPanel({ blobs, subjectId, timeout, onClose }: BatchIm
                                 <div className="font-medium">{t.batchImport.question.replace("{index}", String(index + 1))}</div>
                                 <StatusLine item={item} />
                                 {item.status === "success" && item.imported && (
-                                    <Link href={`/error-items/${item.imported.id}`} className="block truncate text-xs text-primary hover:underline">
-                                        {item.imported.notebookName} · {item.imported.shortId}
-                                    </Link>
+                                    <div className="space-y-0.5">
+                                        {(item.imported.savedItems ?? [item.imported]).map((saved) => (
+                                            <Link key={saved.id} href={withChildParam(`/error-items/${saved.id}`, learnerId)} className="block truncate text-xs text-primary hover:underline">
+                                                {saved.notebookName} · {saved.shortId}
+                                            </Link>
+                                        ))}
+                                    </div>
                                 )}
                                 {item.status === "failed" && (
                                     <>

@@ -89,6 +89,7 @@ export default function AddErrorPage() {
                             <BatchImportPanel
                                 blobs={flow.batchBlobs}
                                 subjectId={notebookId}
+                                learnerId={learnerId}
                                 timeout={flow.aiTimeout}
                                 onClose={flow.closeBatch}
                             />
@@ -125,14 +126,17 @@ export default function AddErrorPage() {
                 )}
             </div>
 
-            <ImageCropper
-                imageSrc={flow.croppingImage || ""}
-                open={flow.isCropperOpen}
-                onClose={flow.closeCropper}
-                onCropComplete={flow.cropComplete}
-                onMultiCropComplete={flow.multiCropComplete}
+            {flow.croppingImage && (
+                <ImageCropper
+                    imageSrc={flow.croppingImage}
+                    open={flow.isCropperOpen}
+                    onClose={flow.closeCropper}
+                    onCancelQueue={flow.cropQueueLabel ? flow.cancelQueue : undefined}
+                    onCropComplete={flow.cropComplete}
+                    onMultiCropComplete={flow.multiCropComplete}
                     titleSuffix={flow.cropQueueLabel}
-            />
+                />
+            )}
         </main>
     );
 }

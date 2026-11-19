@@ -11,12 +11,14 @@ const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
     session: null as { user: { id: string; email: string; name: string; role: string }; expires: string } | null,
     kidLearnerId: undefined as string | undefined,
+    replan: vi.fn(),
 }));
 
 vi.mock('@/lib/prisma', () => ({ get prisma() { return mocks.prisma; } }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(async () => mocks.session) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
+vi.mock('@/lib/learning-path/service', () => ({ scheduleLearningPathReplan: (...args: unknown[]) => mocks.replan(...args) }));
 vi.mock('@/lib/server/request-context', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/server/request-context')>()),
     getKidModeLearnerId: () => mocks.kidLearnerId,
@@ -39,9 +41,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
     mocks.kidLearnerId = undefined;
+    mocks.replan.mockReset();
     await db.practiceRecord.deleteMany();
     await db.errorItem.deleteMany();
     await db.learner.deleteMany();
+    await db.gradingStudent.deleteMany();
+    await db.gradingClass.deleteMany();
     await db.subject.deleteMany();
     await db.user.deleteMany();
 });
@@ -140,5 +145,40 @@ describe('POST /api/error-items/batch-move', () => {
         expect((await move({ ids: [], subjectId: alice.review.id })).status).toBe(400);
         expect((await move({ ids: Array.from({ length: 101 }, (_, i) => `id-${i}`), subjectId: alice.review.id })).status).toBe(400);
         expect((await move({ ids: ['x'] })).status).toBe(400);
+    });
+
+    it('按 classId 只移动该班级名册学生错题，且移动后触发学习路径重排；排除已归档孩子与已在目标本的题目', async () => {
+        const alice = await seedUser('alice@example.com');
+        const bob = await seedUser('bob@example.com');
+        const clsA = await db.gradingClass.create({ data: { userId: alice.user.id, name: '一班' } });
+        const clsB = await db.gradingClass.create({ data: { userId: bob.user.id, name: '他班' } });
+        const stuA = await db.gradingStudent.create({ data: { classId: clsA.id, name: '小明' } });
+        const learnerStuA = await db.learner.create({ data: { userId: alice.user.id, kind: 'student', name: '小明', gradingStudentId: stuA.id } });
+        const archivedChild = await db.learner.create({ data: { userId: alice.user.id, kind: 'child', name: '已归档', archivedAt: new Date() } });
+
+        const stuItem = await alice.item(learnerStuA.id, '学生题');
+        const selfItem = await alice.item(null, '教师本人题');
+        const archivedItem = await alice.item(archivedChild.id, '已归档题');
+        const alreadyInTarget = await db.errorItem.create({
+            data: { userId: alice.user.id, subjectId: alice.review.id, learnerId: learnerStuA.id, originalImageUrl: '', questionText: '已在目标本' },
+        });
+        login(alice.user);
+
+        // 按 classId 只移动本班学生且不在目标本中的题
+        const resClass = await move({ ids: [stuItem.id, selfItem.id, alreadyInTarget.id], subjectId: alice.review.id, classId: clsA.id });
+        expect(resClass.status).toBe(200);
+        expect(await resClass.json()).toEqual({ moved: 1, skipped: 2 });
+        expect((await db.errorItem.findUnique({ where: { id: stuItem.id } }))?.subjectId).toBe(alice.review.id);
+        expect((await db.errorItem.findUnique({ where: { id: selfItem.id } }))?.subjectId).toBe(alice.math.id);
+        expect(mocks.replan).toHaveBeenCalledWith(alice.user.id, 'zh', learnerStuA.id);
+
+        // 不能用其他用户的 classId
+        expect((await move({ ids: [selfItem.id], subjectId: alice.review.id, classId: clsB.id })).status).toBe(404);
+
+        // 未传 learnerId/classId 时自动排除已归档孩子
+        const resDefault = await move({ ids: [archivedItem.id], subjectId: alice.review.id });
+        expect(resDefault.status).toBe(200);
+        expect(await resDefault.json()).toEqual({ moved: 0, skipped: 1 });
+        expect((await db.errorItem.findUnique({ where: { id: archivedItem.id } }))?.subjectId).toBe(alice.math.id);
     });
 });

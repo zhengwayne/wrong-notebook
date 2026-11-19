@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notFound, internalError } from "@/lib/api-errors";
 import { LearnerNotFoundError } from "@/lib/learners";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
 import { defineApiRoute } from "@/lib/server/api-route";
@@ -25,6 +26,7 @@ export const DELETE = defineApiRoute({ auth: 'user' }, async (req, { user }) => 
         await prisma.errorItem.deleteMany({
             where: learningScopeWhere(scope),
         });
+        scheduleLearningPathReplan(userId, 'zh', scope.learnerId);
 
         return NextResponse.json({ message: "Error data cleared successfully" });
     } catch (error) {

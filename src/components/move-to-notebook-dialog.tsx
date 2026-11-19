@@ -24,10 +24,18 @@ interface MoveToNotebookDialogProps {
 export function MoveToNotebookDialog({ open, onOpenChange, count, currentSubjectId, moving, onMove }: MoveToNotebookDialogProps) {
     const { t } = useLanguage();
     const [target, setTarget] = useState<string>("");
-    const disabled = !target || target === currentSubjectId || count === 0;
+    // 切换当前错题本时避免沿用与当前错题本相同的目标值
+    const effectiveTarget = target && target !== currentSubjectId ? target : "";
+    const disabled = !effectiveTarget || count === 0;
+
+    const handleOpenChange = (next: boolean) => {
+        if (moving) return;
+        if (!next) setTarget("");
+        onOpenChange(next);
+    };
 
     return (
-        <Dialog open={open} onOpenChange={(next) => { if (!moving) onOpenChange(next); }}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent data-testid="move-to-notebook-dialog">
                 <DialogHeader>
                     <DialogTitle>{t.notebook.moveTitle.replace("{count}", String(count))}</DialogTitle>
@@ -35,13 +43,13 @@ export function MoveToNotebookDialog({ open, onOpenChange, count, currentSubject
                 </DialogHeader>
                 <div className="space-y-2">
                     <Label>{t.notebook.moveTarget}</Label>
-                    <NotebookSelector value={target || undefined} onChange={setTarget} className="w-full" />
+                    <NotebookSelector value={effectiveTarget || undefined} onChange={setTarget} className="w-full" />
                 </div>
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={moving}>
+                    <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={moving}>
                         {t.common.cancel}
                     </Button>
-                    <Button type="button" onClick={() => onMove(target)} disabled={disabled} loading={moving}>
+                    <Button type="button" onClick={() => onMove(effectiveTarget)} disabled={disabled} loading={moving}>
                         {t.notebook.moveConfirm}
                     </Button>
                 </DialogFooter>

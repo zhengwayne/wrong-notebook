@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { internalError, notFound } from "@/lib/api-errors";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
@@ -10,6 +11,7 @@ import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { truncatePlainPreview } from "@/lib/plain-preview";
 import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
+import { resolveNotebookItemFilter } from "@/lib/server/notebook-item-filter";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:stats:repeated-mistakes');
@@ -20,33 +22,61 @@ export const REPEATED_MISTAKES_LIMIT = 10;
 const PREVIEW_LENGTH = 60;
 
 /**
- * 反复错题榜：当前学习者做错 2 次及以上的错题，按出错次数降序取前 10。
- * 练习记录与错题都限定在同一账号、同一学习者（本人/孩子/学生）范围内。
+ * 反复错题榜：当前学习者（或教师所选班级）做错/不会 2 次及以上的错题，按出错次数降序取前 10。
+ * 练习记录与错题都限定在同一账号与同一作用域（本人/孩子/学生/班级名册）范围内。
  * Ported from margrop/wrong-notebook 07e4dca9 (MIT).
  */
 export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
-        let scope;
-        try {
-            const kidLearnerId = getKidModeLearnerId();
-            scope = await resolveLearningScope(prisma, user.id, kidLearnerId ?? readRequestLearnerId(req));
-        } catch (error) {
-            if (error instanceof LearnerNotFoundError) {
-                return notFound("Learner not found");
+        const kidLearnerId = getKidModeLearnerId();
+        const reqLearnerId = readRequestLearnerId(req);
+        const searchParams = new URL(req.url, 'http://127.0.0.1').searchParams;
+        const reqClassId = kidLearnerId ? null : searchParams.get('classId')?.trim() || null;
+
+        let scopeWhere: { userId: string; learnerId: string | null | { in: string[] } };
+        if (reqClassId) {
+            const params = new URLSearchParams();
+            params.set('classId', reqClassId);
+            if (reqLearnerId) params.set('learnerId', reqLearnerId);
+            const resolved = await resolveNotebookItemFilter(user.id, params);
+            if (resolved instanceof Response) return resolved;
+            if ('learnerId' in resolved && resolved.learnerId && typeof resolved.learnerId === 'object' && 'in' in resolved.learnerId) {
+                if (resolved.learnerId.in.length === 0) {
+                    return NextResponse.json({ items: [] });
+                }
+                scopeWhere = { userId: user.id, learnerId: resolved.learnerId };
+            } else if ('learnerId' in resolved) {
+                scopeWhere = { userId: user.id, learnerId: resolved.learnerId as string | null };
+            } else {
+                scopeWhere = { userId: user.id, learnerId: null };
             }
-            throw error;
+        } else {
+            let scope;
+            try {
+                scope = await resolveLearningScope(prisma, user.id, kidLearnerId ?? reqLearnerId);
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
+            scopeWhere = learningScopeWhere(scope);
         }
-        const scopeWhere = learningScopeWhere(scope);
+
+        const recordWhere: Prisma.PracticeRecordWhereInput = {
+            ...scopeWhere,
+            OR: [
+                { result: { in: ['wrong', 'not_attempted'] } },
+                { result: null, isCorrect: false },
+            ],
+            errorItemId: { not: null },
+            // 题目本身也必须在同一作用域内，避免历史数据串到别的学习者
+            errorItem: scopeWhere,
+        };
 
         const groups = await prisma.practiceRecord.groupBy({
             by: ['errorItemId'],
-            where: {
-                ...scopeWhere,
-                result: 'wrong',
-                errorItemId: { not: null },
-                // 题目本身也必须在同一作用域内，避免历史数据串到别的学习者
-                errorItem: scopeWhere,
-            },
+            where: recordWhere,
             _count: { id: true },
             _max: { createdAt: true },
             having: { id: { _count: { gte: 2 } } },

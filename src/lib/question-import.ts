@@ -10,6 +10,8 @@ export interface ImportedQuestion {
     subjectId: string | null;
     notebookName: string | null;
     duplicate?: boolean;
+    /** 单张图片解析出多道题时，全部已保存的题目列表 */
+    savedItems?: ImportedQuestion[];
 }
 
 interface CreatedErrorItem {
@@ -81,7 +83,7 @@ export async function saveParsedQuestion(
     };
 }
 
-/** 压缩、识别并保存一张题目图片（批量导入时每个框调用一次） */
+/** 压缩、识别并保存一张题目图片（批量导入时每个框调用一次；单图解析出多题时全部保存） */
 export async function importQuestionImage(
     file: Blob,
     options: { language: 'zh' | 'en'; subjectId?: string | null; learnerId?: string | null; timeout?: number; onStage?: (stage: 'analyzing' | 'saving') => void }
@@ -90,5 +92,17 @@ export async function importQuestionImage(
     options.onStage?.('analyzing');
     const parsed = await analyzeQuestionImage(imageBase64, options);
     options.onStage?.('saving');
-    return saveParsedQuestion(parsed, { subjectId: options.subjectId, imageUrl: imageBase64, learnerId: options.learnerId });
+    const provenanceId = parsed.provenanceId ?? undefined;
+    const questions = Array.isArray(parsed.items) && parsed.items.length > 0 ? parsed.items : [parsed];
+    const saveOpts = provenanceId
+        ? { subjectId: options.subjectId, imageUrl: imageBase64, learnerId: options.learnerId, provenanceId }
+        : { subjectId: options.subjectId, imageUrl: imageBase64, learnerId: options.learnerId };
+    if (questions.length === 1) {
+        return saveParsedQuestion(questions[0], saveOpts);
+    }
+    const savedItems: ImportedQuestion[] = [];
+    for (const question of questions) {
+        savedItems.push(await saveParsedQuestion(question, saveOpts));
+    }
+    return { ...savedItems[0], savedItems };
 }

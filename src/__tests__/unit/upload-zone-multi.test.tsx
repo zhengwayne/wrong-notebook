@@ -69,4 +69,12 @@ describe('UploadZone 多选', () => {
         await act(async () => root.render(<LanguageProvider><UploadZone onImageSelect={onImageSelect} isAnalyzing={false} /></LanguageProvider>));
         expect((container.querySelector('input[type="file"]') as HTMLInputElement).multiple).toBe(false);
     });
+
+    it('拒绝 SVG 图片并提示不支持的文件类型', async () => {
+        const onImageSelect = vi.fn();
+        await act(async () => root.render(<LanguageProvider><UploadZone onImageSelect={onImageSelect} isAnalyzing={false} /></LanguageProvider>));
+        await choose([new File(['<svg/>'], 'bad.svg', { type: 'image/svg+xml' })]);
+        expect(onImageSelect).not.toHaveBeenCalled();
+        expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    });
 });

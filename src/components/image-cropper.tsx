@@ -41,9 +41,11 @@ interface ImageCropperProps {
     eraseEnabled?: boolean;
     /** 标题后缀，如多张图片排队裁剪时的「第 1/3 张」 */
     titleSuffix?: string;
+    /** 多图排队裁剪时提供，允许一次放弃整个队列（onClose 则跳过当前张） */
+    onCancelQueue?: () => void;
 }
 
-export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiCropComplete, eraseEnabled = true, titleSuffix }: ImageCropperProps) {
+export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiCropComplete, eraseEnabled = true, titleSuffix, onCancelQueue }: ImageCropperProps) {
     const { t } = useLanguage();
     const safeImageSrc = toSafeImageSrc(imageSrc);
     // 始终保存百分比坐标，缩放改变图片显示尺寸后仍然准确
@@ -293,8 +295,13 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                                     {t.batchImport.clear}
                                 </Button>
                             )}
+                            {onCancelQueue && (
+                                <Button variant="ghost" onClick={onCancelQueue}>
+                                    {t.upload.cancelAllImages}
+                                </Button>
+                            )}
                             <Button variant="outline" onClick={onClose}>
-                                {t.common.cancel || "Cancel"}
+                                {onCancelQueue ? t.upload.skipImage : (t.common.cancel || "Cancel")}
                             </Button>
                             {mode === "multi" ? (
                                 <Button onClick={handleMultiConfirm} disabled={regions.length === 0}>

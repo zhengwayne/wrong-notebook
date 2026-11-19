@@ -139,6 +139,7 @@ function HomeContent() {
                             <BatchImportPanel
                                 blobs={flow.batchBlobs}
                                 subjectId={initialNotebookId}
+                                learnerId={learnerId}
                                 timeout={flow.aiTimeout}
                                 onClose={flow.closeBatch}
                             />
@@ -167,6 +168,7 @@ function HomeContent() {
                     imageSrc={flow.croppingImage}
                     open={flow.isCropperOpen}
                     onClose={flow.closeCropper}
+                    onCancelQueue={flow.cropQueueLabel ? flow.cancelQueue : undefined}
                     onCropComplete={flow.cropComplete}
                     onMultiCropComplete={flow.multiCropComplete}
                     titleSuffix={flow.cropQueueLabel}

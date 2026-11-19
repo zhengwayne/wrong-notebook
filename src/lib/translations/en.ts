@@ -516,6 +516,10 @@ export const en = {
         multiHint: "Select up to {max} images at once; crop each in turn, then recognize them together",
         multiTooMany: "You can select up to {max} images at once; the first {max} were kept",
         multiCropProgress: "Image {n} of {total}",
+        skipImage: "Skip this",
+        cancelAllImages: "Cancel all",
+        invalidFileType: "Unsupported file type. Please upload a JPG, PNG, WebP, or HEIC image",
+        fileTooLarge: "Each image must be smaller than {max}MB",
         // dragDrop: "Click or drag image to upload", // Moved to app
         support: "Support JPG, PNG (Max 5MB)",
         analyze: "Analyze with AI",

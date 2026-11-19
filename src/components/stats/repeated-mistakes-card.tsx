@@ -39,33 +39,41 @@ const MASTERY_BADGE: Record<MasteryStatus, string> = {
  */
 export function RepeatedMistakesCard() {
     const { t } = useLanguage();
-    const { learnerId } = useCurrentChild();
-    const [data, setData] = useState<RepeatedMistakesData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [failed, setFailed] = useState(false);
+    const { learnerId, classId, hrefWithChild } = useCurrentChild();
+    const classFilter = learnerId ? null : classId;
     const [reloadKey, setReloadKey] = useState(0);
+    const requestKey = `${learnerId ?? ""}::${classFilter ?? ""}::${reloadKey}`;
+    const [loadState, setLoadState] = useState<{
+        key: string;
+        data: RepeatedMistakesData | null;
+        failed: boolean;
+    }>({ key: "", data: null, failed: false });
+
+    const loading = loadState.key !== requestKey;
+    const data = loading ? null : loadState.data;
+    const failed = loading ? false : loadState.failed;
 
     useEffect(() => {
         let cancelled = false;
-        apiClient.get<RepeatedMistakesData>(withChildParam("/api/stats/repeated-mistakes", learnerId))
+        const endpoint = learnerId
+            ? withChildParam("/api/stats/repeated-mistakes", learnerId)
+            : classFilter
+                ? `/api/stats/repeated-mistakes?classId=${encodeURIComponent(classFilter)}`
+                : "/api/stats/repeated-mistakes";
+        apiClient.get<RepeatedMistakesData>(endpoint)
             .then((result) => {
                 if (cancelled) return;
-                setData(result);
-                setFailed(false);
+                setLoadState({ key: requestKey, data: result, failed: false });
             })
             .catch((error) => {
                 if (cancelled) return;
                 frontendLogger.error("[RepeatedMistakes]", "Failed to load repeated mistakes", { error });
-                setFailed(true);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
+                setLoadState({ key: requestKey, data: null, failed: true });
             });
         return () => { cancelled = true; };
-    }, [learnerId, reloadKey]);
+    }, [learnerId, classFilter, requestKey]);
 
     const reload = useCallback(() => {
-        setLoading(true);
         setReloadKey((key) => key + 1);
     }, []);
 
@@ -101,17 +109,19 @@ export function RepeatedMistakesCard() {
                     <ol className="divide-y">
                         {data.items.map((item, index) => (
                             <li key={item.id}>
-                                <Link href={`/error-items/${item.id}`} className="block rounded-md transition-colors hover:bg-accent/50">
-                                    <div className="flex items-center gap-3 py-2.5">
-                                        <span className="w-6 shrink-0 text-center text-sm font-medium text-muted-foreground">{index + 1}</span>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium">{item.preview || copy.noPreview}</p>
-                                            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                                                {item.subjectName && <span>{item.subjectName}</span>}
-                                                {item.lastWrongAt && <span>{copy.lastWrong.replace("{date}", item.lastWrongAt)}</span>}
+                                <Link href={hrefWithChild(`/error-items/${item.id}`)} className="block rounded-md transition-colors hover:bg-accent/50">
+                                    <div className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+                                        <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:items-center sm:gap-3">
+                                            <span className="w-6 shrink-0 text-center text-sm font-medium text-muted-foreground">{index + 1}</span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium">{item.preview || copy.noPreview}</p>
+                                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                                    {item.subjectName && <span>{item.subjectName}</span>}
+                                                    {item.lastWrongAt && <span>{copy.lastWrong.replace("{date}", item.lastWrongAt)}</span>}
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="flex shrink-0 items-center gap-2">
+                                        <div className="flex shrink-0 flex-wrap items-center gap-2 pl-8 sm:pl-0">
                                             <Badge variant="secondary" className="bg-destructive/10 text-destructive">
                                                 {copy.wrongTimes.replace("{count}", String(item.wrongCount))}
                                             </Badge>

@@ -54,7 +54,7 @@ export function ErrorListSelectionBar({
                         variant="destructive"
                         loading={deleting}
                         onClick={onDelete}
-                        disabled={selectedIds.length === 0}
+                        disabled={selectedIds.length === 0 || moving}
                     >
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                         {t.notebook.deleteSelected}

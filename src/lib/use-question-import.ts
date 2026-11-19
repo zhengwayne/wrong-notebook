@@ -120,6 +120,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
 
     const startBatch = (blobs: Blob[]) => {
         setIsCropperOpen(false);
+        setCroppingImage(null);
         setLastImported(null);
         setBatchBlobs(blobs);
     };
@@ -150,6 +151,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         }
         setImageQueue(null);
         setIsCropperOpen(false);
+        setCroppingImage(null);
         if (blobs.length > 1) {
             startBatch(blobs);
         } else if (blobs.length === 1) {
@@ -269,6 +271,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
             return;
         }
         setIsCropperOpen(false);
+        setCroppingImage(null);
         analyzeImage(new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" }));
     };
 
@@ -288,6 +291,14 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
             return;
         }
         setIsCropperOpen(false);
+        setCroppingImage(null);
+    };
+
+    /** 取消整个多图排队裁剪流程，放弃已暂存的裁剪结果 */
+    const cancelQueue = () => {
+        setImageQueue(null);
+        setIsCropperOpen(false);
+        setCroppingImage(null);
     };
 
     const cropQueueLabel = imageQueue
@@ -373,7 +384,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         step, cancelReview: () => { setStep("upload"); setPendingItems(null); },
         analysisStep, setAnalysisStep, isBusy: analysisStep !== 'idle',
         parsedData, currentImage, aiTimeout,
-        croppingImage, isCropperOpen, closeCropper, cropQueueLabel,
+        croppingImage, isCropperOpen, closeCropper, cancelQueue, cropQueueLabel,
         lastImported, dismissImported: () => setLastImported(null),
         batchBlobs, closeBatch: () => setBatchBlobs(null),
         selectImage, selectImages, cropComplete, multiCropComplete, startBatch, submitText, saveQuestion, saveReviewed,

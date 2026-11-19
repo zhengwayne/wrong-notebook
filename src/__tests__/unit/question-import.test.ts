@@ -23,4 +23,24 @@ describe('免确认与批量录入传递识别年级', () => {
         await importQuestionImage(new Blob(['test'], { type: 'image/png' }), { language: 'en' });
         expect(vi.mocked(apiClient.post).mock.calls[1][1]).toMatchObject({ recognizedGradeSemester: '四年级下' });
     });
+
+    it('单张图片识别出多道题时全部保存并透传 learnerId', async () => {
+        const q2: ParsedQuestion = { ...parsed, questionText: '第二题' };
+        vi.mocked(apiClient.post)
+            .mockResolvedValueOnce({ ...parsed, items: [parsed, q2] })
+            .mockResolvedValueOnce({ id: 'e1', shortId: 'E01' })
+            .mockResolvedValueOnce({ id: 'e2', shortId: 'E02' });
+
+        const result = await importQuestionImage(new Blob(['test'], { type: 'image/png' }), {
+            language: 'zh',
+            subjectId: 'nb-1',
+            learnerId: 'child-1',
+        });
+
+        expect(vi.mocked(apiClient.post)).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(apiClient.post).mock.calls[1][1]).toMatchObject({ questionText: '题目', learnerId: 'child-1', subjectId: 'nb-1' });
+        expect(vi.mocked(apiClient.post).mock.calls[2][1]).toMatchObject({ questionText: '第二题', learnerId: 'child-1', subjectId: 'nb-1' });
+        expect(result.id).toBe('e1');
+        expect(result.savedItems?.map((item) => item.id)).toEqual(['e1', 'e2']);
+    });
 });

@@ -513,6 +513,10 @@ export const zh = {
         multiHint: "可一次选择最多 {max} 张图片，逐张裁剪后一起识别",
         multiTooMany: "一次最多选择 {max} 张图片，已取前 {max} 张",
         multiCropProgress: "第 {n}/{total} 张",
+        skipImage: "跳过这张",
+        cancelAllImages: "取消全部",
+        invalidFileType: "不支持的文件类型，请上传 JPG、PNG、WebP 或 HEIC 图片",
+        fileTooLarge: "单张图片不能超过 {max}MB",
         // dragDrop: "点击或拖拽上传图片", // Moved to app
         support: "支持 JPG, PNG (最大 5MB)",
         analyze: "AI 智能解析",

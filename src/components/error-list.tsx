@@ -37,6 +37,18 @@ export interface ErrorListProps {
     subject?: NotebookSubject | null;
     learnerId?: string | null;
     classId?: string | null;
+    /** 批量移动或删除错题后回调，供父页面静默刷新顶部计数 */
+    onItemsChanged?: () => void;
+}
+
+const BATCH_ACTION_CHUNK_SIZE = 100;
+
+function chunkIds(ids: string[], size = BATCH_ACTION_CHUNK_SIZE): string[][] {
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += size) {
+        chunks.push(ids.slice(i, i + size));
+    }
+    return chunks;
 }
 
 interface KnowledgeFilterChange {
@@ -45,7 +57,7 @@ interface KnowledgeFilterChange {
     tag?: string | null;
 }
 
-export function ErrorList({ subjectId, subject = null, learnerId, classId }: ErrorListProps = {}) {
+export function ErrorList({ subjectId, subject = null, learnerId, classId, onItemsChanged }: ErrorListProps = {}) {
     const { t } = useLanguage();
     const router = useRouter();
     const [items, setItems] = useState<ErrorItemSummary[]>([]);
@@ -200,11 +212,14 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId }: Err
 
         setIsDeleting(true);
         try {
-            await apiClient.post("/api/error-items/batch-delete", { ids: Array.from(selectedIds) });
+            for (const batch of chunkIds(Array.from(selectedIds))) {
+                await apiClient.post("/api/error-items/batch-delete", { ids: batch });
+            }
             toast.success(t.notebook?.batchDeleteSuccess || "Deleted successfully");
             setIsSelectMode(false);
             setSelectedIds(new Set());
             await fetchItems();
+            onItemsChanged?.();
         } catch (err) {
             frontendLogger.error("[ErrorList]", "Batch delete failed", { error: err });
             toast.error(t.common?.messages?.deleteFailed || "Delete failed");
@@ -219,17 +234,35 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId }: Err
         if (selectedIds.size === 0 || !targetSubjectId) return;
         setIsMoving(true);
         try {
-            const result = await apiClient.post<{ moved: number; skipped: number }>("/api/error-items/batch-move", {
-                ids: Array.from(selectedIds),
-                subjectId: targetSubjectId,
-                ...(learnerId ? { learnerId } : {}),
-            });
-            toast.success(t.notebook.moveSuccess.replace("{count}", String(result.moved)));
-            if (result.skipped > 0) toast.warning(t.notebook.moveSkipped.replace("{count}", String(result.skipped)));
+            let totalMoved = 0;
+            let totalSkipped = 0;
+            const scopePayload = learnerId
+                ? { learnerId }
+                : classId
+                    ? { classId }
+                    : {};
+            for (const batch of chunkIds(Array.from(selectedIds))) {
+                const result = await apiClient.post<{ moved: number; skipped: number }>("/api/error-items/batch-move", {
+                    ids: batch,
+                    subjectId: targetSubjectId,
+                    ...scopePayload,
+                });
+                totalMoved += result.moved;
+                totalSkipped += result.skipped;
+            }
+            if (totalMoved > 0) {
+                toast.success(t.notebook.moveSuccess.replace("{count}", String(totalMoved)));
+            }
+            if (totalSkipped > 0) {
+                toast.warning(t.notebook.moveSkipped.replace("{count}", String(totalSkipped)));
+            }
             setMoveOpen(false);
             setIsSelectMode(false);
             setSelectedIds(new Set());
             await fetchItems();
+            if (totalMoved > 0) {
+                onItemsChanged?.();
+            }
         } catch (err) {
             frontendLogger.error("[ErrorList]", "Batch move failed", { error: err });
             toast.error(t.notebook.moveFailed);
@@ -242,6 +275,9 @@ export function ErrorList({ subjectId, subject = null, learnerId, classId }: Err
     useEffect(() => {
         const filtersChanged = prevFiltersRef.current !== filters;
         prevFiltersRef.current = filters;
+        if (filtersChanged) {
+            setSelectedIds((prev) => (prev.size > 0 ? new Set() : prev));
+        }
         if (filtersChanged && page !== 1) {
             setPage(1);
             return;

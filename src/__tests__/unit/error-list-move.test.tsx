@@ -47,6 +47,15 @@ describe('批量移动', () => {
         expect(button(zh.moveSelected)).toBeUndefined();
     });
 
+    it('移动过程中同时禁用删除按钮', async () => {
+        await act(async () => root.render(
+            <LanguageProvider>
+                <ErrorListSelectionBar selectedIds={['a']} deleting={false} moving onCancel={vi.fn()} onDelete={vi.fn()} onMove={vi.fn()} />
+            </LanguageProvider>
+        ));
+        expect(button(zh.deleteSelected)!.disabled).toBe(true);
+    });
+
     it('移动对话框显示数量，未选目标错题本时不能确认', async () => {
         await act(async () => root.render(<LanguageProvider><MoveToNotebookDialog open onOpenChange={vi.fn()} count={3} moving={false} onMove={vi.fn()} /></LanguageProvider>));
         expect(document.body.textContent).toContain(zh.moveTitle.replace('{count}', '3'));

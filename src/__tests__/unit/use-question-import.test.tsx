@@ -167,9 +167,25 @@ describe('题目导入流程', () => {
 
             await act(async () => flow.cropComplete(new Blob(['c'])));
             expect(flow.isCropperOpen).toBe(false);
+            expect(flow.croppingImage).toBeNull();
             expect(flow.cropQueueLabel).toBeUndefined();
             expect(flow.batchBlobs).toHaveLength(4);
             expect(mocks.post).not.toHaveBeenCalledWith('/api/analyze', expect.anything(), expect.anything());
+        });
+
+        it('取消整个队列时立即关闭并释放预览 URL，不进入识别', async () => {
+            await render();
+            await act(async () => flow.selectImages([file('a'), file('b'), file('c')]));
+            await act(async () => flow.cropComplete(new Blob(['a'])));
+            expect(flow.cropQueueLabel).toBe('第 2/3 张');
+
+            await act(async () => flow.cancelQueue());
+            expect(flow.isCropperOpen).toBe(false);
+            expect(flow.croppingImage).toBeNull();
+            expect(flow.cropQueueLabel).toBeUndefined();
+            expect(flow.batchBlobs).toBeNull();
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-2');
+            expect(mocks.post).not.toHaveBeenCalled();
         });
 
         it('取消某一张时跳过它；只剩一张时按单张流程识别', async () => {

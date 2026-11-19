@@ -103,6 +103,20 @@ export default function NotebookDetailPage() {
         return () => { requestSeqRef.current += 1; };
     }, [notebookId, fetchNotebook]);
 
+    const refreshNotebookCount = useCallback(async () => {
+        if (!notebookId) return;
+        const seq = requestSeqRef.current;
+        try {
+            const query = learnerId ? `?learnerId=${encodeURIComponent(learnerId)}`
+                : classFilter ? `?classId=${encodeURIComponent(classFilter)}` : "";
+            const data = await apiClient.get<Notebook>(`/api/notebooks/${notebookId}${query}`);
+            if (seq !== requestSeqRef.current) return;
+            setNotebook(data);
+        } catch (error) {
+            frontendLogger.warn("[NotebookDetail]", "Failed to refresh notebook count", { error });
+        }
+    }, [notebookId, learnerId, classFilter]);
+
     const handleRename = async (name: string) => {
         if (!notebook) return;
         const updated = await apiClient.put<Notebook>(`/api/notebooks/${notebook.id}`, { name });
@@ -202,7 +216,14 @@ export default function NotebookDetailPage() {
                 }
             />
 
-            <ErrorList key={`${listVersion}-${learnerId || classFilter || "all"}`} subjectId={notebook.id} subject={resolveNotebookScope(notebook).subject} learnerId={learnerId} classId={classFilter} />
+            <ErrorList
+                key={`${listVersion}-${learnerId || classFilter || "all"}`}
+                subjectId={notebook.id}
+                subject={resolveNotebookScope(notebook).subject}
+                learnerId={learnerId}
+                classId={classFilter}
+                onItemsChanged={() => void refreshNotebookCount()}
+            />
 
             <RenameNotebookDialog
                 open={renameDialogOpen}

@@ -35,6 +35,8 @@ beforeEach(async () => {
     await db.practiceRecord.deleteMany();
     await db.errorItem.deleteMany();
     await db.learner.deleteMany();
+    await db.gradingStudent.deleteMany();
+    await db.gradingClass.deleteMany();
     await db.subject.deleteMany();
     await db.user.deleteMany();
 });
@@ -120,5 +122,30 @@ describe('GET /api/stats/repeated-mistakes', () => {
         for (let i = 0; i < 12; i++) await seedItem(alice.user.id, alice.subject.id, null, `题 ${i}`, 2);
         login(alice.user);
         expect(await fetchItems()).toHaveLength(10);
+    });
+
+    it('支持教师按 classId 统计全班，并计入 not_attempted 与历史 result=null/isCorrect=false 记录', async () => {
+        const teacher = await seedUser('teacher@example.com');
+        const other = await seedUser('other@example.com');
+        const cls = await db.gradingClass.create({ data: { userId: teacher.user.id, name: '三班' } });
+        const otherCls = await db.gradingClass.create({ data: { userId: other.user.id, name: '外班' } });
+        const stu = await db.gradingStudent.create({ data: { classId: cls.id, name: '小红' } });
+        const stuLearner = await db.learner.create({ data: { userId: teacher.user.id, kind: 'student', name: '小红', gradingStudentId: stu.id } });
+
+        await seedItem(teacher.user.id, teacher.subject.id, null, '教师自己的题', 3);
+        const stuItem = await db.errorItem.create({
+            data: { userId: teacher.user.id, subjectId: teacher.subject.id, learnerId: stuLearner.id, originalImageUrl: '', questionText: '学生不会与旧错题' },
+        });
+        await db.practiceRecord.create({ data: { userId: teacher.user.id, learnerId: stuLearner.id, errorItemId: stuItem.id, result: 'not_attempted', isCorrect: false } });
+        await db.practiceRecord.create({ data: { userId: teacher.user.id, learnerId: stuLearner.id, errorItemId: stuItem.id, result: null, isCorrect: false } });
+        await db.practiceRecord.create({ data: { userId: teacher.user.id, learnerId: stuLearner.id, errorItemId: stuItem.id, result: 'correct', isCorrect: true } });
+        login(teacher.user);
+
+        const classItems = await fetchItems(`?classId=${cls.id}`);
+        expect(classItems).toHaveLength(1);
+        expect(classItems[0]).toMatchObject({ id: stuItem.id, wrongCount: 2 });
+
+        const forbiddenRes = await GET(new Request(`http://localhost/api/stats/repeated-mistakes?classId=${otherCls.id}`));
+        expect(forbiddenRes.status).toBe(404);
     });
 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, notFound, internalError } from "@/lib/api-errors";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { createLogger } from "@/lib/logger";
 import { defineApiRoute } from "@/lib/server/api-route";
 
@@ -29,6 +30,7 @@ export const DELETE = defineApiRoute<Request, { id: string }>(
             await prisma.errorItem.delete({
                 where: { id: id },
             });
+            scheduleLearningPathReplan(user.id, 'zh', errorItem.learnerId);
 
             return NextResponse.json({ message: "Deleted successfully" });
         } catch (error) {
