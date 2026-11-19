@@ -222,6 +222,32 @@ export const FIGURE_SVG_RULES = `- 输出一个完整的 <svg> 元素，包含 x
 /**
  * LaTeX 书写规则：页面用 KaTeX 渲染，只支持其中的命令（识别、举一反三、重新解题、修复公式共用）
  */
+/**
+ * 语文题干转写规则：拼音声调、看拼音写词语的空位、注音汉字顺序。
+ * Ported from margrop/wrong-notebook 8386537b (MIT).
+ */
+export const CHINESE_TRANSCRIPTION_RULES = `【语文题干转写规则】
+- 拼音必须带声调符号原样转写（ā á ǎ à ō ó ǒ ò ē é ě è ī í ǐ ì ū ú ǔ ù ǖ ǘ ǚ ǜ ü）：不得丢掉声调、不得用数字声调（如 ma3），也不得把拼音改写成汉字。
+- 「看拼音写词语」等题型必须保留拼音与括号/方框的对应关系：每个空用「（  ）」原样保留，不要把多个空合并，也不要把拼音或答案填进空里。
+- 填空题的下划线、括号、田字格位置按原样保留为空，不要把答案填进题干。
+- 带拼音注音的汉字（如「zhāo（朝）」）保持原有顺序，不要把注音与汉字调换、拆开或省略。`;
+
+/**
+ * 学科为语文、学科未知（图片识别由 AI 判断学科）或样例文字含拼音时返回语文转写规则，其他情况返回空串。
+ */
+export function generateChineseTranscriptionRules(
+  subject?: string | null,
+  sampleText?: string | null,
+  includeUnknownSubject = false,
+): string {
+  const raw = (subject || '').trim();
+  const isChinese = raw.includes('语文') || raw.toLowerCase().includes('chinese');
+  if (isChinese || (includeUnknownSubject && !raw) || (sampleText && /[āáǎàōóǒòēéěèīíǐìūúǔùǖǘǚǜü]|拼音/.test(sampleText))) {
+    return CHINESE_TRANSCRIPTION_RULES;
+  }
+  return '';
+}
+
 export const LATEX_RULES = String.raw`- 行内公式用 $...$，独立公式用 $$...$$；不要用 \(...\) 或 \[...\]，每个 $ 必须成对出现。
 - 所有 LaTeX 命令（如 \frac、\sqrt、\times、\angle）都必须写在 $...$ 内，公式外不能出现反斜杠命令。
 - 只使用 KaTeX 支持的命令和环境：方程组用 \begin{cases}...\end{cases}，多行推导用 \begin{aligned}...\end{aligned}（放在 $$...$$ 中），不要用 align、eqnarray、\newcommand、\usepackage、\label、\tag 等。
@@ -614,6 +640,8 @@ ${tagsString}
   const appendix = [
     '请完整识别用户图片中的题目。多道题时按题拆开输出，已做对的题目不要收入。只根据可见作答判断对错，不要臆造错解。',
     generateOutputContract('analyze'),
+    // 未指定错题本时学科由 AI 判断，无法提前知道是否语文，统一附带转写规则
+    generateChineseTranscriptionRules(subject, null, true),
     ...(options?.customTemplate ? [
       langInstruction,
       LATEX_RULES,
@@ -1315,7 +1343,9 @@ export function parentReviewSubjectGuidance(subject?: string | null, language: '
       : `【语文学科补充】本卷是语文试卷。请将每题的 subjectHint 设为「语文」。
 - 拼音、字词、选择题、判断题、古诗文默写等有唯一或可核对答案的题目：按 objective 判断对错。如实转写手写拼音、汉字与标点，不要擅自改字、补字或美化。
 - 阅读理解主观题、开放性简答、作文：不要猜一个确定对错。可给出简要参考要点，将 verdict 标为 partial，confidence 低于 0.7，并在 errorCause 中请家长确认。
-- 没有数学公式时不要使用 LaTeX。`;
+- 没有数学公式时不要使用 LaTeX。
+
+${CHINESE_TRANSCRIPTION_RULES}`;
   }
   const display = raw === 'math' ? (language === 'en' ? 'mathematics' : '数学')
     : raw === 'english' ? (language === 'en' ? 'English' : '英语')
