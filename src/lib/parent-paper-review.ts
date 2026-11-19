@@ -166,7 +166,10 @@ export function expandQuestionBBox(bbox: QuestionBBox): QuestionBBox {
     return padded ?? bbox;
 }
 
-/** 校验后再外扩；家长手动画的框请只用 validateQuestionBBox，不要再次外扩 */
+/**
+ * 校验后再外扩。整条识卷流水线只在 parent-paper-recognize 里调用一次；
+ * 解析模型输出（parseParentPaperReview）和家长手动画的框都只用 validateQuestionBBox，不要再次外扩。
+ */
 export function normalizeQuestionBBox(raw: unknown, pageCount: number): QuestionBBox | null {
     const validated = validateQuestionBBox(raw, pageCount);
     return validated ? expandQuestionBBox(validated) : null;
@@ -189,7 +192,8 @@ export function parseParentPaperReview(text: string, pageCount: number): ParentP
             errorCause: item.errorCause,
             knowledgePoints: (item.knowledgePoints || []).map((point) => String(point).trim()).filter(Boolean).slice(0, 5),
             subjectHint: item.subjectHint || item.subject,
-            bbox: normalizeQuestionBBox(item.bbox, pageCount),
+            // 解析层只校验并换算成 0-1 坐标，外扩统一在识卷流水线里做一次，避免题框被加两次边距
+            bbox: validateQuestionBBox(item.bbox, pageCount),
         });
     }
     return { questions };

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseExamPaperByMode } from "@/lib/ai/exam-paper-read";
 import {
     applyAnswerKeyToReview,
+    BBOX_PAD_X,
+    BBOX_PAD_Y,
     effectiveVerdict,
     expandQuestionBBox,
     isLowConfidence,
@@ -65,12 +67,8 @@ describe("parseParentPaperReview", () => {
             ],
         }), pageCount);
         expect(result.questions).toHaveLength(2);
-        const box = result.questions[0].bbox!;
-        expect(box.pageIndex).toBe(0);
-        expect(box.x).toBeLessThanOrEqual(0.1);
-        expect(box.y).toBeLessThanOrEqual(0.1);
-        expect(box.x + box.width).toBeGreaterThanOrEqual(0.9);
-        expect(box.y + box.height).toBeGreaterThanOrEqual(0.3);
+        // 解析层只校验，不外扩：外扩统一在识卷流水线里做一次
+        expect(result.questions[0].bbox).toEqual({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.2 });
         expect(result.questions[0].questionText).toBe("计算 $1+1$");
         expect(result.questions[1].confidence).toBe(0.8);
         expect(result.questions[1].bbox).toBeNull();
@@ -95,10 +93,7 @@ describe("parseExamPaperByMode", () => {
         const result = parseExamPaperByMode("parent_review", '{"questions":[{"number":"1","verdict":"correct","bbox":{"pageIndex":0,"x":0.1,"y":0.1,"width":0.4,"height":0.2}}]}', 1);
         expect(result.questions).toEqual([]);
         expect(result.reviewQuestions?.[0]).toMatchObject({ number: "1", verdict: "correct" });
-        const box = result.reviewQuestions?.[0].bbox;
-        expect(box?.pageIndex).toBe(0);
-        expect(box!.x).toBeLessThanOrEqual(0.1);
-        expect(box!.width).toBeGreaterThan(0.4);
+        expect(result.reviewQuestions?.[0].bbox).toEqual({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.4, height: 0.2 });
     });
 });
 
@@ -167,5 +162,28 @@ describe("normalizeQuestionBBox", () => {
         const normalized = normalizeQuestionBBox({ pageIndex: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.1 }, 1);
         expect(normalized?.width).toBeGreaterThan(0.2);
         expect(normalizeQuestionBBox({ pageIndex: 0, x: 12, y: 40, width: 300, height: 80 }, 1)).toBeNull();
+    });
+
+    it("pads a model box exactly once across parse + normalize", () => {
+        const raw = { pageIndex: 0, x: 0.2, y: 0.3, width: 0.4, height: 0.1 };
+        const parsed = parseParentPaperReview(JSON.stringify({ questions: [{ number: "1", verdict: "wrong", bbox: raw }] }), 1);
+        const stored = normalizeQuestionBBox(parsed.questions[0].bbox, 1);
+        expect(stored).toEqual(expandQuestionBBox(raw));
+        expect(stored).not.toEqual(expandQuestionBBox(expandQuestionBBox(raw)));
+        expect(stored).toEqual({
+            pageIndex: 0,
+            x: Number((0.2 - BBOX_PAD_X).toFixed(4)),
+            y: Number((0.3 - BBOX_PAD_Y).toFixed(4)),
+            width: Number((0.4 + BBOX_PAD_X * 2).toFixed(4)),
+            height: Number((0.1 + BBOX_PAD_Y * 2).toFixed(4)),
+        });
+    });
+
+    it("converts 0-100 percentage coordinates in the parser and still pads only once", () => {
+        const parsed = parseParentPaperReview(JSON.stringify({
+            questions: [{ number: "1", verdict: "wrong", bbox: { pageIndex: 0, x: 20, y: 30, width: 40, height: 10 } }],
+        }), 1);
+        expect(parsed.questions[0].bbox).toEqual({ pageIndex: 0, x: 0.2, y: 0.3, width: 0.4, height: 0.1 });
+        expect(normalizeQuestionBBox(parsed.questions[0].bbox, 1)).toEqual(expandQuestionBBox(parsed.questions[0].bbox!));
     });
 });

@@ -68,6 +68,19 @@ test('家长端闭环：新建孩子 → 上传试卷 → Mock AI 识别 → 改
         await expect(cards).toHaveCount(2, { timeout: 30000 });
         await expect(page.getByText('已知')).toBeVisible();
 
+        // 题框只外扩一次：Mock AI 的第 1 题框是 (0.08, 0.12, 0.84, 0.28)，左右各加 0.012、上下各加 0.01
+        const paperId = page.url().match(/\/parent\/papers\/([^/?#]+)/)?.[1];
+        expect(paperId).toBeTruthy();
+        const paperDetail = (await (await page.request.get(`/api/parent/papers/${paperId}`)).json()) as {
+            questions: Array<{ bbox: { pageIndex: number; x: number; y: number; width: number; height: number } | null }>;
+        };
+        const firstBox = paperDetail.questions[0].bbox;
+        expect(firstBox?.pageIndex).toBe(0);
+        expect(firstBox?.x).toBeCloseTo(0.068, 4);
+        expect(firstBox?.y).toBeCloseTo(0.11, 4);
+        expect(firstBox?.width).toBeCloseTo(0.864, 4);
+        expect(firstBox?.height).toBeCloseTo(0.3, 4);
+
         // 6. 将第 2 题（原判定「正确」）改判为「错误」并勾选加入错题本，确认入库计数从 1 变成 2
         const secondCard = cards.nth(1);
         await secondCard.getByRole('button', { name: /^(错误|Wrong)$/ }).click();

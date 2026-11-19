@@ -34,6 +34,8 @@ import { POST as CONFIRM } from "@/app/api/parent/papers/[id]/confirm/route";
 import { PATCH as PATCH_QUESTION } from "@/app/api/parent/papers/[id]/questions/[questionId]/route";
 import { failStaleRecognizingPapers, waitForParentPaperRecognition } from "@/lib/parent-paper-recognize";
 import { PARENT_PAPER_STATUS } from "@/lib/parent-papers";
+import { parseExamPaperByMode, type ExamPaperReadMode } from "@/lib/ai/exam-paper-read";
+import { expandQuestionBBox } from "@/lib/parent-paper-review";
 
 let directory: string;
 let db: PrismaClient;
@@ -139,6 +141,22 @@ describe("parent paper recognition and confirm", () => {
         expect(detail.questions[1].selected).toBe(false);
         expect(await db.errorItem.count()).toBe(0);
         expect(mocks.replan).not.toHaveBeenCalled();
+    });
+
+    it("pads a model box exactly once from raw model output to the stored question", async () => {
+        const raw = { pageIndex: 0, x: 0.2, y: 0.3, width: 0.4, height: 0.1 };
+        // 走真实的解析器，模拟 provider 返回的原始 JSON 文本
+        mocks.readExamPaper.mockImplementation(async (input: { mode: ExamPaperReadMode; images: unknown[] }) => parseExamPaperByMode(
+            input.mode,
+            JSON.stringify({ questions: [{ number: "1", verdict: "wrong", studentAnswer: "3", correctAnswer: "2", confidence: 0.9, bbox: raw }] }),
+            input.images.length,
+        ));
+        const paper = await createPaper();
+        await recognize(paper.id);
+
+        const detail = await (await GET_PAPER(new Request(`http://localhost/api/parent/papers/${paper.id}`), { params: Promise.resolve({ id: paper.id }) })).json();
+        expect(detail.questions[0].bbox).toEqual(expandQuestionBBox(raw));
+        expect(detail.questions[0].bbox).not.toEqual(expandQuestionBBox(expandQuestionBBox(raw)));
     });
 
     it("accepts an empty question list from the model", async () => {
