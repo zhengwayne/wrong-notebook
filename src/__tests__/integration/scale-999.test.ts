@@ -47,15 +47,34 @@ async function seedItems(prefix: string, count: number, learnerId: string | null
         });
         await db.practiceRecord.createMany({
             data: slice.flatMap((id, index) => {
-                const base = { userId: 'scale-user', learnerId, errorItemId: id, result: 'wrong', isCorrect: false, subject: '数学', source: 'practice' };
-                // 前 20 道题做错两次，进入反复错题榜
-                return index < 20 && start === 0
-                    ? [{ ...base, createdAt: new Date(now - 3 * DAY) }, { ...base, createdAt: new Date(now - 2 * DAY) }]
-                    : [{ ...base, createdAt: new Date(now - 3 * DAY) }];
+                const base = { userId: 'scale-user', learnerId, errorItemId: id, result: 'wrong' as string | null, isCorrect: false, subject: '数学', source: 'practice' };
+                // 前 20 道题做错两次进入反复错题榜；第 21 道混入历史 result=null/isCorrect=false 记录
+                if (start === 0 && index < 20) {
+                    return [
+                        { ...base, createdAt: new Date(now - 3 * DAY) },
+                        { ...base, createdAt: new Date(now - 2 * DAY) },
+                    ];
+                }
+                if (start === 0 && index === 20) {
+                    return [
+                        { ...base, result: null, isCorrect: false, createdAt: new Date(now - 3 * DAY) },
+                    ];
+                }
+                return [{ ...base, createdAt: new Date(now - 3 * DAY) }];
             }),
         });
     }
     return ids;
+}
+
+async function connectTagInBatches(tagId: string, itemIds: string[]) {
+    for (let start = 0; start < itemIds.length; start += 400) {
+        const slice = itemIds.slice(start, start + 400);
+        await db.knowledgeTag.update({
+            where: { id: tagId },
+            data: { errorItems: { connect: slice.map((id) => ({ id })) } },
+        });
+    }
 }
 
 beforeAll(async () => {
@@ -69,11 +88,12 @@ beforeAll(async () => {
     childId = child.id;
 
     const selfIds = await seedItems('self', ITEM_COUNT, null);
-    await seedItems('child', CHILD_ITEM_COUNT, childId);
+    const childIds = await seedItems('child', CHILD_ITEM_COUNT, childId);
 
-    // 标签统计与薄弱点按标签聚合，至少要有标签才能走到该路径
+    // 为超过 999 道错题建立多对多标签关联，覆盖大基数标签统计与薄弱点聚合路径
     await db.knowledgeTag.create({ data: { id: 'tag-algebra', name: '方程', subject: 'math', userId: 'scale-user' } });
-    await db.errorItem.update({ where: { id: selfIds[0] }, data: { tags: { connect: { id: 'tag-algebra' } } } });
+    await connectTagInBatches('tag-algebra', selfIds);
+    await connectTagInBatches('tag-algebra', childIds.slice(0, 100));
 }, 180000);
 
 afterAll(async () => {
@@ -121,16 +141,28 @@ describe(`错题超过 999 道（本人 ${ITEM_COUNT} 道、孩子 ${CHILD_ITEM_
         expect(child.total).toBe(CHILD_ITEM_COUNT);
     }, 60000);
 
-    it('练习统计、反复错题榜、标签统计、学情分析与薄弱点接口正常返回', async () => {
+    it('练习统计、反复错题榜、标签统计、学情分析与薄弱点接口正常返回并校验真实计数', async () => {
         const practice = await okJson(await PRACTICE_STATS(new Request('http://localhost/api/stats/practice')));
         expect(practice.overallStats.total).toBe(ITEM_COUNT + 20);
 
         const repeated = await okJson(await REPEATED_MISTAKES(new Request(`http://localhost/api/stats/repeated-mistakes?learnerId=${childId}`)));
         expect(repeated.items).toHaveLength(10);
-        expect(repeated.items.every((item: { wrongCount: number }) => item.wrongCount === 2)).toBe(true);
+        expect(repeated.items.every((item: { id: string; wrongCount: number }) => item.id.startsWith('child-') && item.wrongCount === 2)).toBe(true);
 
-        await okJson(await TAG_STATS(new Request('http://localhost/api/tags/stats')));
-        await okJson(await ANALYTICS(new Request('http://localhost/api/analytics')));
-        await okJson(await WEAKNESS(new Request('http://localhost/api/variants/weakness?subjectId=math')));
+        const selfTags = await okJson(await TAG_STATS(new Request('http://localhost/api/tags/stats')));
+        expect(selfTags).toMatchObject({ total: ITEM_COUNT, uniqueTags: 1 });
+        expect(selfTags.stats).toEqual([{ tag: '方程', count: ITEM_COUNT }]);
+
+        const childTags = await okJson(await TAG_STATS(new Request(`http://localhost/api/tags/stats?learnerId=${childId}`)));
+        expect(childTags).toMatchObject({ total: CHILD_ITEM_COUNT, uniqueTags: 1 });
+        expect(childTags.stats).toEqual([{ tag: '方程', count: 100 }]);
+
+        const analytics = await okJson(await ANALYTICS(new Request('http://localhost/api/analytics')));
+        expect(analytics).toMatchObject({ totalErrors: ITEM_COUNT, masteredCount: 0 });
+        expect(analytics.subjectStats).toEqual([{ name: '数学', value: ITEM_COUNT }]);
+
+        const weakness = await okJson(await WEAKNESS(new Request('http://localhost/api/variants/weakness?subjectId=math')));
+        expect(weakness.profile.itemCount).toBe(ITEM_COUNT + CHILD_ITEM_COUNT);
+        expect(weakness.profile.weaknesses[0]).toMatchObject({ knowledgePoint: '方程', itemCount: ITEM_COUNT + 100 });
     }, 60000);
 });

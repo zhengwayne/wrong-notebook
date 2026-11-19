@@ -543,7 +543,7 @@ bash scripts/ci.sh          # 完整 CI（使用上述源码开发环境和 Pyth
 
 `scripts/` 目录下提供维护和调试脚本，例如：
 
-- **重置密码**：`node scripts/reset-password.js <邮箱> <新密码>`
+- **重置密码**：`node scripts/reset-password.js <邮箱> <新密码>`（邮箱不区分大小写；新密码不少于 8 位且拒绝旧版弱默认口令，重置后自动撤销该用户旧会话）
 - **恢复默认管理员角色**：`node scripts/seed-admin.js`（只为已有的 `admin@localhost` 恢复管理员角色并启用；没有任何管理员时，重启服务后按启动提示从配置目录读取初始化令牌）
 - **重建系统知识点**：`npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts`（保留自定义标签和题目关联；生产环境操作前请先备份）
 - **检查数据库**：`node scripts/check-db-users.js`、`node scripts/check-db-data.js`

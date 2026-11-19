@@ -545,7 +545,7 @@ After changing `prisma/schema.prisma`, create a migration with `npx prisma migra
 
 The `scripts/` directory contains maintenance and debugging scripts, for example:
 
-- **Reset a password**: `node scripts/reset-password.js <email> <new-password>`
+- **Reset a password**: `node scripts/reset-password.js <email> <new-password>` (case-insensitive email lookup; requires at least 8 characters, rejects the legacy default password, and revokes existing sessions)
 - **Restore the default admin role**: `node scripts/seed-admin.js` (only restores the admin role and re-enables an existing `admin@localhost`; when no admin exists, restart the server and read the one-time token from the file listed in its startup log)
 - **Rebuild system knowledge points**: `npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts` (keeps custom tags and question links; back up before running in production)
 - **Inspect the database**: `node scripts/check-db-users.js`, `node scripts/check-db-data.js`
