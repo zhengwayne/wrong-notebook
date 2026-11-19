@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { BookOpen, CalendarCheck, Camera, FileText, Route, Users } from "lucide-react";
 import { ChildLearnersManager } from "@/components/child-learners-manager";
 import { HomeSection, MasteryList, PracticeTrendChart, TodayStepList, WeakPointList } from "@/components/home/home-panels";
+import { DailyHomeworkCard } from "@/components/parent/daily-homework-card";
 import { ParentKidModeCard } from "@/components/parent/kid-mode-lock-bar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -136,6 +137,7 @@ function ParentHome() {
                         {child && (
                             <div className="space-y-8">
                                 <ParentKidModeCard learnerId={child.id} learnerName={child.name} />
+                                <DailyHomeworkCard learnerId={child.id} />
                                 {child.latestPaper ? (
                                     <HomeSection title={copy.latestPaper}>
                                         <Link

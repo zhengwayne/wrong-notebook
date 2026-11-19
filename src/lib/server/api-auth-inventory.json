@@ -76,6 +76,8 @@
     "notebooks/[id]/retag": { "auth": "user", "mechanism": "getCurrentUser" },
     "openclaw/batch-upload": { "auth": "custom_key_or_credentials", "mechanism": "custom" },
     "parent/home": { "auth": "user", "mechanism": "getCurrentUser" },
+    "parent/homeworks": { "auth": "user", "mechanism": "defineApiRoute" },
+    "parent/homeworks/[id]": { "auth": "user", "mechanism": "defineApiRoute" },
     "parent/kid-mode": { "auth": "user", "mechanism": "defineApiRoute" },
     "parent/kid-mode/unlock": { "auth": "user", "mechanism": "defineApiRoute" },
     "parent/papers": { "auth": "user", "mechanism": "getCurrentUser" },
