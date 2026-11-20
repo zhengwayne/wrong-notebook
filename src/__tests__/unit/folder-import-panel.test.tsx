@@ -13,9 +13,25 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
     apiClient: { post: vi.fn() },
 }));
 vi.mock("@/lib/use-paper-images", () => ({
-    compressPaperImages: vi.fn(async (files: File[]) => files.map((file) => `data:image/jpeg;base64,${btoa(file.name)}`)),
+    compressPaperImages: vi.fn(async (files: File[]) => files.map((file) => `data:image/jpeg;base64,${btoa(encodeURIComponent(file.name))}`)),
 }));
 vi.mock("@/lib/feedback", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/pdf-pages", async () => {
+    class PdfReadError extends Error {
+        constructor(readonly code: "encrypted" | "corrupt" | "unsupported") {
+            super(`PDF_${code}`);
+        }
+    }
+    return {
+        PdfReadError,
+        classifyPdfError: (error: unknown) => (error instanceof PdfReadError ? error.code : "corrupt"),
+        getPdfPageCount: vi.fn(async (file: File) => {
+            if (file.name.includes("加密")) throw new PdfReadError("encrypted");
+            return 2;
+        }),
+        renderPdfPages: vi.fn(async (file: File) => [1, 2].map((page) => new File(["p"], `${file.name}-p${page}.jpg`, { type: "image/jpeg" }))),
+    };
+});
 
 const fi = translations.zh.grading.folderImport;
 const students = [
@@ -61,12 +77,13 @@ describe("FolderImport 面板", () => {
             folderFile("期中/李四/1.jpg"),
             folderFile("期中/scan_003.jpg"),
             folderFile("期中/.DS_Store"),
-            folderFile("期中/赵六.pdf"),
+            folderFile("期中/说明.docx"),
         ];
         Object.defineProperty(dirInput, "files", { value: files, configurable: true });
         await act(async () => {
             dirInput.dispatchEvent(new Event("change", { bubbles: true }));
         });
+        await vi.waitFor(() => expect(host.querySelector('[data-testid="folder-import-summary"]')).not.toBeNull());
 
         expect(host.querySelector('[data-testid="folder-import-summary"]')?.textContent).toBe(
             fi.summary.replace("{papers}", "3").replace("{pages}", "4").replace("{matched}", "2"),
@@ -112,5 +129,43 @@ describe("FolderImport 面板", () => {
         expect(retryBody.importKey).toBe(failedBody.importKey);
         await vi.waitFor(() => expect(host.textContent).toContain(fi.progress.replace("{done}", "2").replace("{total}", "2")));
         expect(host.textContent).not.toContain(fi.retryFailed.replace("{count}", "1"));
+    });
+
+    it("PDF：预览按实际页数计、加密的整份不能导入；上传时逐页渲染成图片", async () => {
+        await act(async () => {
+            root.render(<FolderImport taskId="task-1" students={students} submittedIds={new Set()} multiClass={false} onUploaded={vi.fn()} />);
+        });
+        const dirInput = host.querySelector<HTMLInputElement>('[data-testid="folder-import-dir"]')!;
+        const pdf = (path: string) => {
+            const file = new File(["%PDF"], path.split("/").pop()!, { type: "application/pdf", lastModified: 1 });
+            Object.defineProperty(file, "webkitRelativePath", { value: path });
+            return file;
+        };
+        Object.defineProperty(dirInput, "files", { value: [pdf("扫描/张三.pdf"), pdf("扫描/李四 加密.pdf")], configurable: true });
+        await act(async () => {
+            dirInput.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await vi.waitFor(() => expect(host.querySelector('[data-testid="folder-import-summary"]')).not.toBeNull());
+
+        expect(host.querySelector('[data-testid="folder-import-summary"]')?.textContent).toBe(
+            fi.summary.replace("{papers}", "1").replace("{pages}", "2").replace("{matched}", "1"),
+        );
+        expect(host.textContent).toContain(fi.pdfProblem.encrypted);
+        expect(host.textContent).toContain(`张三.pdf${fi.pdfPages.replace("{count}", "2")}`);
+        const rows = [...host.querySelectorAll('[data-testid="folder-import-paper"]')];
+        const encryptedRow = rows.find((row) => row.textContent?.includes("加密"))!;
+        expect(encryptedRow.querySelector("select")!.disabled).toBe(true);
+        expect(encryptedRow.querySelector("select")!.value).toBe("__skip");
+
+        const post = vi.mocked(apiClient.post);
+        post.mockResolvedValue({ id: "sub-pdf", reused: false });
+        const start = [...host.querySelectorAll("button")].find((button) => button.textContent?.includes(fi.start.replace("{count}", "1")))!;
+        await act(async () => {
+            start.click();
+        });
+        await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+        const body = post.mock.calls[0][1] as { images: string[]; importKey: string };
+        expect(body.images).toEqual(["张三.pdf-p1.jpg", "张三.pdf-p2.jpg"].map((name) => `data:image/jpeg;base64,${btoa(encodeURIComponent(name))}`));
+        expect(body.importKey).toMatch(/^[a-f0-9]{64}$/);
     });
 });

@@ -4,10 +4,12 @@ import {
     computeImportKey,
     groupImportFiles,
     identityFromLabel,
+    readPdfInfo,
     matchImportPapers,
     naturalCompare,
     runWithConcurrency,
     type ImportSourceFile,
+    type PdfInfo,
 } from "@/lib/folder-import";
 import type { RosterStudent } from "@/lib/student-match";
 
@@ -22,13 +24,15 @@ const roster: RosterStudent[] = [
 ];
 
 describe("文件夹导入：文件分类", () => {
-    it("忽略隐藏、系统、PDF、非图片和超大文件", () => {
+    it("忽略隐藏、系统、非图片非 PDF 和超大文件；PDF 可导入（上限 50MB）", () => {
         expect(classifyFile("卷子/.DS_Store", 10)).toBe("system");
         expect(classifyFile("卷子/Thumbs.db", 10)).toBe("system");
         expect(classifyFile("__MACOSX/卷子/._a.jpg", 10)).toBe("system");
         expect(classifyFile("卷子/.hidden.jpg", 10)).toBe("hidden");
         expect(classifyFile("卷子/.git/a.png", 10)).toBe("hidden");
-        expect(classifyFile("卷子/张三.pdf", 10)).toBe("pdf");
+        expect(classifyFile("卷子/张三.pdf", 10)).toBeNull();
+        expect(classifyFile("卷子/张三.PDF", 49 * MB)).toBeNull();
+        expect(classifyFile("卷子/张三.pdf", 51 * MB)).toBe("too_large");
         expect(classifyFile("卷子/说明.txt", 10)).toBe("unsupported");
         expect(classifyFile("卷子/无扩展名", 10)).toBe("unsupported");
         expect(classifyFile("卷子/张三.JPG", 21 * MB)).toBe("too_large");
@@ -58,11 +62,11 @@ describe("文件夹导入：分组", () => {
             ["李四", ["期中/李四/a.png", "期中/李四/scan/b.png"]],
             ["王小明", ["期中/王小明.jpg"]],
             ["张三", ["期中/张三/第1页.jpg", "期中/张三/第2页.jpg", "期中/张三/第10页.jpg"]],
+            ["赵六", ["期中/赵六.pdf"]],
         ]);
         expect(result.ignored).toEqual([
             { path: "期中/.DS_Store", reason: "system" },
             { path: "期中/李四/备注.txt", reason: "unsupported" },
-            { path: "期中/赵六.pdf", reason: "pdf" },
         ]);
         expect(result.overflow).toEqual([]);
         expect(result.tooLarge).toBe(false);
@@ -92,6 +96,41 @@ describe("文件夹导入：分组", () => {
         expect(capped.papers.map((paper) => paper.label)).toEqual(["1", "2", "3"]);
         expect(capped.overflow.map((paper) => paper.label)).toEqual(["4", "5"]);
         expect(capped.tooLarge).toBe(true);
+    });
+});
+
+describe("文件夹导入：PDF", () => {
+    it("根目录的 PDF 各成一份；子文件夹里的 PDF 按文件名插在原位置并入这份，页数按 PDF 实际页数计", () => {
+        const pdfInfo: PdfInfo = new Map([["卷/张三.pdf", 2], ["卷/李四/2.pdf", 3]]);
+        const result = groupImportFiles([src("卷/张三.pdf"), src("卷/李四/1.jpg"), src("卷/李四/2.pdf"), src("卷/李四/3.jpg")], { pdfInfo });
+        expect(result.papers.map((paper) => [paper.label, paper.pages.map((page) => page.path), paper.pageCount])).toEqual([
+            ["李四", ["卷/李四/1.jpg", "卷/李四/2.pdf", "卷/李四/3.jpg"], 5],
+            ["张三", ["卷/张三.pdf"], 2],
+        ]);
+    });
+
+    it("展开后超过页数上限、或含加密/损坏的 PDF，整份不能导入且不占份数名额", () => {
+        const pdfInfo: PdfInfo = new Map<string, number | "encrypted" | "corrupt">([
+            ["卷/长卷.pdf", 9], ["卷/加密.pdf", "encrypted"], ["卷/坏的.pdf", "corrupt"], ["卷/正常.pdf", 2],
+        ]);
+        const result = groupImportFiles([src("卷/长卷.pdf"), src("卷/加密.pdf"), src("卷/坏的.pdf"), src("卷/正常.pdf")], { pdfInfo, maxPapers: 1 });
+        const byLabel = Object.fromEntries(result.papers.map((paper) => [paper.label, paper]));
+        expect(byLabel["长卷"].tooManyPages).toBe(true);
+        expect(byLabel["加密"].pdfProblem).toBe("encrypted");
+        expect(byLabel["坏的"].pdfProblem).toBe("corrupt");
+        expect(byLabel["正常"]).toMatchObject({ pageCount: 2, tooManyPages: false, pdfProblem: null });
+        expect(result.overflow).toEqual([]);
+    });
+
+    it("readPdfInfo 只读可导入的 PDF，失败的按原因记录", async () => {
+        const counter = async (source: ImportSourceFile<string>) => {
+            if (source.path.includes("加密")) throw Object.assign(new Error("pw"), { name: "PasswordException" });
+            return 3;
+        };
+        const classify = (error: unknown) => ((error as Error).name === "PasswordException" ? "encrypted" as const : "corrupt" as const);
+        const info = await readPdfInfo([src("卷/a.pdf"), src("卷/加密.pdf"), src("卷/b.jpg"), src("卷/.x.pdf"), src("卷/大.pdf", 60 * MB)], counter, classify);
+        expect([...info.entries()]).toEqual(expect.arrayContaining([["卷/a.pdf", 3], ["卷/加密.pdf", "encrypted"]]));
+        expect(info.size).toBe(2);
     });
 });
 

@@ -15,19 +15,25 @@ import {
     FOLDER_IMPORT_CONCURRENCY,
     FOLDER_IMPORT_MAX_FILE_BYTES,
     FOLDER_IMPORT_MAX_PAGES,
+    FOLDER_IMPORT_MAX_PDF_BYTES,
     FOLDER_IMPORT_MAX_PAPERS,
     FOLDER_IMPORT_MAX_TOTAL_BYTES,
     groupImportFiles,
+    isPdfPath,
     matchImportPapers,
+    normalizeImportPath,
+    readPdfInfo,
     runWithConcurrency,
     sourcesFromDataTransfer,
     sourcesFromFileList,
     type IgnoredFile,
     type ImportPaper,
     type ImportSourceFile,
+    type PdfInfo,
 } from "@/lib/folder-import";
 import { studentLabel } from "@/lib/grading-labels";
 import { HEIC_UNSUPPORTED } from "@/lib/heic";
+import { classifyPdfError, getPdfPageCount, PdfReadError, renderPdfPages } from "@/lib/pdf-pages";
 import type { PaperIdentity } from "@/lib/student-match";
 import { compressPaperImages } from "@/lib/use-paper-images";
 import type { GradingStudentInfo } from "@/types/grading";
@@ -71,6 +77,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
     const folderRef = useRef<HTMLInputElement>(null);
     const itemsRef = useRef<ImportItem[]>([]);
     const keyCache = useRef(new Map<string, string>());
+    const [pdfInfo, setPdfInfo] = useState<PdfInfo>(new Map());
 
     // React 不认识 webkitdirectory 属性，挂载时手动设置
     const setFolderInput = useCallback((node: HTMLInputElement | null) => {
@@ -89,8 +96,13 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         commit(itemsRef.current.map((item) => (item.key === key ? { ...item, ...change } : item)));
     };
 
-    const load = (sources: ImportSourceFile[]) => {
-        const grouped = groupImportFiles(sources);
+    const load = async (sources: ImportSourceFile[]) => {
+        // 先读出 PDF 页数，页数上限与加密/损坏都在预览里就能看到
+        const info = sources.some((source) => isPdfPath(source.path))
+            ? await readPdfInfo(sources, (source) => getPdfPageCount(source.file), classifyPdfError)
+            : new Map() as PdfInfo;
+        setPdfInfo(info);
+        const grouped = groupImportFiles(sources, { pdfInfo: info });
         const roster = students.map((student) => ({ id: student.id, name: student.name, studentNo: student.studentNo, classId: student.classId || "", className: student.className || "" }));
         const matches = matchImportPapers(grouped.papers.map((paper) => paper.label), roster, submittedIds);
         commit(grouped.papers.map((paper, index) => ({
@@ -98,8 +110,8 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
             autoStudentId: matches[index].studentId,
             identity: matches[index].identity,
             alreadySubmitted: matches[index].alreadySubmitted,
-            choice: paper.tooManyPages ? SKIP : matches[index].studentId || "",
-            status: paper.tooManyPages ? "skipped" : "ready",
+            choice: paper.tooManyPages || paper.pdfProblem ? SKIP : matches[index].studentId || "",
+            status: paper.tooManyPages || paper.pdfProblem ? "skipped" : "ready",
         })));
         keyCache.current.clear();
         setIgnored(grouped.ignored);
@@ -108,10 +120,18 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         if (grouped.papers.length === 0) toast.error(fi.empty);
     };
 
-    const onPick = (input: HTMLInputElement | null) => {
+    const onPick = async (input: HTMLInputElement | null) => {
         if (!input?.files?.length) return;
-        load(sourcesFromFileList(input.files));
+        const sources = sourcesFromFileList(input.files);
         input.value = "";
+        setReading(true);
+        try {
+            await load(sources);
+        } catch (error) {
+            toast.error(getErrorMessage(error));
+        } finally {
+            setReading(false);
+        }
     };
 
     const onDrop = async (event: React.DragEvent<HTMLDivElement>) => {
@@ -120,7 +140,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         if (running) return;
         setReading(true);
         try {
-            load(await sourcesFromDataTransfer(event.dataTransfer));
+            await load(await sourcesFromDataTransfer(event.dataTransfer));
         } catch (error) {
             toast.error(getErrorMessage(error));
         } finally {
@@ -132,7 +152,14 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         if (stop.quota) return;
         patch(item.key, { status: "compressing", error: undefined });
         try {
-            const images = await compressPaperImages(item.pages.map((page) => page.file));
+            // PDF 逐页渲染成图片，按文件顺序插在原位置
+            const files: File[] = [];
+            for (const page of item.pages) {
+                if (isPdfPath(page.path)) files.push(...await renderPdfPages(page.file, { maxPages: FOLDER_IMPORT_MAX_PAGES + 1 }));
+                else files.push(page.file);
+            }
+            if (files.length > FOLDER_IMPORT_MAX_PAGES) throw new Error(fi.tooManyPages.replace("{max}", String(FOLDER_IMPORT_MAX_PAGES)));
+            const images = await compressPaperImages(files);
             let importKey = keyCache.current.get(item.key);
             if (!importKey) {
                 importKey = await computeImportKey(taskId, item);
@@ -157,13 +184,14 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         } catch (error) {
             if (error instanceof ApiError && error.status === 429) stop.quota = true;
             const isHeic = getErrorMessage(error) === HEIC_UNSUPPORTED || (error instanceof Error && error.name === HEIC_UNSUPPORTED);
-            const message = isHeic ? t.errors.HEIC_UNSUPPORTED : getApiErrorMessage(error) || getErrorMessage(error);
+            const message = error instanceof PdfReadError ? fi.pdfProblem[error.code]
+                : isHeic ? t.errors.HEIC_UNSUPPORTED : getApiErrorMessage(error) || getErrorMessage(error);
             patch(item.key, { status: "failed", error: stop.quota ? fi.quotaStopped : message });
         }
     };
 
     const run = async (only: (item: ImportItem) => boolean) => {
-        const queue = itemsRef.current.filter((item) => item.choice !== SKIP && !item.tooManyPages && only(item));
+        const queue = itemsRef.current.filter((item) => item.choice !== SKIP && !item.tooManyPages && !item.pdfProblem && only(item));
         if (queue.length === 0) return;
         setRunning(true);
         const stop = { quota: false };
@@ -189,17 +217,24 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         setIgnored([]);
         setOverflow(0);
         setTooLarge(false);
+        setPdfInfo(new Map());
         keyCache.current.clear();
     };
 
-    const active = items.filter((item) => item.choice !== SKIP && !item.tooManyPages);
+    const active = items.filter((item) => item.choice !== SKIP && !item.tooManyPages && !item.pdfProblem);
     const finishedCount = active.filter((item) => item.status === "done" || item.status === "reused").length;
     const failedCount = active.filter((item) => item.status === "failed").length;
     const readyCount = active.filter((item) => item.status === "ready").length;
-    const pageCount = active.reduce((sum, item) => sum + item.pages.length, 0);
-    const matchedCount = items.filter((item) => item.autoStudentId).length;
+    const pageCount = active.reduce((sum, item) => sum + item.pageCount, 0);
+    const matchedCount = active.filter((item) => item.autoStudentId && item.choice === item.autoStudentId).length;
     const studentById = new Map(students.map((student) => [student.id, student]));
     const started = active.some((item) => item.status !== "ready");
+
+    const fileLabel = (page: ImportSourceFile) => {
+        const name = page.path.split("/").pop() || page.path;
+        const count = isPdfPath(page.path) ? pdfInfo.get(normalizeImportPath(page.path)) : undefined;
+        return typeof count === "number" ? `${name}${fi.pdfPages.replace("{count}", String(count))}` : name;
+    };
 
     const statusIcon = (status: ItemStatus) => {
         if (status === "compressing" || status === "uploading") return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
@@ -215,7 +250,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
                 <p className="text-xs text-muted-foreground">{fi.hint}</p>
             </div>
             <input ref={setFolderInput} type="file" multiple className="hidden" data-testid="folder-import-dir" onChange={(event) => onPick(event.currentTarget)} />
-            <input ref={filesRef} type="file" multiple accept="image/*,.heic,.heif,image/heic,image/heif" className="hidden" data-testid="folder-import-files" onChange={(event) => onPick(event.currentTarget)} />
+            <input ref={filesRef} type="file" multiple accept="image/*,.heic,.heif,image/heic,image/heif,.pdf,application/pdf" className="hidden" data-testid="folder-import-files" onChange={(event) => onPick(event.currentTarget)} />
             <div
                 className={`flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:flex-wrap sm:items-center ${dragging ? "border-primary bg-primary/10" : "border-primary/40 bg-primary/5"}`}
                 onDragOver={(event) => { event.preventDefault(); if (!running) setDragging(true); }}
@@ -241,7 +276,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
                                 {ignored.map((file) => (
                                     <li key={file.path} className="flex gap-2">
                                         <span className="min-w-0 flex-1 truncate">{file.path}</span>
-                                        <span className="shrink-0 text-muted-foreground">{fi.ignoredReason[file.reason].replace("{max}", String(FOLDER_IMPORT_MAX_FILE_BYTES / 1024 / 1024))}</span>
+                                        <span className="shrink-0 text-muted-foreground">{fi.ignoredReason[file.reason].replace("{max}", String(FOLDER_IMPORT_MAX_FILE_BYTES / 1024 / 1024)).replace("{pdfMax}", String(FOLDER_IMPORT_MAX_PDF_BYTES / 1024 / 1024))}</span>
                                     </li>
                                 ))}
                             </ul>
@@ -257,16 +292,17 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
 
                     <ul className="space-y-2">
                         {items.map((item, index) => {
-                            const locked = running || item.status === "done" || item.status === "reused" || item.tooManyPages;
+                            const locked = running || item.status === "done" || item.status === "reused" || item.tooManyPages || !!item.pdfProblem;
                             const busy = item.status === "compressing" || item.status === "uploading";
                             const matched = item.autoStudentId ? studentById.get(item.autoStudentId) : null;
                             return (
                                 <li key={item.key} data-testid="folder-import-paper" className={`space-y-2 rounded-lg border p-3 ${item.status === "failed" ? "border-destructive/50" : item.choice === SKIP ? "opacity-60" : ""}`}>
                                     <div className="flex flex-wrap items-center gap-2 text-sm">
                                         <span className="font-medium">{t.grading.paperN.replace("{index}", String(index + 1))} · {item.label}</span>
-                                        <span className="text-xs text-muted-foreground">{t.grading.live.pages.replace("{count}", String(item.pages.length))}</span>
+                                        <span className="text-xs text-muted-foreground">{t.grading.live.pages.replace("{count}", String(item.pageCount))}</span>
                                         {matched && item.choice === matched.id && <Badge variant="outline" className="border-primary/40 text-primary">{fi.autoMatched}</Badge>}
                                         {item.alreadySubmitted && item.choice === item.autoStudentId && <Badge variant="outline" className="gap-1 border-amber-500/60 text-amber-700 dark:text-amber-400"><AlertTriangle className="h-3 w-3" />{fi.alreadySubmitted}</Badge>}
+                                        {item.pdfProblem && <Badge variant="outline" className="border-destructive/50 text-destructive">{fi.pdfProblem[item.pdfProblem]}</Badge>}
                                         {item.tooManyPages && <Badge variant="outline" className="border-destructive/50 text-destructive">{fi.tooManyPages.replace("{max}", String(FOLDER_IMPORT_MAX_PAGES))}</Badge>}
                                         <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground" data-testid="folder-import-status">
                                             {statusIcon(item.status)}{fi.status[item.status]}
@@ -274,7 +310,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
                                     </div>
                                     {busy && <Progress value={item.status === "compressing" ? 35 : 75} className="h-1.5" />}
                                     {item.status === "failed" && item.error && <p className="text-xs text-destructive">{fi.failed.replace("{error}", item.error)}</p>}
-                                    <p className="truncate text-xs text-muted-foreground">{item.pages.map((page) => page.path.split("/").pop()).join("、")}</p>
+                                    <p className="truncate text-xs text-muted-foreground">{item.pages.map((page) => fileLabel(page)).join("、")}</p>
                                     <NativeSelect aria-label={fi.student} value={item.choice} disabled={locked} onChange={(event) => setChoice(item, event.target.value)}>
                                         <option value="">{fi.aiIdentify}</option>
                                         <option value={SKIP}>{fi.skip}</option>

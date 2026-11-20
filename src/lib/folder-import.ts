@@ -5,15 +5,18 @@
  * 分组规则：
  * - 选择或拖入的单个外层文件夹会被剥掉（它只是容器）；
  * - 外层下的每个子文件夹 = 一份卷子，子文件夹内（含更深层）的图片按路径自然排序作为页序；
- * - 外层根目录下散放的每张图片 = 一份卷子；
- * - 隐藏文件、系统文件、非图片、PDF（暂不支持）、超过单张大小上限的文件忽略并列出原因；
- * - 一份超过页数上限时整份标记为不可导入，不截断。
+ * - 外层根目录下散放的每张图片、每个 PDF = 一份卷子（PDF 的每一页是这份的一页）；
+ * - 子文件夹里的 PDF 按文件名排在它的位置上，展开成连续几页并入这份（如「1.jpg、2.pdf(2 页)、3.jpg」共 4 页）；
+ * - 隐藏文件、系统文件、非图片非 PDF、超过大小上限的文件忽略并列出原因；
+ * - 一份超过页数上限，或含加密/损坏的 PDF 时，整份标记为不可导入，不截断。
  */
 import { MAX_PAGES_PER_PAPER, MAX_PAPERS_PER_UPLOAD } from "@/lib/grading-api";
 import { matchStudent, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
 
 /** 单张图片原文件上限（与单题上传一致） */
 export const FOLDER_IMPORT_MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** 单个 PDF 原文件上限（多页扫描件通常比单张图片大） */
+export const FOLDER_IMPORT_MAX_PDF_BYTES = 50 * 1024 * 1024;
 /** 一次导入最多份数（与收卷批量上传一致） */
 export const FOLDER_IMPORT_MAX_PAPERS = MAX_PAPERS_PER_UPLOAD;
 /** 每份最多页数（与收卷单份一致） */
@@ -34,7 +37,13 @@ export interface ImportSourceFile<F = File> {
     lastModified: number;
 }
 
-export type IgnoreReason = "hidden" | "system" | "pdf" | "unsupported" | "too_large";
+export type IgnoreReason = "hidden" | "system" | "unsupported" | "too_large";
+
+/** PDF 读不出来的原因：加密、损坏、浏览器无法加载 pdf.js */
+export type PdfProblem = "encrypted" | "corrupt" | "unsupported";
+
+/** 预先读出的 PDF 信息：页数或问题，按 normalizeImportPath 后的路径索引 */
+export type PdfInfo = Map<string, number | PdfProblem>;
 
 export interface IgnoredFile {
     path: string;
@@ -46,9 +55,14 @@ export interface ImportPaper<F = File> {
     key: string;
     /** 用于匹配学生和展示的名字（子文件夹名或去掉扩展名的文件名） */
     label: string;
+    /** 按页序排列的源文件；PDF 占一项，展开后可能是多页 */
     pages: ImportSourceFile<F>[];
+    /** 展开 PDF 后的实际页数 */
+    pageCount: number;
     /** 超过页数上限，不能导入 */
     tooManyPages: boolean;
+    /** 含读不出来的 PDF，不能导入 */
+    pdfProblem: PdfProblem | null;
 }
 
 export interface GroupResult<F = File> {
@@ -71,6 +85,15 @@ function segments(path: string): string[] {
     return path.replace(/\\/g, "/").split("/").filter((part) => part.length > 0 && part !== ".");
 }
 
+/** 统一路径写法（/ 分隔、去掉空段），用作 PdfInfo 的键 */
+export function normalizeImportPath(path: string): string {
+    return segments(path).join("/");
+}
+
+export function isPdfPath(path: string): boolean {
+    return extensionOf(path) === "pdf";
+}
+
 function extensionOf(name: string): string {
     const dot = name.lastIndexOf(".");
     return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
@@ -82,20 +105,23 @@ function stripExtension(name: string): string {
 }
 
 /** 判断一个文件是否应忽略；返回 null 表示可导入 */
-export function classifyFile(path: string, size: number, maxFileBytes = FOLDER_IMPORT_MAX_FILE_BYTES): IgnoreReason | null {
+export function classifyFile(path: string, size: number, maxFileBytes = FOLDER_IMPORT_MAX_FILE_BYTES, maxPdfBytes = FOLDER_IMPORT_MAX_PDF_BYTES): IgnoreReason | null {
     const parts = segments(path);
     const name = parts[parts.length - 1] || "";
     if (SYSTEM_FILES.has(name.toLowerCase()) || parts.some((part) => part === "__MACOSX")) return "system";
     if (parts.some((part) => part.startsWith("."))) return "hidden";
     const ext = extensionOf(name);
-    if (ext === "pdf") return "pdf";
+    if (ext === "pdf") return size > maxPdfBytes ? "too_large" : null;
     if (!IMAGE_EXTENSIONS.has(ext)) return "unsupported";
     if (size > maxFileBytes) return "too_large";
     return null;
 }
 
 /** 按目录结构把文件分成份；输入顺序无关 */
-export function groupImportFiles<F>(files: ImportSourceFile<F>[], options: { maxPapers?: number; maxPages?: number; maxTotalBytes?: number; maxFileBytes?: number } = {}): GroupResult<F> {
+export function groupImportFiles<F>(
+    files: ImportSourceFile<F>[],
+    options: { maxPapers?: number; maxPages?: number; maxTotalBytes?: number; maxFileBytes?: number; maxPdfBytes?: number; pdfInfo?: PdfInfo } = {},
+): GroupResult<F> {
     const maxPapers = options.maxPapers ?? FOLDER_IMPORT_MAX_PAPERS;
     const maxPages = options.maxPages ?? FOLDER_IMPORT_MAX_PAGES;
     const maxTotalBytes = options.maxTotalBytes ?? FOLDER_IMPORT_MAX_TOTAL_BYTES;
@@ -104,7 +130,7 @@ export function groupImportFiles<F>(files: ImportSourceFile<F>[], options: { max
     for (const source of files) {
         const parts = segments(source.path);
         if (parts.length === 0) continue;
-        const reason = classifyFile(source.path, source.size, options.maxFileBytes);
+        const reason = classifyFile(source.path, source.size, options.maxFileBytes, options.maxPdfBytes);
         if (reason) ignored.push({ path: parts.join("/"), reason });
         else kept.push({ source, parts });
     }
@@ -122,7 +148,7 @@ export function groupImportFiles<F>(files: ImportSourceFile<F>[], options: { max
         const isLoose = rest.length === 1;
         const key = isLoose ? parts.join("/") : parts.slice(0, strip + 1).join("/");
         const label = isLoose ? stripExtension(rest[0]) : rest[0];
-        const paper = groups.get(key) ?? { key, label, pages: [], tooManyPages: false };
+        const paper = groups.get(key) ?? { key, label, pages: [], pageCount: 0, tooManyPages: false, pdfProblem: null };
         paper.pages.push(source);
         groups.set(key, paper);
     }
@@ -130,12 +156,25 @@ export function groupImportFiles<F>(files: ImportSourceFile<F>[], options: { max
     const all = [...groups.values()];
     for (const paper of all) {
         paper.pages.sort((a, b) => naturalCompare(segments(a.path).join("/"), segments(b.path).join("/")));
-        paper.tooManyPages = paper.pages.length > maxPages;
+        for (const page of paper.pages) {
+            if (!isPdfPath(page.path)) {
+                paper.pageCount += 1;
+                continue;
+            }
+            // 还没读页数的 PDF 先按 1 页估计
+            const info = options.pdfInfo?.get(normalizeImportPath(page.path));
+            if (typeof info === "number") paper.pageCount += Math.max(1, info);
+            else if (info) {
+                paper.pdfProblem = paper.pdfProblem ?? info;
+                paper.pageCount += 1;
+            } else paper.pageCount += 1;
+        }
+        paper.tooManyPages = paper.pageCount > maxPages;
     }
     all.sort((a, b) => naturalCompare(a.key, b.key));
 
-    const importable = all.filter((paper) => !paper.tooManyPages);
-    const blocked = all.filter((paper) => paper.tooManyPages);
+    const importable = all.filter((paper) => !paper.tooManyPages && !paper.pdfProblem);
+    const blocked = all.filter((paper) => paper.tooManyPages || paper.pdfProblem);
     const accepted = importable.slice(0, maxPapers);
     const overflow = importable.slice(maxPapers);
     const totalBytes = accepted.reduce((sum, paper) => sum + paper.pages.reduce((s, page) => s + page.size, 0), 0);
@@ -294,4 +333,26 @@ export async function sourcesFromDataTransfer(data: DataTransfer, limit = 2000):
     const out: ImportSourceFile[] = [];
     for (const entry of entries) await walkEntry(entry, out, limit);
     return out;
+}
+
+/**
+ * 预先读出所有可导入 PDF 的页数（加密/损坏记为问题），供分组计算页数与上限；
+ * counter 由调用方注入（浏览器里是 pdf.js），便于测试。
+ */
+export async function readPdfInfo<F>(
+    files: ImportSourceFile<F>[],
+    counter: (source: ImportSourceFile<F>) => Promise<number>,
+    classify: (error: unknown) => PdfProblem,
+    options: { concurrency?: number; maxFileBytes?: number; maxPdfBytes?: number } = {},
+): Promise<PdfInfo> {
+    const info: PdfInfo = new Map();
+    const pdfs = files.filter((source) => isPdfPath(source.path) && !classifyFile(source.path, source.size, options.maxFileBytes, options.maxPdfBytes));
+    await runWithConcurrency(pdfs, options.concurrency ?? 2, async (source) => {
+        try {
+            info.set(normalizeImportPath(source.path), await counter(source));
+        } catch (error) {
+            info.set(normalizeImportPath(source.path), classify(error));
+        }
+    });
+    return info;
 }
