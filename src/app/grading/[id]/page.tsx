@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ClassSummary } from "@/components/grading/class-summary";
 import { HorizontalQuestionGrader } from "@/components/grading/horizontal-question-grader";
 import { KeyEditor } from "@/components/grading/key-editor";
+import { FolderImport } from "@/components/grading/folder-import";
 import { PaperCapture } from "@/components/grading/paper-capture";
 import { SubmissionList } from "@/components/grading/submission-list";
 import { TaskCollectShareBar } from "@/components/grading/task-collect-share-bar";
@@ -89,7 +90,12 @@ function GradingTaskView() {
                 {tab === "key" && <KeyEditor key={task.questions.map((q) => q.id).join()} taskId={task.id} initial={task.questions} onSaved={load} />}
                 {tab === "capture" && (task.questions.length === 0 && task.taskMode !== "quick"
                     ? <p className="text-sm text-muted-foreground">{t.grading.noKey}</p>
-                    : <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />)}
+                    : (
+                        <div className="space-y-6">
+                            <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />
+                            <FolderImport taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />
+                        </div>
+                    ))}
                 {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} multiClass={task.classIds.length > 1} onChanged={load} />}
                 {tab === "horizontal" && <HorizontalQuestionGrader taskId={task.id} questions={task.questions} onChanged={load} />}
                 {tab === "summary" && <ClassSummary taskId={task.id} version={version} />}
