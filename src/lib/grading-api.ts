@@ -6,6 +6,8 @@ import { GRADING_QUESTION_TYPES, GRADING_VERDICTS, MAX_GRADING_QUESTIONS } from 
 export const imageDataUrlSchema = z.string().max(8 * 1024 * 1024).regex(/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/);
 export const MAX_PAGES_PER_PAPER = 8;
 export const MAX_PAPERS_PER_UPLOAD = 60;
+/** 文件夹导入单份请求体上限：每页压缩后约 1MB，8 页留足余量 */
+export const FOLDER_IMPORT_MAX_BODY_BYTES = 24 * 1024 * 1024;
 
 export const keyQuestionSchema = z.object({
     number: z.string().trim().min(1).max(20),
