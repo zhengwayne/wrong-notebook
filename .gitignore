@@ -19,6 +19,9 @@
 !/eval/datasets/grading/cases.json
 !/eval/datasets/verify/golden-cases.json
 
+# pdf.js 静态资源由 scripts/copy-pdfjs-assets.mjs 在 dev/build 前生成
+/public/pdfjs/
+
 # next.js
 /.next/
 /.next-e2e/

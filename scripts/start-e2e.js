@@ -104,6 +104,8 @@ async function main() {
         const env = await prepareFixture(directory);
         if (stopping) return;
         if (useLocalDistDir) env.NEXT_DIST_DIR = '.next-e2e';
+        // 直接启动 next 不会触发 predev，这里补齐 pdf.js 的同源静态资源
+        execFileSync(process.execPath, [path.join(REPO_ROOT, 'scripts/copy-pdfjs-assets.mjs')], { stdio: 'inherit' });
         const args = [require.resolve('next/dist/bin/next'), process.env.CI ? 'start' : 'dev',
             '-H', address.hostname, '-p', address.port || '80'];
         server = spawn(process.execPath, args, {

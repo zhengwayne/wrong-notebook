@@ -248,7 +248,8 @@ export const config = {
          * - favicon.ico (favicon file)
          * - icons/、manifest.webmanifest（PWA 图标与清单，登录页也要能加载）
          * - sw.js、offline.html（Service Worker 与离线页，未登录时也要能加载）
+         * - pdfjs/（pdf.js 的 worker、wasm、字体等公开静态资源，不含用户数据）
          */
-        "/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html).*)",
+        "/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html|pdfjs/).*)",
     ],
 };
