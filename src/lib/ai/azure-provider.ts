@@ -1,5 +1,6 @@
 import { AzureOpenAI } from "openai";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion, AnalyzeImageResult } from "./types";
 import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateReanswerRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -7,17 +8,20 @@ import type { NarrationSegment } from '../svg-animation';
 import { parseLatexFix } from './latex-fix';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
-import { parseGradeRecognition, safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
+import { parseGradeRecognition, parseMasteryEvaluation, parseAnswerGrading, parseTagSuggestion, parseFigure } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { generateExamPaperReadRequest } from './prompt-requests';
-import { parseExamPaperRead } from './exam-paper-read';
+import { parseExamPaperByMode } from './exam-paper-read';
 import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read';
 import { createLogger } from '../logger';
-import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
-import { normalizeMistakeStatusForSave } from '../mistake-status';
-import { parseRecognizedGrade } from '../question-grade';
+import { withTruncationRetry } from './truncation';
 import { normalizeGeneratedQuestion } from './generated-question';
 import { normalizeAiQuestionTags } from './knowledge-points';
+import { parseAnalyzeResponse, toAnalyzeImageResult } from './parse-analyze';
+import { getInitialMaxTokens } from './model-output-limits';
+import { extractXmlTag, parseGeogebraJson, parseQuestionXml, parseReanswerXml } from './base-xml-parser';
+import { currentAiDeadlineSignal, deadlineFetch } from './deadline';
+import { normalizeAiError } from './error-normalizer';
 
 const logger = createLogger('ai:azure');
 
@@ -63,6 +67,7 @@ export class AzureOpenAIProvider implements AIService {
             endpoint: endpoint,
             deployment: deployment,
             apiVersion: config?.apiVersion || '2024-02-15-preview',
+            fetch: deadlineFetch,
         });
 
         this.model = config?.model || deployment;
@@ -74,84 +79,22 @@ export class AzureOpenAIProvider implements AIService {
             model: this.model,
             deployment: this.deployment,
             endpoint: endpoint,
-            apiKeyPrefix: apiKey.substring(0, 8) + '...'
         }, 'Azure AI Provider initialized');
     }
 
+    private createChatCompletion(params: ChatCompletionCreateParamsNonStreaming) {
+        const signal = currentAiDeadlineSignal();
+        return signal
+            ? this.client.chat.completions.create(params, { signal })
+            : this.client.chat.completions.create(params);
+    }
+
     private extractTag(text: string, tagName: string): string | null {
-        const startTag = `<${tagName}>`;
-        const endTag = `</${tagName}>`;
-        const startIndex = text.indexOf(startTag);
-        const endIndex = text.lastIndexOf(endTag);
-
-        if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
-            return null;
-        }
-
-        return text.substring(startIndex + startTag.length, endIndex).trim();
+        return extractXmlTag(text, tagName);
     }
 
     private parseResponse(text: string): ParsedQuestion {
-        logger.debug({ textLength: text.length }, 'Parsing AI response');
-
-        const questionText = this.extractTag(text, "question_text");
-        const answerText = this.extractTag(text, "answer_text");
-        const analysis = this.extractTag(text, "analysis");
-        const subjectRaw = this.extractTag(text, "subject");
-        const knowledgePointsRaw = this.extractTag(text, "knowledge_points");
-        const requiresImageRaw = this.extractTag(text, "requires_image");
-        const wrongAnswerText = this.extractTag(text, "wrong_answer_text") || "";
-        const mistakeAnalysis = this.extractTag(text, "mistake_analysis") || "";
-        const mistakeStatusRaw = this.extractTag(text, "mistake_status");
-
-        // Basic Validation
-        if (!questionText || !answerText || !analysis) {
-            logger.error({ rawTextSample: text.substring(0, 500) }, 'Missing critical XML tags');
-            throw new Error("Invalid AI response: Missing critical XML tags (<question_text>, <answer_text>, or <analysis>)");
-        }
-
-        // Process Subject
-        let subject: ParsedQuestion['subject'] = '其他';
-        const validSubjects: ParsedQuestion['subject'][] = ["数学", "物理", "化学", "生物", "英语", "语文", "历史", "地理", "政治", "其他"];
-        if (subjectRaw && (validSubjects as string[]).includes(subjectRaw)) {
-            subject = subjectRaw as ParsedQuestion['subject'];
-        }
-
-        // Process Knowledge Points
-        let knowledgePoints: string[] = [];
-        if (knowledgePointsRaw) {
-            knowledgePoints = knowledgePointsRaw.split(/[,，\n]/).map(k => k.trim()).filter(k => k.length > 0);
-        }
-
-        // Process requiresImage
-        const requiresImage = requiresImageRaw?.toLowerCase().trim() === 'true';
-        const mistakeStatus = normalizeMistakeStatusForSave(mistakeStatusRaw, wrongAnswerText);
-
-        // Construct Result
-        const result: ParsedQuestion = {
-            questionText,
-            answerText,
-            analysis,
-            wrongAnswerText,
-            mistakeAnalysis,
-            mistakeStatus,
-            subject,
-            knowledgePoints,
-            requiresImage,
-            gradeSemester: parseRecognizedGrade(this.extractTag(text, "grade_semester")),
-            difficultyStars: parseDifficultyStars(this.extractTag(text, "difficulty_stars")),
-            ...parseFigure(this.extractTag(text, "has_figure"), this.extractTag(text, "figure_svg")),
-        };
-
-        // Final Schema Validation
-        const validation = safeParseParsedQuestion(result);
-        if (validation.success) {
-            logger.debug('Validated successfully via XML tags');
-            return validation.data;
-        } else {
-            logger.warn({ validationError: validation.error.format() }, 'Schema validation warning');
-            return result;
-        }
+        return parseQuestionXml(text);
     }
 
     async analyzeImage(
@@ -162,7 +105,7 @@ export class AzureOpenAIProvider implements AIService {
         subject?: string | null,
         gradeSemester?: string | null,
         candidateTags?: CandidateTags
-    ): Promise<ParsedQuestion> {
+    ): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -185,7 +128,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.box('📝 Full System Prompt', systemPrompt.system);
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     {
@@ -206,7 +149,7 @@ export class AzureOpenAIProvider implements AIService {
                     },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             logger.box('📦 Full API Response', JSON.stringify(response, null, 2));
 
@@ -221,7 +164,9 @@ export class AzureOpenAIProvider implements AIService {
             logger.box('🤖 AI Raw Response', text);
 
             if (!text) throw new Error("Empty response from AI");
-            const parsedResult = normalizeAiQuestionTags(this.parseResponse(text), tagOptions);
+            const parsed = parseAnalyzeResponse(text);
+            const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 
@@ -266,7 +211,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.box('📝 User Prompt', userPrompt);
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     {
@@ -279,7 +224,7 @@ export class AzureOpenAIProvider implements AIService {
                     },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || "";
 
@@ -304,16 +249,21 @@ export class AzureOpenAIProvider implements AIService {
 
 
     async completeJson(request: { system: string; user: string }): Promise<StructuredCompletion> {
-        const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
-            model: this.deployment,
-            messages: [
-                { role: "system", content: request.system },
-                { role: "user", content: request.user },
-            ],
-            max_tokens: maxTokens,
-        }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.deployment);
-        const text = response.choices[0]?.message?.content || "";
-        return parseJsonCompletion(text, usageFromOpenAi(response.usage));
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
+                model: this.deployment,
+                messages: [
+                    { role: "system", content: request.system },
+                    { role: "user", content: request.user },
+                ],
+                max_tokens: maxTokens,
+            }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            const text = response.choices[0]?.message?.content || "";
+            return parseJsonCompletion(text, usageFromOpenAi(response.usage));
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during structured JSON completion');
+            this.handleError(error);
+        }
     }
 
     async reanswerQuestion(
@@ -352,14 +302,14 @@ export class AzureOpenAIProvider implements AIService {
                 logger.debug({ imageBase64Type: typeof imageBase64, hasValue: !!imageBase64 }, 'No image data');
             }
 
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
                     { role: "user", content: userContent }
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             logger.debug({ response: JSON.stringify(response) }, 'Full API response');
 
@@ -375,26 +325,13 @@ export class AzureOpenAIProvider implements AIService {
 
             if (!text) throw new Error("Empty response from AI");
 
-            // 解析响应
-            const answerText = this.extractTag(text, "answer_text") || "";
-            const analysis = this.extractTag(text, "analysis") || "";
-            const knowledgePointsRaw = this.extractTag(text, "knowledge_points") || "";
-            const knowledgePoints = knowledgePointsRaw.split(/[,，\n]/).map(k => k.trim()).filter(k => k.length > 0);
-            const wrongAnswerText = this.extractTag(text, "wrong_answer_text") || "";
-            const mistakeAnalysis = this.extractTag(text, "mistake_analysis") || "";
-            const mistakeStatus = normalizeMistakeStatusForSave(
-                this.extractTag(text, "mistake_status"),
-                wrongAnswerText
-            );
-
             logger.info('Reanswer parsed successfully');
 
-            return normalizeAiQuestionTags({ answerText, analysis, knowledgePoints, wrongAnswerText, mistakeAnalysis, mistakeStatus, subject: normalizeSubject(this.extractTag(text, "subject")), gradeSemester: parseRecognizedGrade(this.extractTag(text, "grade_semester")), difficultyStars: parseDifficultyStars(this.extractTag(text, "difficulty_stars")) }, { candidateTags });
+            return parseReanswerXml(text, candidateTags);
 
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during reanswer');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -409,7 +346,7 @@ export class AzureOpenAIProvider implements AIService {
         }, 'GeoGebra Analysis Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -422,32 +359,10 @@ export class AzureOpenAIProvider implements AIService {
             logger.debug({ rawResponse: text }, 'GeoGebra AI raw response');
 
             if (!text) throw new Error("Empty response from AI");
-
-            // Extract JSON from response (handle possible markdown code blocks)
-            let jsonStr = text.trim();
-            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-            if (jsonMatch) {
-                jsonStr = jsonMatch[1].trim();
-            }
-
-            // Try to find JSON object
-            const objStart = jsonStr.indexOf('{');
-            const objEnd = jsonStr.lastIndexOf('}');
-            if (objStart !== -1 && objEnd !== -1) {
-                jsonStr = jsonStr.substring(objStart, objEnd + 1);
-            }
-
-            const parsed = JSON.parse(jsonStr);
-
-            return {
-                suitable: Boolean(parsed.suitable),
-                commands: Array.isArray(parsed.commands) ? parsed.commands : [],
-                description: parsed.description || "",
-            };
+            return parseGeogebraJson(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during GeoGebra analysis');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -460,7 +375,7 @@ export class AzureOpenAIProvider implements AIService {
         }, 'Mastery Evaluation Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -484,16 +399,15 @@ export class AzureOpenAIProvider implements AIService {
     async recognizeGrade(questionText: string): Promise<string | null> {
         const prompt = generateGradeRecognitionRequest(questionText);
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
                 max_tokens: maxTokens,
-            }), 1024, () => logger.warn('年级识别输出截断，增加上限重试'));
+            }), 1024, () => logger.warn('年级识别输出截断，增加上限重试'), this.model);
             return parseGradeRecognition(response.choices[0]?.message?.content || '');
         } catch (error) {
             logger.error({ error }, '识别题目年级失败');
             this.handleError(error);
-            throw error;
         }
     }
 
@@ -502,7 +416,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI' }, 'Answer Grading Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -528,7 +442,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI', mode: input.mode, pages: input.images.length }, 'Exam Paper Read Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -538,13 +452,13 @@ export class AzureOpenAIProvider implements AIService {
                     ] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Exam paper read AI raw response');
 
             if (!text) throw new Error("Empty response from AI");
-            return parseExamPaperRead(text);
+            return parseExamPaperByMode(input.mode, text, input.images.length);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during exam paper read');
             this.handleError(error);
@@ -562,7 +476,7 @@ export class AzureOpenAIProvider implements AIService {
         }, 'Tag Suggestion Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -588,14 +502,14 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, imageSize: imageBase64.length }, 'Figure SVG Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
                     { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }, { type: "text", text: prompt.user }] },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
@@ -614,14 +528,14 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, fields: Object.keys(input) }, 'LaTeX Fix Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
                     { role: "user", content: prompt.user },
                 ],
                 max_tokens: maxTokens,
-            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
+            }), getInitialMaxTokens(this.model), () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
 
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'LaTeX fix AI raw response');
@@ -640,7 +554,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, questionLength: questionText.length }, 'SVG Animation Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -666,7 +580,7 @@ export class AzureOpenAIProvider implements AIService {
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, svgLength: svgAnimation.length }, 'SVG Narration Request');
 
         try {
-            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+            const response = await withTruncationRetry((maxTokens) => this.createChatCompletion({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: prompt.system },
@@ -687,44 +601,7 @@ export class AzureOpenAIProvider implements AIService {
         }
     }
 
-    private handleError(error: unknown) {
-        logger.error({ error }, 'Azure OpenAI error');
-        if (error instanceof Error) {
-            if (error.message === AI_OUTPUT_TRUNCATED || error.message.startsWith('AI_RESPONSE_ERROR:')) {
-                throw error;
-            }
-            const msg = error.message.toLowerCase();
-            if (msg.includes('fetch failed') || msg.includes('network') || msg.includes('connect')) {
-                throw new Error("AI_CONNECTION_FAILED", { cause: error });
-            }
-            // 超时错误 (包括 408 Request Timeout)
-            if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted') || msg.includes('408')) {
-                throw new Error("AI_TIMEOUT_ERROR", { cause: error });
-            }
-            // 配额/频率限制错误
-            if (msg.includes('quota') || msg.includes('额度') || msg.includes('rate limit') || msg.includes('429') || msg.includes('too many')) {
-                throw new Error("AI_QUOTA_EXCEEDED", { cause: error });
-            }
-            // 权限/403 错误
-            if (msg.includes('403') || msg.includes('forbidden') || msg.includes('permission')) {
-                throw new Error("AI_PERMISSION_DENIED", { cause: error });
-            }
-            // 资源不存在/404 错误
-            if (msg.includes('404') || msg.includes('not found') || msg.includes('does not exist')) {
-                throw new Error("AI_NOT_FOUND", { cause: error });
-            }
-            // 服务器错误 (500/502/503/504)
-            if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') ||
-                msg.includes('无可用') || msg.includes('overloaded') || msg.includes('unavailable')) {
-                throw new Error("AI_SERVICE_UNAVAILABLE", { cause: error });
-            }
-            if (msg.includes('invalid json') || msg.includes('parse')) {
-                throw new Error("AI_RESPONSE_ERROR", { cause: error });
-            }
-            if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) {
-                throw new Error("AI_AUTH_ERROR", { cause: error });
-            }
-        }
-        throw new Error("AI_UNKNOWN_ERROR", { cause: error });
+    private handleError(error: unknown): never {
+        normalizeAiError(error, 'Azure OpenAI');
     }
 }

@@ -57,7 +57,7 @@ async function handlePost(
 
         const fixed = await trackBackgroundTask(
             { userId: user.id, kind: 'fix_latex', subject: describeQuestion(item), link: `/error-items/${id}` },
-            () => getAIService().fixLatex(input)
+            () => getAIService('text').fixLatex(input)
         );
         const updated: Partial<Record<LatexField, string>> = {};
         for (const field of Object.keys(input) as LatexField[]) {

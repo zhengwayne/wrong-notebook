@@ -57,19 +57,25 @@
 
 ### 快速开始
 
-1. **修改配置文件**
+1. **准备密钥与配置文件**
+
+新部署先在部署目录运行以下命令生成本实例的 `.env`。已有实例沿用保存的 `NEXTAUTH_SECRET`。
+
+```bash
+(umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
+```
 
 ```yaml
 # docker-compose.https.yml
 services:
   wrong-notebook:
     ports:
-      - "443:443"           # HTTPS 端口
+      - "443:8443"          # HTTPS 端口映射（宿主机 443 -> 容器内非特权端口 8443）
     environment:
       - HTTPS_ENABLED=true
       - CERT_DOMAIN=YOUR_IP_OR_DOMAIN  # 替换为你的 IP 或域名
       - NEXTAUTH_URL=https://YOUR_IP_OR_DOMAIN
-      - NEXTAUTH_SECRET=your_secret_key
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in the deployment .env}
       - AUTH_TRUST_HOST=true
     volumes:
       - ./certs:/app/certs  # 证书持久化
@@ -101,7 +107,7 @@ docker logs wrong-notebook | grep -i cert
 | `CERT_DOMAIN` | 否 | `localhost` | 证书的 CN（你的 IP 或域名） |
 | `NEXTAUTH_URL` | 是 | - | 完整访问地址 |
 | `AUTH_TRUST_HOST` | 是 | - | 设为 `true` |
-| `HTTPS_PORT` | 否 | `443` | HTTPS 监听端口 |
+| `HTTPS_PORT` | 否 | `8443` | 容器内 HTTPS 监听端口（通过端口映射对外暴露 443） |
 
 ### 使用自定义证书
 

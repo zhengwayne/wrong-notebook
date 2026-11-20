@@ -5,10 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
-import { authOptions } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { defineApiRoute } from '@/lib/server/api-route';
 import type { KnowledgeTag } from '@prisma/client';
 
 const logger = createLogger('api:tags');
@@ -58,13 +57,8 @@ function buildTagTree(tags: KnowledgeTag[]): TagTreeNode[] {
  *   - subject: 学科 (必填, e.g., 'math')
  *   - flat: 是否返回扁平列表 (可选, 默认 false 返回树)
  */
-export async function GET(request: NextRequest) {
+export const GET = defineApiRoute<NextRequest>({ auth: 'user' }, async (request, { user }) => {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const { searchParams } = new URL(request.url);
         const subject = searchParams.get('subject');
         const flat = searchParams.get('flat') === 'true';
@@ -79,7 +73,7 @@ export async function GET(request: NextRequest) {
                 subject,
                 OR: [
                     { isSystem: true },
-                    { userId: session.user.id },
+                    { userId: user.id },
                 ],
             },
             orderBy: [
@@ -125,19 +119,14 @@ export async function GET(request: NextRequest) {
         logger.error({ error }, 'Error fetching tags');
         return NextResponse.json({ error: 'Failed to fetch tags' }, { status: 500 });
     }
-}
+});
 
 /**
  * POST /api/tags
  * Body: { name: string, subject: string, parentId?: string }
  */
-export async function POST(request: NextRequest) {
+export const POST = defineApiRoute<NextRequest>({ auth: 'user' }, async (request, { user }) => {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const body = await request.json();
         const { name, subject, parentId } = body;
 
@@ -151,7 +140,7 @@ export async function POST(request: NextRequest) {
             where: {
                 name: name.trim(),
                 subject,
-                userId: session.user.id,
+                userId: user.id,
                 parentId: parentId || null,
             },
         });
@@ -167,7 +156,7 @@ export async function POST(request: NextRequest) {
                 subject,
                 parentId: parentId || null,
                 isSystem: false,
-                userId: session.user.id,
+                userId: user.id,
             },
         });
 
@@ -177,20 +166,15 @@ export async function POST(request: NextRequest) {
         logger.error({ error }, 'Error creating tag');
         return NextResponse.json({ error: 'Failed to create tag' }, { status: 500 });
     }
-}
+});
 
 /**
  * DELETE /api/tags
  * Query params: id (tag ID to delete)
  * Only allows deleting user's own custom tags
  */
-export async function DELETE(request: NextRequest) {
+export const DELETE = defineApiRoute<NextRequest>({ auth: 'user' }, async (request, { user }) => {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const { searchParams } = new URL(request.url);
         const tagId = searchParams.get('id');
 
@@ -202,7 +186,7 @@ export async function DELETE(request: NextRequest) {
         const tag = await prisma.knowledgeTag.findFirst({
             where: {
                 id: tagId,
-                userId: session.user.id,
+                userId: user.id,
                 isSystem: false,
             },
         });
@@ -221,4 +205,4 @@ export async function DELETE(request: NextRequest) {
         logger.error({ error }, 'Error deleting tag');
         return NextResponse.json({ error: 'Failed to delete tag' }, { status: 500 });
     }
-}
+});

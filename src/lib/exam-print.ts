@@ -20,6 +20,18 @@ export const EXAM_PRINT_CSS = `
 .exam-sheet .question-figure img { display: block; margin: 0 auto; max-width: 100%; max-height: 360px; background: #fff; }
 .exam-sheet .markdown-content table { border-collapse: collapse; }
 .exam-sheet .markdown-content td, .exam-sheet .markdown-content th { border: 1px solid #999; padding: 2px 6px; }
+.exam-sheet .choice-options { display: grid; column-gap: 24px; row-gap: 4px; margin-bottom: 12px; }
+.exam-sheet .choice-options[data-columns="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.exam-sheet .choice-options[data-columns="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.exam-sheet .choice-options[data-columns="1"] { grid-template-columns: minmax(0, 1fr); }
+.exam-sheet .choice-options > div { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.exam-sheet .choice-options > div > span:first-child { flex-shrink: 0; }
+.exam-sheet .choice-options .markdown-content { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.exam-sheet .choice-options .markdown-content p { margin: 0; }
+@media screen and (max-width: 639px) {
+  .exam-sheet .choice-options[data-columns="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exam-sheet .choice-options[data-columns="2"] { grid-template-columns: minmax(0, 1fr); }
+}
 @media print { .exam-sheet { padding: 0; max-width: none; } @page { size: A4; margin: 15mm; } }
 `;
 

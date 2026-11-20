@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -24,8 +24,16 @@ model User {
   gradeRecognitionMode String @default("fixed") // 录入年级规则：fixed 固定，ai 按题目识别
   fixedGradeSemester String? // 固定年级学期，未指定时沿用账户当前年级
 
-  role      String   @default("user") // "admin" or "user"
-  isActive  Boolean  @default(true)   // 用户是否启用
+  role        String   @default("user") // "admin" or "user"
+  isActive    Boolean  @default(true)   // 用户是否启用
+  authVersion Int      @default(0)      // 会话版本号：改密、禁用或权限变更后递增，令旧 JWT 立即失效
+
+  /// JSON 数组：teacher / parent / self，未确认前为 []
+  personas             String    @default("[]")
+  /// 当前使用的身份，未确认前为空
+  activePersona        String?
+  /// 首次确认身份的时间；为空则下次登录需要一次性确认
+  personasConfirmedAt  DateTime?
 
   confirmBeforeImport Boolean @default(false) // 导入题目前是否进入人工校对页
   questionDuplicateThreshold Float @default(90) // 百分比，相似度严格大于此值时判重
@@ -34,6 +42,12 @@ model User {
   enableGeogebra Boolean @default(false) // 是否显示 GeoGebra 动态演示
   enableSvgAnimation Boolean @default(true) // 是否显示 SVG 动画讲解
   themePreference String @default("system") // 界面主题：system 跟随系统、light 浅色、dark 深色
+  reviewAlgorithmVersion String @default("ebbinghaus-v1") // 逐题复习算法：ebbinghaus-v1 | fsrs-v1
+
+  /// 家长专注做题模式 4 位 PIN 码的 bcrypt 哈希（不随普通查询或备份导出）
+  parentPinHash        String?
+  parentPinFailedCount Int       @default(0)
+  parentPinLockedUntil DateTime?
 
   errorItems ErrorItem[]
   subjects   Subject[]
@@ -44,6 +58,15 @@ model User {
   gradingClasses GradingClass[]
   gradingTasks   GradingTask[]
   variantRuns    VariantRun[]
+  knowledgeMasteries KnowledgeMastery[]
+  learningPaths LearningPath[]
+  learners     Learner[]
+  parentPapers ParentPaper[]
+  dailyHomeworks DailyHomeworkItem[]
+  itemMemories ItemMemory[]
+  sourceImports SourceImport[]
+  asyncOperations AsyncOperation[]
+  aiDailyQuotas   AiDailyQuota[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -145,14 +168,20 @@ model ErrorItem {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  learnerId        String?
+  learner          Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+  provenanceId     String?
+
   reviewSchedules ReviewSchedule[]
   practiceRecords PracticeRecord[]
   examQuestions   ExamQuestion[]
   variantRuns     VariantRun[]
+  itemMemories    ItemMemory[]
 
   // 列表、统计都按用户取错题并按时间排序；SQLite 不会自动给外键建索引
   @@index([userId, createdAt])
   @@index([subjectId])
+  @@index([learnerId])
 }
 
 model ReviewSchedule {
@@ -194,11 +223,15 @@ model PracticeRecord {
   examQuestionId String?
   examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
   
+  learnerId  String?
+  learner    Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([errorItemId, createdAt])
   @@index([examQuestionId])
   @@index([userId, createdAt])
+  @@index([learnerId])
   variantItems VariantItem[]
 }
 
@@ -207,6 +240,8 @@ model ExamPaper {
   id         String   @id @default(cuid())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId  String?
+  learner    Learner? @relation(fields: [learnerId], references: [id], onDelete: SetNull)
   title      String
   status     String   @default("generating") // generating | ready | partial | failed
   scope      String   // unmastered | mastered | all
@@ -223,6 +258,7 @@ model ExamPaper {
   updatedAt  DateTime @updatedAt
 
   @@index([userId, createdAt])
+  @@index([userId, learnerId, createdAt])
 }
 
 model ExamQuestion {
@@ -284,6 +320,7 @@ model GradingStudent {
   order       Int      @default(0)
   submissions GradingSubmission[]
   variantRuns VariantRun[]
+  learner     Learner?
   createdAt   DateTime @default(now())
 
   @@unique([classId, studentNo])
@@ -293,20 +330,25 @@ model GradingStudent {
 
 // 一次改卷任务（某班某次考试）
 model GradingTask {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  classId     String
-  class       GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
-  title       String
-  subjectName String   @default("数学") // 导入错题时使用的学科名
-  examPaperId String?  // 从已有试卷生成答案时记录来源
-  keyImageUrl String?  // 拍照识别的答案卷（压缩后的 data URL）
-  extraClassIds String? // JSON 数组：同一次考试一起收卷的其他班级
-  questions   GradingKeyQuestion[]
-  submissions GradingSubmission[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId         String
+  class           GradingClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title           String
+  subjectName     String    @default("数学") // 导入错题时使用的学科名
+  taskMode        String    @default("standard") // standard 标准答案模式 | quick 随堂无答案速批
+  scoringMode     String    @default("numeric")  // numeric 数值分制 | grade 等级制(优/良/合格/待订正)
+  deadline        DateTime?
+  allowSelfSubmit Boolean   @default(false)
+  submitTokenHash String?   @unique
+  examPaperId     String?   // 从已有试卷生成答案时记录来源
+  keyImageUrl     String?   // 拍照识别的答案卷（压缩后的 data URL）
+  extraClassIds   String?   // JSON 数组：同一次考试一起收卷的其他班级
+  questions       GradingKeyQuestion[]
+  submissions     GradingSubmission[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId, createdAt])
   @@index([classId])
@@ -322,6 +364,7 @@ model GradingKeyQuestion {
   type            String  @default("objective") // objective 客观题 | subjective 主观题
   maxScore        Float   @default(1)
   answer          String  @default("")
+  answerSource    String  @default("manual") // manual | exam_paper | key_image | ai_inferred
   acceptedAnswers String? // JSON 数组：其他可接受的答案写法
   questionText    String?
   knowledgePoints String? // JSON 数组
@@ -332,27 +375,37 @@ model GradingKeyQuestion {
 
 // 一位学生的一份答卷（可多页）
 model GradingSubmission {
-  id           String   @id @default(cuid())
-  taskId       String
-  task         GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  studentId    String?
-  student      GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  detectedName String?  // AI 从卷面读出的姓名
-  detectedClass String? // AI 从卷面读出的班级
-  detectedStudentNo String? // AI 从卷面读出的学号
-  matchStatus  String?  // auto 自动匹配 | review 待确认 | manual 老师指定
-  matchConfidence Float? // 自动匹配置信度 0~1
-  matchReason  String?  // JSON：匹配原因代码与参数
-  matchCandidates String? // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
-  images       String   // JSON 数组：压缩后的 data URL，每页一张
-  status       String   @default("pending") // pending | grading | graded | failed | confirmed
-  totalScore   Float?
-  error        String?
-  confirmedAt  DateTime?
-  importedCount Int     @default(0) // 确认后导入错题本的题目数
-  results      GradingResult[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  taskId            String
+  task              GradingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  studentId         String?
+  student           GradingStudent? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  detectedName      String?   // AI 从卷面读出的姓名
+  detectedClass     String?   // AI 从卷面读出的班级
+  detectedStudentNo String?   // AI 从卷面读出的学号
+  matchStatus       String?   // auto 自动匹配 | review 待确认 | manual 老师指定
+  matchConfidence   Float?    // 自动匹配置信度 0~1
+  matchReason       String?   // JSON：匹配原因代码与参数
+  matchCandidates   String?   // JSON 数组：待确认时的候选学生 [{studentId, confidence, reason}]
+  images            String    // JSON 数组：压缩后的 data URL，每页一张
+  status            String    @default("pending") // pending | grading | graded | failed | confirmed
+  reviewBucket      String    @default("yellow")  // green 绿灯免检 | yellow 黄灯待复核
+  handwritingLevel  String?   // excellent | good | fair | needs_work
+  neatnessLevel     String?   // excellent | good | fair | needs_work
+  attitudeLevel     String?   // excellent | good | fair | needs_work
+  processTags       String?   // JSON 数组：快捷评价胶囊 key
+  visualAlerts      String?   // JSON 数组：AI 宏观视觉异常预警
+  teacherComment    String?   // 答卷级综合评语
+  shareTokenHash    String?   @unique
+  shareExpiresAt    DateTime?
+  version           Int       @default(0) // 乐观锁版本号：修改判分、指定学生或确认入库时递增
+  totalScore        Float?
+  error             String?
+  confirmedAt       DateTime?
+  importedCount     Int       @default(0) // 确认后导入错题本的题目数
+  results           GradingResult[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([taskId, createdAt])
   @@index([studentId])
@@ -369,9 +422,13 @@ model GradingResult {
   verdict       String  // correct | partial | wrong | blank
   score         Float   @default(0)
   aiScore       Float?  // AI 建议分（主观题）
+  confidence    Float?  // AI 识别与初判把握度 0~1
+  bbox          String? // 归一化题框 JSON：{ pageIndex, x, y, width, height }
   reason        String?
+  comment       String? // 老师单题文字批注
   source        String  @default("auto") // auto 本地比对 | ai | teacher 老师改判
   errorItemId   String? // 导入错题本后的错题 ID
+  provenanceId  String?
 
   @@unique([submissionId, keyQuestionId])
   @@index([keyQuestionId])
@@ -444,6 +501,7 @@ model VariantItem {
   examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
   reviewNote   String?
   reviewedAt   DateTime?
+  provenanceId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   stages       VariantStageLog[]
@@ -471,3 +529,304 @@ model VariantStageLog {
   @@index([runId, createdAt])
 }
 
+
+// ===== 学习路径：知识点掌握模型与分步路径（借鉴 DeepTutor Mastery Path 的阶段门与复述复习，独立实现） =====
+
+// 学习者：本人（默认，错题可不挂 learnerId）、家长名下的孩子（每户最多 3 个）、老师花名册学生
+model Learner {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// self | child | student
+  kind             String
+  name             String
+  /// 老师的学生：对应花名册，studentKey 仍用 GradingStudent.id
+  gradingStudentId String?  @unique
+  gradingStudent   GradingStudent? @relation(fields: [gradingStudentId], references: [id], onDelete: SetNull)
+  order            Int      @default(0)
+  archivedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  errorItems      ErrorItem[]
+  practiceRecords PracticeRecord[]
+  parentPapers    ParentPaper[]
+  dailyHomeworks  DailyHomeworkItem[]
+  itemMemories    ItemMemory[]
+  examPapers      ExamPaper[]
+
+  @@index([userId, kind])
+}
+
+// 回填审计：只记录本次脚本改过的行，便于原样撤回，不删除任何错题
+model LearnerBackfillAudit {
+  id                String   @id @default(cuid())
+  batchId           String
+  userId            String
+  entityType        String   // learner | errorItem | practiceRecord
+  entityId          String
+  action            String   // create | link
+  previousLearnerId String?
+  newLearnerId      String?
+  createdAt         DateTime @default(now())
+
+  @@index([batchId])
+  @@index([entityType, entityId])
+}
+
+
+// 家长为孩子上传的试卷：先存为待识别草稿，确认前不写入错题本
+model ParentPaper {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  title     String?
+  /// 家长选择的学科：math / chinese 等，对应 NOTEBOOK_SUBJECTS
+  subjectKey String?
+  /// pending_recognition | recognizing | pending_confirmation | confirmed | failed
+  status    String   @default("pending_recognition")
+  /// 乐观锁版本号：编辑单题判定/框选或确认入库时递增
+  version   Int      @default(0)
+  /// 可选答案卷照片，JSON 数组（data URL）
+  answerKeyImages String?
+  hasAnswerKey    Boolean  @default(false)
+  handwritingLevel String?
+  neatnessLevel    String?
+  attitudeLevel    String?
+  processTags      String?
+  parentComment    String?
+  errorMessage    String?
+  recognizedAt    DateTime?
+  confirmedAt     DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pages     ParentPaperPage[]
+  questions ParentPaperQuestion[]
+
+  @@index([userId, learnerId, createdAt])
+  @@index([userId, status])
+}
+
+model ParentPaperPage {
+  id               String   @id @default(cuid())
+  paperId          String
+  paper            ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  position         Int
+  imageUrl         String
+  originalImageUrl String?
+  createdAt        DateTime @default(now())
+
+  @@index([paperId, position])
+}
+
+
+/// 家长试卷识别出的题目：确认前不写入错题本
+model ParentPaperQuestion {
+  id                  String   @id @default(cuid())
+  paperId             String
+  paper               ParentPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  position            Int
+  number              String
+  /// objective | subjective
+  type                String   @default("objective")
+  questionText        String   @default("")
+  studentAnswer       String   @default("")
+  correctAnswer       String   @default("")
+  /// correct | wrong | partial
+  verdict             String
+  overrideVerdict     String?
+  confidence          Float    @default(0)
+  errorCause          String?
+  knowledgePoints     String   @default("[]")
+  /// 归一化 bbox JSON：{ pageIndex, x, y, width, height }，无效时为空
+  bbox                String?
+  subjectHint         String?
+  importedErrorItemId String?
+  provenanceId        String?
+  selected            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([paperId, position])
+}
+
+model KnowledgeMastery {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentKey     String   // "self" 或花名册学生 id
+  knowledgePoint String
+  pKnown         Float    @default(0.3) // BKT 掌握概率
+  retrievability Float    @default(1)
+  stabilityDays  Float    @default(1)
+  evidenceCount  Int      @default(0)
+  lastCorrect    Boolean?
+  lastObservedAt DateTime?
+  dueAt          DateTime?
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, studentKey, knowledgePoint])
+  @@index([userId, studentKey])
+  @@index([userId, dueAt])
+}
+
+model LearningPath {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentKey   String
+  studentName  String
+  classId      String?
+  version      Int      @default(1)
+  status       String   @default("active") // active | completed
+  evidenceHash String
+  planReason   String?
+  aiSuggestCount Int    @default(0)
+  aiSuggestedAt  DateTime?
+  plannedAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  steps        LearningPathStep[]
+
+  @@unique([userId, studentKey])
+  @@index([userId, classId])
+}
+
+model LearningPathStep {
+  id              String    @id @default(cuid())
+  pathId          String
+  path            LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  position        Int
+  type            String    // review_explanation | variant_practice | spaced_review | checkpoint
+  title           String
+  reason          String
+  knowledgePoints String    // JSON 数组
+  errorItemIds    String?   // JSON 数组
+  variantRunId    String?
+  status          String    @default("pending") // pending | in_progress | completed | skipped
+  locked          Boolean   @default(false)
+  dueAt           DateTime?
+  href            String?
+  teacherNote     String?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([pathId, position])
+}
+
+/// AI 产出记录的提示词、模型与解析器溯源（相同组合复用同一行）
+model AiProvenance {
+  id            String   @id @default(cuid())
+  task          String   // analyze | grade | exam-read | variant | reanswer
+  provider      String   // gemini | openai | azure | anthropic | 渠道预设名
+  model         String
+  promptVersion String   // prompts.ts 中对应提示词规范化文本的 SHA-256 前 12 位
+  parserVersion String   // 解析与校验逻辑版本
+  createdAt     DateTime @default(now())
+
+  @@unique([task, provider, model, promptVersion, parserVersion])
+}
+
+/// 逐题记忆模型状态（FSRS 风格参数，可完全由 PracticeRecord 重算）
+model ItemMemory {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId        String?
+  learner          Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+  scopeKey         String    @default("self")
+  errorItemId      String
+  errorItem        ErrorItem @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
+  stability        Float     @default(1)
+  difficulty       Float     @default(5)
+  lastReviewAt     DateTime?
+  dueAt            DateTime
+  reps             Int       @default(0)
+  lapses           Int       @default(0)
+  algorithmVersion String    @default("fsrs-v1")
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([userId, scopeKey, errorItemId, algorithmVersion])
+  @@index([userId, scopeKey, dueAt])
+  @@index([errorItemId])
+}
+
+/// 批量改卷与家长试卷确认入库去重索引：确保同一源题目在并发确认下至多生成一条错题
+model SourceImport {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKind       String   // parent_paper | grading_submission
+  sourceId         String
+  sourceQuestionId String
+  errorItemId      String
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, sourceKind, sourceQuestionId])
+  @@index([userId, sourceKind, sourceId])
+  @@index([errorItemId])
+}
+
+/// 统一异步作业、幂等操作与断线可恢复请求状态表
+model AsyncOperation {
+  id             String    @id @default(cuid())
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopeKey       String    @default("") // 非空作用域键：避免 SQLite 唯一索引下 NULL 不互斥
+  category       String    // idempotent | recoverable | task
+  kind           String
+  idempotencyKey String
+  requestHash    String?
+  status         String    @default("running") // running | succeeded | failed | interrupted
+  statusCode     Int?
+  subject        String?
+  link           String?
+  progressJson   String?
+  responseJson   String?
+  error          String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  expiresAt      DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([scopeKey, category, kind, idempotencyKey])
+  @@index([userId, category, status, startedAt])
+  @@index([expiresAt])
+}
+
+/// 用户按应用时区自然日统计的 AI 调用原子计数表
+model AiDailyQuota {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayKey    String   // YYYY-MM-DD（应用时区）
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dayKey])
+  @@index([dayKey])
+}
+
+/// 家长每日全科作业待办项
+model DailyHomeworkItem {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnerId        String
+  learner          Learner   @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  dateKey          String    // YYYY-MM-DD（应用时区）
+  subjectKey       String    @default("math")
+  category         String    @default("written") // written 书面 | recitation 背诵 | dictation 听写 | review 错题复习
+  title            String
+  estimatedMinutes Int?
+  actualMinutes    Int?
+  completed        Boolean   @default(false)
+  completedAt      DateTime?
+  order            Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId, learnerId, dateKey])
+}

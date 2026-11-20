@@ -2,6 +2,7 @@
  * /api/user API 集成测试
  * 测试用户信息获取和更新接口
  */
+import { legacyAdminPasswordSample } from '../fixtures/legacy-admin';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
@@ -39,17 +40,30 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 // Mock bcryptjs
-vi.mock('bcryptjs', () => ({
+vi.mock('bcryptjs', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('bcryptjs')>()),
     hash: vi.fn((password: string) => Promise.resolve(`hashed_${password}`)),
 }));
 
 // Import after mocks
 import { GET, PATCH } from '@/app/api/user/route';
+import { userUpdateSchema } from '@/lib/user-profile-schema';
+import { GRADE_SEMESTERS } from '@/lib/grade-options';
 import type { Session } from 'next-auth';
 
 describe('/api/user', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.mockPrismaUser.findUnique.mockResolvedValue({
+            id: 'user-1',
+            email: 'test@example.com',
+            name: 'Test User',
+            role: 'user',
+            isActive: true,
+            authVersion: 0,
+            educationStage: 'junior_high',
+            enrollmentYear: 2024,
+        });
     });
 
     describe('GET /api/user', () => {
@@ -72,13 +86,32 @@ describe('/api/user', () => {
         });
 
         it('应该返回 404 当用户不存在', async () => {
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(null);
+            mocks.mockPrismaUser.findUnique
+                .mockResolvedValueOnce({
+                    id: 'user-1',
+                    email: 'test@example.com',
+                    name: 'Test User',
+                    role: 'user',
+                    isActive: true,
+                    authVersion: 0,
+                })
+                .mockResolvedValueOnce(null);
 
             const response = await GET();
             const data = await response.json();
 
             expect(response.status).toBe(404);
             expect(data.message).toBe('User not found');
+        });
+
+        it('数据库用户不存在或会话版本失配时返回 401 SESSION_REVOKED', async () => {
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce(null);
+
+            const response = await GET();
+            const data = await response.json();
+
+            expect(response.status).toBe(401);
+            expect(data.code).toBe('SESSION_REVOKED');
         });
     });
 
@@ -129,6 +162,34 @@ describe('/api/user', () => {
             expect(response.status).toBe(200);
             expect(mocks.mockPrismaUser.update.mock.calls[0][0].data).toEqual({ enableSvgAnimation: false });
             expect(mocks.mockPrismaUser.update.mock.calls[0][0].select.enableSvgAnimation).toBe(true);
+        });
+
+        it('应该更新「分阶段变式流水线」偏好（开启与关闭），并在响应中返回实际值', async () => {
+            for (const enabled of [false, true]) {
+                mocks.mockPrismaUser.update.mockResolvedValue({ variantPipelineEnabled: enabled });
+
+                const response = await PATCH(new Request('http://localhost/api/user', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ variantPipelineEnabled: enabled }),
+                    headers: { 'Content-Type': 'application/json' },
+                }));
+
+                expect(response.status).toBe(200);
+                expect(await response.json()).toEqual({ variantPipelineEnabled: enabled });
+                expect(mocks.mockPrismaUser.update.mock.calls.at(-1)?.[0].data).toEqual({ variantPipelineEnabled: enabled });
+                expect(mocks.mockPrismaUser.update.mock.calls.at(-1)?.[0].select.variantPipelineEnabled).toBe(true);
+            }
+        });
+
+        it('分阶段变式流水线偏好不是布尔值时拒绝更新', async () => {
+            const response = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ variantPipelineEnabled: 'true' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+
+            expect(response.status).toBe(400);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
         });
 
         it('应该更新界面主题偏好，并在响应中返回该字段', async () => {
@@ -393,6 +454,46 @@ describe('/api/user', () => {
             expect(response.status).toBe(400);
             expect(data.message).toBe('Invalid email format');
         });
+
+        it('修改邮箱时自动归一化为小写，已被他人占用时返回 409', async () => {
+            mocks.mockPrismaUser.findUnique
+                .mockResolvedValueOnce({
+                    id: 'user-1',
+                    email: 'test@example.com',
+                    role: 'user',
+                    isActive: true,
+                    authVersion: 0,
+                })
+                .mockResolvedValueOnce({ id: 'other-user', email: 'taken@example.com' });
+            const conflictRes = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ email: 'Taken@Example.COM' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(conflictRes.status).toBe(409);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
+
+            mocks.mockPrismaUser.findUnique
+                .mockResolvedValueOnce({
+                    id: 'user-1',
+                    email: 'test@example.com',
+                    role: 'user',
+                    isActive: true,
+                    authVersion: 0,
+                })
+                .mockResolvedValueOnce(null);
+            mocks.mockPrismaUser.update.mockResolvedValueOnce({
+                name: 'Test User',
+                email: 'fresh@example.com',
+            });
+            const okRes = await PATCH(new Request('http://localhost/api/user', {
+                method: 'PATCH',
+                body: JSON.stringify({ email: ' Fresh@Example.COM ' }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(okRes.status).toBe(200);
+            expect(mocks.mockPrismaUser.update.mock.calls[0][0].data.email).toBe('fresh@example.com');
+        });
     });
 
     describe('角色权限测试', () => {
@@ -401,11 +502,19 @@ describe('/api/user', () => {
             const { getServerSession } = await import('next-auth');
             vi.mocked(getServerSession).mockResolvedValue({
                 user: {
+                    id: 'admin-1',
                     email: 'admin@localhost',
                     name: 'Admin',
                     role: 'admin',
                 },
                 expires: '2025-12-31',
+            });
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce({
+                id: 'admin-1',
+                email: 'admin@localhost',
+                role: 'admin',
+                isActive: true,
+                authVersion: 0,
             });
 
             const updatedUser = {
@@ -511,11 +620,19 @@ describe('/api/user', () => {
             const { getServerSession } = await import('next-auth');
             vi.mocked(getServerSession).mockResolvedValue({
                 user: {
+                    id: 'admin-1',
                     email: 'admin@localhost',
                     name: 'Admin',
                     role: 'admin',
                 },
                 expires: '2025-12-31',
+            });
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce({
+                id: 'admin-1',
+                email: 'admin@localhost',
+                role: 'admin',
+                isActive: true,
+                authVersion: 0,
             });
 
             const updatedUser = {
@@ -535,21 +652,30 @@ describe('/api/user', () => {
             const response = await PATCH(request);
 
             expect(response.status).toBe(200);
-            // 验证密码被哈希
+            // 验证密码被哈希且递增 authVersion
             const updateCall = mocks.mockPrismaUser.update.mock.calls[0][0];
             expect(updateCall.data.password).toBe('hashed_newAdminPassword123');
+            expect(updateCall.data.authVersion).toEqual({ increment: 1 });
         });
 
         it('管理员不能把密码改回默认密码', async () => {
             const { getServerSession } = await import('next-auth');
             vi.mocked(getServerSession).mockResolvedValue({
-                user: { email: 'admin@localhost', name: 'Admin', role: 'admin' },
+                user: { id: 'admin-1', email: 'admin@localhost', name: 'Admin', role: 'admin' },
                 expires: '2025-12-31',
+            });
+            mocks.mockPrismaUser.findUnique.mockResolvedValue({
+                id: 'admin-1',
+                email: 'admin@localhost',
+                name: 'Admin',
+                role: 'admin',
+                isActive: true,
+                authVersion: 0,
             });
 
             const request = new Request('http://localhost/api/user', {
                 method: 'PATCH',
-                body: JSON.stringify({ password: '123456' }),
+                body: JSON.stringify({ password: legacyAdminPasswordSample }),
                 headers: { 'Content-Type': 'application/json' },
             });
 
@@ -599,11 +725,19 @@ describe('/api/user', () => {
             const { getServerSession } = await import('next-auth');
             vi.mocked(getServerSession).mockResolvedValue({
                 user: {
+                    id: 'admin-1',
                     email: 'admin@localhost',
                     name: 'Admin',
                     role: 'admin',
                 },
                 expires: '2025-12-31',
+            });
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce({
+                id: 'admin-1',
+                email: 'admin@localhost',
+                role: 'admin',
+                isActive: true,
+                authVersion: 0,
             });
 
             const updatedUser = {
@@ -622,20 +756,28 @@ describe('/api/user', () => {
 
             await PATCH(request);
 
-            // 验证更新操作使用了 session 中的 email
+            // 验证更新操作使用了经 actor 校验后的用户 ID
             const updateCall = mocks.mockPrismaUser.update.mock.calls[0][0];
-            expect(updateCall.where.email).toBe('admin@localhost');
+            expect(updateCall.where.id).toBe('admin-1');
         });
 
-        it('普通用户修改信息时使用的是自己的 session email', async () => {
+        it('普通用户修改信息时使用的是自己的用户 ID', async () => {
             const { getServerSession } = await import('next-auth');
             vi.mocked(getServerSession).mockResolvedValue({
                 user: {
+                    id: 'normal-user-1',
                     email: 'normaluser@example.com',
                     name: 'Normal User',
                     role: 'user',
                 },
                 expires: '2025-12-31',
+            });
+            mocks.mockPrismaUser.findUnique.mockResolvedValueOnce({
+                id: 'normal-user-1',
+                email: 'normaluser@example.com',
+                role: 'user',
+                isActive: true,
+                authVersion: 0,
             });
 
             const updatedUser = {
@@ -654,9 +796,99 @@ describe('/api/user', () => {
 
             await PATCH(request);
 
-            // 验证更新操作使用了 session 中的 email（不能修改其他用户）
+            // 验证更新操作使用了经 actor 校验后的用户 ID（不能修改其他用户）
             const updateCall = mocks.mockPrismaUser.update.mock.calls[0][0];
-            expect(updateCall.where.email).toBe('normaluser@example.com');
+            expect(updateCall.where.id).toBe('normal-user-1');
+        });
+    });
+
+    describe('userUpdateSchema 全字段 PATCH → GET 往返护栏 (OPT-21)', () => {
+        const ROUNDTRIP_SAMPLES: Record<string, [unknown, unknown]> = {
+            name: ['Alice', 'Bob'],
+            email: ['alice@example.com', 'bob@example.com'],
+            educationStage: ['junior_high', 'senior_high'],
+            enrollmentYear: [2023, 2024],
+            gradeRecognitionMode: ['fixed', 'ai'],
+            fixedGradeSemester: [GRADE_SEMESTERS[0], GRADE_SEMESTERS[1]],
+            confirmBeforeImport: [true, false],
+            enableGeogebra: [true, false],
+            enableSvgAnimation: [false, true],
+            variantPipelineEnabled: [false, true],
+            themePreference: ['light', 'dark'],
+            questionDuplicateThreshold: [85, 92.5],
+            masteryThreshold: [60, 75],
+            reviewAlgorithmVersion: ['fsrs-v1', 'ebbinghaus-v1'],
+        };
+
+        it('schema 除 password 外的所有字段都必须在往返样本表中登记并保持 PATCH → GET 一致', async () => {
+            const schemaKeys = Object.keys(userUpdateSchema.shape).filter((key) => key !== 'password').sort();
+            expect(Object.keys(ROUNDTRIP_SAMPLES).sort()).toEqual(schemaKeys);
+
+            const originalEmail = mocks.mockSession.user.email;
+            const storedUser: Record<string, unknown> = {
+                id: 'user-roundtrip',
+                name: 'Init',
+                email: originalEmail,
+                educationStage: 'primary',
+                enrollmentYear: 2022,
+                gradeRecognitionMode: 'fixed',
+                fixedGradeSemester: null,
+                confirmBeforeImport: false,
+                enableGeogebra: false,
+                enableSvgAnimation: true,
+                variantPipelineEnabled: true,
+                themePreference: 'system',
+                questionDuplicateThreshold: 90,
+                masteryThreshold: 50,
+                reviewAlgorithmVersion: 'ebbinghaus-v1',
+            };
+
+            const project = (row: Record<string, unknown>, select?: Record<string, boolean>) => {
+                if (!select) return { ...row };
+                const out: Record<string, unknown> = {};
+                for (const [key, enabled] of Object.entries(select)) {
+                    if (enabled) out[key] = row[key];
+                }
+                return out;
+            };
+
+            const { getServerSession } = await import('next-auth');
+            vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession as unknown as Session);
+            mocks.mockPrismaUser.update.mockImplementation(async (args: { data: Record<string, unknown>; select?: Record<string, boolean> }) => {
+                Object.assign(storedUser, args.data);
+                if (typeof args.data.email === 'string') {
+                    mocks.mockSession.user.email = args.data.email;
+                }
+                return project(storedUser, args.select);
+            });
+            mocks.mockPrismaUser.findUnique.mockImplementation(async (args: { select?: Record<string, boolean> }) => {
+                return project(storedUser, args.select);
+            });
+
+            try {
+                for (const key of schemaKeys) {
+                    const [firstVal, secondVal] = ROUNDTRIP_SAMPLES[key];
+                    for (const expectedVal of [firstVal, secondVal]) {
+                        const patchRes = await PATCH(new Request('http://localhost/api/user', {
+                            method: 'PATCH',
+                            body: JSON.stringify({ [key]: expectedVal }),
+                            headers: { 'Content-Type': 'application/json' },
+                        }));
+                        expect(patchRes.status).toBe(200);
+                        const patchData = await patchRes.json();
+                        expect(patchData[key]).toEqual(expectedVal);
+
+                        const getRes = await GET();
+                        expect(getRes.status).toBe(200);
+                        const getData = await getRes.json();
+                        expect(getData[key]).toEqual(expectedVal);
+                    }
+                }
+            } finally {
+                mocks.mockSession.user.email = originalEmail;
+                mocks.mockPrismaUser.update.mockReset();
+                mocks.mockPrismaUser.findUnique.mockReset();
+            }
         });
     });
 });

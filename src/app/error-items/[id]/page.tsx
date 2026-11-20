@@ -10,11 +10,14 @@ import { ImageViewer } from "@/components/error-detail/image-viewer";
 import { MarkdownFieldCard } from "@/components/error-detail/markdown-field-card";
 import { NotesCard } from "@/components/error-detail/notes-card";
 import { QuestionCard } from "@/components/error-detail/question-card";
+import { ReadAloudButton } from "@/components/read-aloud-button";
 import { ToggleImage } from "@/components/error-detail/toggle-image";
 import { WrongAnswerCard } from "@/components/error-detail/wrong-answer-card";
 import { FixLatexButton } from "@/components/fix-latex-button";
 import { MasteryPanel } from "@/components/mastery-panel";
+import { ErrorItemLearningCard } from "@/components/error-item-learning-card";
 import { MasteryStatusBadge } from "@/components/mastery-status-badge";
+import { useKidModeState } from "@/components/parent/kid-mode-lock-bar";
 import { RegenerateAnswerButton } from "@/components/regenerate-answer-button";
 import { ShortIdBadge } from "@/components/short-id-badge";
 import { SvgAnimationExplainer } from "@/components/svg-animation-explainer";
@@ -22,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageLoading } from "@/components/ui/page-loading";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
@@ -48,6 +51,8 @@ export default function ErrorDetailPage() {
     // 复习状态由举一反三记录和掌握概率决定，随掌握面板的数据更新
     const [masteryStatus, setMasteryStatus] = useState<MasteryStatus | null>(null);
     const [savingDifficulty, setSavingDifficulty] = useState(false);
+    const { state: kidMode } = useKidModeState(true);
+    const kidLocked = Boolean(kidMode?.active);
 
     const fetchItem = useCallback(async (id: string) => {
         try {
@@ -56,7 +61,11 @@ export default function ErrorDetailPage() {
         } catch (error) {
             frontendLogger.error('[ErrorDetail]', 'Failed to fetch error item', { error });
             toast.error(t.common?.messages?.loadFailed || 'Failed to load item');
-            router.push("/notebooks");
+            if (error instanceof ApiError && error.status === 403) {
+                router.push("/learn");
+            } else {
+                router.push("/notebooks");
+            }
         } finally {
             setLoading(false);
         }
@@ -134,22 +143,22 @@ export default function ErrorDetailPage() {
     if (!item) return <EmptyState icon={FileQuestion} title={t.detail.notFound || "Item not found"} className="m-4 md:m-8" />;
 
     return (
-        <main className="min-h-screen">
+        <main id="main-content" tabIndex={-1} className="min-h-screen">
             <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <Link href={item.subjectId ? `/notebooks/${item.subjectId}` : "/notebooks"}>
+                        <Link href={kidLocked ? "/learn" : (item.subjectId ? `/notebooks/${item.subjectId}` : "/notebooks")}>
                             <Button variant="ghost" size="icon" className="-ml-2">
                                 <ArrowLeft className="h-5 w-5" />
                             </Button>
                         </Link>
                         <h1 className="text-2xl font-bold tracking-tight">{t.detail.title}</h1>
                         <ShortIdBadge shortId={item.shortId} />
-                        <DifficultyStars size="md" value={item.difficultyStars} onChange={handleDifficultyChange} disabled={savingDifficulty} />
+                        <DifficultyStars size="md" value={item.difficultyStars} onChange={handleDifficultyChange} disabled={savingDifficulty || kidLocked} />
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <FixLatexButton errorItemId={item.id} fields={item} onDone={updateItem} />
+                        {!kidLocked && <FixLatexButton errorItemId={item.id} fields={item} onDone={updateItem} />}
                         <Link href={`/practice?id=${item.id}`}>
                             <Button variant="outline" size="sm">
                                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -157,16 +166,20 @@ export default function ErrorDetailPage() {
                             </Button>
                         </Link>
                         {masteryStatus && <MasteryStatusBadge status={masteryStatus} className="h-8 self-center px-3" />}
-                        <Button variant="ghost" size="sm" onClick={deleteItem} className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t.detail.delete || "Delete"}
-                        </Button>
+                        {!kidLocked && (
+                            <Button variant="ghost" size="sm" onClick={deleteItem} className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {t.detail.delete || "Delete"}
+                            </Button>
+                        )}
                     </div>
                 </div>
 
-                <QuestionCard item={item} educationStage={educationStage} saveFields={saveFields} onUpdate={updateItem} reload={reload} onEnlarge={setViewerImageUrl} />
+                <QuestionCard item={item} educationStage={educationStage} saveFields={saveFields} onUpdate={updateItem} reload={reload} onEnlarge={setViewerImageUrl} readOnly={kidLocked} />
 
-                <MasteryPanel errorItemId={item.id} onMasteryStatusChange={setMasteryStatus} />
+                <ErrorItemLearningCard item={item} />
+
+                <MasteryPanel errorItemId={item.id} onMasteryStatusChange={setMasteryStatus} readOnly={kidLocked} />
 
                 <div className="grid gap-6 lg:grid-cols-2">
                     <MarkdownFieldCard
@@ -179,7 +192,8 @@ export default function ErrorDetailPage() {
                         cardClassName="border-primary/20"
                         titleClassName="text-primary"
                         contentClassName="font-semibold"
-                        headerActions={<RegenerateAnswerButton errorItemId={item.id} onDone={(updated) => updateItem({ answerText: updated.answerText ?? "", analysis: updated.analysis ?? "" })} />}
+                        readOnly={kidLocked}
+                        headerActions={!kidLocked ? <RegenerateAnswerButton errorItemId={item.id} onDone={(updated) => updateItem({ answerText: updated.answerText ?? "", analysis: updated.analysis ?? "" })} /> : undefined}
                     >
                         {item.referenceImageUrl && (
                             <div className="pt-3">
@@ -187,7 +201,7 @@ export default function ErrorDetailPage() {
                             </div>
                         )}
                     </MarkdownFieldCard>
-                    <WrongAnswerCard item={item} saveFields={saveFields} onEnlarge={setViewerImageUrl} />
+                    <WrongAnswerCard item={item} saveFields={saveFields} onEnlarge={setViewerImageUrl} readOnly={kidLocked} />
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -198,6 +212,8 @@ export default function ErrorDetailPage() {
                         logLabel="analysis"
                         rows={12}
                         placeholder="Enter analysis..."
+                        readOnly={kidLocked}
+                        headerActions={<ReadAloudButton text={item.analysis} />}
                     />
                     <MarkdownFieldCard
                         title={t.detail?.mistakeAnalysis || "Mistake Analysis"}
@@ -207,6 +223,7 @@ export default function ErrorDetailPage() {
                         rows={8}
                         editorLabel={t.editor?.mistakeAnalysis || "Mistake Cause Analysis"}
                         emptyText={t.detail?.noMistakeAnalysis || "No mistake analysis yet."}
+                        readOnly={kidLocked}
                     />
                 </div>
 
@@ -219,12 +236,13 @@ export default function ErrorDetailPage() {
                             svgAnimation={language === 'en' ? item.svgAnimationEn : item.svgAnimation}
                             hasOtherLanguage={!!(language === 'en' ? item.svgAnimation : item.svgAnimationEn)}
                             onChange={handleSvgAnimationChange}
+                            readOnly={kidLocked}
                         />
                     )}
 
-                    {geogebraEnabled && <GeogebraSection errorItemId={item.id} commands={item.geogebraCommands} onUpdate={updateItem} />}
+                    {geogebraEnabled && <GeogebraSection errorItemId={item.id} commands={item.geogebraCommands} onUpdate={updateItem} readOnly={kidLocked} />}
 
-                    <NotesCard item={item} onUpdate={updateItem} />
+                    <NotesCard item={item} onUpdate={updateItem} readOnly={kidLocked} />
                 </div>
             </div>
 

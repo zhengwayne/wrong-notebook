@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { internalError, unauthorized, forbidden } from "@/lib/api-errors";
+import { internalError } from "@/lib/api-errors";
+import { defineApiRoute } from "@/lib/server/api-route";
 import {
     MATH_CURRICULUM, MATH_GRADE_ORDER,
     PHYSICS_CURRICULUM, PHYSICS_GRADE_ORDER,
@@ -32,19 +31,9 @@ interface TagAssociation {
     subject: string;
 }
 
-export async function POST() {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
-    if (session.user.role !== 'admin') {
-        return forbidden("Admin access required for tag migration");
-    }
-
+export const POST = defineApiRoute({ auth: 'admin' }, async (_req, { user }) => {
     try {
-        logger.info({ email: session.user.email }, 'Tag migration initiated');
+        logger.info({ email: user.email }, 'Tag migration initiated');
         let totalCreated = 0;
         let associationsRestored = 0;
         let customTagsCreated = 0;
@@ -153,7 +142,7 @@ export async function POST() {
 
                         // 查找执行操作的用户
                         const adminUser = await tx.user.findUnique({
-                            where: { email: session.user!.email! },
+                            where: { id: user.id },
                             select: { id: true }
                         });
 
@@ -182,7 +171,7 @@ export async function POST() {
                                     select: { gradeSemester: true }
                                 });
 
-                                const parentId = await findParentTagIdForGrade(errorItem?.gradeSemester, assoc.subject);
+                                const parentId = await findParentTagIdForGrade(errorItem?.gradeSemester, assoc.subject, tx);
 
                                 customTag = await tx.knowledgeTag.create({
                                     data: {
@@ -234,7 +223,7 @@ export async function POST() {
         logger.error({ error }, 'Tag migration error');
         return internalError("Failed to migrate tags");
     }
-}
+});
 
 async function seedMath(tx: Prisma.TransactionClient, curriculum: SectionedCurriculum, gradeOrder: Record<string, number>) {
     let count = 0;

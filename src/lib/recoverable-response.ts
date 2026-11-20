@@ -1,17 +1,20 @@
 /**
  * 耗时请求的响应暂存，供请求被浏览器中断后取回。
  *
- * 部分浏览器（如 iPhone 上的 Safari）会在服务端返回前中断等待较久的请求，fetch 抛出网络错误，
- * 而服务端仍会继续执行（AI 生成、保存等）。前端为这类请求附带随机的请求编号（X-Request-Id），
- * 服务端把最终响应按编号暂存在内存中，前端断线后通过 GET /api/requests/:id 轮询取回原本的响应。
- *
- * 只保存在当前进程内存中（生产环境为单个容器），服务重启后清空；请求编号由前端随机生成，只有发起请求的页面知道。
+ * 结合进程内热缓存与 SQLite `AsyncOperation` 表（category = 'recoverable'）：
+ * - 响应按账户和当前专注锁绑定的学习者隔离；
+ * - 当 `AsyncOperation` 表可用时支持跨重启取回已完成响应。
  */
+import type { PrismaClient } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
+import { resolveActor } from "@/lib/server/actor";
+import { getRequestContext } from "@/lib/server/request-context";
+import { getKidModeLockFromRequest } from "@/lib/kid-mode-lock";
 
-const logger = createLogger('recoverable-response');
+const logger = createLogger("recoverable-response");
 
-export const REQUEST_ID_HEADER = 'x-request-id';
+export const REQUEST_ID_HEADER = "x-request-id";
 
 /** 请求结束后响应保留的时长 */
 export const RESPONSE_TTL_MS = 15 * 60 * 1000;
@@ -22,12 +25,15 @@ const MAX_ENTRIES = 200;
 const MAX_BODY_LENGTH = 5_000_000;
 
 const REQUEST_ID_PATTERN = /^[a-f0-9]{32}$/;
+const RECOVERABLE_CATEGORY = "recoverable";
+const RECOVERABLE_KIND = "http_request";
 
 export type StoredResponse =
-    | { state: 'running' }
-    | { state: 'done'; status: number; body: unknown };
+    | { state: "running" }
+    | { state: "done"; status: number; body: unknown };
 
 interface Entry {
+    userId: string;
     startedAt: number;
     finishedAt: number | null;
     status: number;
@@ -36,6 +42,18 @@ interface Entry {
 
 const store = globalThis as typeof globalThis & { __recoverableResponses?: Map<string, Entry> };
 const entries: Map<string, Entry> = store.__recoverableResponses ??= new Map();
+
+function getAsyncOpRepo(): PrismaClient["asyncOperation"] | null {
+    try {
+        const db = prisma as unknown as { asyncOperation?: PrismaClient["asyncOperation"] };
+        if (db?.asyncOperation && typeof db.asyncOperation.findUnique === "function" && typeof db.asyncOperation.upsert === "function") {
+            return db.asyncOperation;
+        }
+    } catch {
+        // 局部 mock Prisma 的测试环境自动回退纯内存模式
+    }
+    return null;
+}
 
 function prune(now: number) {
     for (const [id, entry] of entries) {
@@ -59,10 +77,28 @@ export function parseRequestId(value: string | null | undefined): string | null 
 
 async function readBody(response: Response): Promise<unknown> {
     const text = await response.text();
-    if (text.length > MAX_BODY_LENGTH) throw new Error('RESPONSE_TOO_LARGE');
+    if (text.length > MAX_BODY_LENGTH) throw new Error("RESPONSE_TOO_LARGE");
     if (!text) return null;
-    if ((response.headers.get('content-type') ?? '').includes('application/json')) return JSON.parse(text);
+    if ((response.headers.get("content-type") ?? "").includes("application/json")) return JSON.parse(text);
     return text;
+}
+
+function recoveryScope(userId: string, learnerId?: string): string {
+    return learnerId ? JSON.stringify([userId, learnerId]) : userId;
+}
+
+async function resolveRecoveryOwner(req: Request) {
+    const context = getRequestContext();
+    if (context?.userId) return { userId: context.userId, learnerId: context.kidModeLearnerId };
+    try {
+        const actor = await resolveActor();
+        if (actor.kind !== "authenticated") return null;
+        const { id: userId, authVersion } = actor.user;
+        const lock = getKidModeLockFromRequest(req, { userId, authVersion });
+        return { userId, learnerId: lock?.learnerId };
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -73,37 +109,199 @@ export function withRecoverableResponse<R extends Request, A extends unknown[]>(
         const id = parseRequestId(req.headers.get(REQUEST_ID_HEADER));
         if (!id) return handler(req, ...args);
 
+        const owner = await resolveRecoveryOwner(req);
+        if (!owner) return handler(req, ...args);
+        const ownerUserId = owner.userId;
+        const scopeKey = recoveryScope(ownerUserId, owner.learnerId);
+        const cacheKey = `${scopeKey}:${id}`;
         const now = Date.now();
         prune(now);
-        const entry: Entry = { startedAt: now, finishedAt: null, status: 0, body: null };
-        entries.set(id, entry);
+        const entry: Entry = {
+            userId: ownerUserId,
+            startedAt: now,
+            finishedAt: null,
+            status: 0,
+            body: null,
+        };
+        entries.set(cacheKey, entry);
+
+        const repo = getAsyncOpRepo();
+        const dbInitPromise = (async () => {
+            if (!repo) return;
+            await repo.upsert({
+                where: {
+                    scopeKey_category_kind_idempotencyKey: {
+                        scopeKey,
+                        category: RECOVERABLE_CATEGORY,
+                        kind: RECOVERABLE_KIND,
+                        idempotencyKey: id,
+                    },
+                },
+                create: {
+                    userId: entry.userId,
+                    scopeKey,
+                    category: RECOVERABLE_CATEGORY,
+                    kind: RECOVERABLE_KIND,
+                    idempotencyKey: id,
+                    status: "running",
+                    startedAt: new Date(now),
+                    expiresAt: new Date(now + RUNNING_TTL_MS),
+                },
+                update: {
+                    userId: entry.userId,
+                    status: "running",
+                    statusCode: null,
+                    responseJson: null,
+                    error: null,
+                    startedAt: new Date(now),
+                    finishedAt: null,
+                    expiresAt: new Date(now + RUNNING_TTL_MS),
+                },
+            });
+        })().catch((error) => {
+            logger.warn({ requestId: id, error: error instanceof Error ? error.message : String(error) }, "Failed to persist running recoverable request");
+        });
+
         try {
             const response = await handler(req, ...args);
+            await dbInitPromise;
+
             try {
-                entry.body = await readBody(response.clone());
+                const body = await readBody(response.clone());
+                const finishedAt = Date.now();
+                entry.body = body;
                 entry.status = response.status;
-                entry.finishedAt = Date.now();
+                entry.finishedAt = finishedAt;
+
+                if (repo) {
+                    await repo.upsert({
+                        where: {
+                            scopeKey_category_kind_idempotencyKey: {
+                                scopeKey,
+                                category: RECOVERABLE_CATEGORY,
+                                kind: RECOVERABLE_KIND,
+                                idempotencyKey: id,
+                            },
+                        },
+                        create: {
+                            userId: ownerUserId,
+                            scopeKey,
+                            category: RECOVERABLE_CATEGORY,
+                            kind: RECOVERABLE_KIND,
+                            idempotencyKey: id,
+                            status: "succeeded",
+                            statusCode: response.status,
+                            responseJson: JSON.stringify(body),
+                            startedAt: new Date(now),
+                            finishedAt: new Date(finishedAt),
+                            expiresAt: new Date(finishedAt + RESPONSE_TTL_MS),
+                        },
+                        update: {
+                            userId: ownerUserId,
+                            status: "succeeded",
+                            statusCode: response.status,
+                            responseJson: JSON.stringify(body),
+                            finishedAt: new Date(finishedAt),
+                            expiresAt: new Date(finishedAt + RESPONSE_TTL_MS),
+                        },
+                    }).catch((error) => {
+                        logger.warn({ requestId: id, error: error instanceof Error ? error.message : String(error) }, "Failed to persist done recoverable response");
+                    });
+                }
             } catch (error) {
-                entries.delete(id);
-                logger.warn({ requestId: id, error: error instanceof Error ? error.message : String(error) }, 'Response not stored for recovery');
+                entries.delete(cacheKey);
+                if (repo) {
+                    await repo.deleteMany({
+                        where: {
+                            scopeKey,
+                            category: RECOVERABLE_CATEGORY,
+                            kind: RECOVERABLE_KIND,
+                            idempotencyKey: id,
+                        },
+                    }).catch(() => {});
+                }
+                logger.warn({ requestId: id, error: error instanceof Error ? error.message : String(error) }, "Response not stored for recovery");
             }
             return response;
         } catch (error) {
-            entries.delete(id);
+            entries.delete(cacheKey);
+            await dbInitPromise;
+            if (repo) {
+                await repo.deleteMany({
+                    where: {
+                        scopeKey,
+                        category: RECOVERABLE_CATEGORY,
+                        kind: RECOVERABLE_KIND,
+                        idempotencyKey: id,
+                    },
+                }).catch(() => {});
+            }
             throw error;
         }
     };
 }
 
-/** 按请求编号查询：进行中、已结束（含响应），或不存在（请求没有到达服务端、已过期或服务重启） */
-export function getStoredResponse(id: string): StoredResponse | null {
-    prune(Date.now());
-    const entry = entries.get(id);
-    if (!entry) return null;
-    return entry.finishedAt === null ? { state: 'running' } : { state: 'done', status: entry.status, body: entry.body };
+/** 按请求编号查询：进行中、已结束（含响应），或不存在 / 跨用户无权（返回 null） */
+export async function getStoredResponse(id: string, viewerUserId: string, learnerId?: string): Promise<StoredResponse | null> {
+    if (!viewerUserId) return null;
+    const now = Date.now();
+    prune(now);
+
+    const scopeKey = recoveryScope(viewerUserId, learnerId);
+    const entry = entries.get(`${scopeKey}:${id}`);
+    if (entry) {
+        return entry.finishedAt === null ? { state: "running" } : { state: "done", status: entry.status, body: entry.body };
+    }
+
+    const repo = getAsyncOpRepo();
+    if (!repo) return null;
+
+    const record = await repo.findUnique({
+        where: {
+            scopeKey_category_kind_idempotencyKey: {
+                scopeKey,
+                category: RECOVERABLE_CATEGORY,
+                kind: RECOVERABLE_KIND,
+                idempotencyKey: id,
+            },
+        },
+    });
+    if (!record) return null;
+    if (record.expiresAt && record.expiresAt.getTime() <= now) {
+        return null;
+    }
+    if (record.status === "interrupted" || record.status === "failed") {
+        return null;
+    }
+    if (record.userId !== viewerUserId) {
+        return null;
+    }
+    if (record.status === "running") {
+        return { state: "running" };
+    }
+    return {
+        state: "done",
+        status: record.statusCode ?? 200,
+        body: record.responseJson ? JSON.parse(record.responseJson) : null,
+    };
 }
 
-/** 仅供测试：清空暂存 */
+/** 仅供测试：清空内存暂存 */
 export function resetRecoverableResponsesForTest(): void {
     entries.clear();
+}
+
+/** 清空内存中的断线重取响应缓存（供 system-reset 调用） */
+export function clearRecoverableResponses(): void {
+    entries.clear();
+}
+
+/** 注销/删除用户时从进程内热缓存移除该用户的断线恢复响应 */
+export function purgeUserRecoverableResponses(userId: string): void {
+    if (!userId) return;
+    for (const [id, entry] of entries) {
+        if (entry.userId === userId) {
+            entries.delete(id);
+        }
+    }
 }

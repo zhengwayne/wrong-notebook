@@ -44,11 +44,15 @@ final class LocalServer {
     private LocalServer() {
     }
 
+    private static boolean isExpectedVersion(String expected, String live) {
+        return expected.isEmpty() ? live != null : expected.equals(live);
+    }
+
     /** 确保服务在运行；耗时操作（解压、迁移、启动），必须在后台线程调用 */
     static synchronized void ensureRunning(Context context, Listener listener) throws IOException {
         JSONObject runtime = readRuntimeInfo(context);
         String version = runtime.optString("version");
-        if (version.equals(healthyVersion())) return;
+        if (isExpectedVersion(version, healthyVersion())) return;
 
         File filesDir = context.getFilesDir();
         File serverDir = new File(filesDir, "server");
@@ -102,7 +106,8 @@ final class LocalServer {
             if (!isAlive(process)) {
                 throw new IOException("Server exited (" + process.exitValue() + ")\n" + tail(log));
             }
-            if (healthyVersion() != null) return;
+            String liveVersion = healthyVersion();
+            if (isExpectedVersion(version, liveVersion)) return;
             try {
                 Thread.sleep(300);
             } catch (InterruptedException e) {
@@ -134,7 +139,10 @@ final class LocalServer {
             connection.setReadTimeout(2000);
             if (connection.getResponseCode() != 200) return null;
             try (InputStream in = connection.getInputStream()) {
-                return new JSONObject(readStream(in)).optString("version", "");
+                JSONObject json = new JSONObject(readStream(in));
+                if (!"ok".equals(json.optString("status"))) return null;
+                String version = json.optString("version", "");
+                return version.isEmpty() ? null : version;
             }
         } catch (IOException | JSONException e) {
             return null;

@@ -7,6 +7,7 @@ import { MetaFields } from "@/components/correction-editor/meta-fields";
 import { MistakeFields } from "@/components/correction-editor/mistake-fields";
 import { PreviewPanel } from "@/components/correction-editor/preview-panel";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { PinyinToolbar } from "@/components/pinyin-toolbar";
 import { TagInput } from "@/components/tag-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,6 +49,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         gradeSemester: initialData.gradeSemester || "",
     });
     const gradeEdited = useRef(false);
+    const questionTextRef = useRef<HTMLTextAreaElement>(null);
     const update = (fields: Partial<CorrectionDraft>) => {
         if ('gradeSemester' in fields) gradeEdited.current = true;
         setData(prev => ({ ...prev, ...fields }));
@@ -169,15 +171,22 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                         <MarkdownEditor
                             value={data.questionText}
                             onChange={(questionText) => update({ questionText })}
+                            textareaRef={questionTextRef}
                             className="min-h-[150px] font-mono text-sm"
                             placeholder={markdownPlaceholder}
+                        />
+                        <PinyinToolbar
+                            value={data.questionText}
+                            onChange={(questionText) => update({ questionText })}
+                            textareaRef={questionTextRef}
+                            subject={tagSubject}
                         />
                         <Button
                             variant="default"
                             size="sm"
                             onClick={handleReanswer}
                             disabled={isReanswering || !data.questionText.trim()}
-                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-700 hover:to-violet-600 text-white font-medium"
+                            className="w-full bg-primary font-medium text-primary-foreground hover:bg-primary/90"
                         >
                             {isReanswering ? (
                                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t.editor.reanswering || 'AI solving...'}</>

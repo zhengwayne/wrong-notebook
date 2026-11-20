@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { getKidModeLockFromRequest } from "@/lib/kid-mode-lock";
 import { unauthorized, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { isShortId } from "@/lib/short-id";
@@ -26,8 +27,9 @@ export async function GET(
             return notFound("Item not found");
         }
 
+        const lock = getKidModeLockFromRequest(req, { userId: user.id, authVersion: user.authVersion });
         const item = await prisma.errorItem.findUnique({
-            where: { shortId },
+            where: { shortId, ...(lock ? { learnerId: lock.learnerId } : {}) },
             select: { id: true, userId: true, subjectId: true, shortId: true },
         });
         if (!item || item.userId !== user.id) {

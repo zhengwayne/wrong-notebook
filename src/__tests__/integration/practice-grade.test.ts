@@ -4,13 +4,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    user: { findUnique: vi.fn() },
     errorItem: { findUnique: vi.fn() },
     gradeAnswer: vi.fn(),
     consumeAiQuota: vi.fn(),
     session: { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' },
 }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: mocks.user, errorItem: mocks.errorItem } }));
 vi.mock('@/lib/ai', () => ({ getAIService: () => ({ gradeAnswer: mocks.gradeAnswer }) }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
@@ -31,6 +32,7 @@ const grade = (body: object) => POST(new Request('http://localhost/api/practice/
 describe('POST /api/practice/grade', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'user@example.com', role: 'user', isActive: true, authVersion: 0 });
         mocks.errorItem.findUnique.mockResolvedValue({ userId: 'user-1', lastPractice });
         mocks.gradeAnswer.mockResolvedValue({ correct: false, reason: '只答出一个解' });
         mocks.consumeAiQuota.mockResolvedValue(null);

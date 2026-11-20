@@ -33,6 +33,14 @@ vi.mock('@/lib/tts/mp3', async (importOriginal) => {
         },
     };
 });
+vi.mock('node-edge-tts', () => ({
+    EdgeTTS: class {
+        async *streamAudio() {
+            // 最小可识别的 MP3 同步字（不播放，仅供接口测试）
+            yield Buffer.concat([Buffer.from([0xff, 0xf3, 0x64, 0xc4]), Buffer.alloc(200)]);
+        }
+    },
+}));
 vi.stubGlobal('fetch', mocks.fetch);
 
 import { GET as getMode, POST as synthesize } from '@/app/api/tts/route';
@@ -41,6 +49,7 @@ import { POST as batch } from '@/app/api/tts/batch/route';
 import { POST as status } from '@/app/api/tts/status/route';
 import { listBackgroundTasks, resetBackgroundTasksForTest } from '@/lib/background-tasks';
 import { measureLoudness } from '@/lib/tts/loudness';
+import { ttsUserLimiter } from '@/lib/rate-limit';
 import { looksLikeMp3 } from '@/lib/tts/mp3';
 import type { PcmAudio } from '@/lib/tts/wav';
 
@@ -78,6 +87,8 @@ beforeEach(() => {
     mocks.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'user' });
     mocks.config = { tts: { mode: 'minimax' }, minimax: { apiKey: 'mm-key' } };
     mocks.fetch.mockImplementation(async () => new Response(JSON.stringify({ data: { audio: miniMaxAudio() }, base_resp: { status_code: 0 } })));
+    ttsUserLimiter.reset('user-1');
+    ttsUserLimiter.reset('admin-1');
 });
 
 describe('云端语音接口', () => {
@@ -87,6 +98,8 @@ describe('云端语音接口', () => {
         expect(await (await getMode()).json()).toEqual({ mode: 'browser' });
         mocks.config = {};
         expect(await (await getMode()).json()).toEqual({ mode: 'browser' });
+        mocks.config = { tts: { mode: 'edge' } };
+        expect(await (await getMode()).json()).toEqual({ mode: 'cloud' });
     });
 
     it('合成后返回编号和版本，音频为归一化到约 -15 LUFS 的 MP3；同样的文字只合成一次', async () => {
@@ -165,7 +178,7 @@ describe('云端语音接口', () => {
         expect(await notConfigured.json()).toMatchObject({ message: 'TTS_NOT_CONFIGURED' });
 
         expect((await post({ text: '' })).status).toBe(400);
-        expect((await post({ text: '长'.repeat(301) })).status).toBe(400);
+        expect((await post({ text: '长'.repeat(4001) })).status).toBe(400);
         expect(mocks.fetch).not.toHaveBeenCalled();
     });
 
@@ -193,6 +206,27 @@ describe('云端语音接口', () => {
         mocks.session = { user: { email: 'user@example.com' }, expires: '2099-01-01' };
         expect((await audio('../app-config')).status).toBe(404);
         expect((await audio('b'.repeat(64))).status).toBe(404);
+    });
+
+    it('Edge 在线语音无需 Key，按语言选择晓晓或 Aria，并接受语速', async () => {
+        mocks.config = { tts: { mode: 'edge', rate: 1, edge: { voice: 'zh-CN-XiaoxiaoNeural', englishVoice: 'en-US-AriaNeural' } } };
+        const res = await post({ text: '你好，我是晓晓。', language: 'zh', rate: 1 });
+        expect(res.status).toBe(200);
+        const { id, version } = await res.json();
+        expect(id).toMatch(/^[a-f0-9]{64}$/);
+        const mp3 = await audio(id);
+        expect(mp3.status).toBe(200);
+        expect(mp3.headers.get('Content-Type')).toBe('audio/mpeg');
+        expect(looksLikeMp3(Buffer.from(await mp3.arrayBuffer()))).toBe(true);
+        expect(version).toEqual(expect.any(Number));
+        expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it('同一用户超限时返回 429，合成失败时可回退到浏览器语音', async () => {
+        for (let i = 0; i < 60; i++) ttsUserLimiter.hit('user-1');
+        const res = await post({ text: '超限了', language: 'zh' });
+        expect(res.status).toBe(429);
+        expect(await res.json()).toMatchObject({ message: 'TTS_RATE_LIMITED' });
     });
 });
 
@@ -225,15 +259,48 @@ describe('整个动画的语音', () => {
         expect(mocks.fetch).toHaveBeenCalledTimes(4);
     });
 
-    it('别人的错题不显示题目说明；失败时任务标记失败，管理员看到服务商报错', async () => {
-        mocks.errorItem.findUnique.mockResolvedValue({ userId: 'someone-else', shortId: 'Zz9999', questionText: '别人的题' });
+    it('非本人 errorItemId 返回 404 不调用服务商；本人错题失败时任务标记失败并仅向管理员展示报错', async () => {
+        mocks.errorItem.findUnique.mockResolvedValueOnce({ userId: 'someone-else', shortId: 'Zz9999', questionText: '别人的题' });
         mocks.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'admin' });
+
+        const forbiddenRes = await postTo(batch, { texts: ['拒绝越权'], language: 'zh', errorItemId: 'item-other' });
+        expect(forbiddenRes.status).toBe(404);
+        expect(mocks.fetch).not.toHaveBeenCalled();
+        expect(listBackgroundTasks('user-1')).toHaveLength(0);
+
+        mocks.errorItem.findUnique.mockResolvedValue({ userId: 'user-1', shortId: 'AbC234', questionText: '本人的题' });
         mocks.fetch.mockImplementation(async () => new Response(JSON.stringify({ base_resp: { status_code: 2056, status_msg: '用量上限' } })));
 
-        const res = await postTo(batch, { texts: ['失败的段落'], language: 'zh', errorItemId: 'item-x' });
+        const res = await postTo(batch, { texts: ['失败的段落'], language: 'zh', errorItemId: 'item-1' });
         expect(res.status).toBe(502);
         expect(await res.json()).toMatchObject({ message: 'TTS_PROVIDER_ERROR', details: 'MiniMax 2056: 用量上限' });
-        expect(listBackgroundTasks('user-1')[0]).toMatchObject({ kind: 'tts_voice', status: 'failed', subject: null, link: null });
+        expect(listBackgroundTasks('user-1')[0]).toMatchObject({ kind: 'tts_voice', status: 'failed', link: '/error-items/item-1' });
+    });
+
+    it('音频缓存按用户授权隔离，未授权读取返 404 且状态探测为 false；自己合成复用磁盘音频后可读取', async () => {
+        const synthesized = await post({ text: '专属缓存片段', language: 'zh' });
+        expect(synthesized.status).toBe(200);
+        const { id } = await synthesized.json();
+        expect(mocks.fetch).toHaveBeenCalledTimes(1);
+
+        // 切换为 user-2：未合成过该音频前不能读取也不应探测出已有缓存
+        mocks.user.findUnique.mockResolvedValue({ id: 'user-2', role: 'user' });
+        expect((await audio(id)).status).toBe(404);
+        expect(await (await postTo(status, { texts: ['专属缓存片段'], language: 'zh' })).json()).toEqual({ ready: false });
+
+        // user-2 自行触发合成：复用磁盘物理缓存不重复花钱调服务商，同时将该用户加入授权清单
+        const selfSynth = await post({ text: '专属缓存片段', language: 'zh' });
+        expect(selfSynth.status).toBe(200);
+        expect(mocks.fetch).toHaveBeenCalledTimes(1);
+        expect((await audio(id)).status).toBe(200);
+        expect(await (await postTo(status, { texts: ['专属缓存片段'], language: 'zh' })).json()).toEqual({ ready: true });
+    });
+
+    it('批量语音合成同样受用户限流保护', async () => {
+        for (let i = 0; i < 60; i++) ttsUserLimiter.hit('user-1');
+        const res = await postTo(batch, { texts: ['限流片段'], language: 'zh' });
+        expect(res.status).toBe(429);
+        expect(await res.json()).toMatchObject({ message: 'TTS_RATE_LIMITED' });
     });
 
     it('浏览器语音或参数无效时返回错误', async () => {

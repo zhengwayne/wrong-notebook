@@ -3,6 +3,7 @@
  * 检查出的问题就是页面上显示为红色错误或原样显示源码的地方。前后端共用。
  */
 import katex from 'katex';
+import { KATEX_RENDER_OPTIONS } from './katex-options';
 import { extractMathSegments } from './markdown-math';
 
 export interface LatexIssue {
@@ -28,7 +29,7 @@ export function findLatexIssues(content: string | null | undefined): LatexIssue[
 
     for (const segment of segments) {
         try {
-            katex.renderToString(segment.tex, { displayMode: segment.displayMode, throwOnError: true, strict: 'ignore' });
+            katex.renderToString(segment.tex, { ...KATEX_RENDER_OPTIONS, displayMode: segment.displayMode, throwOnError: true });
         } catch (error) {
             const message = error instanceof Error ? error.message.replace(/^KaTeX parse error:\s*/, '') : String(error);
             issues.push({ snippet: clip(segment.source), message });

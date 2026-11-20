@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -20,6 +21,12 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0  # 完整历史，用于生成 changelog
+
+      - name: Verify same-SHA CI gate
+        uses: ./.github/actions/verify-ci-gate
+        with:
+          sha: ${{ github.sha }}
+          github-token: ${{ github.token }}
 
       - name: Extract version from tag
         id: version

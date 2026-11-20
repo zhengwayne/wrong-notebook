@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GreenBucketBanner } from "@/components/grading/green-bucket-banner";
 import { MatchPanel } from "@/components/grading/match-panel";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
@@ -62,6 +63,7 @@ export function SubmissionList({ taskId, students, submissions, multiClass, onCh
 
     return (
         <div className="space-y-4">
+            <GreenBucketBanner taskId={taskId} submissions={submissions} onConfirmed={onChanged} />
             {review.length > 0 && (
                 <section className="space-y-2 rounded-2xl border border-amber-500/50 p-3">
                     <h3 className="font-semibold text-amber-700 dark:text-amber-400">{m.reviewTitle.replace("{count}", String(review.length))}</h3>

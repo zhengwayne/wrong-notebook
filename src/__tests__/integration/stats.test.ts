@@ -6,6 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
+    mockPrismaUser: {
+        findUnique: vi.fn(),
+    },
     mockPrismaPracticeRecord: {
         groupBy: vi.fn(),
         findMany: vi.fn(),
@@ -14,7 +17,12 @@ const mocks = vi.hoisted(() => ({
     },
     mockPrismaErrorItem: {
         deleteMany: vi.fn(),
+        updateMany: vi.fn(),
     },
+    mockPrismaItemMemory: {
+        deleteMany: vi.fn(),
+    },
+    mockScheduleLearningPathReplan: vi.fn(),
     mockSession: {
         user: {
             id: 'user-123',
@@ -28,9 +36,21 @@ const mocks = vi.hoisted(() => ({
 // Mock Prisma client
 vi.mock('@/lib/prisma', () => ({
     prisma: {
+        user: mocks.mockPrismaUser,
         practiceRecord: mocks.mockPrismaPracticeRecord,
         errorItem: mocks.mockPrismaErrorItem,
+        itemMemory: mocks.mockPrismaItemMemory,
+        $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+            user: mocks.mockPrismaUser,
+            practiceRecord: mocks.mockPrismaPracticeRecord,
+            errorItem: mocks.mockPrismaErrorItem,
+            itemMemory: mocks.mockPrismaItemMemory,
+        })),
     },
+}));
+
+vi.mock('@/lib/learning-path/service', () => ({
+    scheduleLearningPathReplan: mocks.mockScheduleLearningPathReplan,
 }));
 
 // Mock next-auth
@@ -54,6 +74,16 @@ describe('/api/stats', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
+        mocks.mockPrismaUser.findUnique.mockResolvedValue({
+            id: 'user-123',
+            email: 'user@example.com',
+            name: 'Test User',
+            role: 'user',
+            isActive: true,
+            authVersion: 0,
+        });
+        mocks.mockPrismaItemMemory.deleteMany.mockResolvedValue({ count: 0 });
+        mocks.mockPrismaErrorItem.updateMany.mockResolvedValue({ count: 0 });
     });
 
     describe('GET /api/stats/practice (获取练习统计)', () => {
@@ -266,7 +296,7 @@ describe('/api/stats', () => {
             await DELETE_ERROR_ITEMS();
 
             expect(mocks.mockPrismaErrorItem.deleteMany).toHaveBeenCalledWith({
-                where: { userId: 'user-123' },
+                where: { userId: 'user-123', learnerId: null },
             });
         });
 

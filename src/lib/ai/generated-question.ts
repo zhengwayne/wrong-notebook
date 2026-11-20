@@ -1,7 +1,5 @@
-import type { ParsedQuestion } from './types';
-
 /** 只清理生成题目的排版标记，原题识别保持原文。 */
-export function normalizeGeneratedQuestion(question: ParsedQuestion): ParsedQuestion {
+export function normalizeGeneratedQuestion<T extends { questionText: string }>(question: T): T {
     const questionText = question.questionText
         .replace(/[（(【\[]\s*(?:(?:本题|共|满分)\s*)?\d+(?:\.\d+)?\s*(?:分|points?|marks?|pts?\.?)\s*[）)】\]]/giu, '')
         .replace(/^\s*(?:#{1,6}\s*)?(?:第\s*\d+\s*题\s*[:：.、]?|(?:Question|Problem)\s*\d+\s*[:：.、]?|\d+\s*(?:[、．]|\.(?!\d)))\s*/iu, '')

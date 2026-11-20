@@ -15,11 +15,29 @@ env:
   NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
+  ci-gate:
+    name: Verify CI Gate
+    if: github.server_url == 'https://github.com' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Verify same-SHA CI gate
+        uses: ./.github/actions/verify-ci-gate
+        with:
+          sha: ${{ github.sha }}
+          github-token: ${{ github.token }}
+
   npm:
     name: npm
+    needs: [ci-gate]
     runs-on: ubuntu-24.04
-    # 只在 GitHub 上运行；Gitea 读取 main 时会回退到本目录，需跳过
-    if: github.server_url == 'https://github.com'
+    # 只在 GitHub 上运行；打标签时要求先通过同 SHA 的全量 CI 门禁
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     permissions:
       contents: read
     steps:
@@ -100,7 +118,8 @@ jobs:
 
   desktop:
     name: Desktop (${{ matrix.name }})
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -162,6 +181,85 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: node scripts/package/build.mjs desktop ${{ matrix.args }}
+
+      - name: Smoke test unpacked desktop server
+        shell: bash
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const os = require("node:os");
+          const net = require("node:net");
+          const path = require("node:path");
+          const { spawn } = require("node:child_process");
+
+          function findServerDirs(dir, depth = 0, out = []) {
+            if (depth > 6 || !fs.existsSync(dir)) return out;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (!entry.isDirectory()) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.name === "server" && /^resources$/i.test(path.basename(dir))) {
+                out.push(full);
+              } else {
+                findServerDirs(full, depth + 1, out);
+              }
+            }
+            return out;
+          }
+
+          function getFreePort() {
+            return new Promise((resolve, reject) => {
+              const srv = net.createServer();
+              srv.listen(0, "127.0.0.1", () => {
+                const { port } = srv.address();
+                srv.close(() => resolve(port));
+              });
+              srv.on("error", reject);
+            });
+          }
+
+          (async () => {
+            const dirs = findServerDirs("dist/desktop/release");
+            if (dirs.length === 0) throw new Error("未找到解包后的 desktop resources/server 目录");
+            const serverDir = dirs[0];
+            const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-smoke-"));
+            const port = await getFreePort();
+            let logs = "";
+            const child = spawn(process.execPath, [path.join(serverDir, "launcher.js"), "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir], {
+              stdio: ["ignore", "pipe", "pipe"],
+              env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: String(port) },
+            });
+            child.stdout.on("data", (d) => { logs += d.toString(); });
+            child.stderr.on("data", (d) => { logs += d.toString(); });
+
+            const killChild = () => {
+              if (!child.killed) child.kill("SIGTERM");
+            };
+            const deadline = Date.now() + 45000;
+            try {
+              while (Date.now() < deadline) {
+                if (child.exitCode !== null) {
+                  throw new Error("desktop server 提前退出: " + child.exitCode + "\n" + logs);
+                }
+                try {
+                  const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+                  if (res.ok) {
+                    const body = await res.json();
+                    if (body && body.status === "ok") {
+                      console.log("Desktop unpacked /api/health smoke OK:", serverDir, body);
+                      return;
+                    }
+                  }
+                } catch {}
+                await new Promise((r) => setTimeout(r, 500));
+              }
+              throw new Error("desktop server 健康检查超时\n" + logs);
+            } finally {
+              killChild();
+              await new Promise((r) => setTimeout(r, 400));
+              fs.rmSync(dataDir, { recursive: true, force: true });
+            }
+          })().catch((err) => { console.error(err); process.exit(1); });
+          '
 
       - name: 检查 Windows 签名配置与安装包元数据
         if: env.SIGN_WINDOWS == 'true'
@@ -234,7 +332,8 @@ jobs:
 
   fnos:
     name: fnOS (${{ matrix.arch }})
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -277,6 +376,50 @@ jobs:
           node scripts/package/build.mjs bundle
           node scripts/package/build.mjs fnos --arch ${{ matrix.arch }}
 
+      - name: Smoke test fnOS package lifecycle & health
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/WrongNotebook-FnOS-*.fpk
+          TMP_ROOT="$(mktemp -d)"
+          TMP_APP="${TMP_ROOT}/app"
+          TMP_VAR="${TMP_ROOT}/var"
+          mkdir -p "${TMP_APP}/target" "${TMP_VAR}"
+          cp -R dist/fnos/cmd "${TMP_APP}/cmd"
+          cp -R dist/fnos/app/* "${TMP_APP}/target/"
+          chmod +x "${TMP_APP}"/cmd/*
+
+          PORT="$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close();});')"
+          cleanup() {
+            TRIM_APPNAME=wrongnotebook TRIM_APPDEST="${TMP_APP}" TRIM_PKGVAR="${TMP_VAR}" "${TMP_APP}/cmd/main" stop >/dev/null 2>&1 || true
+            rm -rf "${TMP_ROOT}"
+          }
+          trap cleanup EXIT
+
+          export TRIM_APPNAME=wrongnotebook
+          export TRIM_APPDEST="${TMP_APP}"
+          export TRIM_PKGVAR="${TMP_VAR}"
+          export TRIM_SERVICE_PORT="${PORT}"
+          export wizard_admin_email="fnos-smoke@example.com"
+          export wizard_admin_password="SmokeTestPass123!"
+
+          "${TMP_APP}/cmd/install_init"
+          "${TMP_APP}/cmd/install_callback"
+          test -s "${TMP_VAR}/config/initial-admin.json"
+          if grep -q "SmokeTestPass123!" "${TMP_VAR}/install.log"; then
+            echo "::error::fnOS install.log 不得记录明文向导密码"
+            exit 1
+          fi
+
+          "${TMP_APP}/cmd/main" start
+          HEALTH="$(curl -fsS "http://127.0.0.1:${PORT}/api/health")"
+          echo "fnOS health response: ${HEALTH}"
+          echo "${HEALTH}" | grep -q '"status":"ok"'
+
+          "${TMP_APP}/cmd/upgrade_init"
+          "${TMP_APP}/cmd/upgrade_callback"
+          find "${TMP_VAR}/backups" -maxdepth 2 -name "wrong-notebook.db" -size +0c | grep -q "fnos-upgrade-"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-fnos-${{ matrix.arch }}
@@ -285,7 +428,8 @@ jobs:
 
   android:
     name: Android
-    if: github.server_url == 'https://github.com'
+    needs: [ci-gate]
+    if: ${{ github.server_url == 'https://github.com' && always() && (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') }}
     runs-on: ubuntu-24.04
     # 未命中缓存时需要交叉编译 Prisma 引擎
     timeout-minutes: 90
@@ -363,6 +507,41 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: node scripts/package/build.mjs android
+
+      - name: Verify Android standalone server.zip contents
+        run: |
+          python3 - <<'PY'
+          import zipfile
+
+          zip_path = 'packaging/android/app/src/standalone/assets/server.zip'
+          with zipfile.ZipFile(zip_path) as zf:
+              names = set(zf.namelist())
+
+          required = [
+              'launcher.js',
+              'server.js',
+              'prisma/seed.db',
+              'node_modules/@img/sharp-wasm32/package.json',
+              'node_modules/@emnapi/runtime/package.json',
+          ]
+          missing = [item for item in required if item not in names]
+          if missing:
+              raise SystemExit(f'server.zip 缺少必需条目: {missing}')
+
+          forbidden = [
+              name for name in names
+              if any(token in name for token in (
+                  'node_modules/@img/sharp-linux',
+                  'node_modules/@img/sharp-darwin',
+                  'node_modules/@img/sharp-win32',
+                  'node_modules/@img/sharp-libvips',
+                  'schema-engine-',
+              )) or (name.endswith('.node') and 'query_engine' in name)
+          ]
+          if forbidden:
+              raise SystemExit(f'server.zip 包含不应打包的平台原生二进制: {forbidden[:10]}')
+          print(f'server.zip verified OK ({len(names)} entries, sharp-wasm32 bundled without native @img binaries)')
+          PY
 
       - name: Verify signatures
         shell: bash

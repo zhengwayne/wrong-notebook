@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import { acceptConfirmDialog, ADMIN_PASSWORD } from './helpers';
+import { acceptConfirmDialog, ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 async function login(page: Page) {
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.getByLabel(/邮箱|Email/).fill('admin@localhost');
     await page.getByLabel(/^密码$|^Password$/).fill(ADMIN_PASSWORD);
     await page.getByRole('button', { name: /登录|Login/ }).click();
@@ -74,5 +74,5 @@ test('新建错题本、搜索和批量删除错题，清空后删除错题本',
     await page.getByRole('button', { name: '删除' }).first().click();
     await acceptConfirmDialog(page);
     await page.waitForURL('**/notebooks');
-    await expect(page.getByText(notebookName)).not.toBeVisible();
+    await expect(page.locator('main').getByText(notebookName)).not.toBeVisible();
 });

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icons/icon.png" width="128" height="128" alt="智能错题本应用图标">
+  <img src="public/icons/icon.png" width="128" height="128" alt="学迹应用图标">
 </p>
 
-# Smart Wrong Notebook (智能错题本)
+# 学迹（XueJi）
 
 **简体中文** | [English](README.en.md)
 
@@ -158,29 +158,32 @@
 - **🧪 分阶段变式审核**：默认先规划再逐题生成，用 mathjs 对可计算题做符号/数值验算，并另一次 AI 独立重解比对答案，再与原题和已练习题目去重、复核难度。无法验算或结果不一致的题目进入「待审核」，**不会自动通过**；老师在「变式审核」中批准、编辑或拒绝后，题目才会写入练习记录或组成可打印试卷（复用现有组卷与打印）。可在「设置 → 通用」关闭流水线，改回原来的一次生成，便于对比质量、耗时和用量；对比页支持查看汇总或导出 CSV。流程设计借鉴 [DeepTutor](https://github.com/HKUDS/DeepTutor) v1.7.2（Apache-2.0）的「先规划、再逐题生成」，以 TypeScript 重新实现，不复制其 Python 流水线，也不执行模型生成的代码。
 - **🎯 按错题本出题与专题**：老师可查看每位学生（改卷确认后的「学生名·学科」错题本）的弱点画像（知识点、错因、掌握与复习状态、近因），为一名学生或整班生成个性化练习卷（按薄弱点由易到难）或补救专题课题（标题、针对知识点、原因、简要提纲和代表练习题）；班级视图会汇总共性薄弱点并建议班级专题。班级批量有人数上限，每一轮计一次组卷额度。
 - **📈 掌握概率**：根据举一反三和试卷的作答历史，由 AI 评估每道题的已掌握概率。错题分为三种状态：没有举一反三记录的为「待复习」，有记录且掌握概率低于已掌握阈值的为「复习中」，达到阈值的为「已掌握」。阈值默认 50%，每个用户可在设置中单独调整。
-- **📅 今日复习**：按 1、2、4、7、15、30 天的艾宾浩斯间隔安排每道错题的复习，做对进入下一轮间隔，做错从头开始。导航栏的「复习」页列出今天到期的错题（最早到期的在前），首页显示今日待复习数量。
+- **📅 今日复习**：默认策略（`ebbinghaus-v1`）按 **0（录入当天）、1、2、4、7、15、30 天**共 7 轮艾宾浩斯间隔安排每道错题的复习（连续做对 7 次毕业），做对进入下一轮间隔，做错从第 0 档重新开始；可在「设置 → 通用」切换为逐题记忆模型灰度（`fsrs-v1`）。导航栏「复习」页与学习路径共用同一到期口径，首页显示今日待复习数量。
 - **🧾 错题试卷**：按错题本、知识点和掌握情况随机抽题，用举一反三生成一套可打印的试卷；做完后可按题录入结果，结果计入原题的作答历史。
-- **🖨️ 错题打印**：筛选后打印错题，可选打印题目文字或原图、答案、解析、知识点，调节图片比例，可直接打印或保存为 PDF。
+- **🖨️ 错题打印**：筛选后打印错题，可选打印题目文字或原图、答案、解析、知识点，调节图片比例，可直接打印或保存为 PDF。超过 200 道题时可翻页分批打印，每次打印当前页勾选的题目。
 
-### 老师收卷改卷
+### 老师收卷改卷与家长日常督学
 
-- **📸 收卷拍照改卷**：底部导航「改卷」。新建改卷任务（多个班考同一张卷可一起勾选），标准答案三选一：从已有试卷导入、拍答案页由 AI 识别、或快速录入（如 `1-5 ABCDA`、`6 x=2|x=2.0 4分`、`13 主观 10 要点`）。
+- **📸 收卷拍照改卷与随堂无答案速批**：底部导航「改卷」。支持常规标准答案模式（从已有试卷导入、拍答案页识别、或快速文本录入）与**随堂无答案速批模式**（先由视觉模型提取题干、再由文本模型结合 `mathjs` 独立推演参考答案，支持数值分制或「优/良/合格/待订正」等级制），未预先导入花名册时也可自动归入随堂速批班。
+- **🔗 扫码自助交卷与催交文案**：老师可为任务开启免注册扫码交卷短链（`/submit/[token]`，仅凭匹配名册的学号+姓名提交，不暴露班级花名册隐私），并一键复制未交名单催交通知文案发至班级群。
 - **🗂️ 导入学生名册**：在「班级」卡片中从 Excel 复制粘贴，或选择 `.csv` / `.xlsx` 文件，包含班级、学号、姓名（表头可有可无，Tab、逗号、空格分隔均可）。一次可导入多个班，先预览新增、更新、重复和出错的行，再确认写入；已有学生按 班级+学号 更新，不会删除名册中的学生。Excel 只读第一个工作表。
-- **🔎 按卷头自动对应学生**：每拍一张，后台立即读卷头上手写的班级、学号、姓名，按「班级+学号 → 学号 → 姓名（容忍形近错字）」匹配名册，并交叉核对。学号与姓名矛盾、多人同名、置信度低或同一学生出现两份时，答卷进入「待确认」，列出卷面读到的信息、原因和候选学生，点一下即可分配，不会悄悄分给低置信度的学生。
-- **📑 自动归页**：没有姓名的页（背面、A3 第二面）自动接到上一位学生；读到新的学生就开始新的一份，同一学生连续写了名字不会重复成两份；第一页没有姓名时标为待确认。一份在下一位学生开始或点「完成」后自动上传判分。拍照页和答卷页都可以「从这页起新一份」「并入上一份」或改学生。批量选照片时按拍摄时间、文件名排序后同样处理。每读一张卷头计一次 AI 调用额度。
-- **🤖 AI 判分 + 老师复核**：客观题按答案精确比对（选择题不区分大小写和顺序，可设多个可接受答案），主观题给出 AI 建议分和理由；老师逐题一键「判对 / 判错」或直接改分，确认后错题自动导入该学生的错题本（「学生名·学科」，保留知识点标签）。
-- **📊 班级汇总**：平均分、最高最低分、每题错误率、共性薄弱知识点、学生成绩表，可导出成绩 CSV 或直接打印。
-- 判分方式的设计参考了 [OMRChecker](https://github.com/Udayraj123/OMRChecker)（MIT）的答案配置思路（题号区间、多个可接受答案、按题设分值），未使用其代码。改卷数据暂未纳入数据备份。
+- **🔎 按卷头自动对应学生与跨页归份**：每拍一张立即读卷头班级、学号、姓名匹配名册，无姓名背面自动接到上一位学生，冲突或低置信度停在「待确认」供一键分配。
+- **🚦 红绿灯分流、横向切题连批与单题裁图**：全客观高置信度答卷自动归入「绿灯免检」支持一键全班批量确认；支持**按题号横向流水阅卷**（同一道题平铺全班单题裁切框快速打分）；客观题支持分数/小数/方程解数学等价与英文多词短语空格保护；确认入库时自动按归一化 `bbox` 裁出单题图片存入学生错题本。
+- **✍️ 书写 · 整洁 · 态度三维过程评价**：AI 依据涂改面积、排版对齐与留白比例给出宏观视觉提醒，老师点选三维等级与 8 枚快捷评语胶囊即可 1 秒生成鼓励式批语，并可在学习路径步骤上添加教师督学批注。
+- **📄 班级热力矩阵、Word 讲义导出与家长反馈卡**：教师工作台提供「学生 × 知识点 × 习惯」掌握度热力矩阵，错题本与统计页支持按「班级 → 学生」级联筛选；班级汇总页支持导出可编辑 **Word（`.docx`）错题讲评讲义**；单份答卷可生成带时效的家长批改反馈卡短链（`/share/submission/[token]`），家长打开后可免重拍一键将错题导入自家孩子错题本。
+- **👨‍👩‍👧‍👦 家长全科督学清单与孩子专注锁**：家长首页提供**每日全科作业待办清单**（书面/背诵/听写/错题复习）与连续打卡天数激励；支持设置 **4 位 PIN 码开启「孩子专注做题模式」**（服务端 `HttpOnly` 签名锁自动隐藏设置、删题与账号切换，连续输错 5 次锁定 15 分钟）；巩固组卷严格按当前选定孩子/学生隔离抽题，开放小学语文错题本并内置小初高语文及史地政课标知识点库。
+- 判分方式的设计参考了 [OMRChecker](https://github.com/Udayraj123/OMRChecker)（MIT）的答案配置思路（题号区间、多个可接受答案、按题设分值），未使用其代码。
 
 ### 管理与统计
 
 - **🔍 多维度筛选**：按掌握状态、时间范围、知识点、年级学期、试卷等级等条件筛选，支持批量操作和两题相似度比较。
-- **📊 数据统计**：错题与练习的掌握率、月度趋势和学科分布。
-- **⏳ 后台任务**：页面右下角的按钮可查看识别、AI 生成、动画语音生成、批量标注、组卷等耗时事务的进度；离开页面后事务仍在服务器上继续。
-- **💾 数据导入导出**：在「设置」中导出或导入数据备份，包含错题本、错题、练习与作答记录、试卷、个人偏好、变式审核记录和已合成的云端语音；账户凭据和 AI 配置不在备份中。改卷名册与答卷仍暂未纳入备份，因此变式记录中的学生/班级外键在导入后可能为空。
+- **📊 数据统计**：错题与练习的掌握率、月度趋势和学科分布；管理员还可通过只读诊断接口 `GET /api/admin/metrics` 查看异步任务成功率、AI 队列饱和度与溯源修改率。
+- **⏳ 后台任务**：页面右下角的按钮可查看识别、AI 生成、动画语音生成、批量标注、组卷等耗时事务的进度；任务状态持久化保存在数据库，离开页面后仍在服务器上继续。
+- **💾 数据导入导出与每日快照**：在「设置 → 危险」导出或导入 **v3 流式 ZIP 备份**（支持 AES-256-GCM 口令加密，完整包含错题本、多孩子与班级学生档案、家长试卷、教师改卷名册与答卷、随机试卷、个人偏好、变式审核阶段、掌握度、学习路径和云端语音；兼容旧版 JSON 导入），账户凭据和 AI 配置不在备份中；同时支持迁移前自动备份与服务端每日 `VACUUM INTO` 一致性快照。全用户备份请由管理员选择「导入全部」。
+- **🛡️ 隐私告知与自助注销**：「设置 → 关于」透明告知当前视觉、文本与语音 AI 提供商及端点类型（云端 / 本地端点），图片入库与发送前均会在服务端剥离 EXIF 元数据；普通用户在「设置 → 危险」可输入当前密码完成单事务自助销户（`DELETE /api/user`）。
 - **🌗 深色模式**：顶部导航栏的主题按钮可在「自动（跟随系统）」「浅色」「深色」之间切换，默认自动。偏好按用户保存在账号中，换设备登录也保持一致。
 - **🕒 应用时区**：默认北京时间，管理员可修改，日期显示与统计都按应用时区计算，详见 [时区说明](doc/TIME_ZONE.md)。
-- **🔑 一次性初始化链接**：全新安装不再预置固定密码的管理员。服务首次启动时生成只能使用一次的初始化链接，打开后自行设置管理员邮箱和密码：桌面版、安卓单机版自动打开；飞牛OS 直接在安装向导中填写管理员邮箱和密码；Docker、npm、源码运行打印在启动日志中（也可在数据目录的 `config/setup-token` 中找到令牌）。从旧版本升级的实例保留原有账号。
+- **🔑 首次创建管理员**：桌面版和安卓单机版会自动打开管理员创建页，飞牛OS 在安装向导中设置账号。Docker、npm 和源码部署者从配置目录的 `setup-token` 文件读取一次性令牌。旧版本升级保留原有账号。
 - **🧭 安装向导**：管理员首次登录时进入向导：修改默认密码（仅旧版本的默认管理员需要）→ 配置 AI 渠道（推荐免费的 MiniMax Code）→ 创建第一个错题本，后两步可跳过；可在「设置 → 用户管理」中重新运行。已在使用的实例升级后不会自动弹出。
 - **🔐 多用户与管理后台**：支持注册、登录，数据按用户隔离；新用户注册默认关闭（关闭时登录页不显示注册入口，改为提示联系管理员），管理员可在「设置 → 用户管理」中开启，并可限制每人每天的 AI 使用次数、查看今日用量；管理员可在「设置 → 用户管理」进入管理后台，查看使用统计，启用/禁用或删除用户。登录和注册带失败次数限制，防止暴力破解密码。
 - **🐞 调试日志**：遇到问题时，管理员在「设置 → 用户管理」中打开调试模式，复现问题后导出调试日志（JSON）发给作者。调试模式下记录包括 debug 级别在内的全部服务端日志和前端错误，导出时自动去除 API Key、密码和令牌；日志只保存在内存中，24 小时后自动关闭，服务重启后清空。
@@ -188,7 +191,7 @@
 
 ## 🚀 快速开始
 
-按上手难度从易到难排列。全新安装没有默认账号：首次启动时会生成一次性初始化链接，打开后设置管理员邮箱和密码，再进入安装向导配置 AI 渠道、创建第一个错题本。桌面版、安卓单机版会自动打开该链接；Docker 用 `docker logs wrong-notebook 2>&1 | grep initialize` 查看；npm、源码运行打印在终端里。链接中的主机为 `localhost` 时，从其他设备访问需换成服务器地址（或设置 `NEXTAUTH_URL`）。尚未创建管理员时，登录页也会显示这些说明。
+首次启动后，桌面版和安卓单机版会自动打开管理员创建页。Docker 可运行 `docker exec wrong-notebook cat /app/config/setup-token` 读取一次性令牌。npm 和源码运行时按启动日志显示的路径读取文件（npm 默认 `~/.wrong-notebook/config/setup-token`，源码默认 `config/setup-token`）。在浏览器地址栏输入服务地址和 `/initialize?token=`，在等号后粘贴令牌，再打开页面设置管理员邮箱和密码。随后可通过安装向导配置 AI 渠道和第一个错题本。
 
 ### 方式一：安装包（Windows / macOS / Linux / 飞牛OS / 安卓 / npm）
 
@@ -212,7 +215,7 @@ Windows 的 [Code signing policy（代码签名政策）](doc/CODE_SIGNING.md)�
 > codesign --force --deep --sign - /Applications/WrongNotebook.app
 > ```
 
-也可以通过 npm 安装（Node.js 22 及以上）：
+也可以通过 npm 安装（Node.js 22.15 及以上）：
 
 ```bash
 npm install -g wrong-notebook
@@ -236,7 +239,8 @@ wrong-notebook --port 3000
    ```bash
    mkdir -p wrong-notebook/data wrong-notebook/config
    cd wrong-notebook
-   openssl rand -base64 32   # 生成的字符串用作 NEXTAUTH_SECRET
+   # 新部署执行一次。已有实例保留原密钥。
+   (umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
    ```
 
 2. **启动容器**（任选一种）：
@@ -244,7 +248,7 @@ wrong-notebook --port 3000
    ```bash
    docker run -d --name wrong-notebook \
      --restart always \
-     -e NEXTAUTH_SECRET="上一步生成的密钥" \
+     --env-file .env \
      -e NEXTAUTH_URL="http://你的IP或域名:3000" \
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
@@ -252,9 +256,9 @@ wrong-notebook --port 3000
      ghcr.io/margrop/wrong-notebook:latest
    ```
 
-   或下载仓库中的 [`docker-compose.yml`](docker-compose.yml) 放到当前目录，修改 `NEXTAUTH_SECRET`（及 `NEXTAUTH_URL`）后执行 `docker compose up -d`。
+   或下载仓库中的 [`docker-compose.yml`](docker-compose.yml) 放到当前目录，Compose 会读取同目录的 `.env`。可在其中设置 `NEXTAUTH_URL`，然后执行 `docker compose up -d`。
 
-3. **登录**：访问 `http://你的IP或域名:3000`。
+3. **初始化与登录**：全新部署首次启动后，运行 `docker exec wrong-notebook cat /app/config/setup-token`（使用 Compose 时运行 `docker compose exec -T wrong-notebook cat /app/config/setup-token`）读取一次性令牌，访问 `http://你的IP或域名:3000/initialize?token=<令牌>` 设置管理员邮箱和密码；之后访问 `http://你的IP或域名:3000` 登录。
 
 4. **升级**：拉取新镜像并重建容器，数据保留在挂载目录中，启动时只执行数据库迁移。升级前建议先备份 `data/` 目录。
 
@@ -269,7 +273,7 @@ wrong-notebook --port 3000
 
 ### 方式三：本地源码运行
 
-1. **环境准备**：Node.js 22 及以上（推荐 24）和 npm。
+1. **环境准备**：Node.js 24.15+（24.x，推荐），也支持 22.22.2+（22.x）或 26 及以上。需安装 npm。
 2. **克隆并安装依赖**：
 
    ```bash
@@ -279,7 +283,7 @@ wrong-notebook --port 3000
    cp .env.example .env   # 按「环境变量」一节填写
    ```
 
-3. **初始化数据库**：创建表结构和管理员账户，再导入系统知识点（与 Docker 构建时相同）：
+3. **初始化数据库**：创建表结构、检查管理员状态，再导入系统知识点（与 Docker 构建时相同）：
 
    ```bash
    npx prisma migrate dev
@@ -295,9 +299,13 @@ wrong-notebook --port 3000
 
 ```bash
 docker build -t wrong-notebook:local .
+```
 
+完成构建后，进入方式二创建的部署目录，使用其中的 `.env` 和持久化目录启动容器。
+
+```bash
 docker run -d --name wrong-notebook \
-  -e NEXTAUTH_SECRET="your_secret_key" \
+  --env-file .env \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/config:/app/config" \
@@ -340,6 +348,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | 火山引擎 Agent Plan | [Agent Plan](https://ark.volcengine.com/region:cn-beijing/docs/82379/2160841?lang=zh) 专属 Key，套餐含豆包语音合成 | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seed-evolving` |
 | 火山引擎 Coding Plan | [Coding Plan](https://www.volcengine.com/docs/82379/1928261)，方舟 API Key | `https://ark.cn-beijing.volces.com/api/coding/v3`（不要改成 `/api/v3`，否则不计入套餐） | `doubao-seed-evolving` |
 | 火山引擎（免费试用） | 新用户**免费推理额度**，见[下文](#火山引擎免费试用) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-evolving` |
+| 硅基流动 SiliconFlow | [硅基流动控制台](https://cloud.siliconflow.cn)，部分对话模型**免费**（仅文本，需实名认证） | `https://api.siliconflow.cn/v1` | `THUDM/GLM-Z1-9B-0414` |
+| 硅基流动（国际站） | [SiliconFlow 国际站](https://cloud.siliconflow.com)，独立账号，新用户有体验赠金 | `https://api.siliconflow.com/v1` | `Qwen/Qwen2.5-VL-7B-Instruct` |
 | Anthropic 及兼容接口 | [Claude Console](https://platform.claude.com/) | `https://api.anthropic.com`（不含 `/v1`） | `claude-sonnet-5-5` |
 | Azure OpenAI | Azure 门户 → OpenAI 资源 → 密钥和终结点 | 填写资源 Endpoint 和部署名称 | 部署名称 |
 | OpenAI 及兼容接口 | [OpenAI Platform](https://platform.openai.com/api-keys)，可添加多个配置并切换 | `https://api.openai.com/v1` | `gpt-6.1-sol` |
@@ -420,12 +430,20 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | 环境变量 | 描述 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | 数据库连接地址 | 源码 `file:./dev.db`；Docker `file:/app/data/dev.db` | SQLite 数据库路径 |
+| `SQLITE_JOURNAL_MODE` | SQLite 日志模式 | `WAL` | 可选 `WAL`、`DELETE`、`TRUNCATE`、`PERSIST`、`MEMORY`、`OFF`；NAS NFS/CIFS 网络卷建议设为 `DELETE` 或 `TRUNCATE` |
+| `DAILY_SNAPSHOT_ENABLED` | 每日自动快照 | `true` | 每天自动执行 `VACUUM INTO` 生成一致性快照到 `backups/`；已有卷快照的 Docker 部署可设为 `false` |
+| `DAILY_SNAPSHOT_RETENTION` | 快照保留份数 | `7` | `backups/` 中保留的最近每日快照数量 |
 | `NEXTAUTH_SECRET` | Auth 密钥 | 无 | 用于加密 Session，生产环境必须设置，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 访问地址 | 无 | 部署后的访问地址，如 `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | 信任主机头 | Docker 镜像中为 `true` | 为 `true` 时根据请求自动推断访问地址，适合 Docker/反向代理 |
+| `TRUST_PROXY` | 代理 IP 头信任模式 | `false` | 默认 `false` 忽略代理 IP 头防伪造绕过限流；Nginx/Caddy 反代设 `true`，Cloudflare 后设 `cloudflare` |
+| `TRUSTED_PROXY_HOPS` | 可信反向代理层数 | `1` | 仅 `TRUST_PROXY=true` 时生效，从 `X-Forwarded-For` 末端取第 N 跳客户端 IP |
+| `NEXTAUTH_DEBUG` | NextAuth 调试日志 | `false` | 设为 `true` 时输出 NextAuth 详细调试日志 |
 | `LOG_LEVEL` | 日志级别 | 开发 `debug` / 生产 `info` | 可选 `trace`、`debug`、`info`、`warn`、`error`、`fatal`，详见 [日志指南](doc/LOGGING_GUIDE.md) |
+| `LOG_AI_PAYLOADS` | 生产输出 AI 调试载荷 | `false` | 生产环境默认不向 stdout 打印完整提示词与学生答案；设为 `true` 时输出脱敏并截断后的载荷 |
 | `DEBUG_DB` | SQL 日志 | `false` | 为 `true` 时输出数据库查询日志 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 代理 | 无 | 访问 AI 服务时使用的代理 |
+| `BACKUP_MAX_UPLOAD_BYTES` | 备份导入上传上限（字节） | `2147483648`（2 GiB） | 导入备份时的上传体积上限（解压总量另有 2 GiB 上限）；表单上传按 `Content-Length` 提前拒绝，超限返回 413 |
 | `ALLOW_REGISTRATION` | 允许注册 | `false` | 为 `true` 时默认开放注册；管理员在「设置 → 用户管理」中保存的开关优先 |
 | `AI_DAILY_LIMIT` | 每人每日 AI 次数 | `0`（不限制） | 普通用户每天可发起的 AI 操作次数，管理员不受限制；「设置 → 用户管理」中保存的值优先 |
 | `AI_CONCURRENCY_LIMIT` | 同一模型 AI 并发上限 | `5` | 同一渠道、地址和模型同时进行的 AI 调用数量（1～100），超出的调用排队等待，避免服务商返回 429；「设置 → 用户管理」中保存的值优先 |
@@ -435,7 +453,7 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 
 | 环境变量 | 描述 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `AI_PROVIDER` | AI 提供商 | `minimax` | 可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`anthropic`、`azure`、`openai`、`gemini` |
+| `AI_PROVIDER` | AI 提供商 | `minimax` | 可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`siliconflow`、`siliconflow-global`、`anthropic`、`azure`、`openai`、`gemini` |
 | `MINIMAX_API_KEY` / `MINIMAX_BASE_URL` / `MINIMAX_MODEL` | MiniMax | 地址 `https://api.minimax.cn/v1`，模型 `MiniMax-M3.1-Flash` | 地址和模型可留空 |
 | `MINIMAX_CODE_MODEL` | MiniMax Code 模型 | `MiniMax-M3.1-Flash` | 账号在网页设置中登录，无需 API Key |
 | `MINIMAX_CODE_AUTO_CHECKIN` | MiniMax Code 每日自动签到 | `true` | 设为 `false` 关闭 |
@@ -448,6 +466,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `VOLCENGINE_AGENT_API_KEY` / `VOLCENGINE_AGENT_BASE_URL` / `VOLCENGINE_AGENT_MODEL` | 火山引擎 Agent Plan | 地址 `https://ark.cn-beijing.volces.com/api/plan/v3`，模型 `doubao-seed-evolving` | Agent Plan 管理页的专属 API Key；套餐含豆包语音合成 |
 | `VOLCENGINE_CODING_API_KEY` / `VOLCENGINE_CODING_BASE_URL` / `VOLCENGINE_CODING_MODEL` | 火山引擎 Coding Plan | 地址 `https://ark.cn-beijing.volces.com/api/coding/v3`，模型 `doubao-seed-evolving` | 方舟 API Key；不要改成 `/api/v3`（不计入套餐）；套餐不含语音合成 |
 | `VOLCENGINE_FREE_API_KEY` / `VOLCENGINE_FREE_BASE_URL` / `VOLCENGINE_FREE_MODEL` | 火山引擎（免费试用） | 地址 `https://ark.cn-beijing.volces.com/api/v3`，模型 `doubao-seed-evolving` | 新用户免费推理额度，开启「安心体验模式」后用完自动暂停 |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` / `SILICONFLOW_MODEL` | 硅基流动 SiliconFlow（中国站） | 地址 `https://api.siliconflow.cn/v1`，模型 `THUDM/GLM-Z1-9B-0414` | 部分对话模型免费（仅文本输入，需实名认证）；图片识别需付费视觉模型或其他渠道 |
+| `SILICONFLOW_GLOBAL_API_KEY` / `SILICONFLOW_GLOBAL_BASE_URL` / `SILICONFLOW_GLOBAL_MODEL` | 硅基流动（国际站） | 地址 `https://api.siliconflow.com/v1`，模型 `Qwen/Qwen2.5-VL-7B-Instruct` | 独立账号与 Key，新用户有体验赠金；默认模型支持图片 |
 | `VOLCENGINE_TTS_API_KEY` | 豆包语音 API Key | 无 | 云端语音选择火山引擎豆包语音时使用，与火山方舟的 Key 不同 |
 | `ANTHROPIC_API_KEY` | Anthropic API Key | 无 | 从 [Claude Console](https://platform.claude.com/) 获取 |
 | `ANTHROPIC_BASE_URL` | API 地址 | `https://api.anthropic.com` | 兼容服务填写不含 `/v1` 的地址 |
@@ -474,6 +494,8 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 | `OPENCLAW_AUTH_MODE` | 认证方式 | `credentials` | `credentials`（用户名密码）或 `apikey` |
 | `OPENCLAW_INTEGRATION_API_KEY` | 本系统 API 密钥 | 无 | 仅 `apikey` 模式需要，供 Openclaw 调用本系统，可用 `openssl rand -hex 32` 生成 |
 
+在源码目录运行 `node scripts/test-openclaw.js` 可执行离线集成测试。若要检查已部署实例，请在当前终端设置 `WRONG_NOTEBOOK_URL`（目标 HTTP 或 HTTPS 地址）和 `OPENCLAW_TEST_USER`（测试账号，API Key 模式填邮箱），并按服务端的 `OPENCLAW_AUTH_MODE` 提供 `OPENCLAW_TEST_PASSWORD` 或 `OPENCLAW_INTEGRATION_API_KEY`。默认只校验认证；传入测试图片路径时会向该账号实际导入一题。
+
 新增环境变量时需同步更新 `.env.example`。
 
 </details>
@@ -499,7 +521,7 @@ GeoGebra 的文字、不等式和标签参数按共用命令清单校验，重�
 - **数据库**：[SQLite](https://www.sqlite.org/)（via [Prisma 5](https://www.prisma.io/)）
 - **样式**：[Tailwind CSS v4](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/)（shadcn/ui 风格组件）
 - **公式**：[KaTeX](https://katex.org/)（react-markdown + remark-math）
-- **AI**：MiniMax / MiniMax Code（网页登录）/ 智谱 GLM / DeepSeek / Kimi / 千问 Qwen / 阶跃星辰 StepFun / 火山引擎豆包（含 Agent Plan、Coding Plan、免费试用）/ Anthropic（及兼容接口）/ Azure OpenAI / OpenAI（及兼容接口）/ Google Gemini
+- **AI**：MiniMax / MiniMax Code（网页登录）/ 智谱 GLM / DeepSeek / Kimi / 千问 Qwen / 阶跃星辰 StepFun / 火山引擎豆包（含 Agent Plan、Coding Plan、免费试用）/ 硅基流动 SiliconFlow（国内站与国际站）/ Anthropic（及兼容接口）/ Azure OpenAI / OpenAI（及兼容接口）/ Google Gemini
 - **认证**：[NextAuth.js v4](https://next-auth.js.org/)
 - **测试**：Vitest（单元、集成）、Playwright（E2E）
 
@@ -511,8 +533,8 @@ npm run test:unit           # 单元测试
 npm run test:integration    # 集成测试
 npm test                    # 全部 Vitest 测试
 npm run test:coverage       # 测试覆盖率（低于最低要求时失败）
-npm run test:e2e            # Playwright E2E（先运行 node scripts/prepare-e2e.js 准备测试账号）
-bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构建）
+npm run test:e2e            # Playwright E2E（自动创建临时数据库、配置和测试账号）
+bash scripts/ci.sh          # 完整 CI（使用上述源码开发环境和 Python 3，含生产构建）
 ```
 
 修改 `prisma/schema.prisma` 后使用 `npx prisma migrate dev --name <名称>` 生成正式迁移并提交；迁移须兼容已有数据。更多开发约定见 [AGENTS.md](AGENTS.md)。
@@ -521,8 +543,8 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 
 `scripts/` 目录下提供维护和调试脚本，例如：
 
-- **重置密码**：`node scripts/reset-password.js <邮箱> <新密码>`
-- **恢复默认管理员角色**：`node scripts/seed-admin.js`（只为已有的 `admin@localhost` 恢复管理员角色并启用；没有任何管理员时，重启服务会在日志中打印新的初始化链接）
+- **重置密码**：`node scripts/reset-password.js <邮箱> <新密码>`（邮箱不区分大小写；新密码不少于 8 位且拒绝旧版弱默认口令，重置后自动撤销该用户旧会话）
+- **恢复默认管理员角色**：`node scripts/seed-admin.js`（只为已有的 `admin@localhost` 恢复管理员角色并启用；没有任何管理员时，重启服务后按启动提示从配置目录读取初始化令牌）
 - **重建系统知识点**：`npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts`（保留自定义标签和题目关联；生产环境操作前请先备份）
 - **检查数据库**：`node scripts/check-db-users.js`、`node scripts/check-db-data.js`
 
@@ -547,7 +569,7 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 
 使用中遇到问题、想分享用法或提建议，欢迎加入 QQ 群 **964325781**，或用 QQ 扫描下方二维码。Bug 和功能需求仍建议提交到 [Issues](https://github.com/margrop/wrong-notebook/issues)，方便跟踪处理；在群里发截图前请隐去孩子姓名、学校、账号和访问地址。
 
-<img src="doc/images/qq-group.webp" alt="智能错题本用户交流 QQ 群二维码，群号 964325781" width="240">
+<img src="doc/images/qq-group.webp" alt="学迹用户交流 QQ 群二维码，群号 964325781" width="240">
 
 也可以在 X 上关注作者 [@MargropMe](https://x.com/MargropMe)，获取更新动态或私信交流。
 

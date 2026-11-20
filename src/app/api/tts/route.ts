@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/current-user";
-import { badRequest, unauthorized } from "@/lib/api-errors";
+import { badRequest, tooManyRequests, unauthorized } from "@/lib/api-errors";
+import { ttsUserLimiter } from "@/lib/rate-limit";
 import { getTtsMode, synthesizeSpeech } from "@/lib/tts/speech-cache";
-import { speechErrorResponse, speechLanguageSchema, speechTextSchema } from "@/lib/tts/request";
+import { speechErrorResponse, speechLanguageSchema, speechPitchSchema, speechRateSchema, speechTextSchema, speechVoiceSchema } from "@/lib/tts/request";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,9 @@ const bodySchema = z.object({
     language: speechLanguageSchema,
     /** 忽略缓存重新合成 */
     regenerate: z.boolean().optional(),
+    voice: speechVoiceSchema,
+    rate: speechRateSchema,
+    pitch: speechPitchSchema,
 });
 
 /**
@@ -38,12 +42,23 @@ async function handlePost(req: Request) {
     if (!user) {
         return unauthorized("Authentication required");
     }
+    const retryAfter = ttsUserLimiter.retryAfter(user.id);
+    if (retryAfter > 0) {
+        return tooManyRequests(retryAfter, "TTS_RATE_LIMITED");
+    }
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
         return badRequest("INVALID_TTS_TEXT");
     }
+    ttsUserLimiter.hit(user.id);
     try {
-        const result = await synthesizeSpeech(parsed.data.text, parsed.data.language, { regenerate: parsed.data.regenerate });
+        const result = await synthesizeSpeech(parsed.data.text, parsed.data.language, {
+            regenerate: parsed.data.regenerate,
+            voice: parsed.data.voice,
+            rate: parsed.data.rate,
+            pitch: parsed.data.pitch,
+            userId: user.id,
+        });
         if (!result) return badRequest("TTS_DISABLED");
         return NextResponse.json(result);
     } catch (error) {

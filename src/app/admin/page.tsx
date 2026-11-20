@@ -63,7 +63,7 @@ export default function AdminPage() {
     }
 
     return (
-        <div className="max-w-6xl mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="max-w-6xl mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8">
             <PageHeader
                 title={t.admin?.dashboard?.title || "Admin Dashboard"}
                 description={t.admin?.dashboard?.subtitle || "View all users and error statistics"}
@@ -99,6 +99,6 @@ export default function AdminPage() {
                     />
                 </CardContent>
             </Card>
-        </div>
+        </main>
     )
 }

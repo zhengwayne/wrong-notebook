@@ -15,6 +15,7 @@ async function checkData() {
 
         const items = await prisma.errorItem.findMany({
             take: 3,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             select: {
                 id: true,
                 questionText: true,
@@ -30,7 +31,8 @@ async function checkData() {
             console.log(`  Created: ${item.createdAt}`);
         });
     } catch (e) {
-        console.error('Error:', e);
+        console.error('Error:', e.message);
+        process.exitCode = 1;
     } finally {
         await prisma.$disconnect();
     }

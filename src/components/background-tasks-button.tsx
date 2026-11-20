@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { CheckCircle2, ListTodo, Loader2, XCircle } from "lucide-react";
+import { KID_MODE_CHANGED_EVENT, useKidModeState } from "@/components/parent/kid-mode-lock-bar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
-import { apiClient } from "@/lib/api-client";
+import { classifyAiErrorText } from "@/lib/ai/error-text-classification";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/date-time";
 import type { BackgroundTask } from "@/lib/background-tasks";
 
@@ -37,8 +39,12 @@ export function BackgroundTasksButton() {
     const [open, setOpen] = useState(false);
     const [tasks, setTasks] = useState<BackgroundTask[]>([]);
     const [now, setNow] = useState(() => Date.now());
+    const [disabledByForbidden, setDisabledByForbidden] = useState(false);
 
-    const hidden = status !== "authenticated" || HIDDEN_PATHS.some((pattern) => pattern.test(pathname || ""));
+    const isPathHidden = HIDDEN_PATHS.some((pattern) => pattern.test(pathname || ""));
+    const { state: kidMode } = useKidModeState(status === "authenticated" && !isPathHidden);
+    const kidLocked = Boolean(kidMode?.active);
+    const hidden = status !== "authenticated" || isPathHidden || kidLocked;
 
     const refresh = useCallback(async () => {
         if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -46,13 +52,23 @@ export function BackgroundTasksButton() {
             const result = await apiClient.get<{ tasks: BackgroundTask[] }>("/api/tasks");
             setTasks(result.tasks);
             setNow(Date.now());
-        } catch {
+        } catch (err) {
+            if (err instanceof ApiError && err.status === 403) {
+                setDisabledByForbidden(true);
+            }
             // 查询失败时保留上次结果，下次轮询再试
         }
     }, []);
 
     useEffect(() => {
-        if (hidden) return;
+        if (typeof window === "undefined") return;
+        const onKidModeChanged = () => setDisabledByForbidden(false);
+        window.addEventListener(KID_MODE_CHANGED_EVENT, onKidModeChanged);
+        return () => window.removeEventListener(KID_MODE_CHANGED_EVENT, onKidModeChanged);
+    }, []);
+
+    useEffect(() => {
+        if (hidden || disabledByForbidden) return;
         // 立即查询一次（放到下一轮事件循环，避免在 effect 中同步更新状态），之后定时刷新
         const first = setTimeout(refresh, 0);
         const timer = setInterval(refresh, open ? OPEN_POLL_MS : CLOSED_POLL_MS);
@@ -60,16 +76,25 @@ export function BackgroundTasksButton() {
             clearTimeout(first);
             clearInterval(timer);
         };
-    }, [hidden, open, refresh]);
+    }, [hidden, disabledByForbidden, open, refresh]);
 
     if (hidden) return null;
 
     const runningCount = tasks.filter((task) => task.status === "running").length;
     const hasFinished = tasks.some((task) => task.status !== "running");
-    const errorText = (code: string | null) => {
+    const errorText = (code: string | null, kind?: BackgroundTask["kind"]) => {
         if (!code) return null;
-        const mapped = (t.backgroundTasks.errors as Record<string, string>)[code] ?? (t.errors as Record<string, unknown>)[code];
-        return typeof mapped === "string" ? mapped : code;
+        const lookup = (key: string) => (t.backgroundTasks.errors as Record<string, string>)[key] ?? (t.errors as Record<string, unknown>)[key];
+        const head = code.split(":")[0]?.trim() || code;
+        const mapped = lookup(code) ?? lookup(head);
+        if (typeof mapped === "string") return mapped;
+        // 仅对非数据导入类任务按 AI 服务商原文归类，避免把备份导入的 JSON/体积报错误译为 AI 错误
+        if (kind !== "data_import") {
+            const classified = classifyAiErrorText(code);
+            const translated = classified ? lookup(classified) : undefined;
+            if (typeof translated === "string") return translated;
+        }
+        return code;
     };
 
     const clearFinished = async () => {
@@ -135,7 +160,7 @@ export function BackgroundTasksButton() {
                                                     </div>
                                                 </div>
                                             )}
-                                            {task.error && <div className="text-xs text-destructive">{errorText(task.error)}</div>}
+                                            {task.error && <div className="text-xs text-destructive">{errorText(task.error, task.kind)}</div>}
                                             <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                                                 <span>{t.backgroundTasks.startedAt.replace("{time}", formatDateTime(task.startedAt, "HH:mm:ss", timeZone))}</span>
                                                 <span>{t.backgroundTasks.elapsed.replace("{time}", formatElapsed(task.startedAt, task.finishedAt, now))}</span>

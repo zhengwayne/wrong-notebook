@@ -4,6 +4,12 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
 import type { PcmAudio } from "./wav";
 
+export type EncodedMp3Audio = { encoded: "mp3"; data: Buffer };
+
+export function isEncodedMp3(audio: PcmAudio | EncodedMp3Audio): audio is EncodedMp3Audio {
+    return "encoded" in audio && audio.encoded === "mp3" && Buffer.isBuffer(audio.data);
+}
+
 const BITRATE_KBPS = 48;
 const FRAME_SAMPLES = 1152;
 

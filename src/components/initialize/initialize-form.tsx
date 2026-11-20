@@ -7,7 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD } from "@/lib/default-admin";
+import { DEFAULT_ADMIN_EMAIL, isDefaultAdminPassword } from "@/lib/default-admin";
 import { frontendLogger } from "@/lib/frontend-logger";
 
 interface InitializeFormProps {
@@ -36,7 +36,7 @@ export function InitializeForm({ token, onAlreadyInitialized }: InitializeFormPr
             setError(texts.passwordMismatch);
             return;
         }
-        if (password.length < 6 || password === DEFAULT_ADMIN_PASSWORD) {
+        if (password.length < 6 || isDefaultAdminPassword("admin", password)) {
             setError(texts.passwordHint);
             return;
         }

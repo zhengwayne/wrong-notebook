@@ -1,7 +1,7 @@
 /**
  * 登录、注册失败限流：计数、锁定、过期与客户端 IP 识别
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { User } from 'next-auth';
 
 const mocks = vi.hoisted(() => ({
@@ -51,13 +51,47 @@ describe('RateLimiter', () => {
     });
 });
 
-describe('getClientIp', () => {
-    it('依次取 Cloudflare、x-real-ip、x-forwarded-for 的第一个地址', () => {
+describe('getClientIp (TRUST_PROXY 三态)', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it('未配置或 TRUST_PROXY=false 时忽略所有转发头返回 null', () => {
+        vi.stubEnv('TRUST_PROXY', '');
+        const headers = new Headers({
+            'cf-connecting-ip': '1.1.1.1',
+            'x-real-ip': '2.2.2.2',
+            'x-forwarded-for': '3.3.3.3',
+        });
+        expect(getClientIp(headers)).toBeNull();
+
+        vi.stubEnv('TRUST_PROXY', 'false');
+        expect(getClientIp(headers)).toBeNull();
+        expect(getClientIp({ 'x-real-ip': '2.2.2.2' })).toBeNull();
+        expect(getClientIp(undefined)).toBeNull();
+    });
+
+    it('TRUST_PROXY=true 时忽略 cf-connecting-ip，按 TRUSTED_PROXY_HOPS 从 x-forwarded-for 末端回溯可信跳', () => {
+        vi.stubEnv('TRUST_PROXY', 'true');
+        vi.stubEnv('TRUSTED_PROXY_HOPS', '1');
+        expect(getClientIp(new Headers({
+            'cf-connecting-ip': '1.1.1.1',
+            'x-real-ip': '2.2.2.2',
+            'x-forwarded-for': '9.9.9.9, 3.3.3.3',
+        }))).toBe('3.3.3.3');
+
+        vi.stubEnv('TRUSTED_PROXY_HOPS', '2');
+        expect(getClientIp({ 'x-forwarded-for': '9.9.9.9, 3.3.3.3, 10.0.0.1' })).toBe('3.3.3.3');
+
+        // 无 x-forwarded-for 时回退 x-real-ip，普通对象头名大小写不敏感
+        expect(getClientIp({ 'X-Real-IP': '2.2.2.2', 'cf-connecting-ip': '1.1.1.1' })).toBe('2.2.2.2');
+        expect(getClientIp({})).toBeNull();
+    });
+
+    it('TRUST_PROXY=cloudflare 时优先读取 cf-connecting-ip，缺失时回退代理链路', () => {
+        vi.stubEnv('TRUST_PROXY', 'cloudflare');
         expect(getClientIp(new Headers({ 'cf-connecting-ip': '1.1.1.1', 'x-real-ip': '2.2.2.2' }))).toBe('1.1.1.1');
         expect(getClientIp({ 'x-real-ip': '2.2.2.2' })).toBe('2.2.2.2');
-        expect(getClientIp({ 'x-forwarded-for': ' 3.3.3.3, 10.0.0.1' })).toBe('3.3.3.3');
-        expect(getClientIp(undefined)).toBeNull();
-        expect(getClientIp({})).toBeNull();
     });
 });
 
@@ -66,9 +100,14 @@ describe('登录失败锁定', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubEnv('TRUST_PROXY', 'true');
         mocks.findUnique.mockResolvedValue(userRow);
         loginAccountLimiter.reset('kid@example.com');
         loginIpLimiter.reset('9.9.9.9');
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
     });
 
     it('同一账号密码错 5 次后，即使密码正确也拒绝，且不再校验密码', async () => {

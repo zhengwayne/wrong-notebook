@@ -43,8 +43,10 @@ vi.mock('@/lib/config', () => ({
 }));
 
 const mockGetServerSession = vi.hoisted(() => vi.fn());
+const mockUserFindUnique = vi.hoisted(() => vi.fn());
 vi.mock('next-auth', () => ({ getServerSession: mockGetServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mockUserFindUnique } } }));
 
 // Import after mocks
 import { GET, POST } from '@/app/api/settings/route';
@@ -57,6 +59,11 @@ describe('/api/settings', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetServerSession.mockResolvedValue(adminSession);
+        mockUserFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+            if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+            if (where?.id === 'user-1') return { id: 'user-1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+            return null;
+        });
     });
 
     describe('访问控制', () => {
@@ -78,7 +85,8 @@ describe('/api/settings', () => {
 
             expect(response.status).toBe(200);
             expect(data.aiProvider).toBe('gemini');
-            expect(Object.keys(data).filter((key) => !['aiProvider', 'timeouts', 'timeZone'].includes(key))).toEqual([]);
+            expect(Object.keys(data).filter((key) => !['aiProvider', 'aiReadiness', 'timeouts', 'timeZone', 'dataFlow'].includes(key))).toEqual([]);
+            expect(data.dataFlow).toMatchObject({ vision: { provider: 'gemini', endpointType: 'official' } });
             expect(data.timeZone).toBe('Asia/Shanghai');
             expect(JSON.stringify(data)).not.toContain('sk-test-key');
             expect(JSON.stringify(data)).not.toContain('AIza-test-key');
@@ -121,20 +129,42 @@ describe('/api/settings', () => {
             expect(data.prompts).toBeDefined();
         });
 
-        it('应该返回 AI 提供商设置', async () => {
+        it('应该返回 AI 提供商设置并对非空密钥脱敏，且保持空密钥不被脱敏', async () => {
             const response = await GET();
             const data = await response.json();
 
-            expect(data.openai.instances[0].apiKey).toBe('sk-test-key');
-            expect(data.gemini.apiKey).toBe('AIza-test-key');
+            expect(data.openai.instances[0].apiKey).toBe('********');
+            expect(data.gemini.apiKey).toBe('********');
             expect(data.gemini.model).toBe('gemini-2.5-flash');
+            expect(JSON.stringify(data)).not.toContain('sk-test-key');
+            expect(JSON.stringify(data)).not.toContain('AIza-test-key');
+
+            // 空字符串和未配置渠道的密钥保持原样，不返回 ********
+            const base = mocks.mockGetAppConfig();
+            mocks.mockGetAppConfig.mockReturnValueOnce({
+                ...base,
+                gemini: { apiKey: '', baseUrl: '', model: 'gemini-2.5-flash' },
+                anthropic: undefined,
+            } as unknown as ReturnType<typeof mocks.mockGetAppConfig>);
+            const emptyRes = await GET();
+            const emptyData = await emptyRes.json();
+            expect(emptyData.gemini.apiKey).toBe('');
+            expect(emptyData.anthropic).toBeUndefined();
         });
 
-        it('应该返回注册开关状态', async () => {
+        it('应该返回注册开关状态与管理员安全态势摘要', async () => {
             const response = await GET();
             const data = await response.json();
 
+            expect(response.status).toBe(200);
             expect(data.allowRegistration).toBe(true);
+            expect(data.securityPosture).toMatchObject({
+                trustProxyMode: expect.any(String),
+                defaultNextAuthSecret: expect.any(Boolean),
+                httpsConfigured: expect.any(Boolean),
+                registrationOpen: true,
+                openclawAuthMode: expect.stringMatching(/^(apikey|credentials)$/),
+            });
         });
     });
 
@@ -262,6 +292,31 @@ describe('/api/settings', () => {
             expect(updateCall.openai?.instances?.length).toBe(1);
             expect(updateCall.openai?.instances?.[0]?.apiKey).toBe('sk-test-key');
             expect(updateCall.gemini?.apiKey).toBe('AIza-test-key');
+        });
+
+        it('文本角色独立凭据的掩码 API Key 同样保留原有值', async () => {
+            const current = mocks.mockGetAppConfig();
+            mocks.mockGetAppConfig.mockReturnValueOnce({
+                ...current,
+                textSameAsVision: false,
+                aiTextProvider: 'gemini',
+                textAi: { gemini: { apiKey: 'AIza-text-saved' } },
+            } as ReturnType<typeof mocks.mockGetAppConfig>);
+            const request = new Request('http://localhost/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    textSameAsVision: false,
+                    aiTextProvider: 'gemini',
+                    textAi: { gemini: { apiKey: '********', model: 'gemini-pro' } },
+                }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const response = await POST(request);
+            expect(response.status).toBe(200);
+            expect(mocks.mockUpdateAppConfig.mock.calls[0][0].textAi?.gemini).toEqual({
+                apiKey: 'AIza-text-saved',
+                model: 'gemini-pro',
+            });
         });
 
         it('国产大模型渠道同样保留掩码 API Key 的原有值', async () => {
@@ -421,6 +476,87 @@ describe('/api/settings', () => {
 
             expect(response.status).toBe(500);
             expect(data.message).toBe('Failed to update settings');
+        });
+
+        it('关闭同多模态开关后保存带掩码的 textAi 时自动从 vision 回退还原真实密钥，且响应继续脱敏', async () => {
+            const current = mocks.mockGetAppConfig();
+            mocks.mockGetAppConfig.mockReturnValueOnce({
+                ...current,
+                textAi: undefined,
+            } as ReturnType<typeof mocks.mockGetAppConfig>);
+            mocks.mockUpdateAppConfig.mockImplementationOnce((cfg: Partial<AppConfig>) => ({
+                ...current,
+                ...cfg,
+                aiProvider: (cfg.aiProvider ?? current.aiProvider) as AppConfig['aiProvider'],
+            }) as AppConfig);
+
+            const response = await POST(new Request('http://localhost/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    textSameAsVision: false,
+                    aiTextProvider: 'gemini',
+                    textAi: {
+                        gemini: { apiKey: '********', model: 'gemini-2.5-pro' },
+                        openai: {
+                            instances: [{
+                                id: 'test-instance',
+                                name: 'Test',
+                                apiKey: '********',
+                                baseUrl: 'https://api.openai.com/v1',
+                                model: 'gpt-4o',
+                            }],
+                            activeInstanceId: 'test-instance',
+                        },
+                    },
+                }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            const saved = mocks.mockUpdateAppConfig.mock.calls[0][0];
+            expect(saved.textAi?.gemini?.apiKey).toBe('AIza-test-key');
+            expect(saved.textAi?.openai?.instances?.[0]?.apiKey).toBe('sk-test-key');
+            // POST 返回同样对所有非空密钥脱敏
+            expect(data.textAi.gemini.apiKey).toBe('********');
+            expect(data.gemini.apiKey).toBe('********');
+            expect(JSON.stringify(data)).not.toContain('AIza-test-key');
+            expect(JSON.stringify(data)).not.toContain('sk-test-key');
+        });
+
+        it('拦截不安全的自定义出站地址（169.254.169.254、0.0.0.0、带凭据 URL），保留内网地址', async () => {
+            for (const unsafeUrl of [
+                'http://169.254.169.254/latest/meta-data',
+                'http://0.0.0.0:8080/v1',
+                'https://user:pass@api.example.com/v1',
+            ]) {
+                const res = await POST(new Request('http://localhost/api/settings', {
+                    method: 'POST',
+                    body: JSON.stringify({ gemini: { apiKey: 'AIza-x', baseUrl: unsafeUrl } }),
+                    headers: { 'Content-Type': 'application/json' },
+                }));
+                expect(res.status).toBe(400);
+            }
+            expect(mocks.mockUpdateAppConfig).not.toHaveBeenCalled();
+
+            // 本地与局域网模型部署（如 Ollama/vLLM）正常允许保存
+            const lanRes = await POST(new Request('http://localhost/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    openai: {
+                        instances: [{
+                            id: 'ollama',
+                            name: 'Local Ollama',
+                            apiKey: 'ollama',
+                            baseUrl: 'http://192.168.1.50:11434/v1',
+                            model: 'qwen2.5-vl',
+                        }],
+                        activeInstanceId: 'ollama',
+                    },
+                }),
+                headers: { 'Content-Type': 'application/json' },
+            }));
+            expect(lanRes.status).toBe(200);
         });
     });
 });

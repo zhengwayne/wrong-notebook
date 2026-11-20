@@ -15,8 +15,16 @@ export const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  ...(process.env.NEXT_DIST_DIR
+    ? {
+        distDir: process.env.NEXT_DIST_DIR,
+        experimental: { turbopackFileSystemCacheForDev: false },
+      }
+    : {}),
+  // 允许本地 Playwright E2E 通过 127.0.0.1 访问 next dev 静态与 HMR 资源
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   output: 'standalone',
-  serverExternalPackages: ['@prisma/client', 'bcryptjs'],
+  serverExternalPackages: ['@prisma/client', 'bcryptjs', 'node-edge-tts', 'ws', 'sharp'],
   // 禁止 next dev 自动向 AGENTS.md / CLAUDE.md 写入 agent-rules 段落
   agentRules: false,
   poweredByHeader: false,

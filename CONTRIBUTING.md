@@ -11,7 +11,7 @@
 
 ## 开发环境
 
-需要 Node.js 22 及以上，推荐 24（见 `.nvmrc`，CI 与 Docker 镜像均使用 24）。
+源码开发使用 Node.js 24.15+（24.x，推荐），也支持 22.22.2+（22.x）或 26 及以上。使用 nvm 时，运行 `nvm install` 可按 `.nvmrc` 安装当前 24.x 版本。
 
 ```bash
 npm ci
@@ -20,7 +20,7 @@ cp .env.example .env        # 按需填写 AI 提供商的 API Key
 npx prisma migrate dev
 npx prisma db seed
 npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts
-npm run dev                 # http://localhost:3000，默认管理员 admin@localhost / 123456
+npm run dev                 # 首次启动时按日志中的路径读取 setup-token 文件并创建管理员
 ```
 
 更多说明见 [README](README.md) 和 [doc/](doc/) 目录。

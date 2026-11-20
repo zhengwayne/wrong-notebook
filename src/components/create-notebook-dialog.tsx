@@ -49,6 +49,7 @@ export function CreateNotebookDialog({ open, onOpenChange, onCreate }: CreateNot
     };
 
     const handleCreate = async () => {
+        if (loading) return;
         if (!name.trim()) {
             toast.warning(t.notebooks?.dialog?.enterName || "Please enter notebook name");
             return;

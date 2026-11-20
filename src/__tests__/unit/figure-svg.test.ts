@@ -44,6 +44,30 @@ describe('sanitizeFigureSvg', () => {
         expect(svg).toContain('<rect');
     });
 
+    it('恶意嵌套超过净化上限轮次（>10 层）拒收返回 null，并剥离孤立宿主闭合逃逸标签', () => {
+        let deepScript = '<script/>';
+        for (let i = 0; i < 25; i += 1) {
+            deepScript = `<scr${deepScript}ipt/>`;
+        }
+        expect(sanitizeFigureSvg(`<svg viewBox="0 0 10 10"><rect width="5" height="5"/>${deepScript}</svg>`)).toBeNull();
+
+        const strippedBody = sanitizeFigureSvg('<svg viewBox="0 0 10 10"><rect width="5" height="5"/><body onload="1"></body></svg>');
+        expect(strippedBody).not.toBeNull();
+        expect(strippedBody).not.toMatch(/body|onload/i);
+    });
+
+    it('截断多 SVG 中夹带的 HTML 容器闭合逃逸并清除嵌套 </body>/</html>', () => {
+        const splitSvg = '<svg viewBox="0 0 10 10"><circle r="3"/></svg></body><script>alert(1)</script><svg><rect width="1" height="1"/></svg>';
+        const cleanSplit = sanitizeFigureSvg(splitSvg)!;
+        expect(cleanSplit).not.toMatch(/<\/?body|<script|<rect/i);
+        expect(cleanSplit).toContain('<circle');
+
+        const nestedEscape = '<svg viewBox="0 0 10 10"><circle r="3"/></bo</body>dy><body onload="alert(1)"><html/></svg>';
+        const cleanNested = sanitizeFigureSvg(nestedEscape)!;
+        expect(cleanNested).not.toMatch(/<\/?(?:body|html|head)|onload/i);
+        expect(cleanNested).toContain('<circle');
+    });
+
     it('没有图形元素、不是 SVG、超长或不是字符串时返回 null', () => {
         expect(sanitizeFigureSvg('<svg xmlns="http://www.w3.org/2000/svg"></svg>')).toBeNull();
         expect(sanitizeFigureSvg('<svg><script>alert(1)</script></svg>')).toBeNull();

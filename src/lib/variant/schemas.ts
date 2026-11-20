@@ -2,6 +2,7 @@
  * 变式流水线各阶段的结构化输出（zod 校验）
  */
 import { z } from 'zod';
+import { sanitizeFigureSvg } from '@/lib/figure-svg';
 
 export const DIFFICULTIES = ['easy', 'medium', 'hard', 'harder'] as const;
 export type VariantDifficulty = (typeof DIFFICULTIES)[number];
@@ -38,7 +39,7 @@ export const variantQuestionSchema = z.object({
     questionText: z.string().trim().min(1).max(8000),
     answerText: z.string().trim().min(1).max(4000),
     analysis: z.string().trim().min(1).max(8000),
-    figureSvg: z.string().trim().max(20000).nullable().optional(),
+    figureSvg: z.string().trim().max(20000).nullable().optional().transform((val) => (val ? sanitizeFigureSvg(val) : null)),
     knowledgePoints: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
     computable: computableSpecSchema,
 });

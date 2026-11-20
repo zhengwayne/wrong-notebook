@@ -4,7 +4,7 @@ For regular deployments the [Docker image](Deployment-en) is recommended. Follow
 
 ## Requirements
 
-- Node.js 22 or later (24 recommended), with npm.
+- Node.js 24.15+ on the 24.x line (recommended), 22.22.2+ on the 22.x line, or 26 and later, with npm.
 - Git; Python 3 is also needed to run the full CI.
 - Network access to your chosen AI service, plus its API credentials.
 
@@ -23,11 +23,11 @@ Edit `.env` and at least check the database path and session secret:
 
 ```dotenv
 DATABASE_URL="file:./dev.db"
-NEXTAUTH_SECRET="replace with a randomly generated secret"
+NEXTAUTH_SECRET=""
 NEXTAUTH_URL="http://localhost:3000"
 ```
 
-Generate `NEXTAUTH_SECRET` with `openssl rand -base64 32`. `file:./dev.db` is relative to `prisma/schema.prisma`, i.e. `prisma/dev.db`.
+Run `openssl rand -hex 32`, paste the result into the empty value above, and save the local `.env`. `file:./dev.db` is relative to `prisma/schema.prisma`, i.e. `prisma/dev.db`.
 
 AI credentials can be filled in later from the admin settings in the web UI; see [AI Configuration](AI-Configuration-en).
 
@@ -42,7 +42,7 @@ npx prisma db seed
 npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts
 ```
 
-The migration creates the tables, the seed script creates the admin account, and the last step builds the system knowledge-point library. To upgrade an existing production database, follow [Deployment and Upgrades](Deployment-en): back up first, then run the formal migrations.
+The migration creates the tables, the seed script checks whether an administrator exists, and the last step builds the system knowledge-point library. To upgrade an existing production database, follow [Deployment and Upgrades](Deployment-en): back up first, then run the formal migrations.
 
 ## Start and sign in
 
@@ -50,13 +50,13 @@ The migration creates the tables, the seed script creates the admin account, and
 npm run dev
 ```
 
-A fresh database has no admin. When the server starts, the terminal prints a one-time setup link (the log message is in Chinese):
+On the first start from source, read the one-time token from the project directory. If you set `CONFIG_DIR`, read the `setup-token` file in that directory. The startup log shows the full path.
 
-```text
-尚未创建管理员。请打开以下初始化链接设置管理员账号（仅可使用一次）：http://localhost:3000/initialize?token=…
+```bash
+cat config/setup-token
 ```
 
-Open the link and choose the admin name, email and password (at least 6 characters, and not the old default password `123456`). After submitting you are signed in and taken to the setup wizard to set up an AI provider and create your first notebook; both steps can be skipped. The token is also stored in `config/setup-token` and is deleted once the admin exists; while there is no admin, restarting the server prints the link again. Run the wizard again from Settings → User Management; instances that already have notebooks do not open it automatically after upgrading.
+In your browser, enter the server address followed by `/initialize?token=`, paste the token after the equals sign, and open the page. Choose the admin name, email and password (at least 6 characters, and not the legacy default password). After submitting you are signed in and taken to the setup wizard to set up an AI provider and create your first notebook; both steps can be skipped. Successful setup removes the token file. Run the wizard again from Settings → User Management; instances that already have notebooks do not open it automatically after upgrading.
 
 Instances upgraded from earlier versions keep their accounts; signing in as the old default admin `admin@localhost` with the default password still requires changing it first.
 

@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
-import { DEFAULT_ADMIN_PASSWORD } from "@/lib/default-admin";
+import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { getApiErrorMessage } from "@/lib/error-message";
@@ -21,7 +21,7 @@ interface PasswordStepProps {
 /** 向导第 1 步：管理员必须把默认密码改掉 */
 export function PasswordStep({ onDone }: PasswordStepProps) {
     const { t } = useLanguage();
-    const { update } = useSession();
+    const { data: session, update } = useSession();
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [saving, setSaving] = useState(false);
@@ -32,7 +32,7 @@ export function PasswordStep({ onDone }: PasswordStepProps) {
             toast.error(t.setup.password.tooShort);
             return;
         }
-        if (password === DEFAULT_ADMIN_PASSWORD) {
+        if (isDefaultAdminPassword("admin", password)) {
             toast.error(t.setup.password.sameAsDefault);
             return;
         }
@@ -43,8 +43,15 @@ export function PasswordStep({ onDone }: PasswordStepProps) {
 
         setSaving(true);
         try {
-            await apiClient.patch("/api/user", { password });
-            // 刷新会话：服务端按新密码重新判断，解除强制改密
+            const updated = await apiClient.patch<{ email?: string }>("/api/user", { password });
+            // 改密会递增 authVersion 吊销其他旧会话，需重签当前浏览器会话再刷新声明
+            const email = updated?.email || session?.user?.email;
+            if (email) {
+                const res = await signIn("credentials", { email, password, redirect: false });
+                if (res?.error) {
+                    throw new Error(res.error);
+                }
+            }
             await update();
             toast.success(t.setup.password.success);
             onDone();

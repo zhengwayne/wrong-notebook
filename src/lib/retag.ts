@@ -71,7 +71,7 @@ async function suggestTagsForItem(errorItemId: string, userId: string): Promise<
             ? calculateGrade(item.user.educationStage, item.user.enrollmentYear, new Date(), 'zh', getAppTimeZone())
             : null);
 
-    const { tags: chosen, difficultyStars } = await getAIService().suggestKnowledgeTags({
+    const { tags: chosen, difficultyStars } = await getAIService('text').suggestKnowledgeTags({
         questionText: item.questionText,
         answerText: item.answerText,
         analysis: item.analysis,
@@ -86,15 +86,27 @@ async function suggestTagsForItem(errorItemId: string, userId: string): Promise<
     }
 
     // 同名系统标签可能出现在多个年级下，取第一个即可（名称相同即同一知识点）
+    const allowedSet = new Set(allowedTags);
+    const validChosen = Array.from(new Set(chosen.filter((name) => allowedSet.has(name))));
     const systemTags = await prisma.knowledgeTag.findMany({
-        where: { isSystem: true, subject: subjectKey, name: { in: chosen } },
+        where: { isSystem: true, subject: subjectKey, name: { in: validChosen } },
         select: { id: true, name: true },
     });
     const tagIdByName = new Map<string, string>();
     for (const tag of systemTags) {
         if (!tagIdByName.has(tag.name)) tagIdByName.set(tag.name, tag.id);
     }
-    const newTags = chosen.filter((name) => tagIdByName.has(name));
+    // 存量数据库尚未同步最新静态课标标签时，按需补建系统标签行避免丢失
+    for (const name of validChosen) {
+        if (!tagIdByName.has(name)) {
+            const created = await prisma.knowledgeTag.create({
+                data: { name, subject: subjectKey, isSystem: true },
+                select: { id: true, name: true },
+            });
+            tagIdByName.set(created.name, created.id);
+        }
+    }
+    const newTags = validChosen.filter((name) => tagIdByName.has(name));
     const customTags = item.tags.filter((tag) => !tag.isSystem);
 
     return {

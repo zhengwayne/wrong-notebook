@@ -19,13 +19,13 @@ Create a deployment directory:
 ```bash
 mkdir -p wrong-notebook/data wrong-notebook/config
 cd wrong-notebook
-openssl rand -base64 32
+# Run once on a new deployment. Keep the existing secret on upgrades.
+(umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
 ```
 
-Write the generated secret and the actual access URL to `.env` in this directory:
+Add the public access URL on a separate line in the generated `.env`:
 
 ```dotenv
-NEXTAUTH_SECRET=replace-with-the-generated-secret
 NEXTAUTH_URL=http://localhost:3000
 ```
 
@@ -58,13 +58,13 @@ docker compose ps
 curl --fail http://localhost:3000/api/health
 ```
 
-A fresh deployment has no default account; the startup log prints a one-time setup link:
+After Docker starts for the first time, run this command on the host to read the one-time admin setup token.
 
 ```bash
-docker compose logs wrong-notebook | grep initialize
+docker compose exec -T wrong-notebook cat /app/config/setup-token
 ```
 
-Open the link in a browser (its host matches `NEXTAUTH_URL`), choose the admin email and password, and continue in the setup wizard. The link works only once; the token is also stored in `config/setup-token`.
+Enter the server address followed by `/initialize?token=` in your browser, paste the token after the equals sign, and open the page to set the admin email and password. Successful setup removes the token file.
 
 A healthy endpoint returns `status: "ok"` together with `version` and `revision`. It queries the database but does not test the AI; sign in, test the connection in the AI settings, and recognize a real question as well.
 
@@ -78,13 +78,15 @@ For the default account of a fresh install, see [Quick Start](Quick-Start-en).
 | `/app/config` | AI configuration, prompts and global settings saved from the web UI | Mount persistently; backups contain sensitive credentials |
 | `/app/certs` | Certificates for the built-in HTTPS | Mount and back up when used |
 
-The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup runs the formal migrations and skips admin seeding and system tag rebuilding, so existing accounts, tags and their links are kept.
+When overriding `DATABASE_URL`, use an absolute path or a path relative to `/app/prisma` in the container. Mount the selected directory and grant the application user (UID 1001) write access. Pre-migration backups are stored in the `backups` subdirectory of the database directory (default `/app/data/backups`), where `.app_version` is also stored.
+
+The image sets `PRESERVE_EXISTING_DATA=true` by default. When an existing database is found, startup flushes the WAL checkpoint and creates a pre-migration backup under `backups/pre-migrate-*` (keeping the latest 3) before running formal migrations and retaining the existing system tags and their links. Startup preserves account roles and activation status regardless of this setting. When the data directory sits on NAS NFS/CIFS shares lacking cross-node shared memory locks, set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE`.
 
 ## HTTPS and reverse proxies
 
 For access by domain name, use an HTTPS certificate trusted by browsers. A reverse proxy can forward HTTPS requests to the app's HTTP port; set `NEXTAUTH_URL` to the external HTTPS address.
 
-The reverse proxy should forward `X-Real-IP` or `X-Forwarded-For`, because failed sign-ins are counted per client IP. The app sends security headers such as `X-Frame-Options: SAMEORIGIN` by default, so pages on other domains cannot embed it in an iframe; configure HSTS on the reverse proxy if you need it.
+The reverse proxy should forward `X-Real-IP` or `X-Forwarded-For`, and you should set `TRUST_PROXY=true` (with `TRUSTED_PROXY_HOPS`, default `1`) or `TRUST_PROXY=cloudflare` behind Cloudflare; by default `TRUST_PROXY=false` ignores all proxy IP headers to prevent clients from spoofing IPs to bypass rate limiting. The app sends security headers such as `X-Frame-Options: SAMEORIGIN` by default, so pages on other domains cannot embed it in an iframe; configure HSTS on the reverse proxy if you need it.
 
 The app also provides built-in HTTPS; see [`docker-compose.https.yml`](https://github.com/margrop/wrong-notebook/blob/main/docker-compose.https.yml) in the repository:
 
@@ -146,4 +148,4 @@ xattr -cr /Applications/WrongNotebook.app
 codesign --force --deep --sign - /Applications/WrongNotebook.app
 ```
 
-The Android standalone edition runs the server on the phone with no separate deployment and needs a 64-bit ARM device on Android 8.0 or later; the Android client edition is only a shell that connects to a server, which must first be deployed with one of the methods above. See [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md) for details.
+The Android standalone edition runs the server on the phone with no separate deployment on 64-bit ARM devices (Android 8.0+), bundling `@img/sharp-wasm32` so crop and region slicing run locally without native binaries; because data resides in the app-private directory, **always export a backup (preferably passphrase-encrypted ZIP v3) under Settings → Danger before uninstalling or switching devices**. The Android client edition is only a shell that connects to a server deployed with one of the methods above. See [INSTALL_PACKAGES.md](https://github.com/margrop/wrong-notebook/blob/main/doc/INSTALL_PACKAGES.md) for details.

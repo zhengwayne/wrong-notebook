@@ -1,30 +1,64 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// 本机 3000 端口被占用时，可用 E2E_BASE_URL 指向另行启动的开发服务器
-const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:3000';
+const address = new URL(process.env.E2E_BASE_URL || 'http://127.0.0.1:3100');
+if (address.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(address.hostname)
+    || address.pathname !== '/' || address.search || address.hash || address.username || address.password) {
+    throw new Error('E2E_BASE_URL 必须是本机 HTTP 地址，例如 http://127.0.0.1:3101');
+}
+const baseURL = address.origin;
+
+const AI_FLOW_SPECS = [
+    '**/parent-paper-flow.spec.ts',
+    '**/teacher-grading-flow.spec.ts',
+    '**/teacher-folder-import.spec.ts',
+];
+
+const RESET_SPECS = [
+    '**/backup-reset-restore.spec.ts',
+];
+
+const SERIAL_SPECS = [...AI_FLOW_SPECS, ...RESET_SPECS];
 
 export default defineConfig({
     testDir: './e2e',
-    fullyParallel: true,
+    // 各用例共享本轮测试的管理员和配置，顺序执行避免状态竞争。
+    fullyParallel: false,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,
-    workers: process.env.CI ? 1 : undefined,
+    workers: 1,
     reporter: [['html', { host: '0.0.0.0' }]],
     use: {
         baseURL,
         trace: 'on-first-retry',
     },
     webServer: {
-        command: process.env.CI ? 'npm run start' : 'npm run dev',
+        command: 'node scripts/start-e2e.js',
         url: baseURL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: false,
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 10000 },
         timeout: 120 * 1000,
-        // 注册默认关闭，注册流程用例需要开启
-        env: { ...process.env as Record<string, string>, ALLOW_REGISTRATION: 'true' },
+        env: { NEXTAUTH_URL: baseURL },
     },
     projects: [
         {
             name: 'chromium',
+            testIgnore: SERIAL_SPECS,
+            use: { ...devices['Desktop Chrome'] },
+        },
+        {
+            name: 'chromium-serial',
+            testMatch: AI_FLOW_SPECS,
+            dependencies: ['chromium'],
+            fullyParallel: false,
+            workers: 1,
+            use: { ...devices['Desktop Chrome'] },
+        },
+        {
+            name: 'chromium-reset',
+            testMatch: RESET_SPECS,
+            dependencies: ['chromium-serial'],
+            fullyParallel: false,
+            workers: 1,
             use: { ...devices['Desktop Chrome'] },
         },
     ],

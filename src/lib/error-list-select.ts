@@ -8,6 +8,8 @@ export const ERROR_ITEM_LIST_SELECT = {
     questionText: true,
     mistakeStatus: true,
     knowledgePoints: true,
+    errorType: true,
+    mistakeAnalysis: true,
     difficultyStars: true,
     masteryProbability: true,
     createdAt: true,

@@ -8,6 +8,7 @@
 
 import { getErrorMessage } from '../error-message';
 import { createLogger } from '../logger';
+import { isAiDeadlineExceeded } from './deadline';
 import { getKnownModelMaxOutputTokens, isMaxTokensError, parseMaxOutputTokensFromError } from './model-output-limits';
 
 const logger = createLogger('ai:truncation');
@@ -61,6 +62,7 @@ async function callWithinModelLimit<T>(
     try {
         return { response: await call(limit), limit };
     } catch (error) {
+        if (isAiDeadlineExceeded()) throw new Error('AI_TIMEOUT_ERROR', { cause: error });
         const message = getErrorMessage(error);
         const parsed = parseMaxOutputTokensFromError(message, limit);
         const next = parsed
@@ -86,6 +88,9 @@ export async function withTruncationRetry<T extends ChatCompletionLike>(
     const first = await callWithinModelLimit(call, knownMax ? Math.min(maxTokens, knownMax) : maxTokens, model);
     if (!isTruncated(first.response)) {
         return first.response;
+    }
+    if (isAiDeadlineExceeded()) {
+        throw new Error('AI_TIMEOUT_ERROR');
     }
 
     // 第一次调用可能刚从错误中读出上限，重新取一次

@@ -3,6 +3,7 @@
  * 测试错题创建、获取、更新等接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -168,6 +169,7 @@ describe('/api/error-items', () => {
 
         it('指定错题本时忽略学科名', async () => {
             mocks.mockPrismaErrorItem.findUnique.mockResolvedValue(null);
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-chosen', userId: 'user-123', name: '数学' });
             mocks.mockPrismaErrorItem.create.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ id: 'e1', ...args.data }));
 
             await post({ ...baseData, subjectId: 'nb-chosen', subjectName: '物理' });
@@ -175,12 +177,30 @@ describe('/api/error-items', () => {
             expect(mocks.mockPrismaSubject.findMany).not.toHaveBeenCalled();
             expect(mocks.mockPrismaErrorItem.create.mock.calls[0][0].data.subjectId).toBe('nb-chosen');
         });
+
+        it('指定他人或不存在的错题本时拒绝导入（403）', async () => {
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-other', userId: 'other-user', name: '数学' });
+            const foreignRes = await post({ ...baseData, subjectId: 'nb-other' });
+            expect(foreignRes.status).toBe(403);
+
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce(null);
+            const missingRes = await post({ ...baseData, subjectId: 'nb-missing' });
+            expect(missingRes.status).toBe(403);
+            expect(mocks.mockPrismaErrorItem.create).not.toHaveBeenCalled();
+        });
     });
+
+    // 列表先统计命中数，有命中时才查询本页内容；筛选参数断言需要覆盖这第二步。
+    function mockOneListMatch() {
+        mocks.mockPrismaErrorItem.count.mockResolvedValue(1);
+        mocks.mockPrismaErrorItem.findMany.mockResolvedValue([
+            { id: 'match', questionText: '匹配的题目', userId: mockUser.id, _count: { practiceRecords: 0 } },
+        ]);
+    }
 
     describe('GET /api/error-items/list 短 ID 搜索', () => {
         it('查询词为短 ID 时同时按短 ID 精确匹配', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?query=aB3xYz'));
 
@@ -189,8 +209,7 @@ describe('/api/error-items', () => {
         });
 
         it('普通查询词不按短 ID 匹配', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?query=' + encodeURIComponent('勾股定理')));
 
@@ -223,7 +242,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 3',
                 analysis: '移项得 x = 5 - 2 = 3',
                 knowledgePoints: ['一元一次方程', '移项'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
             };
 
             const createdItem = {
@@ -312,10 +331,15 @@ describe('/api/error-items', () => {
                 answerText: '2',
                 analysis: '简单加法',
                 knowledgePoints: ['加法'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 subjectId: 'subject-math-id',
             };
 
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({
+                id: 'subject-math-id',
+                userId: 'user-123',
+                name: '数学',
+            });
             const createdItem = {
                 id: 'error-item-2',
                 ...errorItemData,
@@ -343,7 +367,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 5',
                 analysis: '解析',
                 knowledgePoints: ['方程'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 gradeSemester: '初一上期',
                 paperLevel: 'A',
             };
@@ -396,7 +420,7 @@ describe('/api/error-items', () => {
                 answerText: '答案',
                 analysis: '解析',
                 knowledgePoints: ['知识点'],
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 // 不提供 gradeSemester，应该自动计算
             };
 
@@ -429,7 +453,7 @@ describe('/api/error-items', () => {
                 answerText: '答案',
                 analysis: '解析',
                 knowledgePoints: '一元一次方程, 移项',
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
             };
 
             mocks.mockPrismaErrorItem.create.mockResolvedValue({
@@ -449,6 +473,25 @@ describe('/api/error-items', () => {
 
             expect(response.status).toBe(201);
         });
+
+        it('拒绝非图片或 SVG Data URL 并返回 400', async () => {
+            for (const badUrl of [
+                'data:text/html;base64,PGh0bWw+',
+                'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                'javascript:alert(1)',
+                'https://evil.example/a.png',
+            ]) {
+                const response = await POST(new Request('http://localhost/api/error-items', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        questionText: '题目',
+                        originalImageUrl: badUrl,
+                    }),
+                }));
+                expect(response.status).toBe(400);
+            }
+            expect(mocks.mockPrismaErrorItem.create).not.toHaveBeenCalled();
+        });
     });
 
     describe('GET /api/error-items/[id] (获取单个错题)', () => {
@@ -460,7 +503,7 @@ describe('/api/error-items', () => {
                 answerText: 'x = 3',
                 analysis: '移项得 x = 5 - 2 = 3',
                 knowledgePoints: '["一元一次方程", "移项"]',
-                originalImageUrl: 'data:image/png;base64,test...',
+                originalImageUrl: SAMPLE_PNG_DATA_URL,
                 masteryLevel: 0,
                 subject: { id: 'math', name: '数学' },
             };
@@ -655,9 +698,48 @@ describe('/api/error-items', () => {
             expect(response.status).toBe(404);
             expect(data.message).toBe('Item not found');
         });
+
+        it('支持传空字符串或 null 解绑所属错题本，跨账户移动返回 403', async () => {
+            mocks.mockPrismaErrorItem.findUnique.mockResolvedValue({
+                id: 'e1',
+                userId: 'user-123',
+                subject: { name: '数学' },
+            });
+            mocks.mockPrismaErrorItem.update.mockResolvedValue({ id: 'e1', subjectId: null });
+
+            const emptyRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: '' }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(emptyRes.status).toBe(200);
+            expect(mocks.mockPrismaErrorItem.update.mock.calls[0][0].data.subject).toEqual({ disconnect: true });
+
+            const nullRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: null }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(nullRes.status).toBe(200);
+            expect(mocks.mockPrismaErrorItem.update.mock.calls[1][0].data.subject).toEqual({ disconnect: true });
+            expect(mocks.mockPrismaSubject.findUnique).not.toHaveBeenCalled();
+
+            mocks.mockPrismaSubject.findUnique.mockResolvedValueOnce({ id: 'nb-other', userId: 'other-user', name: '数学' });
+            const forbiddenRes = await PUT(new Request('http://localhost/api/error-items/e1', {
+                method: 'PUT',
+                body: JSON.stringify({ subjectId: 'nb-other' }),
+            }), { params: Promise.resolve({ id: 'e1' }) });
+            expect(forbiddenRes.status).toBe(403);
+        });
     });
 
     describe('GET /api/error-items/list (获取错题列表)', () => {
+        it.each([[0, 1], [1, 2]])('总数为 %i 时请求第 %i 页为空，跳过内容查询', async (total, page) => {
+            mocks.mockPrismaErrorItem.count.mockResolvedValue(total);
+            const response = await GET_LIST(new Request(`http://localhost/api/error-items/list?page=${page}`));
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({ total, page, items: [] });
+            expect(mocks.mockPrismaErrorItem.findMany).not.toHaveBeenCalled();
+        });
+
         it('应该返回用户的错题（分页响应）', async () => {
             const errorItems = [
                 { id: '1', questionText: '题目1', userId: 'user-123', _count: { practiceRecords: 0 } },
@@ -699,8 +781,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持搜索查询', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?query=方程');
             const response = await GET_LIST(request);
@@ -728,8 +809,7 @@ describe('/api/error-items', () => {
             }],
             ['mastered', { practiceRecords: { some: { result: { not: null } } }, masteryProbability: { gte: 0.5 } }],
         ])('应该支持按复习状态 %s 筛选', async (status, condition) => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request(`http://localhost/api/error-items/list?mastery=${status}`);
             const response = await GET_LIST(request);
@@ -758,8 +838,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按知识点标签筛选', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?tag=一元一次方程');
             const response = await GET_LIST(request);
@@ -780,8 +859,7 @@ describe('/api/error-items', () => {
         });
 
         it('按知识点筛选时不应把名称包含该词的其他标签算进来', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             await GET_LIST(new Request('http://localhost/api/error-items/list?tag=函数'));
 
@@ -794,8 +872,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按时间范围筛选（最近一周）', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?timeRange=week');
             const response = await GET_LIST(request);
@@ -813,8 +890,7 @@ describe('/api/error-items', () => {
         });
 
         it('应该支持按试卷等级筛选', async () => {
-            mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
-            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
+            mockOneListMatch();
 
             const request = new Request('http://localhost/api/error-items/list?paperLevel=A');
             const response = await GET_LIST(request);

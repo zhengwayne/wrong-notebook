@@ -1,3 +1,47 @@
 #!/bin/bash
-# 升级后置：数据目录保留，启动时自动执行数据库迁移
+# 升级后置：升级前备份数据库（保留最近 3 份），启动时再自动执行增量迁移
+set -euo pipefail
+
+APP_NAME="${TRIM_APPNAME:-wrongnotebook}"
+APP_DIR="${TRIM_APPDEST:-/var/apps/${APP_NAME}}"
+if [ -n "${TRIM_PKGVAR:-}" ]; then
+    DATA_DIR="${TRIM_PKGVAR}"
+else
+    APP_VOL="$(printf '%s' "$(readlink -f "${APP_DIR}")" | awk -F/ 'NF>2 && $2 ~ /^vol/ {print "/"$2; exit}')"
+    DATA_DIR="${APP_VOL:+${APP_VOL}/@appdata/${APP_NAME}}"
+    DATA_DIR="${DATA_DIR:-${APP_DIR}/var}"
+fi
+
+mkdir -p "${DATA_DIR}"
+LOG="${DATA_DIR}/install.log"
+DB_FILE="${DATA_DIR}/wrong-notebook.db"
+
+if [ -s "${DB_FILE}" ]; then
+    BACKUPS_DIR="${DATA_DIR}/backups"
+    TS="$(date '+%Y%m%d-%H%M%S')"
+    DEST_DIR="${BACKUPS_DIR}/fnos-upgrade-${TS}"
+    TMP_DIR="${BACKUPS_DIR}/.fnos-upgrade-${TS}.$$.tmp"
+    mkdir -p "${TMP_DIR}"
+    chmod 700 "${BACKUPS_DIR}" "${TMP_DIR}" 2>/dev/null || true
+
+    for suffix in "" "-wal" "-shm"; do
+        if [ -f "${DB_FILE}${suffix}" ]; then
+            cp -p "${DB_FILE}${suffix}" "${TMP_DIR}/"
+            chmod 600 "${TMP_DIR}/$(basename "${DB_FILE}${suffix}")" 2>/dev/null || true
+        fi
+    done
+    mv "${TMP_DIR}" "${DEST_DIR}"
+
+    # 滚动保留最近 3 份升级备份
+    mapfile -t OLD_BACKUPS < <(find "${BACKUPS_DIR}" -maxdepth 1 -mindepth 1 -name 'fnos-upgrade-*' ! -name '*.tmp' | sort)
+    COUNT="${#OLD_BACKUPS[@]}"
+    if [ "${COUNT}" -gt 3 ]; then
+        DEL_COUNT=$((COUNT - 3))
+        for ((i=0; i<DEL_COUNT; i++)); do
+            rm -rf "${OLD_BACKUPS[$i]}"
+        done
+    fi
+    echo "[$(date '+%F %T')] upgrade_callback: backed up database to ${DEST_DIR}" >> "${LOG}"
+fi
+
 exit 0

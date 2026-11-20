@@ -1,6 +1,7 @@
 /**
- * 默认密码检测：管理员用默认密码登录时会话带 mustChangePassword，改密后经 update() 解除
+ * 默认密码检测：管理员用默认密码登录时会话带 mustChangePassword，改密后撤销旧会话并重新登录
  */
+import { legacyAdminPasswordSample } from '../fixtures/legacy-admin';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { JWT } from 'next-auth/jwt';
 import type { User } from 'next-auth';
@@ -12,7 +13,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.findUnique } } }));
 vi.mock('@next-auth/prisma-adapter', () => ({ PrismaAdapter: vi.fn(() => ({})) }));
-vi.mock('bcryptjs', () => ({ compare: mocks.compare }));
+vi.mock('bcryptjs', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('bcryptjs')>()),
+    compare: mocks.compare,
+}));
 vi.mock('@/lib/logger', () => ({
     createLogger: vi.fn(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
 }));
@@ -23,16 +27,17 @@ import { isDefaultAdminPassword } from '@/lib/default-admin';
 type AuthorizeFn = (credentials: Record<string, string>) => Promise<(User & { mustChangePassword?: boolean }) | null>;
 const credentialsProvider = authOptions.providers[0] as unknown as { options: { authorize: AuthorizeFn } };
 const authorize = (email: string, password: string) => credentialsProvider.options.authorize({ email, password });
-const jwt = authOptions.callbacks!.jwt! as unknown as (params: { token: JWT; user?: User; trigger?: string }) => Promise<JWT>;
+const jwt = authOptions.callbacks!.jwt! as unknown as (params: { token: JWT; user?: User; trigger?: string; session?: object }) => Promise<JWT>;
 
 const adminRow = { id: 'admin-1', email: 'admin@localhost', name: 'Admin', role: 'admin', isActive: true, password: 'hashed' };
 
 describe('isDefaultAdminPassword', () => {
-    it('只有管理员使用 123456 时才算默认密码', () => {
-        expect(isDefaultAdminPassword('admin', '123456')).toBe(true);
+    it('仅匹配管理员使用的确切旧版口令', () => {
+        expect(isDefaultAdminPassword('admin', legacyAdminPasswordSample)).toBe(true);
         expect(isDefaultAdminPassword('admin', 'another-pass')).toBe(false);
-        expect(isDefaultAdminPassword('user', '123456')).toBe(false);
-        expect(isDefaultAdminPassword(undefined, '123456')).toBe(false);
+        expect(isDefaultAdminPassword('admin', 'other6')).toBe(false);
+        expect(isDefaultAdminPassword('user', legacyAdminPasswordSample)).toBe(false);
+        expect(isDefaultAdminPassword(undefined, legacyAdminPasswordSample)).toBe(false);
     });
 });
 
@@ -45,7 +50,7 @@ describe('authorize 默认密码标记', () => {
     it('管理员用默认密码登录时标记必须改密', async () => {
         mocks.findUnique.mockResolvedValue(adminRow);
 
-        const user = await authorize('admin@localhost', '123456');
+        const user = await authorize('admin@localhost', legacyAdminPasswordSample);
 
         expect(user?.mustChangePassword).toBe(true);
     });
@@ -58,10 +63,10 @@ describe('authorize 默认密码标记', () => {
         expect(user?.mustChangePassword).toBe(false);
     });
 
-    it('普通用户即使密码是 123456 也不标记', async () => {
+    it('普通用户使用旧版口令也不标记', async () => {
         mocks.findUnique.mockResolvedValue({ ...adminRow, role: 'user' });
 
-        const user = await authorize('user@example.com', '123456');
+        const user = await authorize('user@example.com', legacyAdminPasswordSample);
 
         expect(user?.mustChangePassword).toBe(false);
     });
@@ -78,29 +83,47 @@ describe('jwt 回调', () => {
         expect(token.mustChangePassword).toBe(true);
     });
 
-    it('update 时数据库密码已不是默认密码则解除标记', async () => {
-        mocks.findUnique.mockResolvedValue({ password: 'hashed-new' });
-        mocks.compare.mockResolvedValue(false);
-
-        const token = await jwt({ token: { id: 'admin-1', mustChangePassword: true } as JWT, trigger: 'update' });
-
-        expect(mocks.compare).toHaveBeenCalledWith('123456', 'hashed-new');
-        expect(token.mustChangePassword).toBe(false);
+    it('普通会话更新保留强制改密标记，也忽略客户端提供的标记', async () => {
+        mocks.findUnique.mockResolvedValue({ ...adminRow, authVersion: 0 });
+        const token = { id: adminRow.id, authVersion: 0, mustChangePassword: true };
+        expect((await jwt({ token, trigger: 'update' })).mustChangePassword).toBe(true);
+        const updated = await jwt({ token, trigger: 'update', session: { user: { mustChangePassword: false } } });
+        expect(updated.mustChangePassword).toBe(true);
+        expect(mocks.compare).not.toHaveBeenCalled();
     });
 
-    it('update 时仍是默认密码则保持标记', async () => {
-        mocks.findUnique.mockResolvedValue({ password: 'hashed-default' });
-        mocks.compare.mockResolvedValue(true);
+    it('改密递增版本后撤销旧会话，新口令登录可解除强制改密', async () => {
+        const bcrypt = await vi.importActual<typeof import('bcryptjs')>('bcryptjs');
+        mocks.compare.mockImplementation((value: string, hash: string) => bcrypt.compare(value, hash));
+        const oldRow = { ...adminRow, authVersion: 0, password: bcrypt.hashSync(legacyAdminPasswordSample, 4) };
+        mocks.findUnique.mockResolvedValue(oldRow);
+        const firstLogin = await authorize(oldRow.email, legacyAdminPasswordSample);
+        expect(firstLogin).toBeTruthy();
+        const oldToken = await jwt({ token: { id: oldRow.id }, user: firstLogin! });
+        expect(oldToken.mustChangePassword).toBe(true);
 
-        const token = await jwt({ token: { id: 'admin-1', mustChangePassword: true } as JWT, trigger: 'update' });
-
-        expect(token.mustChangePassword).toBe(true);
+        const newPassword = 'updated-password';
+        mocks.findUnique.mockResolvedValue({ ...oldRow, authVersion: 1, password: bcrypt.hashSync(newPassword, 4) });
+        expect((await jwt({ token: oldToken, trigger: 'update' })).revoked).toBe(true);
+        expect(await authorize(oldRow.email, legacyAdminPasswordSample)).toBeNull();
+        const newLogin = await authorize(oldRow.email, newPassword);
+        expect(newLogin).toBeTruthy();
+        const newToken = await jwt({ token: { id: oldRow.id }, user: newLogin! });
+        expect(newToken).toMatchObject({ mustChangePassword: false, revoked: false, authVersion: 1 });
     });
 
-    it('未标记的 token 在 update 时不查库', async () => {
+    it('update 时即使无需改密也会刷新身份字段', async () => {
+        mocks.findUnique.mockResolvedValue({
+            personas: '["self"]',
+            activePersona: 'self',
+            personasConfirmedAt: new Date(),
+        });
+
         const token = await jwt({ token: { id: 'user-1', mustChangePassword: false } as JWT, trigger: 'update' });
 
-        expect(mocks.findUnique).not.toHaveBeenCalled();
+        expect(mocks.compare).not.toHaveBeenCalled();
         expect(token.mustChangePassword).toBe(false);
+        expect(token.needsPersonaConfirmation).toBe(false);
+        expect(token.activePersona).toBe('self');
     });
 });

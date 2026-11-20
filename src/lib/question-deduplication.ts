@@ -1,7 +1,8 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { learningScopeWhere, type LearningScope } from '@/lib/learning-scope';
 import { DEFAULT_QUESTION_DUPLICATE_THRESHOLD, duplicateQuestionSimilarity } from '@/lib/question-similarity';
-import { translations } from '@/lib/translations';
+import { zh } from '@/lib/translations/zh';
 
 export interface ImportedQuestionContent {
     questionText?: string | null;
@@ -18,24 +19,25 @@ interface DuplicateQuestion {
     similarity: number;
 }
 
-/** 分页比较当前用户的完整题库；不同错题本也参与判重，不受导入时间限制。 */
+/** 分页比较同一学习者作用域下的题库；允许同一学习者跨错题本判重，但不跨孩子/学习者混淆。 */
 export async function findDuplicateQuestion(
     client: Prisma.TransactionClient,
-    userId: string,
+    scope: LearningScope,
     content: ImportedQuestionContent,
 ): Promise<DuplicateQuestion | null> {
     const text = content.questionText?.trim() || content.ocrText?.trim();
     if (!text) return null;
-    const user = await client.user.findUnique({ where: { id: userId }, select: { questionDuplicateThreshold: true } });
+    const user = await client.user.findUnique({ where: { id: scope.userId }, select: { questionDuplicateThreshold: true } });
     const threshold = user?.questionDuplicateThreshold ?? DEFAULT_QUESTION_DUPLICATE_THRESHOLD;
     if (threshold >= 100) return null;
 
+    const scopeWhere = learningScopeWhere(scope);
     const pageSize = 200;
     let cursor: string | undefined;
     let bestMatch: DuplicateQuestion | null = null;
     while (true) {
         const candidates = await client.errorItem.findMany({
-            where: { userId },
+            where: scopeWhere,
             select: { id: true, questionText: true, ocrText: true },
             orderBy: { id: 'asc' },
             take: pageSize,
@@ -55,20 +57,21 @@ export async function findDuplicateQuestion(
     }
 }
 
-/** 与判重处于同一事务内，保存本次做错快照，原题内容和历史记录均保留。 */
+/** 与判重处于同一事务内，保存本次做错快照并写入同一学习者 ID，原题内容和历史记录均保留。 */
 export async function recordDuplicateQuestion(
     client: Prisma.TransactionClient,
-    userId: string,
+    scope: LearningScope,
     duplicate: DuplicateQuestion,
     content: ImportedQuestionContent,
 ) {
     const existing = await client.errorItem.findFirstOrThrow({
-        where: { id: duplicate.id, userId },
+        where: { id: duplicate.id, ...learningScopeWhere(scope) },
         include: { tags: true, subject: { select: { id: true, name: true } } },
     });
     const record = await client.practiceRecord.create({
         data: {
-            userId,
+            userId: scope.userId,
+            learnerId: scope.learnerId,
             errorItemId: existing.id,
             subject: existing.subject?.name ?? null,
             result: 'wrong',
@@ -88,7 +91,7 @@ export async function recordDuplicateQuestion(
         similarity: duplicate.similarity,
         mistakeRecorded: true as const,
         practiceRecordId: record.id,
-        message: translations.zh.importFlow.duplicate,
+        message: zh.importFlow.duplicate,
     };
 }
 

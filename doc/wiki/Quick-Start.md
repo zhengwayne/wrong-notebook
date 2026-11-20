@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- Node.js 22 或更新版本（推荐 24），以及 npm。
+- Node.js 24.15+（24.x，推荐），也支持 22.22.2+（22.x）或 26 及以上。需安装 npm。
 - Git；运行完整 CI 时还需要 Python 3。
 - 可访问所选 AI 服务的网络，以及相应的 API 凭据。
 
@@ -23,11 +23,11 @@ cp .env.example .env
 
 ```dotenv
 DATABASE_URL="file:./dev.db"
-NEXTAUTH_SECRET="替换为随机生成的密钥"
+NEXTAUTH_SECRET=""
 NEXTAUTH_URL="http://localhost:3000"
 ```
 
-运行 `openssl rand -base64 32` 生成 `NEXTAUTH_SECRET`。`file:./dev.db` 相对于 `prisma/schema.prisma`，对应 `prisma/dev.db`。
+运行 `openssl rand -hex 32`，将输出填入上面的空值并保存在本机的 `.env` 中。`file:./dev.db` 相对于 `prisma/schema.prisma`，对应 `prisma/dev.db`。
 
 AI 凭据可以稍后登录网页，在管理员设置中填写；详见 [AI 模型配置](AI-Configuration)。
 
@@ -42,7 +42,7 @@ npx prisma db seed
 npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts
 ```
 
-迁移创建表结构；种子脚本创建管理员；最后一步建立系统知识点库。已有生产数据库的升级请使用[部署与升级](Deployment)中的流程，先备份，再运行正式迁移。
+迁移创建表结构；种子脚本检查管理员状态，首个管理员在下文的初始化页创建；最后一步建立系统知识点库。已有生产数据库的升级请使用[部署与升级](Deployment)中的流程，先备份，再运行正式迁移。
 
 ## 启动与首次登录
 
@@ -50,13 +50,13 @@ npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-ta
 npm run dev
 ```
 
-全新数据库没有管理员。服务启动后，终端会打印一次性初始化链接：
+源码安装首次启动后，从项目目录读取一次性令牌。指定了 `CONFIG_DIR` 时，改读该目录中的 `setup-token` 文件。启动日志会显示完整路径。
 
-```text
-尚未创建管理员。请打开以下初始化链接设置管理员账号（仅可使用一次）：http://localhost:3000/initialize?token=…
+```bash
+cat config/setup-token
 ```
 
-打开链接，设置管理员的名称、邮箱和密码（至少 6 位，不能是旧的默认密码 `123456`），提交后自动登录并进入安装向导：配置 AI 渠道、创建第一个错题本，两步都可跳过。令牌同时保存在 `config/setup-token`，创建管理员后删除；没有管理员时重启服务会再次打印链接。向导可在「设置 → 用户管理」中重新运行；已有错题本的实例升级后不会自动弹出。
+在浏览器地址栏输入服务地址和 `/initialize?token=`，在等号后粘贴令牌，再打开页面设置管理员的名称、邮箱和密码（至少 6 位，不能是旧版默认密码），提交后自动登录并进入安装向导：配置 AI 渠道、创建第一个错题本，两步都可跳过。创建成功后令牌文件即删除。向导可在「设置 → 用户管理」中重新运行；已有错题本的实例升级后不会自动弹出。
 
 从旧版本升级的实例保留原有账户；仍使用旧默认管理员 `admin@localhost` 和默认密码登录时，会被要求先修改密码。
 

@@ -17,6 +17,7 @@ import { AIModel, ModelsResponse } from "@/types/api";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { isVendorProvider, VENDOR_PRESETS } from "@/lib/ai/vendor-presets";
 import type { VendorProviderId } from "@/lib/ai/vendor-presets";
+import type { AiModelRole } from "@/lib/ai/roles";
 import { frontendLogger } from "@/lib/frontend-logger";
 
 interface ModelSelectorProps {
@@ -24,12 +25,14 @@ interface ModelSelectorProps {
     apiKey?: string;
     baseUrl?: string;
     currentModel?: string;
+    role?: AiModelRole;
+    instanceId?: string;
     onModelChange: (model: string) => void;
     /** 官方的模型列表文档，显示在字段名旁 */
     docsHref?: string;
 }
 
-export function ModelSelector({ provider, apiKey, baseUrl, currentModel, onModelChange, docsHref }: ModelSelectorProps) {
+export function ModelSelector({ provider, apiKey, baseUrl, currentModel, role, instanceId, onModelChange, docsHref }: ModelSelectorProps) {
     const { t } = useLanguage();
     const [models, setModels] = useState<AIModel[]>([]);
     const [loading, setLoading] = useState(false);
@@ -58,6 +61,8 @@ export function ModelSelector({ provider, apiKey, baseUrl, currentModel, onModel
                 provider,
                 apiKey,
                 ...(baseUrl && { baseUrl }),
+                ...(role && { role }),
+                ...(instanceId && { instanceId }),
             });
 
             // Check if there's an error message in the response

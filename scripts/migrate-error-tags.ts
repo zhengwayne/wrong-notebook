@@ -73,7 +73,7 @@ async function main() {
             if (!tag) {
                 // 尝试根据错题的年级学期查找 parentId
                 const gradeStr = item.gradeSemester;
-                const parentId = await findParentTagIdForGrade(gradeStr, subjectKey);
+                const parentId = await findParentTagIdForGrade(gradeStr, subjectKey, prisma);
 
                 tag = await prisma.knowledgeTag.create({
                     data: {

@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN_PASSWORD } from './helpers';
+import { ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 async function login(page: Page) {
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.getByLabel(/邮箱|Email/).fill('admin@localhost');
     await page.getByLabel(/^密码$|^Password$/).fill(ADMIN_PASSWORD);
     await page.getByRole('button', { name: /登录|Login/ }).click();
@@ -26,7 +26,7 @@ test('做错的题按计划出现在今日复习中，首页显示待复习数�
     expect(itemRes.ok()).toBeTruthy();
     const item = await itemRes.json();
 
-    // 三天前做错：第一轮间隔一天，前天起已到期
+    // 三天前做错：进入第 1 档（间隔 1 天，总 7 轮含当天第 0 档），前天起已到期
     const takenAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const recordRes = await page.request.post('/api/practice/record', {
         data: { errorItemId: item.id, result: 'wrong', source: 'manual', takenAt },
@@ -44,7 +44,7 @@ test('做错的题按计划出现在今日复习中，首页显示待复习数�
         await expect(page.getByRole('heading', { name: '今日复习' })).toBeVisible();
         const entry = page.locator('div').filter({ has: page.getByText(questionText) }).filter({ has: page.getByRole('button', { name: '举一反三' }) }).last();
         await expect(entry).toBeVisible();
-        await expect(entry).toContainText(/起已到期 · 第 1 \/ 6 轮/);
+        await expect(entry).toContainText(/起已到期 · 第 1 \/ 7 轮/);
     } finally {
         expect((await page.request.delete(`/api/error-items/${item.id}/delete`)).ok()).toBeTruthy();
         expect((await page.request.delete(`/api/notebooks/${notebook.id}`)).ok()).toBeTruthy();

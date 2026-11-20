@@ -1,6 +1,6 @@
 /**
- * Docker 启动、安装包构建时调用：只维护已有的默认管理员 admin@localhost（恢复管理员角色并启用）。
- * 全新安装不再创建固定密码的管理员，改由服务启动时在日志中打印一次性初始化链接创建（见 src/lib/initialization.ts）。
+ * 管理员显式执行的恢复工具。为已有的 admin@localhost 恢复管理员角色并启用账号。
+ * 全新安装不再创建固定密码的管理员，改由部署者读取配置目录的 setup-token 文件创建（见 src/lib/initialization.ts）。
  */
 const { PrismaClient } = require('@prisma/client');
 
@@ -41,7 +41,7 @@ async function main() {
         if (result.action === 'updated') {
             console.log('Existing admin user found. Restored admin role.');
         } else {
-            console.log('No default admin user. Create the admin with the one-time setup link printed when the server starts.');
+            console.log('No default admin user. Start the server, read the setup-token file listed in its startup log, and append its contents to /initialize?token= at your site.');
         }
     } finally {
         await prisma.$disconnect();

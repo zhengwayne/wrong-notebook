@@ -1,31 +1,43 @@
 # Backup and Restore
 
-Web export is for moving personal learning data; restoring a whole site requires backing up the database, server configuration and deployment parameters.
+Web export now defaults to a **v3 streaming ZIP archive** (`XueJi-backup-*.zip`), suitable for moving complete personal and multi-learner study data. Restoring an entire site still requires backing up the SQLite database, server configuration, and deployment files.
 
 ## What each backup covers
 
 | Method | Contents | Use |
 | --- | --- | --- |
-| Web JSON export | Notebooks, custom tags, questions, review schedules, practice records, random exam papers and some profile data | Keeping personal data, importing supported fields |
-| Full-site file backup | The complete SQLite database, `config/`, deployment configuration and any certificates | Disaster recovery, moving the site, preparing a rollback before upgrades |
+| Web v3 ZIP backup | `manifest.json`, notebooks, custom tags, learner profiles (children/students), questions, practice records, random exam papers, parent papers/pages/questions, teacher classes/rosters/grading tasks/results, variant runs and stage logs, mastery snapshots, learning paths, AI provenance, deduplicated `media/<sha256>` images, and cloud TTS audio (`tts/*.mp3`) | Moving personal or multi-learner study records across devices or hosts |
+| Legacy JSON (v1/v2) | Notebooks, custom tags, questions, practice records, exam papers, variant runs, cloud voices, and user preferences; **excludes** `Learner`, parent papers, teacher grading, mastery snapshots, and learning paths | Importing historical `.json` backups (can also be exported via `GET /api/export?format=json`) |
+| Full-site file backup | The complete SQLite database, `config/`, deployment configuration, password hashes, and TLS certificates | Disaster recovery, moving the entire site, preparing a rollback before upgrades |
 
-The JSON export does not include full user accounts with passwords or the server AI configuration. Even when an admin exports all data, it does not replace a full-site backup.
+Web exports **never** include user password hashes or server-side AI credentials, and do not replace a full-site backup. Transient `AiUsage` logs and local `LearnerBackfillAudit` records are excluded from portable backups.
 
-## Web export and import
+## Web export and import (ZIP v3 and legacy compatibility)
 
-Export JSON from the data management section in the settings and keep it safe. When a regular user imports, the email in the export file must match the current account; admins can import and export data for all users.
-
-Question figures, GeoGebra demos, Chinese and English SVG animations with their synthesized cloud voice (MP3), the latest similar question and mastery probability are all restored from the export file; SVG is sanitized again on import, and questions without a mastery probability are re-evaluated after import. Exam papers are restored together with their questions and every recorded result; questions still being generated at export time show as failed after import and can be regenerated on the exam page. Importing your own export file also restores preferences such as the question grade rule and fixed grade, review before import, the duplicate threshold, GeoGebra demos, SVG animations and the interface theme.
-
-Import merges existing notebooks and tags and handles duplicates by question similarity. A duplicate may add another wrong attempt under the existing question, so importing the same file repeatedly can change the practice history.
-
-Keep the original backup before importing, and afterwards check the new questions, tags, duplicate count and answer history. To restore to an exact point in time, use a file backup.
-
-Restoring a backup keeps each question's original grade and does not apply the current entry rule. Old backups without a grade rule leave your current account settings unchanged.
+1. Trigger export under **Settings → Danger → Data Management**. The server streams cursor-paged database records into `data/*.ndjson`, splits `data:` images into SHA-256 deduplicated `media/<sha256>` entries and cloud audio into `tts/<id>.mp3`, and appends `manifest.json` with counts and per-entry digests.
+2. Regular users can only import backups matching their own account email; an administrator must choose **Import All** for an **Export All** backup to preserve each account’s data ownership.
+3. On import, the server verifies the manifest format version, every entry's byte size and SHA-256 digest, and remaps IDs across learners, parents' papers, teacher grading, variant stage logs, mastery states, and learning paths.
+   Children with the same name and classmates who share a name without a student number keep separate profiles. When the destination already has a manually created same-name profile, children merge safely only within the same active/archived state (archived children are never merged into an active namesake, nor silently unarchived by name fallback), while roster students merge strictly within the same teacher account in order of same ID in same class, same ID transferred to another class, same student number in class, and same name without student number. New exports identify tags by subject and full curriculum path. Older exports may need you to resolve names that match multiple tags.
+4. **Legacy notes**:
+   - v1/v2 `.json` files remain accepted on `/api/import`, with warnings noting that newer multi-learner/grading/path tables are absent from legacy files;
+   - The legacy `ReviewSchedule` table is no longer used by application logic (review due dates are computed from `PracticeRecord`). v3 import ignores legacy `ReviewSchedule` rows and returns a notice.
+5. Duplicate question matching on import runs within each learner's scope (`{ userId, learnerId }`), recording duplicate hits against that learner without mixing children's histories.
+6. **Optional passphrase encryption (AES-256-GCM + scrypt)**:
+   - Enter a passphrase before exporting to encrypt all `data/*.ndjson`, `media/*`, and `tts/*.mp3` entries via `POST /api/export`. Each entry uses a fresh 12-byte IV and binds its archive path as GCM AAD; `manifest.json` only stores KDF parameters, the random salt, an encrypted `keyCheck` tag, and ciphertext digests—never the passphrase itself.
+   - When exported without a passphrase, the UI and response headers (`X-Backup-Unencrypted-Warning: 1`) remind you that the archive contains student photos and records.
+   - Lost passphrases cannot be recovered or reset. Importing an encrypted archive requires the passphrase (via the Settings input, `passphrase` form field, or `X-Backup-Passphrase` header); missing or incorrect passphrases are rejected cleanly before mutating the database.
 
 ## Docker full-site backup
 
-This example uses the directory layout from the [deployment guide](Deployment-en). Stopping the app before archiving keeps the SQLite data file, its WAL/SHM files and the configuration consistent.
+This example uses the directory layout from the [deployment guide](Deployment-en). The application uses SQLite **WAL mode** by default (along with `busy_timeout=5000` and `foreign_keys=ON`). Stopping the app before archiving keeps the SQLite main file, its `-wal`/`-shm` files, and the configuration consistent. If you need a single-file copy without `-wal`, run `PRAGMA wal_checkpoint(TRUNCATE)` after stopping writes and then back up the `.db` file.
+
+If the data directory is mounted over NFS / CIFS on a NAS (where shared-memory locks do not work reliably), set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE` (which automatically switches `synchronous` to `FULL`).
+
+## Daily consistent snapshots and pre-migration backups
+
+- **Daily automatic snapshots**: While running, the server creates a consistent daily snapshot in `backups/daily-snapshot-YYYY-MM-DD.db` via SQLite `VACUUM INTO`, keeping the latest 7 files by default (configurable with `DAILY_SNAPSHOT_RETENTION`). The last success timestamp appears under **Settings → Danger → Data Management**, and failures show a banner on the home page. Docker deployments that already snapshot volumes can disable it with `DAILY_SNAPSHOT_ENABLED=false`.
+- **Pre-migration backups**: The package launcher (npm / Desktop / fnOS) and Docker entrypoint run a WAL checkpoint and back up existing databases to `backups/pre-migrate-*` (keeping the latest 3) before running `prisma migrate deploy`, refusing to start and printing restore instructions if a migration fails.
+- **Admin system initialization (factory reset)**: At the bottom of **Settings → Danger**, after two-step confirmation (dialog plus typing `RESET`), the server flushes queued background tasks and clears all business tables, other user accounts, and disk TTS/recovery caches in one transaction—preserving only the current admin account and the `isSystem: true` system knowledge-point tree.
 
 Run in the deployment directory:
 
@@ -56,4 +68,4 @@ Do not switch an old database back and forth between incompatible versions. When
 
 The default SQLite file is `prisma/dev.db`; the actual location is decided by `DATABASE_URL`. Stop the service, then back up the directory holding the actual database, `config/`, `.env` and the version information. When restoring, use the matching code and dependencies, and run the formal migrations if needed.
 
-Sources: [export](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/export/route.ts) · [import](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/import/route.ts) · [data model](https://github.com/margrop/wrong-notebook/blob/main/prisma/schema.prisma).
+Sources: [export](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/export/route.ts) · [v3 backup engine](https://github.com/margrop/wrong-notebook/blob/main/src/lib/backup/export-v3.ts) · [import](https://github.com/margrop/wrong-notebook/blob/main/src/app/api/import/route.ts) · [data model](https://github.com/margrop/wrong-notebook/blob/main/prisma/schema.prisma).

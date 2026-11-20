@@ -3,6 +3,7 @@
  * 测试重新回答问题接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -46,11 +47,29 @@ import { POST } from '@/app/api/reanswer/route';
 describe('/api/reanswer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        scopeMocks.findUser.mockResolvedValue({
+            id: 'user-1',
+            email: 'user@example.com',
+            name: 'Test User',
+            role: 'user',
+            isActive: true,
+            authVersion: 0,
+        });
     });
 
     describe('POST /api/reanswer (重新回答问题)', () => {
         it.each([['fixed', '四年级上', '四年级上'], ['ai', null, '高二下']] as const)('新文字录入遵循 %s 年级规则', async (gradeRecognitionMode, targetGrade, expectedGrade) => {
-            scopeMocks.findUser.mockResolvedValue({ gradeRecognitionMode, fixedGradeSemester: '四年级上', educationStage: 'junior_high', enrollmentYear: 2025 });
+            scopeMocks.findUser.mockResolvedValue({
+                id: 'user-1',
+                email: 'user@example.com',
+                role: 'user',
+                isActive: true,
+                authVersion: 0,
+                gradeRecognitionMode,
+                fixedGradeSemester: '四年级上',
+                educationStage: 'junior_high',
+                enrollmentYear: 2025,
+            });
             mocks.mockAIService.reanswerQuestion.mockResolvedValue({ answerText: '答', analysis: '析', gradeSemester: '高二下' });
             const response = await POST(new Request('http://localhost/api/reanswer', {
                 method: 'POST', body: JSON.stringify({ questionText: '题目', forImport: true }),
@@ -124,7 +143,7 @@ describe('/api/reanswer', () => {
             };
             mocks.mockAIService.reanswerQuestion.mockResolvedValue(aiResult);
 
-            const imageBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA...';
+            const imageBase64 = SAMPLE_PNG_DATA_URL;
 
             const request = new Request('http://localhost/api/reanswer', {
                 method: 'POST',
@@ -144,7 +163,7 @@ describe('/api/reanswer', () => {
                 expect.any(String),
                 'zh',
                 '数学',
-                imageBase64,
+                expect.stringMatching(/^data:image\/png;base64,/),
                 undefined,
                 undefined
             );
@@ -471,7 +490,7 @@ describe('/api/reanswer', () => {
 
             expect(response.status).toBe(200);
             expect(scopeMocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-                where: { id: 'nb-1', user: { email: 'user@example.com' } },
+                where: { id: 'nb-1', userId: 'user-1' },
             }));
             expect(scopeMocks.getNotebookCandidateTags).toHaveBeenCalledWith({ stage: 'primary', subject: 'math' });
             expect(mocks.mockAIService.reanswerQuestion.mock.calls[0][5]).toEqual(candidateTags);

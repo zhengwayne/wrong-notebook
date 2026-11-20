@@ -34,6 +34,17 @@ describe('buildSourceWhere', () => {
         expect(where).not.toHaveProperty('NOT');
         expect(where).not.toHaveProperty('AND');
         expect(where).not.toHaveProperty('tags');
+        expect(where.learnerId).toBeNull();
+    });
+
+    it('指定 learnerId 时严格限定该孩子或学生的错题，防止同科目跨孩串题', () => {
+        const elderWhere = buildSourceWhere('u1', {
+            subjectIds: ['math-sub'],
+            scope: 'unmastered',
+            count: 5,
+            learnerId: 'child-elder',
+        });
+        expect(elderWhere.learnerId).toBe('child-elder');
     });
 });
 

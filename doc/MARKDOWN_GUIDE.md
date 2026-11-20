@@ -47,6 +47,26 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 $$
 ```
 
+**化学、单位与几何：**
+```markdown
+硫酸 $\ce{H2SO4}$，反应 $\ce{2H2 + O2 -> 2H2O}$
+重力加速度 $\pu{9.8 m/s^2}$ 或 $9.8\,\mathrm{m/s^2}$
+线段 $\overline{AB}$，弧 $\overset{\frown}{AB}$
+```
+页面已启用 KaTeX mhchem（`\ce`、`\pu`）。`\wideparen{AB}` / `\overparen{AB}` 会映射为 `\overset{\frown}{AB}`。
+
+### 有机结构式（SMILES）
+
+需要画出有机化合物结构式时，使用 `smiles` 围栏代码块（不要用行内代码或其它 HTML）。页面会在浏览器里用 [smiles-drawer](https://github.com/reymond-group/smilesDrawer)（MIT）惰性加载并画成 SVG；解析失败时显示 SMILES 原文。
+
+````markdown
+乙醇的结构式：
+
+```smiles
+CCO
+```
+````
+
 ### 文本格式
 
 ```markdown

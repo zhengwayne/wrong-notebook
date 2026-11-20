@@ -1,9 +1,16 @@
 import { createRequire } from 'module';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
 describe('seed-admin docker helper', () => {
+    it('自动启动与安装包构建都不调用手工恢复管理员的脚本', () => {
+        for (const file of ['docker-entrypoint.sh', 'scripts/package/build.mjs']) {
+            expect(readFileSync(file, 'utf8')).not.toContain('seed-admin.js');
+        }
+    });
+
     it('does not create a default admin on a fresh install', async () => {
         const prisma = {
             user: {

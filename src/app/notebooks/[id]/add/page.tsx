@@ -7,6 +7,7 @@ import { BatchImportPanel } from "@/components/batch-import-panel";
 import { CorrectionEditor } from "@/components/correction-editor";
 import { ImageCropper } from "@/components/image-cropper";
 import { ImportResultBanner } from "@/components/import-result-banner";
+import { MultiQuestionConfirm } from "@/components/multi-question-confirm";
 import { TextInputZone } from "@/components/text-input-zone";
 import { UploadZone } from "@/components/upload-zone";
 import { PageHeader } from "@/components/ui/page-header";
@@ -16,6 +17,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
+import { useCurrentChild } from "@/lib/use-current-child";
 import { useQuestionImport } from "@/lib/use-question-import";
 import type { Notebook } from "@/types/api";
 
@@ -23,6 +25,7 @@ export default function AddErrorPage() {
     const params = useParams();
     const router = useRouter();
     const notebookId = params.id as string;
+    const { learnerId, hrefWithChild } = useCurrentChild();
     const { t } = useLanguage();
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     usePageTitle(t.notebooks.title, notebook?.name, t.pageTitle.addError);
@@ -36,6 +39,7 @@ export default function AddErrorPage() {
         importSubjectId: notebookId,
         textNotebook: { id: notebookId, name: notebook?.name || "" },
         fixedSubjectId: notebookId,
+        learnerId,
     });
 
     useEffect(() => {
@@ -56,12 +60,12 @@ export default function AddErrorPage() {
     }
 
     return (
-        <main className="min-h-screen">
+        <main id="main-content" tabIndex={-1} className="min-h-screen">
             <ProgressFeedback status={flow.analysisStep} />
 
-            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>
+            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" || flow.step === "confirm" ? "max-w-6xl" : "max-w-4xl"}`}>
                 <PageHeader
-                    backHref={`/notebooks/${notebookId}`}
+                    backHref={hrefWithChild(`/notebooks/${notebookId}`)}
                     title={t.app.addError}
                     description={notebook.name}
                 />
@@ -85,11 +89,12 @@ export default function AddErrorPage() {
                             <BatchImportPanel
                                 blobs={flow.batchBlobs}
                                 subjectId={notebookId}
+                                learnerId={learnerId}
                                 timeout={flow.aiTimeout}
                                 onClose={flow.closeBatch}
                             />
                         ) : inputMode === "image" ? (
-                            <UploadZone onImageSelect={flow.selectImage} isAnalyzing={flow.isBusy} />
+                            <UploadZone onImageSelect={flow.selectImage} onImagesSelect={flow.selectImages} isAnalyzing={flow.isBusy} />
                         ) : (
                             <TextInputZone
                                 onSubmit={flow.submitText}
@@ -98,6 +103,15 @@ export default function AddErrorPage() {
                             />
                         )}
                     </div>
+                )}
+
+                {flow.step === "confirm" && flow.pendingItems && (
+                    <MultiQuestionConfirm
+                        items={flow.pendingItems.items}
+                        saving={flow.savingItems}
+                        onCancel={flow.cancelPending}
+                        onSave={flow.savePendingItems}
+                    />
                 )}
 
                 {flow.step === "review" && flow.parsedData && (
@@ -112,13 +126,17 @@ export default function AddErrorPage() {
                 )}
             </div>
 
-            <ImageCropper
-                imageSrc={flow.croppingImage || ""}
-                open={flow.isCropperOpen}
-                onClose={flow.closeCropper}
-                onCropComplete={flow.cropComplete}
-                onMultiCropComplete={flow.startBatch}
-            />
+            {flow.croppingImage && (
+                <ImageCropper
+                    imageSrc={flow.croppingImage}
+                    open={flow.isCropperOpen}
+                    onClose={flow.closeCropper}
+                    onCancelQueue={flow.cropQueueLabel ? flow.cancelQueue : undefined}
+                    onCropComplete={flow.cropComplete}
+                    onMultiCropComplete={flow.multiCropComplete}
+                    titleSuffix={flow.cropQueueLabel}
+                />
+            )}
         </main>
     );
 }

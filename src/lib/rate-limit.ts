@@ -80,25 +80,63 @@ function readHeader(headers: HeaderSource, name: string): string | undefined {
     if (typeof (headers as Headers).get === "function") {
         return (headers as Headers).get(name) ?? undefined;
     }
-    const value = (headers as Record<string, string | string[] | undefined>)[name];
+    const record = headers as Record<string, string | string[] | undefined>;
+    const lowerName = name.toLowerCase();
+    const matchedKey = Object.keys(record).find((key) => key.toLowerCase() === lowerName);
+    const value = matchedKey ? record[matchedKey] : undefined;
     return Array.isArray(value) ? value[0] : value;
 }
 
+export type TrustProxyMode = "false" | "true" | "cloudflare";
+
+/** 解析当前代理信任模式：默认 false（忽略所有转发头），仅显式设为 true / cloudflare 时启用 */
+export function getTrustProxyMode(env: NodeJS.ProcessEnv = process.env): TrustProxyMode {
+    const raw = env.TRUST_PROXY?.trim().toLowerCase();
+    if (raw === "cloudflare") return "cloudflare";
+    if (raw === "true") return "true";
+    return "false";
+}
+
+/** 解析可信代理跳数（默认 1，非法值回退为 1） */
+export function getTrustedProxyHops(env: NodeJS.ProcessEnv = process.env): number {
+    const parsed = Number.parseInt(env.TRUSTED_PROXY_HOPS || "1", 10);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1;
+}
+
+function parseForwardedForHop(headerValue: string | undefined, hops: number): string | null {
+    if (!headerValue) return null;
+    const parts = headerValue
+        .split(",")
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+    if (parts.length === 0) return null;
+    const index = Math.max(0, parts.length - hops);
+    return parts[index] || null;
+}
+
 /**
- * 取客户端 IP：依次看 Cloudflare、反向代理头。没有代理时 Next.js 会把连接的远端地址写入 x-forwarded-for。
- * 取不到时返回 null，调用方应跳过按 IP 限流，避免所有人共用一个计数而被一起锁住。
+ * 取客户端 IP（三态 TRUST_PROXY 控制）：
+ * - false / 未设置：忽略一切转发头并返回 null，避免直连暴露时伪造请求头绕过 IP 限流；
+ * - true：不读取 cf-connecting-ip，按 TRUSTED_PROXY_HOPS 从 x-forwarded-for 末端回溯可信跳，缺省时回退 x-real-ip；
+ * - cloudflare：优先读取 cf-connecting-ip，否则按 true 策略回退。
  */
 export function getClientIp(headers: HeaderSource): string | null {
-    const candidates = [
-        readHeader(headers, "cf-connecting-ip"),
-        readHeader(headers, "x-real-ip"),
-        readHeader(headers, "x-forwarded-for")?.split(",")[0],
-    ];
-    for (const value of candidates) {
-        const ip = value?.trim();
-        if (ip) return ip;
+    const mode = getTrustProxyMode();
+    if (mode === "false") {
+        return null;
     }
-    return null;
+
+    if (mode === "cloudflare") {
+        const cfIp = readHeader(headers, "cf-connecting-ip")?.trim();
+        if (cfIp) return cfIp;
+    }
+
+    const hops = getTrustedProxyHops();
+    const xffIp = parseForwardedForHop(readHeader(headers, "x-forwarded-for"), hops);
+    if (xffIp) return xffIp;
+
+    const realIp = readHeader(headers, "x-real-ip")?.trim();
+    return realIp || null;
 }
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
@@ -109,3 +147,9 @@ export const loginAccountLimiter = new RateLimiter({ limit: 5, windowMs: FIFTEEN
 export const loginIpLimiter = new RateLimiter({ limit: 20, windowMs: FIFTEEN_MINUTES });
 /** 同一 IP 每小时最多提交 10 次注册或初始化 */
 export const registerIpLimiter = new RateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
+
+/** 每用户每分钟最多合成 60 次，给动画逐段请求留出余量 */
+export const ttsUserLimiter = new RateLimiter({ limit: 60, windowMs: 60 * 1000 });
+
+/** 每用户每分钟最多上报 60 次前端日志 */
+export const frontendLogLimiter = new RateLimiter({ limit: 60, windowMs: 60 * 1000 });

@@ -1,11 +1,11 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { MAX_VISIBLE_PAGES } from "@/lib/constants/pagination";
 
-interface PaginationProps {
+export interface PaginationProps {
     page: number;
     totalPages: number;
     onPageChange: (page: number) => void;
@@ -34,19 +34,14 @@ export function Pagination({
         if (totalPages <= MAX_VISIBLE_PAGES) {
             for (let i = 1; i <= totalPages; i++) pages.push(i);
         } else {
-            // 始终显示第一页
             pages.push(1);
-
             if (page > 3) pages.push("ellipsis");
 
-            // 中间页码
             const start = Math.max(2, page - 1);
             const end = Math.min(totalPages - 1, page + 1);
             for (let i = start; i <= end; i++) pages.push(i);
 
             if (page < totalPages - 2) pages.push("ellipsis");
-
-            // 始终显示最后一页
             pages.push(totalPages);
         }
 
@@ -54,55 +49,73 @@ export function Pagination({
     };
 
     const pageNumbers = getPageNumbers();
+    const firstLabel = t.pagination?.first || "First page";
+    const prevLabel = t.pagination?.prev || "Previous page";
+    const nextLabel = t.pagination?.next || "Next page";
+    const lastLabel = t.pagination?.last || "Last page";
 
     return (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
+        <nav
+            aria-label={t.pagination?.navLabel || "Pagination"}
+            className="flex flex-col items-center justify-between gap-4 py-4 sm:flex-row"
+        >
             {total !== undefined && pageSize !== undefined && (
-                <div className="text-sm text-muted-foreground order-2 sm:order-1">
+                <div className="order-2 text-sm tabular-nums text-muted-foreground sm:order-1" aria-live="polite">
                     {(t.pagination?.showing || "Showing {start}-{end} of {total}")
                         .replace("{start}", ((page - 1) * pageSize + 1).toString())
                         .replace("{end}", Math.min(page * pageSize, total).toString())
                         .replace("{total}", total.toString())}
                 </div>
             )}
-            <div className="flex items-center gap-1 order-1 sm:order-2">
-                {/* 首页 */}
+            <div className="order-1 flex items-center gap-1.5 sm:order-2">
                 <Button
+                    type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-9 w-9"
                     onClick={() => onPageChange(1)}
                     disabled={!canGoPrev}
-                    title={t.pagination?.first || "First page"}
+                    aria-label={firstLabel}
+                    title={firstLabel}
                 >
-                    <ChevronsLeft className="h-4 w-4" />
+                    <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
                 </Button>
 
-                {/* 上一页 */}
                 <Button
+                    type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-9 w-9"
                     onClick={() => onPageChange(page - 1)}
                     disabled={!canGoPrev}
-                    title={t.pagination?.prev || "Previous page"}
+                    aria-label={prevLabel}
+                    title={prevLabel}
                 >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 </Button>
 
-                {/* 页码 */}
-                <div className="hidden sm:flex items-center gap-1">
+                <div className="hidden items-center gap-1 sm:flex">
                     {pageNumbers.map((pageNum, idx) =>
                         pageNum === "ellipsis" ? (
-                            <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground">
-                                ...
+                            <span
+                                key={`ellipsis-${idx}`}
+                                aria-hidden="true"
+                                className="px-2 text-muted-foreground select-none"
+                            >
+                                …
                             </span>
                         ) : (
                             <Button
                                 key={pageNum}
+                                type="button"
                                 variant={pageNum === page ? "default" : "outline"}
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-9 w-9 tabular-nums"
+                                aria-current={pageNum === page ? "page" : undefined}
+                                aria-label={(t.pagination?.pageNumber || "Page {page}").replace(
+                                    "{page}",
+                                    pageNum.toString()
+                                )}
                                 onClick={() => onPageChange(pageNum)}
                             >
                                 {pageNum}
@@ -111,35 +124,36 @@ export function Pagination({
                     )}
                 </div>
 
-                {/* 移动端显示当前页/总页数 */}
-                <span className="sm:hidden text-sm px-2">
+                <span className="px-2.5 text-sm font-medium tabular-nums sm:hidden" aria-live="polite">
                     {page} / {totalPages}
                 </span>
 
-                {/* 下一页 */}
                 <Button
+                    type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-9 w-9"
                     onClick={() => onPageChange(page + 1)}
                     disabled={!canGoNext}
-                    title={t.pagination?.next || "Next page"}
+                    aria-label={nextLabel}
+                    title={nextLabel}
                 >
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
 
-                {/* 末页 */}
                 <Button
+                    type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-9 w-9"
                     onClick={() => onPageChange(totalPages)}
                     disabled={!canGoNext}
-                    title={t.pagination?.last || "Last page"}
+                    aria-label={lastLabel}
+                    title={lastLabel}
                 >
-                    <ChevronsRight className="h-4 w-4" />
+                    <ChevronsRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
             </div>
-        </div>
+        </nav>
     );
 }

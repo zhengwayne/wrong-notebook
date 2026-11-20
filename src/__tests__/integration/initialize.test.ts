@@ -2,6 +2,7 @@
 /**
  * 一次性初始化链接：全新安装没有管理员时，用配置目录中的令牌创建第一个管理员（真实 SQLite）
  */
+import { legacyAdminPasswordSample } from '../fixtures/legacy-admin';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,7 @@ vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.logger }));
 
 import { POST } from '@/app/api/initialize/route';
 import { GET as GET_STATUS } from '@/app/api/register/status/route';
-import { announceSetupLink, setupLinkFor } from '@/lib/initialization';
+import { announceSetupLink } from '@/lib/initialization';
 import { ensureSetupToken } from '@/lib/setup-token';
 import { registerIpLimiter } from '@/lib/rate-limit';
 
@@ -54,6 +55,7 @@ beforeEach(async () => {
     configDir = mkdtempSync(join(directory, 'config-'));
     vi.stubEnv('CONFIG_DIR', configDir);
     vi.stubEnv('NEXTAUTH_URL', 'http://192.168.1.10:3000/');
+    vi.stubEnv('TRUST_PROXY', 'true');
 });
 
 afterAll(async () => {
@@ -63,18 +65,19 @@ afterAll(async () => {
 });
 
 describe('启动时的初始化链接', () => {
-    it('没有管理员时生成令牌并在日志中打印完整链接', async () => {
+    it('没有管理员时生成令牌，日志仅包含文件位置与链接填写说明', async () => {
         await announceSetupLink();
 
         expect(existsSync(tokenFile())).toBe(true);
         const token = ensureSetupToken();
         expect(token).toMatch(/^[\w-]{32}$/);
-        const link = setupLinkFor(token);
-        expect(link).toBe(`http://192.168.1.10:3000/initialize?token=${token}`);
-        expect(mocks.logger.warn).toHaveBeenCalledWith({ link }, expect.stringContaining(link));
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(tokenFile()));
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('/initialize?token='));
+        const logs = Object.values(mocks.logger).flatMap(level => level.mock.calls);
+        expect(JSON.stringify(logs).includes(token)).toBe(false);
     });
 
-    it('重启后沿用同一个令牌，已打印的链接仍然有效', async () => {
+    it('重启后沿用同一个令牌，已有链接仍然有效', async () => {
         await announceSetupLink();
         const first = ensureSetupToken();
         await announceSetupLink();
@@ -109,7 +112,7 @@ describe('安装程序预设的管理员（initial-admin.json）', () => {
         expect(mocks.logger.warn).not.toHaveBeenCalled();
     });
 
-    it('预设内容无效时删除文件，改为打印初始化链接', async () => {
+    it('预设内容无效时删除文件，改为提示初始化令牌文件位置', async () => {
         writePreset({ email: 'nas@localhost', passwordHash: 'plain-text-password' });
 
         await announceSetupLink();
@@ -185,11 +188,11 @@ describe('POST /api/initialize', () => {
         expect(await database.user.count({ where: { role: 'admin' } })).toBe(1);
     });
 
-    it('拒绝过短的密码和旧的默认密码 123456', async () => {
+    it('拒绝过短的密码和旧的默认密码', async () => {
         const token = ensureSetupToken();
 
         expect((await initialize({ ...valid(token), password: '12345' })).status).toBe(400);
-        expect((await initialize({ ...valid(token), password: '123456' })).status).toBe(400);
+        expect((await initialize({ ...valid(token), password: legacyAdminPasswordSample })).status).toBe(400);
         expect(await database.user.count()).toBe(0);
     });
 
@@ -203,6 +206,19 @@ describe('POST /api/initialize', () => {
         expect((await response.json()).code).toBe('ALREADY_EXISTS');
         expect(await database.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } })).toMatchObject({ role: 'user', password: 'keep' });
         expect(ensureSetupToken()).toBe(token);
+    });
+
+    it('初始化管理员邮箱自动归一化为小写，且兼容库内历史大写普通用户查重', async () => {
+        const token = ensureSetupToken();
+        await database.user.create({ data: { email: 'Admin@Example.com', password: 'keep', role: 'user' } });
+
+        const dupRes = await initialize({ ...valid(token), email: 'ADMIN@example.com' });
+        expect(dupRes.status).toBe(409);
+
+        const okRes = await initialize({ ...valid(token), email: 'OwnerAdmin@Example.COM' });
+        expect(okRes.status).toBe(201);
+        const created = await database.user.findUniqueOrThrow({ where: { email: 'owneradmin@example.com' } });
+        expect(created.role).toBe('admin');
     });
 });
 

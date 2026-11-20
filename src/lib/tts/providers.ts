@@ -1,12 +1,14 @@
 /**
- * 云端语音合成：MiniMax（T2A v2）、千问（百炼 Qwen-Audio-TTS）、智谱 GLM-TTS、阶跃星辰与火山引擎豆包语音，均返回单声道 PCM 采样。
- * API Key 复用「AI 设置」中对应国产大模型渠道的配置；火山引擎豆包语音使用语音设置中单独填写的 Key。
+ * 云端语音合成：Edge 在线神经网络语音（免费、无需 Key），以及 MiniMax、千问、智谱、阶跃星辰与火山引擎豆包语音，均返回单声道 PCM 采样。
+ * 付费渠道的 API Key 复用「AI 设置」中对应国产大模型渠道的配置；火山引擎豆包语音使用语音设置中单独填写的 Key。
  */
 import crypto from "crypto";
 import { resolveVendorConfig } from "@/lib/ai/vendor-presets";
 import type { VendorConfig } from "@/lib/ai/vendor-presets";
-import { CLOUD_TTS_DEFAULTS, VOICE_STYLE_INSTRUCTION, defaultTtsEndpoint, hasOwnTtsApiKey, usesStyleInstruction } from "./constants";
+import { CLOUD_TTS_DEFAULTS, DEFAULT_EDGE_ENGLISH_VOICE, VOICE_STYLE_INSTRUCTION, defaultTtsEndpoint, hasOwnTtsApiKey, usesStyleInstruction } from "./constants";
 import type { CloudTtsProvider, CloudTtsSettings } from "./constants";
+import { synthesizeEdge } from "./edge-tts";
+import type { EncodedMp3Audio } from "./mp3";
 import { parseWav, pcm16ToFloat } from "./wav";
 import type { PcmAudio } from "./wav";
 
@@ -26,15 +28,19 @@ export interface ResolvedTtsSettings {
     endpoint: string;
     model: string;
     voice: string;
+    englishVoice?: string;
+    rate?: number;
+    pitch?: string;
 }
 
 /** 合并语音设置与渠道配置：模型、音色留空用默认值，接口地址留空按渠道 Base URL 推算 */
 export function resolveTtsSettings(provider: CloudTtsProvider, settings: CloudTtsSettings | undefined, vendor: VendorConfig | undefined): ResolvedTtsSettings {
     const ownKey = hasOwnTtsApiKey(provider) ? settings?.apiKey?.trim() || '' : '';
-    // OpenAI 未单独填写时使用当前 OpenAI 实例的 Key；豆包语音只用单独填写的 Key
-    const apiKey = provider === 'openai' ? ownKey || vendor?.apiKey || ''
-        : provider === 'volcengine' ? ownKey
-            : resolveVendorConfig(provider, vendor).apiKey;
+    // OpenAI 未单独填写时使用当前 OpenAI 实例的 Key；豆包语音只用单独填写的 Key；Edge 无需 Key
+    const apiKey = provider === 'edge' ? ''
+        : provider === 'openai' ? ownKey || vendor?.apiKey || ''
+            : provider === 'volcengine' ? ownKey
+                : resolveVendorConfig(provider, vendor).apiKey;
     const defaults = CLOUD_TTS_DEFAULTS[provider];
     return {
         provider,
@@ -42,6 +48,7 @@ export function resolveTtsSettings(provider: CloudTtsProvider, settings: CloudTt
         endpoint: settings?.endpoint?.trim() || defaultTtsEndpoint(provider, vendor),
         model: settings?.model?.trim() || defaults.model,
         voice: settings?.voice?.trim() || defaults.voice,
+        englishVoice: settings?.englishVoice?.trim() || (provider === 'edge' ? DEFAULT_EDGE_ENGLISH_VOICE : undefined),
     };
 }
 
@@ -240,11 +247,31 @@ async function synthesizeOpenAI(text: string, settings: ResolvedTtsSettings): Pr
     return { sampleRate: SAMPLE_RATE, samples: pcm16ToFloat(audio) };
 }
 
-export async function synthesizeWithProvider(text: string, language: 'zh' | 'en', settings: ResolvedTtsSettings): Promise<PcmAudio> {
-    if (!settings.apiKey) {
+/** 按语言选择音色：英文文本优先用 englishVoice */
+export function resolveVoiceForLanguage(settings: ResolvedTtsSettings, language: 'zh' | 'en', override?: string): string {
+    if (override?.trim()) return override.trim();
+    if (language === 'en' && settings.englishVoice) return settings.englishVoice;
+    return settings.voice;
+}
+
+export async function synthesizeWithProvider(text: string, language: 'zh' | 'en', settings: ResolvedTtsSettings & { provider: 'edge' }): Promise<EncodedMp3Audio>;
+export async function synthesizeWithProvider(text: string, language: 'zh' | 'en', settings: ResolvedTtsSettings): Promise<PcmAudio>;
+export async function synthesizeWithProvider(text: string, language: 'zh' | 'en', settings: ResolvedTtsSettings): Promise<PcmAudio | EncodedMp3Audio> {
+    if (settings.provider !== 'edge' && !settings.apiKey) {
         throw new TtsError('TTS_NOT_CONFIGURED', `${settings.provider} API key is not configured`);
     }
     switch (settings.provider) {
+        case 'edge':
+            try {
+                return await synthesizeEdge(text, {
+                    voice: resolveVoiceForLanguage(settings, language),
+                    rate: settings.rate,
+                    pitch: settings.pitch,
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Edge TTS failed';
+                throw new TtsError('TTS_PROVIDER_ERROR', message);
+            }
         case 'minimax':
             return synthesizeMiniMax(text, language, settings);
         case 'qwen':

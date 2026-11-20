@@ -11,6 +11,8 @@
 
 AI 设置、连接测试、模型列表与提示词设置只向管理员开放。OpenAI 配置支持多个实例，最多 10 个，通过当前激活实例决定实际使用的配置。
 
+> **安全边界**：设置接口对所有已保存的 API Key 均以掩码 `********` 脱敏返回，测试连接或局部保存不会覆写或泄露服务端真实凭据；所有自定义 AI 与语音出站接口地址仅允许 `http:` / `https:`，禁止在 URL 内嵌用户名密码，拦截全零地址（`0.0.0.0/8`、`::`）、链路本地及云元数据地址（`169.254.0.0/16`、`100.100.100.200`、`fe80::/10`、`metadata.google.internal` 等）及其 DNS 解析结果，同时强制 15 秒超时且禁止 HTTP 重定向（仍兼容本机或局域网内的 Ollama / vLLM 等私有部署）。
+
 ## 提供商参数
 
 | 提供商 | 必需参数 | 地址与默认模型 |
@@ -26,6 +28,8 @@ AI 设置、连接测试、模型列表与提示词设置只向管理员开放�
 | 火山引擎 Agent Plan | Agent Plan 专属 API Key | 默认 `https://ark.cn-beijing.volces.com/api/plan/v3`；代码默认 `doubao-seed-evolving`（也可填 `ark-code-latest`，使用方舟控制台「开通管理」中选择的模型）；套餐含豆包语音合成 |
 | 火山引擎 Coding Plan | 火山方舟 API Key | 默认 `https://ark.cn-beijing.volces.com/api/coding/v3`（改成 `/api/v3` 不计入套餐、按量计费）；代码默认 `doubao-seed-evolving`（也可填 `ark-code-latest`，使用方舟控制台「开通管理」中选择的模型）；套餐不含语音合成 |
 | 火山引擎（免费试用） | 火山方舟 API Key | 默认 `https://ark.cn-beijing.volces.com/api/v3`；使用新用户的[免费推理额度](https://www.volcengine.com/docs/82379/1399514)，开启「安心体验模式」后用完自动暂停，不产生费用 |
+| 硅基流动 SiliconFlow | API Key（中国站） | 默认 `https://api.siliconflow.cn/v1`；代码默认 `THUDM/GLM-Z1-9B-0414`（部分对话模型免费、仅文本输入，需实名认证；图片识别需换用付费视觉模型或其他渠道） |
+| 硅基流动（国际站） | API Key（国际站独立账号） | 默认 `https://api.siliconflow.com/v1`；代码默认 `Qwen/Qwen2.5-VL-7B-Instruct`（支持图片输入，新用户有体验赠金） |
 | Anthropic 或兼容接口 | API Key、模型 | 默认 `https://api.anthropic.com`；代码默认 `claude-sonnet-5-5` |
 | Azure OpenAI | API Key、Endpoint、部署名称 | API 版本默认 `2024-02-15-preview`；模型字段用于显示 |
 | OpenAI 或兼容接口 | API Key、模型 | 默认 `https://api.openai.com/v1`；代码默认 `gpt-6.1-sol` |
@@ -72,7 +76,7 @@ MiniMax Code OAuth 用 MiniMax Code 账号登录后调用模型，不需要 API 
 
 ## 环境变量
 
-基础选择使用 `AI_PROVIDER`，默认 `minimax`，可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`anthropic`、`azure`、`openai`、`gemini`。
+基础选择使用 `AI_PROVIDER`，默认 `minimax`，可选 `minimax`、`minimax-code`、`glm`、`deepseek`、`kimi`、`qwen`、`stepfun`、`volcengine`、`volcengine-agent`、`volcengine-coding`、`volcengine-free`、`siliconflow`、`siliconflow-global`、`anthropic`、`azure`、`openai`、`gemini`。
 
 | 提供商 | 配置项 |
 | --- | --- |
@@ -87,6 +91,8 @@ MiniMax Code OAuth 用 MiniMax Code 账号登录后调用模型，不需要 API 
 | 火山引擎 Agent Plan | `VOLCENGINE_AGENT_API_KEY`、`VOLCENGINE_AGENT_BASE_URL`、`VOLCENGINE_AGENT_MODEL` |
 | 火山引擎 Coding Plan | `VOLCENGINE_CODING_API_KEY`、`VOLCENGINE_CODING_BASE_URL`、`VOLCENGINE_CODING_MODEL` |
 | 火山引擎（免费试用） | `VOLCENGINE_FREE_API_KEY`、`VOLCENGINE_FREE_BASE_URL`、`VOLCENGINE_FREE_MODEL` |
+| 硅基流动 SiliconFlow（中国站） | `SILICONFLOW_API_KEY`、`SILICONFLOW_BASE_URL`、`SILICONFLOW_MODEL` |
+| 硅基流动（国际站） | `SILICONFLOW_GLOBAL_API_KEY`、`SILICONFLOW_GLOBAL_BASE_URL`、`SILICONFLOW_GLOBAL_MODEL` |
 | 豆包语音（云端语音） | `VOLCENGINE_TTS_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL` |
 | Azure | `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_DEPLOYMENT`、`AZURE_OPENAI_API_VERSION`、`AZURE_OPENAI_MODEL` |

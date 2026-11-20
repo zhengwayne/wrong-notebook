@@ -7,17 +7,19 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { FieldLabel } from "@/components/settings/field-label";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { getProviderDocs } from "@/lib/ai/provider-docs";
+import type { AiModelRole } from "@/lib/ai/roles";
 import type { AppConfig } from "@/types/api";
 
 type GeminiConfig = NonNullable<AppConfig["gemini"]>;
 
 interface GeminiSettingsProps {
     value?: GeminiConfig;
+    role?: AiModelRole;
     onChange: (value: GeminiConfig) => void;
 }
 
 /** Google Gemini 的配置表单 */
-export function GeminiSettings({ value, onChange }: GeminiSettingsProps) {
+export function GeminiSettings({ value, role, onChange }: GeminiSettingsProps) {
     const { t } = useLanguage();
     const docs = getProviderDocs("gemini");
     const update = (key: keyof GeminiConfig, next: string) => onChange({ ...value, [key]: next });
@@ -45,6 +47,7 @@ export function GeminiSettings({ value, onChange }: GeminiSettingsProps) {
                 apiKey={value?.apiKey}
                 baseUrl={value?.baseUrl}
                 currentModel={value?.model}
+                role={role}
                 onModelChange={(model) => update('model', model)}
                 docsHref={docs?.models}
             />

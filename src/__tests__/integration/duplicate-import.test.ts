@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
+import { createJpegWithExif, SAMPLE_PNG_BASE64, SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 const mocks = vi.hoisted(() => ({
     prisma: undefined as PrismaClient | undefined,
@@ -156,7 +158,7 @@ describe('题目导入自动判重（真实 SQLite）', () => {
             questionText: `  ${questionText}\n`,
             wrongAnswerText: 'x = 7',
             mistakeAnalysis: '移项时忘记变号',
-            originalImageUrl: 'data:image/png;base64,bmV3',
+            originalImageUrl: SAMPLE_PNG_DATA_URL,
         });
         const data = await response.json();
 
@@ -165,10 +167,12 @@ describe('题目导入自动判重（真实 SQLite）', () => {
         expect(data.message).toContain('已在已有题目的举一反三记录中记录');
         expect(await database.errorItem.count()).toBe(1);
         expect(await database.errorItem.findUnique({ where: { id: original.id } })).toEqual(original);
-        expect(await database.practiceRecord.findUnique({ where: { id: data.practiceRecordId } })).toMatchObject({
+        const dupRecord = await database.practiceRecord.findUnique({ where: { id: data.practiceRecordId } });
+        expect(dupRecord).toMatchObject({
             userId: 'user-1', errorItemId: original.id, subject: '数学', result: 'wrong', isCorrect: false,
-            source: 'duplicate_import', wrongAnswerText: 'x = 7', mistakeAnalysis: '移项时忘记变号', originalImageUrl: 'data:image/png;base64,bmV3',
+            source: 'duplicate_import', wrongAnswerText: 'x = 7', mistakeAnalysis: '移项时忘记变号',
         });
+        expect(dupRecord?.originalImageUrl).toMatch(/^data:image\/png;base64,/);
         expect(mocks.scheduleMasteryEvaluation).toHaveBeenCalledWith([original.id]);
     });
 
@@ -213,10 +217,16 @@ describe('题目导入自动判重（真实 SQLite）', () => {
 
     it('新错误快照可从举一反三历史读取', async () => {
         await existing();
-        await save({ wrongAnswerText: '新作答', mistakeAnalysis: '新错因', originalImageUrl: 'new-image' });
+        await save({ wrongAnswerText: '新作答', mistakeAnalysis: '新错因', originalImageUrl: SAMPLE_PNG_DATA_URL });
         const response = await GET_HISTORY(new Request('http://localhost'), { params: Promise.resolve({ id: 'existing' }) });
         expect(response.status).toBe(200);
-        expect((await response.json()).records[0]).toMatchObject({ result: 'wrong', source: 'duplicate_import', wrongAnswerText: '新作答', mistakeAnalysis: '新错因', originalImageUrl: 'new-image' });
+        expect((await response.json()).records[0]).toMatchObject({
+            result: 'wrong',
+            source: 'duplicate_import',
+            wrongAnswerText: '新作答',
+            mistakeAnalysis: '新错因',
+            originalImageUrl: expect.stringMatching(/^data:image\/png;base64,/),
+        });
     });
 
     it('恰好 90% 时仍创建新题', async () => {
@@ -250,7 +260,7 @@ describe('题目导入自动判重（真实 SQLite）', () => {
 
     it('没有题干时不把只有图片的不同题目判为相同', async () => {
         await existing({ questionText: null });
-        expect((await save({ questionText: '', originalImageUrl: 'image' })).status).toBe(201);
+        expect((await save({ questionText: '', originalImageUrl: SAMPLE_PNG_DATA_URL })).status).toBe(201);
         expect(await database.practiceRecord.count()).toBe(0);
     });
 
@@ -287,9 +297,9 @@ describe('题目导入自动判重（真实 SQLite）', () => {
     it('事务失败时回滚错误快照，保持原题不变', async () => {
         const original = await existing();
         await expect(runQuestionImportTransaction(async (tx) => {
-            const duplicate = await findDuplicateQuestion(tx, 'user-1', { questionText });
+            const duplicate = await findDuplicateQuestion(tx, { userId: 'user-1', learnerId: null }, { questionText });
             if (!duplicate) throw new Error('未找到重复题目');
-            await recordDuplicateQuestion(tx, 'user-1', duplicate, { questionText });
+            await recordDuplicateQuestion(tx, { userId: 'user-1', learnerId: null }, duplicate, { questionText });
             throw new Error('模拟事务失败');
         })).rejects.toThrow('模拟事务失败');
         expect(await database.practiceRecord.count()).toBe(0);
@@ -311,7 +321,7 @@ describe('其他导入入口也使用同一判重规则', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
             success: true, data: { questionText, answerText: 'x = 3', analysis: '移项', knowledgePoints: [] },
         }), { status: 200 })));
-        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: 'dGVzdA==', mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
+        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: SAMPLE_PNG_BASE64, mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
         expect(response.status).toBe(201);
         const data = await response.json();
         expect(data.successCount).toBe(1);
@@ -326,7 +336,7 @@ describe('其他导入入口也使用同一判重规则', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
             success: true, data: { questionText, answerText: 'x = 3', analysis: '移项', knowledgePoints: [], gradeSemester: '高二下' },
         }), { status: 200 })));
-        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: 'dGVzdA==', mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
+        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: SAMPLE_PNG_BASE64, mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
         expect(response.status).toBe(201);
         const data = await response.json();
         expect(data.successCount).toBe(1);
@@ -340,7 +350,7 @@ describe('其他导入入口也使用同一判重规则', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
             success: true, data: { questionText, answerText: 'x = 3', analysis: '移项', knowledgePoints: [], difficultyStars: 5 },
         }), { status: 200 })));
-        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: 'dGVzdA==', mimeType: 'image/png', filename: 'star.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
+        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: SAMPLE_PNG_BASE64, mimeType: 'image/png', filename: 'star.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
         expect(response.status).toBe(201);
         const data = await response.json();
         expect(data.successCount).toBe(1);
@@ -354,7 +364,7 @@ describe('其他导入入口也使用同一判重规则', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
             success: true, data: { questionText, answerText: 'x = 3', analysis: '移项', knowledgePoints: [] },
         }), { status: 200 })));
-        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: 'dGVzdA==', mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
+        const response = await IMPORT_OPENCLAW(request({ userEmail: mocks.session.user.email, images: [{ base64: SAMPLE_PNG_BASE64, mimeType: 'image/png', filename: 'grade.png' }] }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
         expect(response.status).toBe(201);
         const data = await response.json();
         const item = await database.errorItem.findUniqueOrThrow({ where: { id: data.results[0].errorItemId } });
@@ -387,7 +397,7 @@ describe('其他导入入口也使用同一判重规则', () => {
         }), { status: 200 })));
         const response = await IMPORT_OPENCLAW(request({
             userEmail: mocks.session.user.email,
-            images: [0, 1].map((index) => ({ base64: 'dGVzdA==', mimeType: 'image/png', filename: `${index}.png` })),
+            images: [0, 1].map((index) => ({ base64: SAMPLE_PNG_BASE64, mimeType: 'image/png', filename: `${index}.png` })),
         }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
         const data = await response.json();
         expect(response.status).toBe(201);
@@ -396,6 +406,25 @@ describe('其他导入入口也使用同一判重规则', () => {
         expect(data.results[1].message).toContain('当前题目重复');
         expect(await database.errorItem.count()).toBe(1);
         expect(await database.practiceRecord.count({ where: { source: 'duplicate_import', wrongAnswerText: 'x = 7' } })).toBe(1);
+    });
+
+    it('Openclaw 写入错题时自动剥离图片 EXIF 与 GPS 元数据', async () => {
+        vi.stubEnv('OPENCLAW_AUTH_MODE', 'apikey');
+        vi.stubEnv('OPENCLAW_INTEGRATION_API_KEY', 'test-only-key');
+        const withExif = await createJpegWithExif({ width: 20, height: 12, orientation: 6 });
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            success: true, data: { questionText, answerText: 'x = 3', analysis: '移项', knowledgePoints: [] },
+        }), { status: 200 })));
+        const response = await IMPORT_OPENCLAW(request({
+            userEmail: mocks.session.user.email,
+            images: [{ base64: withExif.buffer.toString('base64'), mimeType: 'image/jpeg', filename: 'photo.jpg' }],
+        }, '/api/openclaw/batch-upload', { 'x-api-key': 'test-only-key' }));
+        expect(response.status).toBe(201);
+        const data = await response.json();
+        const item = await database.errorItem.findUniqueOrThrow({ where: { id: data.results[0].errorItemId } });
+        expect(item.originalImageUrl.startsWith('data:image/jpeg;base64,')).toBe(true);
+        const savedMeta = await sharp(Buffer.from(item.originalImageUrl.split(',')[1], 'base64')).metadata();
+        expect(savedMeta.exif).toBeUndefined();
     });
 
     it('JSON 导入返回重复计数，并把历史和复习计划映射到原题', async () => {

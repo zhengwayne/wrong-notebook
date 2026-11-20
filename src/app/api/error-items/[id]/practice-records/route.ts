@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { getKidModeLockFromRequest } from "@/lib/kid-mode-lock";
 import { unauthorized, forbidden, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { masteryStatusOf } from "@/lib/mastery-status";
@@ -23,8 +24,10 @@ export async function GET(
             return unauthorized("Authentication required");
         }
 
+        const lock = getKidModeLockFromRequest(req, { userId: user.id, authVersion: user.authVersion });
+        const kidScope = lock ? { learnerId: lock.learnerId } : {};
         const item = await prisma.errorItem.findUnique({
-            where: { id },
+            where: { id, ...kidScope },
             select: {
                 userId: true,
                 masteryLevel: true,
@@ -33,7 +36,7 @@ export async function GET(
                 masterySource: true,
                 masteryEvaluatedAt: true,
                 practiceRecords: {
-                    where: { result: { not: null } },
+                    where: { result: { not: null }, ...kidScope },
                     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
                     select: {
                         id: true,
@@ -48,7 +51,13 @@ export async function GET(
                         originalImageUrl: true,
                         figureSvg: true,
                         createdAt: true,
-                        examQuestion: { select: { paperId: true, order: true, paper: { select: { title: true } } } },
+                        examQuestion: {
+                            select: {
+                                paperId: true,
+                                order: true,
+                                paper: { select: { title: true, _count: { select: { questions: { where: { order: 0 } } } } } },
+                            },
+                        },
                     },
                 },
             },
@@ -69,7 +78,7 @@ export async function GET(
             records: practiceRecords.map(({ examQuestion, ...record }) => ({
                 ...record,
                 exam: examQuestion
-                    ? { paperId: examQuestion.paperId, order: examQuestion.order, title: examQuestion.paper.title }
+                    ? { paperId: examQuestion.paperId, order: examQuestion.order + Number(examQuestion.paper._count.questions > 0), title: examQuestion.paper.title }
                     : null,
             })),
         });

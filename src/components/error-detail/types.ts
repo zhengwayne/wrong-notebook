@@ -26,6 +26,7 @@ export interface ErrorItemDetail {
     subject?: {
         id: string;
         name: string;
+        subjectKey?: string | null;
     } | null;
     gradeSemester?: string | null;
     paperLevel?: string | null;
@@ -35,6 +36,13 @@ export interface ErrorItemDetail {
     geogebraCommands?: string | null;
     svgAnimation?: string | null;    // 中文版动画讲解
     svgAnimationEn?: string | null;  // 英文版动画讲解
+    learning?: {
+        nextReviewAt: string | null;
+        reviewStage: number;
+        reviewDue: boolean;
+        pathSteps: Array<{ id: string; title: string; type: string; status: string; reason: string }>;
+        knowledgeMastery: Array<{ knowledgePoint: string; score: number; evidenceCount: number; dueAt: string | null }>;
+    };
 }
 
 /** 局部更新错题，同时合并到页面状态 */

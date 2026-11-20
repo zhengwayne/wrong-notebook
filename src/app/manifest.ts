@@ -3,15 +3,16 @@ import type { MetadataRoute } from 'next'
 export default function manifest(): MetadataRoute.Manifest {
     return {
         id: '/',
-        name: '智能错题本',
-        short_name: '错题本',
-        description: 'AI 驱动的智能错题管理系统，帮助学生高效整理、分析和复习错题',
+        name: '学迹',
+        short_name: '学迹',
+        description: '学迹（XueJi）是 AI 驱动的学习助手，帮助学生高效整理、分析和复习错题',
         lang: 'zh-CN',
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#ffffff',
-        theme_color: '#4f46e5',
+        background_color: '#f8f7fc',
+        // Web Manifest 规范只允许单一 theme_color；安装启动画面使用浅色主色，运行时由 ThemeProvider 按浅/深色同步 meta theme-color
+        theme_color: '#6b5ca5',
         // 手机竖屏、平板横竖屏都可使用，方向交给系统
         orientation: 'any',
         categories: ['education', 'productivity'],

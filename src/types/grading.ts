@@ -1,6 +1,7 @@
 import type { GradingVerdict, KeyQuestion, KeyQuestionInput } from "@/lib/grading";
+import type { ScoringMode, TaskMode } from "@/lib/grading-grades";
 
-export type { GradingVerdict, KeyQuestion, KeyQuestionInput };
+export type { GradingVerdict, KeyQuestion, KeyQuestionInput, ScoringMode, TaskMode };
 
 import type { MatchCandidate, MatchReasonCode, PaperIdentity } from "@/lib/student-match";
 import type { RosterAction, RosterDuplicate, RosterIssue, RosterPlanRow } from "@/lib/roster-import";
@@ -52,6 +53,8 @@ export interface GradingTaskSummary {
     id: string;
     title: string;
     subjectName: string;
+    taskMode?: TaskMode | string;
+    scoringMode?: ScoringMode | string;
     className: string;
     studentCount: number;
     questionCount: number;
@@ -64,6 +67,10 @@ export interface GradingSubmissionBrief extends GradingMatchInfo {
     id: string;
     studentId: string | null;
     status: GradingSubmissionStatus;
+    reviewBucket?: 'green' | 'yellow' | string;
+    handwritingLevel?: string | null;
+    neatnessLevel?: string | null;
+    attitudeLevel?: string | null;
     totalScore: number | null;
     error: string | null;
     importedCount: number;
@@ -75,6 +82,10 @@ export interface GradingTaskDetail {
     id: string;
     title: string;
     subjectName: string;
+    taskMode?: TaskMode | string;
+    scoringMode?: ScoringMode | string;
+    allowSelfSubmit?: boolean;
+    deadline?: string | null;
     classId: string;
     className: string;
     classIds: string[];
@@ -91,7 +102,10 @@ export interface GradingResultDetail {
     verdict: GradingVerdict;
     score: number;
     aiScore: number | null;
+    confidence?: number | null;
+    bbox?: string | null;
     reason: string | null;
+    comment?: string | null;
     source: 'auto' | 'ai' | 'teacher';
     errorItemId: string | null;
     question: KeyQuestion;
@@ -101,9 +115,18 @@ export interface GradingSubmissionDetail extends GradingMatchInfo {
     id: string;
     taskId: string;
     taskTitle: string;
+    scoringMode?: ScoringMode | string;
     studentId: string | null;
     studentName: string | null;
     status: GradingSubmissionStatus;
+    reviewBucket?: 'green' | 'yellow' | string;
+    handwritingLevel?: string | null;
+    neatnessLevel?: string | null;
+    attitudeLevel?: string | null;
+    processTags?: string[];
+    visualAlerts?: string[];
+    teacherComment?: string | null;
+    version?: number;
     totalScore: number | null;
     error: string | null;
     importedCount: number;

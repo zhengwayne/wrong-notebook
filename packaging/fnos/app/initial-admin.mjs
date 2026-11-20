@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { legacyAdminPasswordHash } from './legacy-admin-password-hash.mjs';
 
 const [serverDir, outFile] = process.argv.slice(2);
 const email = (process.env.WN_ADMIN_EMAIL || '').trim();
@@ -22,13 +23,13 @@ if (!/^[^\s@]+@[^\s@]+$/.test(email)) {
     console.error('管理员邮箱格式不正确');
     process.exit(1);
 }
-if (password.length < 6 || password === '123456') {
-    console.error('管理员密码至少 6 位，且不能是 123456');
+// standalone 构建只保留 bcryptjs 的 ESM 入口（index.js），不能用 require 加载
+const { default: bcrypt } = await import(pathToFileURL(path.join(serverDir, 'node_modules', 'bcryptjs', 'index.js')).href);
+if (password.length < 6 || (password.length === 6 && bcrypt.compareSync(password, legacyAdminPasswordHash))) {
+    console.error('管理员密码至少 6 位，且不能使用旧版通用密码');
     process.exit(1);
 }
 
-// standalone 构建只保留 bcryptjs 的 ESM 入口（index.js），不能用 require 加载
-const { default: bcrypt } = await import(pathToFileURL(path.join(serverDir, 'node_modules', 'bcryptjs', 'index.js')).href);
 const content = JSON.stringify({ email, name: 'Admin', passwordHash: bcrypt.hashSync(password, 12) });
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true });

@@ -1,12 +1,15 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { resolveActor } from '@/lib/server/actor';
+import { setRequestContextUserId } from '@/lib/server/request-context';
 
-/** 根据会话邮箱获取当前登录用户；未登录或用户不存在时返回 null */
+/**
+ * 获取当前已登录且处于激活状态（且会话未被撤销）的用户；
+ * 统一委托给 resolveActor 以确保 57+ 个现有路由同步获得 authVersion 与 isActive 实时校验。
+ */
 export async function getCurrentUser() {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-        return null;
+    const actor = await resolveActor();
+    if (actor.kind === 'authenticated') {
+        setRequestContextUserId(actor.user.id);
+        return actor.user;
     }
-    return prisma.user.findUnique({ where: { email: session.user.email } });
+    return null;
 }

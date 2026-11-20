@@ -8,7 +8,7 @@ import { z } from "zod";
  * 服务首次启动时据此创建管理员并删除该文件，不再需要初始化链接
  */
 const initialAdminSchema = z.object({
-    email: z.string().trim().regex(/^[^\s@]+@[^\s@]+$/),
+    email: z.string().trim().toLowerCase().regex(/^[^\s@]+@[^\s@]+$/),
     name: z.string().trim().min(1).max(50).optional(),
     // bcrypt 哈希，如 $2a$12$…
     passwordHash: z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/),

@@ -3,20 +3,21 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { badRequest, conflict, createErrorResponse, ErrorCode, forbidden, internalError, tooManyRequests, validationError } from "@/lib/api-errors";
-import { DEFAULT_ADMIN_PASSWORD } from "@/lib/default-admin";
+import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { isInitialized } from "@/lib/initialization";
 import { createLogger } from "@/lib/logger";
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit";
 import { claimSetupToken } from "@/lib/setup-token";
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
 
 const logger = createLogger("api:initialize");
 
 const initializeSchema = z.object({
     token: z.string().min(1),
-    // 与注册一致，支持本地邮箱（如 admin@localhost）
-    email: z.string().trim().regex(/^[^\s@]+@[^\s@]+$/),
+    // 与注册一致，支持本地邮箱（如 admin@localhost），统一归一化为小写
+    email: z.string().trim().toLowerCase().regex(/^[^\s@]+@[^\s@]+$/),
     name: z.string().trim().min(1).max(50),
-    password: z.string().min(6).refine((value) => value !== DEFAULT_ADMIN_PASSWORD),
+    password: z.string().min(6).refine((value) => !isDefaultAdminPassword("admin", value)),
 });
 
 /**
@@ -37,12 +38,13 @@ export async function POST(req: Request) {
     }
     const parsed = initializeSchema.safeParse(body);
     if (!parsed.success) return validationError("Invalid initialization data", parsed.error.issues);
-    const { token, email, name, password } = parsed.data;
+    const { token, email: rawEmail, name, password } = parsed.data;
+    const email = normalizeEmail(rawEmail);
 
     try {
         if (await isInitialized()) return conflict("Already initialized");
         // 没有管理员但已有同邮箱的普通用户（极少见），不覆盖其账号
-        if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+        if (await findUserByEmailInsensitive(prisma, email, { id: true })) {
             return createErrorResponse("Email already exists", 409, ErrorCode.ALREADY_EXISTS);
         }
 

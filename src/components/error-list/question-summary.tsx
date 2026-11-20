@@ -1,40 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
-import katex from "katex";
-import { cleanMarkdown } from "@/lib/markdown-utils";
-import { buildQuestionSummary } from "@/lib/question-summary";
-import "katex/dist/katex.min.css";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 
 interface QuestionSummaryProps {
     text: string | null | undefined;
-    maxLength: number;
+    /** @deprecated 改用 CSS line-clamp，保留参数以免旧调用处报错 */
+    maxLength?: number;
+    clamp?: number;
     className?: string;
 }
 
-/** 行内渲染公式；KaTeX 无法解析时退回到纯文本 */
-function renderMath(tex: string): { html: string } | { text: string } {
-    try {
-        return { html: katex.renderToString(tex, { displayMode: false, throwOnError: true, strict: "ignore" }) };
-    } catch {
-        return { text: cleanMarkdown(`$${tex}$`) };
-    }
-}
-
-/** 错题卡片的题干摘要：文字去掉 Markdown 格式，公式用 KaTeX 行内渲染 */
-export function QuestionSummary({ text, maxLength, className = "" }: QuestionSummaryProps) {
-    const parts = useMemo(() => buildQuestionSummary(text, maxLength), [text, maxLength]);
-
+/** 错题卡片的题干摘要：与详情页同一套 Markdown + KaTeX 渲染，用 CSS 限制行数 */
+export function QuestionSummary({ text, clamp = 3, className = "" }: QuestionSummaryProps) {
     return (
-        <div className={`[&_.katex]:text-[1.05em] ${className}`}>
-            {parts.map((part, index) => {
-                if (part.type === "text") return <span key={index}>{part.value}</span>;
-                const rendered = renderMath(part.tex);
-                return "html" in rendered
-                    // KaTeX 输出已转义用户内容（默认 trust: false），可直接插入
-                    ? <span key={index} dangerouslySetInnerHTML={{ __html: rendered.html }} />
-                    : <span key={index}>{rendered.text}</span>;
-            })}
-        </div>
+        <MarkdownRenderer
+            content={text}
+            variant="compact"
+            clamp={clamp}
+            className={`[&_.katex]:text-[1.05em] ${className}`}
+        />
     );
 }

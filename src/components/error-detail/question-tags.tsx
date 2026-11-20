@@ -16,10 +16,11 @@ interface QuestionTagsProps {
     educationStage?: string;
     /** 标签保存或 AI 重新识别后重新加载错题 */
     onChanged: () => Promise<void> | void;
+    readOnly?: boolean;
 }
 
 /** 题目的知识点标签：查看、手动编辑或由 AI 重新识别 */
-export function QuestionTags({ item, educationStage, onChanged }: QuestionTagsProps) {
+export function QuestionTags({ item, educationStage, onChanged, readOnly = false }: QuestionTagsProps) {
     const { t } = useLanguage();
     const tags = getItemTags(item);
     const field = useEditableField<string[]>({
@@ -38,9 +39,9 @@ export function QuestionTags({ item, educationStage, onChanged }: QuestionTagsPr
         <div className="space-y-2">
             <SectionHeader
                 title={<h4 className="text-sm font-semibold">{t.editor?.tags || "Knowledge Tags"}</h4>}
-                actions={!field.editing && <div className="flex"><RetagItemButton errorItemId={item.id} onDone={onChanged} /><EditButton onClick={field.start} /></div>}
+                actions={!readOnly && !field.editing && <div className="flex"><RetagItemButton errorItemId={item.id} onDone={onChanged} /><EditButton onClick={field.start} /></div>}
             />
-            {field.editing ? (
+            {field.editing && !readOnly ? (
                 <div className="space-y-3">
                     <TagInput value={field.value} onChange={field.setValue} placeholder={t.editor?.tagsPlaceholder || "Enter or select knowledge tags..."} subject={inferSubjectFromName(item.subject?.name || null) || undefined} gradeStage={educationStage} />
                     <p className="text-xs text-muted-foreground">{t.editor?.tagsHint || "Select from standard or custom tags"}</p>

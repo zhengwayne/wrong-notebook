@@ -6,7 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ config: { aiConcurrencyLimit: 2 } as { aiConcurrencyLimit?: number } }));
 vi.mock('@/lib/config', () => ({ getAppConfig: () => mocks.config }));
 
-import { getModelConcurrencyState, limitModelConcurrency, runWithModelConcurrency } from '@/lib/ai/concurrency';
+import {
+    AiConcurrencyError,
+    getAiConcurrencyTelemetry,
+    getAllModelConcurrencyStates,
+    getModelConcurrencyState,
+    limitModelConcurrency,
+    resetConcurrencyTelemetryForTest,
+    runWithModelConcurrency,
+    toConcurrencyErrorResponse,
+} from '@/lib/ai/concurrency';
 
 /** 返回一个可手动完成的任务 */
 function deferred() {
@@ -96,6 +105,87 @@ describe('runWithModelConcurrency', () => {
         block.resolve();
         await Promise.all(runs);
     });
+
+    it('排队超出 maxWaiting 上限时立刻拒绝并生成 429 Retry-After 响应', async () => {
+        mocks.config = { aiConcurrencyLimit: 1 };
+        const block = deferred();
+        const active = runWithModelConcurrency('cap', () => block.promise);
+        const queued = runWithModelConcurrency('cap', () => Promise.resolve('q1'), { maxWaiting: 1, queueTimeoutMs: 6000 });
+        await flush();
+
+        expect(getModelConcurrencyState('cap')).toEqual({ active: 1, waiting: 1 });
+
+        let rejected: unknown;
+        try {
+            await runWithModelConcurrency('cap', () => Promise.resolve('overflow'), { maxWaiting: 1, queueTimeoutMs: 6000 });
+        } catch (error) {
+            rejected = error;
+        }
+        expect(rejected).toBeInstanceOf(AiConcurrencyError);
+        expect((rejected as AiConcurrencyError).reason).toBe('QUEUE_FULL');
+
+        const httpRes = toConcurrencyErrorResponse(rejected);
+        expect(httpRes?.status).toBe(429);
+        expect(httpRes?.headers.get('Retry-After')).toBe('3');
+
+        block.resolve();
+        await expect(active).resolves.toBeUndefined();
+        await expect(queued).resolves.toBe('q1');
+    });
+
+    it('排队超时会摘除等待者，并返回 503 与 Retry-After', async () => {
+        mocks.config = { aiConcurrencyLimit: 1 };
+        const block = deferred();
+        const active = runWithModelConcurrency('timeout-key', () => block.promise);
+        await flush();
+
+        const waitedTask = vi.fn(async () => 'should-not-run');
+        let timeoutErr: unknown;
+        try {
+            await runWithModelConcurrency('timeout-key', waitedTask, { maxWaiting: 5, queueTimeoutMs: 25 });
+        } catch (error) {
+            timeoutErr = error;
+        }
+
+        expect(timeoutErr).toBeInstanceOf(AiConcurrencyError);
+        expect((timeoutErr as AiConcurrencyError).reason).toBe('QUEUE_TIMEOUT');
+        expect(getModelConcurrencyState('timeout-key')).toEqual({ active: 1, waiting: 0 });
+
+        const httpRes = toConcurrencyErrorResponse(timeoutErr);
+        expect(httpRes?.status).toBe(503);
+        expect(httpRes?.headers.get('Retry-After')).toBe('1');
+
+        block.resolve();
+        await active;
+        expect(waitedTask).not.toHaveBeenCalled();
+    });
+
+    it('传入 AbortSignal 取消后立即离开队列且不影响后续正常请求', async () => {
+        mocks.config = { aiConcurrencyLimit: 1 };
+        const block = deferred();
+        const active = runWithModelConcurrency('abort-key', () => block.promise);
+        await flush();
+
+        const controller = new AbortController();
+        const abortedFn = vi.fn(async () => 'never');
+        const pendingAbort = runWithModelConcurrency('abort-key', abortedFn, {
+            maxWaiting: 5,
+            queueTimeoutMs: 5000,
+            signal: controller.signal,
+        });
+        await flush();
+        expect(getModelConcurrencyState('abort-key')).toEqual({ active: 1, waiting: 1 });
+
+        controller.abort();
+        await expect(pendingAbort).rejects.toMatchObject({ reason: 'ABORTED' });
+        expect(getModelConcurrencyState('abort-key')).toEqual({ active: 1, waiting: 0 });
+
+        const followUp = runWithModelConcurrency('abort-key', async () => 'after-abort');
+        block.resolve();
+        await active;
+        await expect(followUp).resolves.toBe('after-abort');
+        expect(abortedFn).not.toHaveBeenCalled();
+    });
 });
 
 describe('limitModelConcurrency', () => {
@@ -109,5 +199,43 @@ describe('limitModelConcurrency', () => {
 
         expect(await limited.outer()).toBe('done');
         expect(getModelConcurrencyState('svc')).toEqual({ active: 0, waiting: 0 });
+    });
+
+    it('采集并发遥测与脱敏队列状态且不泄露 baseUrl', async () => {
+        resetConcurrencyTelemetryForTest();
+        mocks.config = { aiConcurrencyLimit: 1 };
+        const block = deferred();
+        const key = 'deepseek|https://private.relay.example.invalid/v1|deepseek-chat';
+
+        const activeRun = runWithModelConcurrency(key, () => block.promise);
+        await flush();
+
+        const states = getAllModelConcurrencyStates();
+        expect(states).toEqual([
+            { provider: 'deepseek', model: 'deepseek-chat', active: 1, waiting: 0 },
+        ]);
+        expect(JSON.stringify(states)).not.toContain('private.relay.example.invalid');
+
+        await expect(
+            runWithModelConcurrency(key, async () => 'rejected', { maxWaiting: 0 }),
+        ).rejects.toMatchObject({ reason: 'QUEUE_FULL' });
+
+        block.resolve();
+        await activeRun;
+
+        await expect(
+            runWithModelConcurrency(key, async () => {
+                throw new Error('AI_QUOTA_EXCEEDED');
+            }),
+        ).rejects.toThrow('AI_QUOTA_EXCEEDED');
+
+        const snap = getAiConcurrencyTelemetry();
+        expect(snap.totalCalls).toBe(3);
+        expect(snap.succeededCalls).toBe(1);
+        expect(snap.provider429Count).toBe(1);
+        expect(snap.queueRejectedCount).toBe(1);
+        expect(snap.waitSampleCount).toBe(2);
+        expect(snap.waitMs.p95).toBeGreaterThanOrEqual(0);
+        expect(JSON.stringify(snap)).not.toContain('private.relay.example.invalid');
     });
 });

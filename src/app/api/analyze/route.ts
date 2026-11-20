@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { getAIService } from "@/lib/ai";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
 import { getQuestionGradeContext, resolveQuestionGrade } from "@/lib/question-grade";
 import type { QuestionGradeProfile } from "@/lib/question-grade";
 import { prisma } from "@/lib/prisma";
@@ -15,19 +13,16 @@ import { getAppTimeZone } from "@/lib/config";
 import { getErrorMessage } from "@/lib/error-message";
 import { consumeAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
+import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
+import { recordAiProvenance } from "@/lib/ai/provenance";
+import { ImageValidationError, normalizeImageInput } from "@/lib/server/image-normalize";
+import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 
 const logger = createLogger('api:analyze');
 
-async function handlePost(req: Request) {
+async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
     logger.info('Analyze API called');
-
-    const session = await getServerSession(authOptions);
-
-    // 认证检查
-    if (!session) {
-        logger.warn('Unauthorized access attempt');
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
 
     try {
         const body = await req.json();
@@ -41,74 +36,66 @@ async function handlePost(req: Request) {
             subjectId
         }, 'Request received');
 
-        if (!imageBase64) {
+        if (!imageBase64 || typeof imageBase64 !== 'string') {
             logger.warn('Missing image data');
             return badRequest("Missing image data");
         }
 
-        // Parse Data URL if present
-        if (imageBase64.startsWith('data:')) {
-            const matches = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-                mimeType = matches[1];
-                imageBase64 = matches[2];
-                logger.debug({ mimeType, base64Length: imageBase64.length }, 'Parsed Data URL');
+        // 服务端校验真实图片格式、转正、限边并剥离 EXIF 等元数据
+        try {
+            const normalized = await normalizeImageInput(imageBase64);
+            imageBase64 = normalized.base64;
+            mimeType = normalized.mimeType;
+            logger.debug({ mimeType, base64Length: imageBase64.length }, 'Normalized analyze image');
+        } catch (imgError) {
+            if (imgError instanceof ImageValidationError) {
+                logger.warn({ code: imgError.code }, 'Invalid image payload for analyze');
+                return badRequest("INVALID_IMAGE");
             }
+            throw imgError;
         }
 
-        // 先获取用户年级信息，用于动态生成 AI prompt 中的标签列表
-        let userGrade: GradeLevel | null = null;
-        let userGradeSemester: string | null = null;
+        // 直接使用经鉴权并加载的当前用户上下文构建年级档案与错题本范围
+        const gradeProfile: QuestionGradeProfile = {
+            educationStage: user.educationStage,
+            enrollmentYear: user.enrollmentYear,
+            gradeRecognitionMode: user.gradeRecognitionMode,
+            fixedGradeSemester: user.fixedGradeSemester,
+        };
+        const context = getQuestionGradeContext(gradeProfile, getAppTimeZone());
+        const userGrade: GradeLevel | null = context.grade;
+        const userGradeSemester: string | null = context.gradeSemester;
         let subjectChinese: string | null = null;
         let candidateTags: CandidateTags | undefined;
         let notebookName: string | null = null;
-        let gradeProfile: QuestionGradeProfile | null = null;
 
-        if (session?.user?.email) {
+        // 错题本的学段 + 学科决定候选知识点：直接取该范围内的全部标签
+        if (subjectId) {
             try {
-                // 获取用户信息
-                const user = await prisma.user.findUnique({
-                    where: { email: session.user.email },
-                    select: { id: true, educationStage: true, enrollmentYear: true, gradeRecognitionMode: true, fixedGradeSemester: true }
+                const notebook = await prisma.subject.findUnique({
+                    where: { id: subjectId },
+                    select: { name: true, userId: true, stage: true, subjectKey: true }
                 });
 
-                if (user) {
-                    gradeProfile = user;
-                    const context = getQuestionGradeContext(user, getAppTimeZone());
-                    userGrade = context.grade;
-                    userGradeSemester = context.gradeSemester;
-                    logger.debug({ userGrade, userGradeSemester }, 'Calculated user grade');
-                }
-
-                // 错题本的学段 + 学科决定候选知识点：直接取该范围内的全部标签
-                if (subjectId && user) {
-                    const notebook = await prisma.subject.findUnique({
-                        where: { id: subjectId },
-                        select: { name: true, userId: true, stage: true, subjectKey: true }
-                    });
-
-                    if (notebook && notebook.userId === user.id) {
-                        notebookName = notebook.name;
-                        const scope = resolveNotebookScope(notebook);
-                        subjectChinese = scope.subject ? SUBJECT_DISPLAY_NAMES[scope.subject] : null;
-                        candidateTags = await getNotebookCandidateTags(scope);
-                        logger.debug({ scope, candidateTagCount: candidateTags?.tags.length }, 'Notebook scope resolved');
-                    }
+                if (notebook && notebook.userId === user.id) {
+                    notebookName = notebook.name;
+                    const scope = resolveNotebookScope(notebook);
+                    subjectChinese = scope.subject ? SUBJECT_DISPLAY_NAMES[scope.subject] : null;
+                    candidateTags = await getNotebookCandidateTags(scope);
+                    logger.debug({ scope, candidateTagCount: candidateTags?.tags.length }, 'Notebook scope resolved');
                 }
             } catch (error) {
-                logger.error({ error }, 'Error fetching user/subject info');
-                // 继续执行，不传递年级参数（会返回所有年级的标签）
+                logger.error({ error }, 'Error fetching subject info');
             }
         }
 
-
         logger.info({ userGrade, userGradeSemester, subject: subjectChinese }, 'Calling AI service for image analysis');
-        const limited = await consumeAiQuota(session.user, 'analyze');
+        const limited = await consumeAiQuota(user, 'analyze');
         if (limited) return limited;
 
-        const aiService = getAIService();
+        const aiService = getAIService('vision');
         const analysisResult = await trackBackgroundTask(
-            { userId: session.user.id, kind: 'analyze', subject: notebookName },
+            { userId: user.id, kind: 'analyze', subject: notebookName },
             () => aiService.analyzeImage(imageBase64, mimeType, language, userGrade, subjectChinese, userGradeSemester, candidateTags)
         );
 
@@ -125,11 +112,16 @@ async function handlePost(req: Request) {
 
         logger.info('AI analysis successful');
 
-        return NextResponse.json(gradeProfile ? {
-            ...analysisResult,
-            gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: analysisResult.gradeSemester }, getAppTimeZone()),
-        } : analysisResult);
+        const provenanceId = await recordAiProvenance(prisma, { task: 'analyze', role: 'vision' });
+        const items = (analysisResult.items?.length ? analysisResult.items : [analysisResult]).map((item) => (
+            gradeProfile
+                ? { ...item, gradeSemester: resolveQuestionGrade(gradeProfile, { recognizedGradeSemester: item.gradeSemester }, getAppTimeZone()) }
+                : item
+        ));
+        return NextResponse.json(toAnalyzeImageResult(items, analysisResult.failedCount, provenanceId));
     } catch (error) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         const message = getErrorMessage(error);
         logger.error({
             error: message,
@@ -168,4 +160,4 @@ async function handlePost(req: Request) {
 }
 
 /** 耗时 AI 请求：浏览器中断连接后，前端可通过 /api/requests/:id 取回响应 */
-export const POST = withRecoverableResponse(handlePost);
+export const POST = defineApiRoute({ auth: 'user' }, withRecoverableResponse(handlePost));

@@ -14,7 +14,7 @@ export const MIN_PAGE_SIZE = 1;
 /** 分页器最多显示的页码按钮数 */
 export const MAX_VISIBLE_PAGES = 5;
 
-/** 打印预览获取所有数据的 pageSize */
+/** 每一批打印预览最多读取的题目数 */
 export const PRINT_PREVIEW_PAGE_SIZE = 200;
 
 

@@ -127,12 +127,12 @@ export function PaperCapture({ taskId, students, submittedIds, multiClass, onUpl
     return (
         <div className="space-y-4">
             <p className="text-sm text-muted-foreground">{live.hint}</p>
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => addFiles(event.target.files, cameraRef.current)} />
-            <input ref={pickRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => addFiles(event.target.files, pickRef.current)} />
-            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-                <Button size="lg" onClick={() => cameraRef.current?.click()}><Camera className="h-5 w-5" />{t.grading.takePhoto}</Button>
-                <Button size="lg" variant="outline" onClick={() => pickRef.current?.click()}><Images className="h-5 w-5" />{t.grading.pickPhotos}</Button>
-                <Button size="lg" variant="secondary" onClick={finish} disabled={!pending}><CheckCheck className="h-5 w-5" />{live.done}</Button>
+            <input ref={cameraRef} type="file" accept="image/*,.heic,.heif,image/heic,image/heif" capture="environment" className="hidden" onChange={(event) => addFiles(event.target.files, cameraRef.current)} />
+            <input ref={pickRef} type="file" accept="image/*,.heic,.heif,image/heic,image/heif" multiple className="hidden" onChange={(event) => addFiles(event.target.files, pickRef.current)} />
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button size="lg" className="w-full justify-center sm:w-auto" onClick={() => cameraRef.current?.click()}><Camera className="h-5 w-5" />{t.grading.takePhoto}</Button>
+                <Button size="lg" variant="outline" className="w-full justify-center sm:w-auto" onClick={() => pickRef.current?.click()}><Images className="h-5 w-5" />{t.grading.pickPhotos}</Button>
+                <Button size="lg" variant="secondary" className="w-full justify-center sm:w-auto" onClick={finish} disabled={!pending}><CheckCheck className="h-5 w-5" />{live.done}</Button>
             </div>
             {(busyUpload || uploadedCount > 0) && (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">

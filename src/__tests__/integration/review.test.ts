@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     errorItem: { findMany: vi.fn() },
+    learner: { findFirst: vi.fn() },
+    user: { findUnique: vi.fn() },
     session: { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' } as { user: { id: string; email: string }; expires: string } | null,
 }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, user: { findUnique: vi.fn(async () => ({ masteryThreshold: 50 })) } } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem, learner: mocks.learner, user: mocks.user } }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/config', () => ({ getAppTimeZone: () => 'Asia/Shanghai' }));
@@ -18,12 +20,12 @@ import { GET } from '@/app/api/review/due/route';
 const get = (query = '') => GET(new Request(`http://localhost/api/review/due${query}`));
 
 const candidates = [
-    // 录入两天前、没有作答：昨天到期
+    // 录入两天前、没有作答：当天即到期，现在仍在队列中
     { id: 'new', createdAt: new Date('2026-10-18T02:00:00Z'), practiceRecords: [] },
-    // 今天刚做对一次：两天后到期
+    // 今天刚做对一次：按第 1 档隔 1 天后到期
     { id: 'fresh', createdAt: new Date('2026-10-01T02:00:00Z'), practiceRecords: [{ result: 'correct', createdAt: new Date('2026-10-20T01:00:00Z') }] },
     // 很早以前做错：早已到期，应排在最前
-    { id: 'old', createdAt: new Date('2026-09-01T02:00:00Z'), practiceRecords: [{ result: 'wrong', createdAt: new Date('2026-09-10T02:00:00Z') }] },
+    { id: 'old', createdAt: new Date('2026-09-01T02:00:00Z'), practiceRecords: [{ result: 'wrong', createdAt: new Date('2026-09-10T02:00:00Z') }] }, // 做错当天到期
 ];
 
 describe('GET /api/review/due', () => {
@@ -33,6 +35,8 @@ describe('GET /api/review/due', () => {
         // 北京时间 2026-10-20 12:00
         vi.setSystemTime(new Date('2026-10-20T04:00:00Z'));
         mocks.session = { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' };
+        mocks.learner.findFirst.mockResolvedValue({ id: 'child-a', kind: 'child' });
+        mocks.user.findUnique.mockResolvedValue({ masteryThreshold: 50, reviewAlgorithmVersion: 'ebbinghaus-v1' });
         mocks.errorItem.findMany.mockImplementation(async (args: { where: { id?: { in: string[] } } }) => {
             if (!args.where.id) return candidates;
             return args.where.id.in.map((id) => ({ id, masteryProbability: null, subject: null, tags: [], _count: { practiceRecords: id === 'new' ? 0 : 1 } }));
@@ -50,23 +54,63 @@ describe('GET /api/review/due', () => {
 
         expect(data.total).toBe(2);
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['old', 'new']);
-        expect(data.items[0]).toMatchObject({ reviewStage: 0, masteryStatus: 'reviewing', nextReviewAt: '2026-09-10T16:00:00.000Z' });
+        expect(data.items[0]).toMatchObject({ reviewStage: 0, masteryStatus: 'reviewing', nextReviewAt: '2026-09-09T16:00:00.000Z' });
         expect(data.items[1]).toMatchObject({ reviewStage: 0, masteryStatus: 'new' });
-        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1' } }));
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: null } }));
     });
 
     it('按错题本筛选并分页', async () => {
         const response = await get('?subjectId=math&page=2&pageSize=1');
         const data = await response.json();
 
-        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', subjectId: 'math' } }));
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: null, subjectId: 'math' } }));
         expect(data).toMatchObject({ total: 2, page: 2, pageSize: 1, totalPages: 2 });
         expect(data.items.map((item: { id: string }) => item.id)).toEqual(['new']);
+    });
+
+    it('按孩子筛选待复习错题', async () => {
+        await get('?learnerId=child-a');
+        expect(mocks.errorItem.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { userId: 'user-1', learnerId: 'child-a' } }));
     });
 
     it('未登录时返回 401', async () => {
         mocks.session = null;
         const response = await get();
         expect(response.status).toBe(401);
+    });
+
+    it('切换 reviewAlgorithmVersion=fsrs-v1 时按逐题记忆模型调度并返回版本标识', async () => {
+        mocks.user.findUnique.mockResolvedValue({ masteryThreshold: 50, reviewAlgorithmVersion: 'fsrs-v1' });
+        mocks.errorItem.findMany.mockImplementation(async (args: { where: { id?: { in: string[] } } }) => {
+            if (!args.where.id) {
+                return [
+                    // 3 天前连续答对 1 次（初始 stability~3 天 -> 10 月 20 日已到期）
+                    {
+                        id: 'fsrs-due',
+                        createdAt: new Date('2026-10-10T02:00:00Z'),
+                        practiceRecords: [{ result: 'correct', createdAt: new Date('2026-10-16T02:00:00Z') }],
+                    },
+                    // 昨天刚答对两次（stability 较长，尚未到期）
+                    {
+                        id: 'fsrs-future',
+                        createdAt: new Date('2026-10-10T02:00:00Z'),
+                        practiceRecords: [
+                            { result: 'correct', createdAt: new Date('2026-10-11T02:00:00Z') },
+                            { result: 'correct', createdAt: new Date('2026-10-19T02:00:00Z') },
+                        ],
+                    },
+                ];
+            }
+            return args.where.id.in.map((id) => ({ id, masteryProbability: null, subject: null, tags: [], _count: { practiceRecords: 1 } }));
+        });
+
+        const response = await get();
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        expect(data.algorithmVersion).toBe('fsrs-v1');
+        expect(data.total).toBe(1);
+        expect(data.items.map((item: { id: string }) => item.id)).toEqual(['fsrs-due']);
+        expect(data.items[0].reviewStage).toBe(1);
     });
 });

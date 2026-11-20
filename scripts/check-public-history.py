@@ -20,7 +20,16 @@ EXAMPLE_ADDRESSES = {
         "src/__tests__/unit/ai/ai-test-route.test.ts", "src/__tests__/unit/ai/models-route.test.ts",
         "src/__tests__/unit/rate-limit.test.ts",
     },
+    ".".join(("10", "0", "0", "8")): {"src/__tests__/unit/outbound-url.test.ts"},
+    ".".join(("172", "16", "8", "12")): {"src/__tests__/unit/outbound-url.test.ts"},
     ".".join(("172", "30", "108", "211")): {"doc/setup-wsl-network.md"},
+    ".".join(("192", "168", "1", "12")): {"src/__tests__/unit/outbound-url.test.ts"},
+    ".".join(("192", "168", "1", "50")): {
+        "src/__tests__/integration/settings.test.ts",
+        "src/__tests__/unit/ai/models-route.test.ts",
+        "src/__tests__/unit/outbound-url.test.ts",
+    },
+    ".".join(("192", "168", "1", "88")): {"src/__tests__/unit/ai/ai-test-route.test.ts"},
     ".".join(("192", "168", "1", "100")): {"doc/HTTPS_SETUP.md", "doc/setup-wsl-network.md", "docker-compose.https.yml"},
     ".".join(("192", "168", "1", "10")): {
         "README.md", "README.en.md", "doc/INSTALL_PACKAGES.md", "src/__tests__/unit/android-app.test.tsx",

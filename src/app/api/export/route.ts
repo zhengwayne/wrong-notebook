@@ -1,138 +1,142 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, internalError, forbidden } from "@/lib/api-errors";
-import { createLogger } from "@/lib/logger";
+import { badRequest, forbidden, internalError } from "@/lib/api-errors";
+import { prepareBackupEncryption } from "@/lib/backup/crypto";
+import { createBackupV3Stream } from "@/lib/backup/export-v3";
+import { loadSystemTagPaths } from "@/lib/backup/tags";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
+import { createLogger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { exportSpeeches } from "@/lib/tts/speech-cache";
+import { defineApiRoute } from "@/lib/server/api-route";
+import type { ActorUser } from "@/lib/server/actor";
 
 const logger = createLogger('api:export');
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+interface ExportParams {
+    user: ActorUser;
+    exportAll: boolean;
+    format: 'zip' | 'json';
+    passphrase?: string;
+}
 
-    if (!session?.user?.email) {
-        return unauthorized("Not authenticated");
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
-
-    if (!user) {
-        return unauthorized("User not found");
-    }
-
-    const { searchParams } = new URL(req.url);
-    const exportAll = searchParams.get('all') === 'true';
-
+async function executeExport({ user, exportAll, format, passphrase }: ExportParams) {
     // 只有管理员可以导出全部数据
-    if (exportAll && session.user.role !== 'admin') {
+    if (exportAll && user.role !== 'admin') {
         return forbidden("Admin role required");
     }
 
+    if (passphrase && format === 'json') {
+        return badRequest("Passphrase encryption requires v3 ZIP format");
+    }
+
+    const userProfile = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        educationStage: user.educationStage,
+        enrollmentYear: user.enrollmentYear,
+        gradeRecognitionMode: user.gradeRecognitionMode,
+        fixedGradeSemester: user.fixedGradeSemester,
+        role: user.role,
+        confirmBeforeImport: user.confirmBeforeImport,
+        questionDuplicateThreshold: user.questionDuplicateThreshold,
+        masteryThreshold: user.masteryThreshold,
+        enableGeogebra: user.enableGeogebra,
+        enableSvgAnimation: user.enableSvgAnimation,
+        variantPipelineEnabled: user.variantPipelineEnabled,
+        themePreference: user.themePreference,
+        reviewAlgorithmVersion: user.reviewAlgorithmVersion,
+    };
+
     try {
+        const dateTag = formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone());
+
+        if (format === 'zip') {
+            const filename = exportAll
+                ? `XueJi-backup-all-${dateTag}.zip`
+                : `XueJi-backup-${dateTag}.zip`;
+            const encrypted = passphrase ? prepareBackupEncryption(passphrase) : null;
+            const stream = createBackupV3Stream({
+                db: prisma,
+                currentUser: userProfile,
+                exportAll,
+                ...(encrypted ? { encryption: encrypted.meta, transformEntry: encrypted.transformEntry } : {}),
+            });
+            logger.info({
+                userId: user.id,
+                scope: exportAll ? 'all' : 'user',
+                format: 'zip-v3',
+                encrypted: Boolean(encrypted),
+            }, 'Streaming ZIP v3 export started');
+            return new NextResponse(stream, {
+                headers: {
+                    'Content-Type': 'application/zip',
+                    'Content-Disposition': `attachment; filename="${filename}"`,
+                    'X-Backup-Format-Version': '3',
+                    'X-Backup-Encrypted': encrypted ? '1' : '0',
+                    ...(encrypted ? {} : { 'X-Backup-Unencrypted-Warning': '1' }),
+                },
+            });
+        }
+
+        // 向后兼容：显式 ?format=json 时保留 v2 JSON 导出格式
         const userFilter = exportAll ? {} : { userId: user.id };
-
-        const subjects = await prisma.subject.findMany({
-            where: userFilter,
-        });
-
-        const customTags = await prisma.knowledgeTag.findMany({
-            where: {
-                ...userFilter,
-                isSystem: false,
-            },
-        });
-
-        const errorItems = await prisma.errorItem.findMany({
-            where: userFilter,
-            include: {
-                tags: true,
-            },
-        });
-
+        const subjects = await prisma.subject.findMany({ where: userFilter });
+        const customTags = await prisma.knowledgeTag.findMany({ where: { ...userFilter, isSystem: false } });
+        const errorItems = await prisma.errorItem.findMany({ where: userFilter, include: { tags: true } });
         const reviewSchedules = await prisma.reviewSchedule.findMany({
-            where: exportAll
-                ? { errorItem: { userId: { not: undefined } } }
-                : { errorItem: { userId: user.id } },
+            where: exportAll ? { errorItem: { userId: { not: undefined } } } : { errorItem: { userId: user.id } },
         });
-
-        const practiceRecords = await prisma.practiceRecord.findMany({
-            where: userFilter,
-        });
-
+        const practiceRecords = await prisma.practiceRecord.findMany({ where: userFilter });
         const examPapers = await prisma.examPaper.findMany({
             where: userFilter,
-            include: {
-                questions: { orderBy: { order: 'asc' } },
-            },
+            include: { questions: { orderBy: { order: 'asc' } } },
         });
-
-        // 与动画讲解文字一致的云端语音（MP3），导入后无需重新合成
         const variantRuns = await prisma.variantRun.findMany({
             where: exportAll ? {} : { userId: user.id },
             include: { items: { orderBy: { index: 'asc' } }, stages: { orderBy: { createdAt: 'asc' } } },
             orderBy: { startedAt: 'asc' },
         });
-
+        const referencedProvenanceIds = [...new Set([
+            ...errorItems.map((item) => item.provenanceId),
+            ...variantRuns.flatMap((run) => run.items.map((item) => item.provenanceId)),
+        ].filter((id): id is string => Boolean(id)))];
+        const aiProvenances = exportAll
+            ? await prisma.aiProvenance.findMany({ orderBy: { createdAt: 'asc' } })
+            : (referencedProvenanceIds.length > 0
+                ? await prisma.aiProvenance.findMany({ where: { id: { in: referencedProvenanceIds } } })
+                : []);
         const ttsSpeeches = await exportSpeeches(errorItems.flatMap((item) => [
             ...(item.svgAnimation ? [{ language: 'zh' as const, svg: item.svgAnimation }] : []),
             ...(item.svgAnimationEn ? [{ language: 'en' as const, svg: item.svgAnimationEn }] : []),
         ]));
 
+        const systemTagPaths = await loadSystemTagPaths(prisma);
         const exportData = {
             version: 2,
             exportedAt: new Date().toISOString(),
             scope: exportAll ? 'all' : 'user',
-            user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                educationStage: user.educationStage,
-                enrollmentYear: user.enrollmentYear,
-                gradeRecognitionMode: user.gradeRecognitionMode,
-                fixedGradeSemester: user.fixedGradeSemester,
-                role: user.role,
-                confirmBeforeImport: user.confirmBeforeImport,
-                questionDuplicateThreshold: user.questionDuplicateThreshold,
-                masteryThreshold: user.masteryThreshold,
-                enableGeogebra: user.enableGeogebra,
-                enableSvgAnimation: user.enableSvgAnimation,
-                variantPipelineEnabled: user.variantPipelineEnabled,
-                themePreference: user.themePreference,
-            },
+            user: userProfile,
             subjects,
-            customTags,
-            errorItems,
+            customTags: customTags.map((tag) => ({
+                ...tag,
+                systemParentPath: tag.parentId ? systemTagPaths.get(tag.parentId)?.path : undefined,
+            })),
+            errorItems: errorItems.map((item) => ({
+                ...item,
+                tags: item.tags.map((tag) => ({ ...tag, systemPath: systemTagPaths.get(tag.id)?.path })),
+            })),
             reviewSchedules,
             practiceRecords,
             examPapers,
             variantRuns,
+            aiProvenances,
             ttsSpeeches,
         };
 
-        logger.info({
-            userId: user.id,
-            scope: exportAll ? 'all' : 'user',
-            subjectsCount: subjects.length,
-            customTagsCount: customTags.length,
-            errorItemsCount: errorItems.length,
-            reviewSchedulesCount: reviewSchedules.length,
-            practiceRecordsCount: practiceRecords.length,
-            examPapersCount: examPapers.length,
-            variantRunsCount: variantRuns.length,
-            ttsSpeechesCount: ttsSpeeches.length,
-        }, 'Data export completed');
-
-        const jsonString = JSON.stringify(exportData, null, 2);
-        const filename = exportAll
-            ? `wrong-notebook-export-all-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`
-            : `wrong-notebook-export-${formatDateTime(new Date(), 'yyyy-MM-dd', getAppTimeZone())}.json`;
-
-        return new NextResponse(jsonString, {
+        const filename = exportAll ? `XueJi-export-all-${dateTag}.json` : `XueJi-export-${dateTag}.json`;
+        return new NextResponse(JSON.stringify(exportData, null, 2), {
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Content-Disposition': `attachment; filename="${filename}"`,
@@ -143,3 +147,30 @@ export async function GET(req: Request) {
         return internalError("Failed to export data");
     }
 }
+
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    const { searchParams } = new URL(req.url);
+    return executeExport({
+        user,
+        exportAll: searchParams.get('all') === 'true',
+        format: searchParams.get('format') === 'json' ? 'json' : 'zip',
+    });
+});
+
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    let body: { all?: unknown; format?: unknown; passphrase?: unknown };
+    try {
+        body = (await req.json()) as { all?: unknown; format?: unknown; passphrase?: unknown };
+    } catch {
+        return badRequest("Invalid JSON format");
+    }
+    const passphrase = typeof body?.passphrase === 'string' && body.passphrase.length > 0
+        ? body.passphrase
+        : undefined;
+    return executeExport({
+        user,
+        exportAll: body?.all === true,
+        format: body?.format === 'json' ? 'json' : 'zip',
+        passphrase,
+    });
+});

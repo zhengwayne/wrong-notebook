@@ -1,98 +1,111 @@
-/**
- * 上传前的图片处理：1MB 以内直接转 Base64，超过则缩放并逐步降低 JPEG 质量
- */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { compressImage, processImageFile, readJpegExifOrientation } from '@/lib/image-utils';
 
-vi.mock('@/lib/frontend-logger', () => ({ frontendLogger: { info: vi.fn(), error: vi.fn() } }));
+/** 构造含 APP1 EXIF Orientation 的极简 JPEG 字节 */
+function buildJpegWithOrientation(orientation: number): Uint8Array {
+    // SOI + APP1(Exif header + big-endian TIFF + 1 IFD tag 0x0112 Orientation) + EOI
+    const buf = new Uint8Array(40);
+    const view = new DataView(buf.buffer);
+    view.setUint16(0, 0xffd8, false); // SOI
+    view.setUint16(2, 0xffe1, false); // APP1
+    view.setUint16(4, 34, false); // APP1 length
+    view.setUint32(6, 0x45786966, false); // "Exif"
+    view.setUint16(10, 0x0000, false);
+    const tiff = 12;
+    view.setUint16(tiff, 0x4d4d, false); // "MM" big endian
+    view.setUint16(tiff + 2, 42, false);
+    view.setUint32(tiff + 4, 8, false); // IFD0 offset
+    const ifd0 = tiff + 8;
+    view.setUint16(ifd0, 1, false); // 1 entry
+    view.setUint16(ifd0 + 2, 0x0112, false); // Orientation tag
+    view.setUint16(ifd0 + 4, 3, false); // SHORT
+    view.setUint32(ifd0 + 6, 1, false); // count
+    view.setUint16(ifd0 + 10, orientation, false); // value
+    view.setUint16(38, 0xffd9, false); // EOI
+    return buf;
+}
 
-import { compressImage, processImageFile } from '@/lib/image-utils';
+describe('image-utils 白底填充与小图规范化 (OPT-15)', () => {
+    const drawOps: Array<{ type: string; fillStyle?: string }> = [];
+    let mockBitmapSize = { width: 800, height: 600 };
 
-const MB = 1024 * 1024;
-const fileOfSize = (bytes: number) => new File([new Uint8Array(bytes)], 'q.png', { type: 'image/png' });
-/** 生成指定解码后大小（MB）的 data URL */
-const dataUrlOfMB = (mb: number) => 'data:image/jpeg;base64,' + 'A'.repeat(Math.ceil((mb * MB * 4) / 3));
+    beforeEach(() => {
+        drawOps.length = 0;
+        mockBitmapSize = { width: 800, height: 600 };
 
-let imageSize = { width: 1000, height: 500 };
-let toDataURL: ReturnType<typeof vi.fn>;
-let drawImage: ReturnType<typeof vi.fn>;
-let canvas: { width: number; height: number; getContext: () => unknown; toDataURL: typeof toDataURL };
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+            width: mockBitmapSize.width,
+            height: mockBitmapSize.height,
+            close: vi.fn(),
+        })));
 
-beforeEach(() => {
-    imageSize = { width: 1000, height: 500 };
-    drawImage = vi.fn();
-    toDataURL = vi.fn(() => dataUrlOfMB(0.5));
-    canvas = { width: 0, height: 0, getContext: () => ({ drawImage }), toDataURL };
-    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
-        if (tag === 'canvas') return canvas;
-        throw new Error(`unexpected element ${tag}`);
-    }) as typeof document.createElement);
-    // jsdom 不会真正解码图片，加载时立即回调
-    vi.stubGlobal('Image', class {
-        width = imageSize.width;
-        height = imageSize.height;
-        onload: (() => void) | null = null;
-        onerror: (() => void) | null = null;
-        set src(_value: string) { setTimeout(() => this.onload?.(), 0); }
-    });
-});
+        const mockCtx = {
+            _fillStyle: '',
+            set fillStyle(val: string) {
+                this._fillStyle = val;
+            },
+            get fillStyle() {
+                return this._fillStyle;
+            },
+            fillRect: vi.fn(function (this: { _fillStyle: string }) {
+                drawOps.push({ type: 'fillRect', fillStyle: this._fillStyle });
+            }),
+            drawImage: vi.fn(() => {
+                drawOps.push({ type: 'drawImage' });
+            }),
+        };
 
-afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-});
-
-describe('processImageFile', () => {
-    it('1MB 以内的图片原样转成 data URL，不经过压缩', async () => {
-        const result = await processImageFile(fileOfSize(1000));
-
-        expect(result).toMatch(/^data:image\/png;base64,/);
-        expect(toDataURL).not.toHaveBeenCalled();
-    });
-
-    it('超过 1MB 时压缩为 JPEG', async () => {
-        const result = await processImageFile(fileOfSize(2 * MB));
-
-        expect(result).toBe(dataUrlOfMB(0.5));
-        expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.8);
-    });
-});
-
-describe('compressImage', () => {
-    it('宽度超过上限时按比例缩小', async () => {
-        imageSize = { width: 4000, height: 3000 };
-
-        await compressImage(fileOfSize(10), 1, 1920);
-
-        expect([canvas.width, canvas.height]).toEqual([1920, 1440]);
-        expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1920, 1440);
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(mockCtx as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,/9j/WHITEBG');
     });
 
-    it('不超过上限的图片保持原尺寸', async () => {
-        await compressImage(fileOfSize(10));
-        expect([canvas.width, canvas.height]).toEqual([1000, 500]);
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
-    it('仍然过大时逐步降低质量，满足大小后立即停止', async () => {
-        toDataURL
-            .mockReturnValueOnce(dataUrlOfMB(3))
-            .mockReturnValueOnce(dataUrlOfMB(2))
-            .mockReturnValueOnce(dataUrlOfMB(0.9));
+    it('compressImage 导出 JPEG 前在 Canvas 先填充纯白底 #ffffff，再绘制图像', async () => {
+        const png = new File([new Uint8Array([137, 80, 78, 71])], 'transparent.png', { type: 'image/png' });
+        const result = await compressImage(png);
 
-        const result = await compressImage(fileOfSize(10), 1);
-
-        expect(result).toBe(dataUrlOfMB(0.9));
-        expect(toDataURL.mock.calls.map(([, q]) => Number(q.toFixed(1)))).toEqual([0.8, 0.7, 0.6]);
+        expect(result).toBe('data:image/jpeg;base64,/9j/WHITEBG');
+        expect(drawOps).toEqual([
+            { type: 'fillRect', fillStyle: '#ffffff' },
+            { type: 'drawImage' },
+        ]);
     });
 
-    it('质量降到下限仍过大时返回最后一次结果，不会无限循环', async () => {
-        toDataURL.mockReturnValue(dataUrlOfMB(5));
+    it('小于 1MB 的透明 PNG 仍走白底规范化转换，不会原样透传', async () => {
+        const smallPng = new File([new Uint8Array([137, 80, 78, 71, 0, 1])], 'small.png', { type: 'image/png' });
+        const result = await processImageFile(smallPng);
 
-        await expect(compressImage(fileOfSize(10), 1)).resolves.toBe(dataUrlOfMB(5));
-        expect(toDataURL.mock.calls.length).toBeLessThanOrEqual(9);
+        expect(result).toBe('data:image/jpeg;base64,/9j/WHITEBG');
+        expect(drawOps[0]).toEqual({ type: 'fillRect', fillStyle: '#ffffff' });
     });
 
-    it('无法获取 Canvas 上下文时报错', async () => {
-        canvas.getContext = () => null;
-        await expect(compressImage(fileOfSize(10))).rejects.toThrow('无法获取 Canvas 上下文');
+    it('小于 1MB 但超宽或含 EXIF Orientation > 1 的 JPEG 仍会规范化，正常小图直接读取 DataURL', async () => {
+        const orientedJpeg = new File([Buffer.from(buildJpegWithOrientation(6))], 'rotated.jpg', { type: 'image/jpeg' });
+        expect(await readJpegExifOrientation(orientedJpeg)).toBe(6);
+
+        const orientedOut = await processImageFile(orientedJpeg);
+        expect(orientedOut).toBe('data:image/jpeg;base64,/9j/WHITEBG');
+        expect(drawOps.length).toBe(2);
+
+        // 正常方向但超宽 > 1920px 的小 JPEG
+        drawOps.length = 0;
+        mockBitmapSize = { width: 2400, height: 1200 };
+        const wideJpeg = new File([Buffer.from(buildJpegWithOrientation(1))], 'wide.jpg', { type: 'image/jpeg' });
+        const wideOut = await processImageFile(wideJpeg);
+        expect(wideOut).toBe('data:image/jpeg;base64,/9j/WHITEBG');
+
+        // 正常方向且 <= 1920px 的小 JPEG：不触发 Canvas 重绘，直接保留原文件 DataURL
+        drawOps.length = 0;
+        mockBitmapSize = { width: 1000, height: 800 };
+        const normalJpeg = new File([Buffer.from(buildJpegWithOrientation(1))], 'normal.jpg', { type: 'image/jpeg' });
+        const normalOut = await processImageFile(normalJpeg);
+        expect(normalOut.startsWith('data:image/jpeg;base64,')).toBe(true);
+        expect(normalOut).not.toBe('data:image/jpeg;base64,/9j/WHITEBG');
+        expect(drawOps).toHaveLength(0);
     });
 });

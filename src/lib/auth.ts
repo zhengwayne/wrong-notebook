@@ -4,11 +4,28 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { prisma } from "@/lib/prisma"
 import { compare } from "bcryptjs"
 import { createLogger } from "@/lib/logger"
-import { DEFAULT_ADMIN_PASSWORD, isDefaultAdminPassword } from "@/lib/default-admin"
+import { isDefaultAdminPassword } from "@/lib/default-admin"
 import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors"
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit"
+import { isPersona, parsePersonas } from "@/lib/personas"
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
 
 const logger = createLogger('auth');
+
+
+async function personaClaims(userId: string) {
+    const row = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { personas: true, activePersona: true, personasConfirmedAt: true },
+    })
+    const personas = parsePersonas(row?.personas)
+    const activePersona = isPersona(row?.activePersona) ? row.activePersona : null
+    return {
+        personas,
+        activePersona,
+        needsPersonaConfirmation: !row?.personasConfirmedAt,
+    }
+}
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma),
@@ -51,7 +68,7 @@ export const authOptions: NextAuthOptions = {
 
                 // 防暴力破解：账号或来源 IP 失败次数过多时，在校验密码前直接拒绝
                 const ip = getClientIp(req?.headers);
-                const accountKey = credentials.email.trim().toLowerCase();
+                const accountKey = normalizeEmail(credentials.email);
                 if (loginAccountLimiter.retryAfter(accountKey) > 0 || (ip && loginIpLimiter.retryAfter(ip) > 0)) {
                     logger.warn({ email: accountKey, ip }, 'Login locked after too many failed attempts');
                     throw new Error(TOO_MANY_ATTEMPTS)
@@ -61,11 +78,7 @@ export const authOptions: NextAuthOptions = {
                     if (ip) loginIpLimiter.hit(ip);
                 };
 
-                const user = await prisma.user.findUnique({
-                    where: {
-                        email: credentials.email
-                    }
-                })
+                const user = await findUserByEmailInsensitive(prisma, credentials.email)
 
                 if (!user) {
                     logger.debug('User not found');
@@ -91,18 +104,25 @@ export const authOptions: NextAuthOptions = {
 
                 logger.info({ email: user.email }, 'Login successful');
 
+                const personas = parsePersonas(user.personas)
+                const activePersona = isPersona(user.activePersona) ? user.activePersona : null
                 return {
                     id: user.id,
                     email: user.email,
                     name: user.name,
                     role: user.role,
+                    isActive: user.isActive,
+                    authVersion: user.authVersion ?? 0,
                     mustChangePassword: isDefaultAdminPassword(user.role, credentials.password),
+                    personas,
+                    activePersona,
+                    needsPersonaConfirmation: !user.personasConfirmedAt,
                 }
             }
         })
     ],
-    // Enable debug messages in the console
-    debug: true,
+    // 仅在显式开启 NEXTAUTH_DEBUG=true 时输出 NextAuth 调试日志
+    debug: process.env.NEXTAUTH_DEBUG === 'true',
     logger: {
         error(code, metadata) {
             logger.error({ code, metadata }, 'NextAuth error');
@@ -123,7 +143,12 @@ export const authOptions: NextAuthOptions = {
                     ...session.user,
                     id: token.id,
                     role: token.role,
+                    isActive: token.isActive !== false,
+                    authVersion: token.authVersion,
                     mustChangePassword: token.mustChangePassword === true,
+                    personas: token.personas ?? [],
+                    activePersona: token.activePersona ?? null,
+                    needsPersonaConfirmation: token.needsPersonaConfirmation === true,
                 }
             }
         },
@@ -134,18 +159,72 @@ export const authOptions: NextAuthOptions = {
                     ...token,
                     id: user.id,
                     role: user.role,
+                    isActive: user.isActive !== false,
+                    authVersion: user.authVersion ?? 0,
+                    revoked: false,
                     mustChangePassword: user.mustChangePassword === true,
+                    personas: user.personas ?? [],
+                    activePersona: user.activePersona ?? null,
+                    needsPersonaConfirmation: user.needsPersonaConfirmation === true,
                 }
             }
-            // 客户端改完密码后调用 update()，以数据库中的密码为准重新判断，不信任客户端传值
-            if (trigger === "update" && token.mustChangePassword) {
-                const dbUser = await prisma.user.findUnique({ where: { id: token.id }, select: { password: true } })
-                const stillDefault = !!dbUser && await compare(DEFAULT_ADMIN_PASSWORD, dbUser.password)
-                logger.info({ userId: token.id, stillDefault }, 'JWT callback - Re-checked default password')
-                return { ...token, mustChangePassword: stillDefault }
+
+            const next = { ...token };
+            if (token.id) {
+                try {
+                    const dbUser = await prisma.user.findUnique({
+                        where: { id: token.id },
+                        select: {
+                            isActive: true,
+                            authVersion: true,
+                            role: true,
+                            personas: true,
+                            activePersona: true,
+                            personasConfirmedAt: true,
+                        },
+                    });
+                    if (dbUser === null) {
+                        return { ...next, revoked: true };
+                    }
+                    if (dbUser) {
+                        if (dbUser.isActive === false) {
+                            next.isActive = false;
+                            next.revoked = true;
+                            return next;
+                        }
+                        if (typeof dbUser.authVersion === 'number') {
+                            const versionMismatch = token.authVersion !== undefined
+                                ? dbUser.authVersion !== token.authVersion
+                                : dbUser.authVersion > 0;
+                            if (versionMismatch) {
+                                next.revoked = true;
+                                return next;
+                            }
+                        }
+                        if (typeof dbUser.role === 'string') {
+                            next.role = dbUser.role;
+                        }
+                        // 改密递增 authVersion 并通过重新登录签发新会话；普通 update() 保留原改密标记。
+                        if (trigger === "update" || token.needsPersonaConfirmation === undefined) {
+                            next.personas = parsePersonas(dbUser.personas);
+                            next.activePersona = isPersona(dbUser.activePersona) ? dbUser.activePersona : null;
+                            next.needsPersonaConfirmation = !dbUser.personasConfirmedAt;
+                        }
+                        return next;
+                    }
+                } catch (error) {
+                    logger.error({ error, userId: token.id }, 'JWT callback - Failed to sync user state');
+                }
+            }
+
+            // 回退兼容仅含 personaClaims 调用的场景
+            if (trigger === "update" && token.id) {
+                const claims = await personaClaims(token.id);
+                Object.assign(next, claims);
+                return next;
             }
             logger.debug('JWT callback - Subsequent call');
-            return token
+            return next;
         }
     }
 }

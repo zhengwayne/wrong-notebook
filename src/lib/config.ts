@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { createLogger } from './logger';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from './date-time';
 import { parseConcurrencyLimit } from './ai-concurrency-limit';
-import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS } from './ai/vendor-presets';
-import type { VendorConfig, VendorProviderId } from './ai/vendor-presets';
+import { VENDOR_PROVIDER_IDS, VENDOR_PRESETS, type VendorConfig, type VendorProviderId } from './ai/vendor-presets';
+import { mergeTextAi } from './ai/roles';
+import type { TextAiConfig } from '@/types/api';
 import type { MiniMaxCodeConfig } from './minimax-code/constants';
-import { CLOUD_TTS_PROVIDERS, isTtsMode } from './tts/constants';
+import { CLOUD_TTS_PROVIDERS, clampTtsRate, isTtsMode } from './tts/constants';
 import type { TtsConfig } from './tts/constants';
 
 const logger = createLogger('config');
@@ -28,11 +30,21 @@ type VendorConfigs = { [K in VendorProviderId]?: VendorConfig };
 
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
+    textSameAsVision?: boolean;
+    /** 文本角色使用的渠道；仅在 textSameAsVision 为 false 时生效 */
+    aiTextProvider?: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本角色独立凭据 */
+    textAi?: TextAiConfig;
     allowRegistration?: boolean;
     /** 普通用户每天可发起的 AI 调用次数，0 表示不限制；管理员不受限制 */
     aiDailyLimit?: number;
     /** 同一模型同时进行的 AI 调用上限，超出的调用排队；默认 5 */
     aiConcurrencyLimit?: number;
+    /** 同一模型排队上限，超出时返回 429 + Retry-After */
+    aiQueueMaxWaiting?: number;
+    /** 同一模型排队最长等待毫秒数，超时返回 503 + Retry-After */
+    aiQueueTimeoutMs?: number;
     timeZone?: string;
     /** 管理员完成（或跳过）安装向导的时间，ISO 字符串；未设置时新安装会自动进入向导 */
     setupCompletedAt?: string;
@@ -87,11 +99,7 @@ function isLegacyOpenAIConfig(config: unknown): config is LegacyOpenAIConfig {
 
 // 生成唯一 ID
 function generateId(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    return randomUUID();
 }
 
 // 迁移旧版 OpenAI 配置到新版多实例格式
@@ -159,9 +167,11 @@ const DEFAULT_CONFIG: AppConfig = {
         model: process.env.MINIMAX_CODE_MODEL,
         autoCheckin: process.env.MINIMAX_CODE_AUTO_CHECKIN !== 'false',
     },
-    // 动画语音讲解默认用浏览器本地语音；TTS_MODE 为 minimax、qwen 等时改用云端语音合成
+    // 默认使用 Microsoft Edge 在线神经网络语音（晓晓）；TTS_MODE 可改为 browser 或付费云端渠道
     tts: {
-        mode: isTtsMode(process.env.TTS_MODE) ? process.env.TTS_MODE : 'browser',
+        mode: isTtsMode(process.env.TTS_MODE) ? process.env.TTS_MODE : 'edge',
+        rate: 1,
+        edge: { voice: 'zh-CN-XiaoxiaoNeural', englishVoice: 'en-US-AriaNeural' },
         // 火山引擎豆包语音的 Key 与火山方舟不同，单独配置
         volcengine: { apiKey: process.env.VOLCENGINE_TTS_API_KEY },
     },
@@ -190,7 +200,8 @@ function mergeVendorConfigs(base: Partial<AppConfig>, override: Partial<AppConfi
 /** 朗读方式与各云端语音的设置分别合并 */
 function mergeTtsConfig(base: TtsConfig | undefined, override: TtsConfig | undefined): TtsConfig {
     return {
-        mode: override?.mode ?? base?.mode ?? 'browser',
+        mode: isTtsMode(override?.mode) ? override.mode : (isTtsMode(base?.mode) ? base?.mode : 'edge'),
+        rate: clampTtsRate(override?.rate, clampTtsRate(base?.rate, 1)),
         ...Object.fromEntries(CLOUD_TTS_PROVIDERS.map((id) => [id, { ...base?.[id], ...override?.[id] }])),
     };
 }
@@ -205,11 +216,86 @@ function readConfigFile(): string | null {
     }
 }
 
-/** 先写临时文件再改名替换，避免其他请求读到写了一半的配置 */
+let tmpSeq = 0;
+
+/** 先写临时文件（0o600 权限）再改名替换，避免其他请求读到写了一半的配置或暴露凭据 */
 function writeConfigFile(config: unknown): void {
-    const tmp = `${CONFIG_FILE_PATH}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
-    fs.renameSync(tmp, CONFIG_FILE_PATH);
+    if (typeof fs.mkdirSync === 'function') {
+        fs.mkdirSync(path.dirname(CONFIG_FILE_PATH), { recursive: true });
+    }
+    const tmp = `${CONFIG_FILE_PATH}.${process.pid}.${Date.now()}.${++tmpSeq}.tmp`;
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+        fs.renameSync(tmp, CONFIG_FILE_PATH);
+    } catch (error) {
+        if (typeof fs.unlinkSync === 'function') {
+            try {
+                fs.unlinkSync(tmp);
+            } catch {
+                // 忽略临时文件清理失败，保留原始写入错误
+            }
+        }
+        throw error;
+    }
+}
+
+
+/** 去掉模型名、地址、密钥首尾空白（含用户误粘贴的制表符），读写配置时都执行。 */
+function trimConn<T extends { apiKey?: string; baseUrl?: string; model?: string; endpoint?: string; deployment?: string }>(value?: T): T | undefined {
+    if (!value) return value;
+    const next = { ...value };
+    if (typeof next.apiKey === 'string') next.apiKey = next.apiKey.trim();
+    if (typeof next.baseUrl === 'string') next.baseUrl = next.baseUrl.trim();
+    if (typeof next.model === 'string') next.model = next.model.trim();
+    if (typeof next.endpoint === 'string') next.endpoint = next.endpoint.trim();
+    if (typeof next.deployment === 'string') next.deployment = next.deployment.trim();
+    return next;
+}
+
+function trimOpenAI(config?: AppConfig['openai']): AppConfig['openai'] {
+    if (!config) return config;
+    return {
+        activeInstanceId: config.activeInstanceId,
+        instances: (config.instances || []).map((instance) => ({
+            ...instance,
+            apiKey: instance.apiKey?.trim() ?? instance.apiKey,
+            baseUrl: instance.baseUrl?.trim() ?? instance.baseUrl,
+            model: instance.model?.trim() ?? instance.model,
+        })),
+    };
+}
+
+function trimTextAi(textAi?: AppConfig['textAi']): AppConfig['textAi'] {
+    if (!textAi) return textAi;
+    const vendors: Record<string, VendorConfig | undefined> = {};
+    for (const id of Object.keys(VENDOR_PRESETS) as VendorProviderId[]) {
+        if (textAi[id]) vendors[id] = trimConn(textAi[id]);
+    }
+    return {
+        ...textAi,
+        ...vendors,
+        openai: trimOpenAI(textAi.openai) as AppConfig['textAi'] extends { openai?: infer O } ? O : undefined,
+        gemini: trimConn(textAi.gemini),
+        azure: trimConn(textAi.azure),
+        anthropic: trimConn(textAi.anthropic),
+    };
+}
+
+export function trimAppConfigConnections<T extends Partial<AppConfig>>(config: T): T {
+    const vendors: Record<string, VendorConfig | undefined> = {};
+    for (const id of Object.keys(VENDOR_PRESETS) as VendorProviderId[]) {
+        const block = (config as AppConfig)[id];
+        if (block) vendors[id] = trimConn(block);
+    }
+    return {
+        ...config,
+        ...vendors,
+        openai: trimOpenAI(config.openai) ?? config.openai,
+        gemini: trimConn(config.gemini) ?? config.gemini,
+        azure: trimConn(config.azure) ?? config.azure,
+        anthropic: trimConn(config.anthropic) ?? config.anthropic,
+        textAi: trimTextAi(config.textAi) ?? config.textAi,
+    };
 }
 
 export function getAppConfig(): AppConfig {
@@ -239,7 +325,7 @@ export function getAppConfig(): AppConfig {
             }
 
             // Merge with default to ensure all fields exist
-            return {
+            return trimAppConfigConnections({
                 ...DEFAULT_CONFIG,
                 ...userConfig,
                 timeZone: isValidTimeZone(userConfig.timeZone) ? userConfig.timeZone.trim() : DEFAULT_TIME_ZONE,
@@ -255,7 +341,10 @@ export function getAppConfig(): AppConfig {
                 prompts: { ...DEFAULT_CONFIG.prompts, ...userConfig.prompts },
                 timeouts: { ...DEFAULT_CONFIG.timeouts, ...userConfig.timeouts },
                 tts: mergeTtsConfig(DEFAULT_CONFIG.tts, userConfig.tts),
-            };
+                textSameAsVision: userConfig.textSameAsVision !== false,
+                aiTextProvider: userConfig.aiTextProvider,
+                textAi: mergeTextAi(undefined, userConfig.textAi),
+            });
         } catch (error) {
             logger.error({ error }, 'Failed to read config file');
             return DEFAULT_CONFIG;
@@ -285,11 +374,15 @@ export function updateAppConfig(newConfig: Partial<AppConfig>) {
         prompts: { ...currentConfig.prompts, ...newConfig.prompts },
         timeouts: { ...currentConfig.timeouts, ...newConfig.timeouts },
         tts: mergeTtsConfig(currentConfig.tts, newConfig.tts),
+        textSameAsVision: newConfig.textSameAsVision !== undefined ? newConfig.textSameAsVision : currentConfig.textSameAsVision,
+        aiTextProvider: newConfig.aiTextProvider !== undefined ? newConfig.aiTextProvider : currentConfig.aiTextProvider,
+        textAi: mergeTextAi(currentConfig.textAi, newConfig.textAi),
     };
 
+    const trimmed = trimAppConfigConnections(updatedConfig);
     try {
-        writeConfigFile(updatedConfig);
-        return updatedConfig;
+        writeConfigFile(trimmed);
+        return trimmed;
     } catch (error) {
         logger.error({ error }, 'Failed to write config file');
         throw error;

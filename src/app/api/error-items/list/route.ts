@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, internalError } from "@/lib/api-errors";
+import { internalError } from "@/lib/api-errors";
+import { resolveNotebookItemFilter } from "@/lib/server/notebook-item-filter";
 import { createLogger } from "@/lib/logger";
 import { getAppTimeZone } from "@/lib/config";
 import { shiftCalendarDate } from "@/lib/date-time";
@@ -11,12 +10,11 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants
 import { isShortId } from "@/lib/short-id";
 import { isMasteryStatus, masteryStatusOf, masteryStatusWhere } from "@/lib/mastery-status";
 import { ERROR_ITEM_LIST_SELECT, ERROR_ITEM_PRINT_SELECT } from "@/lib/error-list-select";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:error-items:list');
 
-export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
-
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     const { searchParams } = new URL(req.url);
     const subjectId = searchParams.get("subjectId");
     const query = searchParams.get("query");
@@ -25,28 +23,16 @@ export async function GET(req: Request) {
     const tag = searchParams.get("tag");
 
     // 分页参数
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parseInt(searchParams.get("pageSize") || String(DEFAULT_PAGE_SIZE), 10)));
+    const parsedPage = Number(searchParams.get("page"));
+    const page = Number.isSafeInteger(parsedPage) ? Math.max(1, parsedPage) : 1;
+    const parsedSize = parseInt(searchParams.get("pageSize") ?? "", 10);
+    const pageSize = Number.isFinite(parsedSize) ? Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parsedSize)) : DEFAULT_PAGE_SIZE;
 
     try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const whereClause: Prisma.ErrorItemWhereInput = {
-            userId: user.id,
-        };
-
-        if (subjectId) {
-            whereClause.subjectId = subjectId;
-        }
+        const itemFilter = await resolveNotebookItemFilter(user.id, searchParams);
+        if (itemFilter instanceof Response) return itemFilter;
+        const whereClause: Prisma.ErrorItemWhereInput = { userId: user.id, ...itemFilter };
+        if (subjectId) whereClause.subjectId = subjectId;
 
         // 搜索条件需要使用 AND 包装，避免与其他 OR 条件冲突
         // 最终的 whereClause.AND 会包含所有需要同时满足的条件
@@ -88,44 +74,18 @@ export async function GET(req: Request) {
             };
         }
 
-        // Chapter filter (第二级筛选：章节)
-        // 如果指定了 chapter，需要找到该章节下所有子标签的 ID，然后过滤错题
         const chapter = searchParams.get("chapter");
         if (chapter) {
-            // 查找该章节标签及其所有后代的ID
-            const chapterTagIds = await findChapterDescendantTagIds(chapter, user.id);
-            if (chapterTagIds.length > 0) {
-                whereClause.tags = {
-                    some: {
-                        id: { in: chapterTagIds }
-                    }
-                };
-            } else {
-                // 章节不存在或没有子标签，应返回空结果
-                // 但为了不破坏其他条件，我们添加一个必然为假的条件
-                whereClause.id = "__IMPOSSIBLE_ID__";
-            }
-        }
-
-        // Tag filter (第三级筛选：具体知识点)
-        if (tag && !chapter) {
-            // 按标签名精确匹配。knowledgePoints 是 JSON 数组字符串，
-            // 只能带引号匹配完整元素，否则筛「函数」会把「二次函数」也筛出来；
-            // 保留它是为了兼容尚未迁移到 tags 关系的旧错题。
+            const ids = await findChapterDescendantTagIds(chapter, user.id);
+            whereClause.tags = { some: { id: { in: ids }, ...(tag ? { name: tag } : {}) } };
+        } else if (tag) {
+            // 兼容只写入 knowledgePoints 的旧题，按完整标签名匹配。
             andConditions.push({
                 OR: [
                     { tags: { some: { name: tag } } },
                     { knowledgePoints: { contains: JSON.stringify(tag) } },
                 ],
             });
-        } else if (tag && chapter) {
-            // 如果同时有 chapter 和 tag，优先用 tag 进一步过滤
-            // 覆盖 chapter 的条件
-            whereClause.tags = {
-                some: {
-                    name: tag
-                }
-            };
         }
 
         // Grade/Semester filter
@@ -155,11 +115,12 @@ export async function GET(req: Request) {
         });
 
         // 分页查询
-        const errorItems = await prisma.errorItem.findMany({
+        const skip = (page - 1) * pageSize;
+        const errorItems = skip >= total ? [] : await prisma.errorItem.findMany({
             where: whereClause,
-            orderBy: { createdAt: "desc" },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             select: searchParams.get("view") === "print" ? ERROR_ITEM_PRINT_SELECT : ERROR_ITEM_LIST_SELECT,
-            skip: (page - 1) * pageSize,
+            skip,
             take: pageSize,
         });
 
@@ -179,7 +140,7 @@ export async function GET(req: Request) {
         logger.error({ error }, 'Error fetching items');
         return internalError("Failed to fetch error items");
     }
-}
+});
 
 function buildGradeFilter(gradeSemester: string): Prisma.ErrorItemWhereInput {
     // 1. 恢复别名映射表 (Support aliases like 初一 for 七年级)
@@ -260,37 +221,16 @@ function buildGradeFilter(gradeSemester: string): Prisma.ErrorItemWhereInput {
     return { OR: orConditions };
 }
 
-// 查找章节标签及其所有后代标签的 ID
+// 一次查询所有可见同名章节及后代。UNION 也会对旧数据中的循环引用去重。
 async function findChapterDescendantTagIds(chapterName: string, userId: string): Promise<string[]> {
-    // 1. 找到章节标签本身 (系统标签或用户自定义标签)
-    const chapterTag = await prisma.knowledgeTag.findFirst({
-        where: {
-            name: chapterName,
-            OR: [
-                { isSystem: true },
-                { userId: userId },
-            ],
-        },
-        select: { id: true }
-    });
-
-    if (!chapterTag) return [];
-
-    // 2. 递归查找所有后代标签
-    const descendantIds: string[] = [chapterTag.id];
-    const queue: string[] = [chapterTag.id];
-
-    while (queue.length > 0) {
-        const parentId = queue.shift()!;
-        const children = await prisma.knowledgeTag.findMany({
-            where: { parentId: parentId },
-            select: { id: true }
-        });
-        for (const child of children) {
-            descendantIds.push(child.id);
-            queue.push(child.id);
-        }
-    }
-
-    return descendantIds;
+    const tags = await prisma.$queryRaw<Array<{ id: string }>>`
+        WITH RECURSIVE descendants(id) AS (
+            SELECT id FROM KnowledgeTag WHERE name = ${chapterName} AND (isSystem OR userId = ${userId})
+            UNION
+            SELECT child.id FROM KnowledgeTag child JOIN descendants ON child.parentId = descendants.id
+            WHERE child.isSystem OR child.userId = ${userId}
+        )
+        SELECT id FROM descendants
+    `;
+    return tags.map(tag => tag.id);
 }

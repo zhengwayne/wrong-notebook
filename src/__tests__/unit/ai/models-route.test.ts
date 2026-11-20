@@ -22,8 +22,16 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 const mockGetServerSession = vi.hoisted(() => vi.fn());
+const mockGetAppConfig = vi.hoisted(() => vi.fn((): Record<string, unknown> => ({ aiProvider: 'gemini' })));
+const mockUserFindUnique = vi.hoisted(() => vi.fn(async ({ where }: { where?: { id?: string } }) => {
+    if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+    if (where?.id === 'u1') return { id: 'u1', email: 'u@localhost', role: 'user', isActive: true, authVersion: 0 };
+    return null;
+}));
 vi.mock('next-auth', () => ({ getServerSession: mockGetServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/config', () => ({ getAppConfig: mockGetAppConfig }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mockUserFindUnique } } }));
 
 import { POST } from '@/app/api/ai/models/route';
 
@@ -291,5 +299,55 @@ describe('POST /api/ai/models - OpenAI provider', () => {
         expect(res.status).toBe(200);
         expect(body.models).toEqual([]);
         expect(body.error).toContain('API error');
+    });
+
+    it('传入掩码密钥 ******** 时按 role 与 instanceId 从服务端配置还原真实密钥', async () => {
+        mockGetAppConfig.mockReturnValueOnce({
+            aiProvider: 'gemini',
+            gemini: { apiKey: 'AIza-vision-key' },
+        });
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ models: [] }) });
+
+        const geminiRes = await POST(new NextRequest('http://localhost/api/ai/models', {
+            method: 'POST',
+            body: JSON.stringify({ provider: 'gemini', apiKey: '********', role: 'text' }),
+            headers: { 'Content-Type': 'application/json' },
+        }));
+        expect(geminiRes.status).toBe(200);
+        expect(mockFetch.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=AIza-vision-key');
+
+        mockGetAppConfig.mockReturnValueOnce({
+            aiProvider: 'openai',
+            openai: {
+                instances: [
+                    { id: 'inst-a', name: 'A', apiKey: 'sk-first', baseUrl: 'https://a.example.com/v1', model: 'gpt-4o' },
+                    { id: 'inst-b', name: 'B', apiKey: 'sk-second', baseUrl: 'https://b.example.com/v1', model: 'gpt-4o-mini' },
+                ],
+                activeInstanceId: 'inst-a',
+            },
+        } as ReturnType<typeof mockGetAppConfig>);
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: 'gpt-4o-mini' }] }) });
+
+        const openaiRes = await POST(new NextRequest('http://localhost/api/ai/models', {
+            method: 'POST',
+            body: JSON.stringify({ provider: 'openai', apiKey: '********', role: 'vision', instanceId: 'inst-b', baseUrl: 'http://192.168.1.50:11434/v1' }),
+            headers: { 'Content-Type': 'application/json' },
+        }));
+        expect(openaiRes.status).toBe(200);
+        expect(mockFetch.mock.calls[1][0]).toBe('http://192.168.1.50:11434/v1/models');
+        expect(mockFetch.mock.calls[1][1]).toMatchObject({
+            redirect: 'error',
+            headers: expect.objectContaining({ Authorization: 'Bearer sk-second' }),
+        });
+        expect(mockFetch.mock.calls[1][1].signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('拦截云元数据与全零地址返回 400 且不发起外网请求', async () => {
+        for (const unsafeUrl of ['http://169.254.169.254/latest', 'http://0.0.0.0:11434/v1']) {
+            const res = await POST(makeRequest({ provider: 'openai', apiKey: 'sk-k', baseUrl: unsafeUrl }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).models).toEqual([]);
+        }
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });

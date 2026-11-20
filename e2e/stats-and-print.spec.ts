@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN_PASSWORD } from './helpers';
+import { ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 async function login(page: Page) {
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.getByLabel(/邮箱|Email/).fill('admin@localhost');
     await page.getByLabel(/^密码$|^Password$/).fill(ADMIN_PASSWORD);
     await page.getByRole('button', { name: /登录|Login/ }).click();
@@ -56,7 +56,7 @@ test('知识点统计按标签计数，打印预览显示所选错题本的题�
         await page.goto(`/print-preview?subjectId=${notebook.id}`);
         await expect(page.getByRole('heading', { name: '打印预览' }).or(page.getByText('打印预览').first())).toBeVisible({ timeout: 15000 });
         for (let i = 1; i <= 3; i++) {
-            await expect(page.getByText(`细胞题 ${i}-${suffix}`)).toBeVisible();
+            await expect(page.getByRole('main').getByText(`细胞题 ${i}-${suffix}`)).toBeVisible();
         }
         // 默认只打印题目，勾选后才显示答案；取消勾选题目后不打印该题
         await expect(page.getByText(`答案 1-${suffix}`)).not.toBeVisible();

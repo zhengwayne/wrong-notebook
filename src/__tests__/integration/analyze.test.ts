@@ -3,6 +3,7 @@
  * 测试图像分析接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_JPEG_DATA_URL, SAMPLE_PNG_BASE64, SAMPLE_PNG_DATA_URL } from '../helpers/sample-images';
 
 // Use vi.hoisted to ensure mocks are initialized before module imports
 const mocks = vi.hoisted(() => ({
@@ -72,7 +73,7 @@ describe('/api/analyze', () => {
             mocks.mockPrismaUser.findUnique.mockResolvedValue({ id: 'u1', educationStage: 'junior_high', enrollmentYear: 2025, gradeRecognitionMode, fixedGradeSemester: '四年级上' });
             mocks.mockAIService.analyzeImage.mockResolvedValue({ questionText: '题目', answerText: '答', analysis: '析', knowledgePoints: [], gradeSemester: '高二下' });
             const response = await POST(new Request('http://localhost/api/analyze', {
-                method: 'POST', body: JSON.stringify({ imageBase64: 'dGVzdA==', language: 'en' }),
+                method: 'POST', body: JSON.stringify({ imageBase64: SAMPLE_PNG_BASE64, language: 'en' }),
             }));
             expect(response.status).toBe(200);
             expect((await response.json()).gradeSemester).toBe(expectedGrade);
@@ -97,7 +98,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     mimeType: 'image/png',
                     language: 'zh',
                 }),
@@ -125,7 +126,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ...',
+                    imageBase64: SAMPLE_JPEG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -175,7 +176,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                     subjectId: 'subject-physics-id',
                 }),
@@ -196,7 +197,7 @@ describe('/api/analyze', () => {
 
             const response = await POST(new Request('http://localhost/api/analyze', {
                 method: 'POST',
-                body: JSON.stringify({ imageBase64: 'data:image/png;base64,test', subjectId: 'nb-physics' }),
+                body: JSON.stringify({ imageBase64: SAMPLE_PNG_DATA_URL, subjectId: 'nb-physics' }),
             }));
 
             expect(response.status).toBe(200);
@@ -213,7 +214,7 @@ describe('/api/analyze', () => {
 
             await POST(new Request('http://localhost/api/analyze', {
                 method: 'POST',
-                body: JSON.stringify({ imageBase64: 'data:image/png;base64,test', subjectId: 'nb-foreign' }),
+                body: JSON.stringify({ imageBase64: SAMPLE_PNG_DATA_URL, subjectId: 'nb-foreign' }),
             }));
 
             expect(mockGetNotebookCandidateTags).not.toHaveBeenCalled();
@@ -233,7 +234,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'en',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -254,7 +255,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -275,7 +276,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -296,7 +297,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -317,7 +318,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -338,7 +339,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -367,7 +368,7 @@ describe('/api/analyze', () => {
             const request = new Request('http://localhost/api/analyze', {
                 method: 'POST',
                 body: JSON.stringify({
-                    imageBase64: 'data:image/png;base64,test...',
+                    imageBase64: SAMPLE_PNG_DATA_URL,
                     language: 'zh',
                 }),
                 headers: { 'Content-Type': 'application/json' },

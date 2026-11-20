@@ -1,27 +1,19 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { requireAdmin } from "@/lib/auth-utils"
-import { forbidden, notFound, internalError } from "@/lib/api-errors"
+import { notFound, internalError } from "@/lib/api-errors"
 import { countByMasteryStatus } from "@/lib/mastery"
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status"
 import { createLogger } from "@/lib/logger"
+import { defineApiRoute } from "@/lib/server/api-route"
 
 const logger = createLogger('api:admin:users:id:detail')
 
-export async function GET(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions)
+export const GET = defineApiRoute<Request, { id: string }>(
+    { auth: 'admin', unauthenticatedStatus: 403 },
+    async (_req, { params }) => {
+        const { id } = await params;
 
-    if (!requireAdmin(session)) {
-        return forbidden("Admin access required")
-    }
-
-    try {
+        try {
         // 获取用户基本信息
         const user = await prisma.user.findUnique({
             where: { id },
@@ -143,4 +135,4 @@ export async function GET(
         logger.error({ error, userId: id }, 'Error fetching user detail');
         return internalError("Failed to fetch user detail")
     }
-}
+});

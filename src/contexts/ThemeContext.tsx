@@ -77,6 +77,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         const root = document.documentElement;
         root.classList.toggle("dark", theme === "dark");
         root.style.colorScheme = theme;
+        // Web Manifest 只能声明单一 theme_color，这里按当前主题同步浏览器/PWA 工具栏颜色
+        const color = theme === "dark" ? "#16141c" : "#6b5ca5";
+        let meta = document.querySelector('meta[name="theme-color"]');
+        if (!meta) {
+            meta = document.createElement("meta");
+            meta.setAttribute("name", "theme-color");
+            document.head.appendChild(meta);
+        }
+        meta.setAttribute("content", color);
     }, [theme]);
 
     // 登录后以账号中保存的偏好为准，换设备或换账号时保持一致

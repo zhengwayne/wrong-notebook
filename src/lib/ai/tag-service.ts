@@ -7,8 +7,56 @@ import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 import type { CandidateTags, GradeLevel } from './types';
 import { isGradeInStage, SUBJECT_DISPLAY_NAMES, type NotebookScope, type NotebookStage, type NotebookSubject } from '@/lib/notebook-scope';
+import {
+    BIOLOGY_CURRICULUM,
+    CHEMISTRY_CURRICULUM,
+    CHINESE_CURRICULUM,
+    ENGLISH_CURRICULUM,
+    GEOGRAPHY_CURRICULUM,
+    HISTORY_CURRICULUM,
+    MATH_CURRICULUM,
+    PHYSICS_CURRICULUM,
+    POLITICS_CURRICULUM,
+} from '@/lib/tag-data';
 
 const logger = createLogger('ai:tag-service');
+
+type ChapterCurriculum = Record<string, Array<{ chapter: string; tags: string[] }>>;
+
+const STATIC_CHAPTER_CURRICULA: Partial<Record<NotebookSubject, ChapterCurriculum>> = {
+    physics: PHYSICS_CURRICULUM,
+    chemistry: CHEMISTRY_CURRICULUM,
+    biology: BIOLOGY_CURRICULUM,
+    english: ENGLISH_CURRICULUM,
+    chinese: CHINESE_CURRICULUM,
+    history: HISTORY_CURRICULUM,
+    geography: GEOGRAPHY_CURRICULUM,
+    politics: POLITICS_CURRICULUM,
+};
+
+function getStaticScopeTags(subject: NotebookSubject, stage?: NotebookStage): string[] {
+    const names = new Set<string>();
+    if (subject === 'math') {
+        for (const [gradeName, chapters] of Object.entries(MATH_CURRICULUM)) {
+            if (stage && !isGradeInStage(gradeName, stage)) continue;
+            for (const ch of chapters) {
+                for (const sec of ch.sections) {
+                    for (const tag of sec.tags) names.add(tag);
+                }
+            }
+        }
+        return Array.from(names);
+    }
+    const curriculum = STATIC_CHAPTER_CURRICULA[subject];
+    if (!curriculum) return [];
+    for (const [gradeName, chapters] of Object.entries(curriculum)) {
+        if (stage && !isGradeInStage(gradeName, stage)) continue;
+        for (const ch of chapters) {
+            for (const tag of ch.tags) names.add(tag);
+        }
+    }
+    return Array.from(names);
+}
 
 /**
  * 从数据库获取指定年级的数学标签
@@ -129,14 +177,18 @@ export async function getTagsFromDB(subject: string): Promise<string[]> {
             where: {
                 subject,
                 isSystem: true,
-                // 只获取叶子节点
+                parentId: { not: null },
+                // 只获取非空年级壳的真实叶子节点
                 children: { none: {} },
             },
             select: { name: true },
             orderBy: { order: 'asc' },
         });
 
-        return tags.map(t => t.name);
+        if (tags.length > 0) {
+            return Array.from(new Set(tags.map(t => t.name)));
+        }
+        return getStaticScopeTags(subject as NotebookSubject);
     } catch (error) {
         logger.error({ error }, 'getTagsFromDB error');
         return [];
@@ -154,6 +206,12 @@ export async function getScopeTagsFromDB(subject: NotebookSubject, stage: Notebo
             orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         });
 
+        // 若存量数据库尚未初始化该学科子节点（为空或仅剩顶层空年级壳），回退静态课标标签树
+        const hasRealChildren = tags.some((tag) => tag.parentId !== null);
+        if (!hasRealChildren) {
+            return getStaticScopeTags(subject, stage);
+        }
+
         const children = new Map<string, typeof tags>();
         for (const tag of tags) {
             if (tag.parentId) {
@@ -167,12 +225,19 @@ export async function getScopeTagsFromDB(subject: NotebookSubject, stage: Notebo
         const collect = (tag: (typeof tags)[number]) => {
             const kids = children.get(tag.id);
             if (!kids?.length) {
-                names.add(tag.name);
+                if (tag.parentId !== null) {
+                    names.add(tag.name);
+                }
                 return;
             }
             kids.forEach(collect);
         };
-        tags.filter((tag) => !tag.parentId && isGradeInStage(tag.name, stage)).forEach(collect);
+        const stageRoots = tags.filter((tag) => !tag.parentId && isGradeInStage(tag.name, stage));
+        stageRoots.forEach(collect);
+        // 若存量库仅有初高中空壳而缺小学根节点（如升级前创建的语文库），对有静态小学课标的学科回退补充
+        if (names.size === 0 && stageRoots.every((root) => !children.get(root.id)?.length) && subject !== 'math') {
+            return getStaticScopeTags(subject, stage);
+        }
         return Array.from(names);
     } catch (error) {
         logger.error({ error, subject, stage }, 'getScopeTagsFromDB error');
@@ -189,15 +254,35 @@ export async function getNotebookCandidateTags(scope: NotebookScope): Promise<Ca
     };
 }
 
+
 /**
- * 未指定错题本时的旧逻辑：数学按学生年级取标签，其他学科取全部；未知学科时各科都取，让 AI 判断
+ * 按年级给出合理学科：小学 (1-6) 保留数学、语文、英语；
+ * 初高中 (7-12) 或未设定年级（null/undefined）返回全部 9 科，避免未设年级时漏掉理化生与政史地。
  */
+export function plausibleSubjectsForGrade(grade: GradeLevel | null | undefined): NotebookSubject[] {
+    const primary: NotebookSubject[] = ['math', 'chinese', 'english'];
+    const secondary: NotebookSubject[] = [...primary, 'physics', 'chemistry', 'biology', 'history', 'geography', 'politics'];
+    if (grade != null && grade <= 6) return primary;
+    return secondary;
+}
+
+/** 未指定错题本时，按年级只取可能出现的学科标签；指定学科时只取该科。 */
 export async function prefetchSubjectTags(subject: string | null | undefined, grade: GradeLevel | null | undefined) {
+    const allowed = new Set(
+        subject
+            ? [subject]
+            : plausibleSubjectsForGrade(grade).map((key) => SUBJECT_DISPLAY_NAMES[key])
+    );
+    const include = (name: string) => allowed.has(name);
     return {
-        prefetchedMathTags: (subject === '数学' || !subject) ? await getMathTagsFromDB(grade || null) : [],
-        prefetchedPhysicsTags: (subject === '物理' || !subject) ? await getTagsFromDB('physics') : [],
-        prefetchedChemistryTags: (subject === '化学' || !subject) ? await getTagsFromDB('chemistry') : [],
-        prefetchedBiologyTags: (subject === '生物' || !subject) ? await getTagsFromDB('biology') : [],
-        prefetchedEnglishTags: (subject === '英语' || !subject) ? await getTagsFromDB('english') : [],
+        prefetchedMathTags: include('数学') ? await getMathTagsFromDB(grade || null) : [],
+        prefetchedPhysicsTags: include('物理') ? await getTagsFromDB('physics') : [],
+        prefetchedChemistryTags: include('化学') ? await getTagsFromDB('chemistry') : [],
+        prefetchedBiologyTags: include('生物') ? await getTagsFromDB('biology') : [],
+        prefetchedEnglishTags: include('英语') ? await getTagsFromDB('english') : [],
+        prefetchedChineseTags: include('语文') ? await getTagsFromDB('chinese') : [],
+        prefetchedHistoryTags: include('历史') ? await getTagsFromDB('history') : [],
+        prefetchedGeographyTags: include('地理') ? await getTagsFromDB('geography') : [],
+        prefetchedPoliticsTags: include('政治') ? await getTagsFromDB('politics') : [],
     };
 }

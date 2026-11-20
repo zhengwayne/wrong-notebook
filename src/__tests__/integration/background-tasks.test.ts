@@ -2,6 +2,8 @@
  * 后台任务查询接口 /api/tasks，以及生成接口登记事务、替换原题图片接口
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import sharp from 'sharp';
+import { createJpegWithExif, SAMPLE_JPEG_DATA_URL } from '../helpers/sample-images';
 
 const mocks = vi.hoisted(() => ({
     user: { findUnique: vi.fn() },
@@ -74,15 +76,24 @@ describe('/api/tasks', () => {
 
 describe('PUT /api/error-items/:id/image', () => {
     const put = (body: unknown) => REPLACE_IMAGE(new Request('http://localhost', { method: 'PUT', body: JSON.stringify(body) }), context);
-    const image = 'data:image/jpeg;base64,QUJDRA==';
+    const image = SAMPLE_JPEG_DATA_URL;
 
-    it('替换为新的原题图片', async () => {
+    it('替换为新的原题图片并剥离 EXIF 元数据', async () => {
         mocks.errorItem.findUnique.mockResolvedValue({ userId: 'user-1' });
+        const withExif = await createJpegWithExif();
 
-        const response = await put({ imageDataUrl: image });
+        const response = await put({ imageDataUrl: withExif.dataUrl });
 
         expect(response.status).toBe(200);
-        expect(mocks.errorItem.update).toHaveBeenCalledWith({ where: { id: 'e1' }, data: { originalImageUrl: image } });
+        const body = await response.json();
+        expect(body.originalImageUrl).toMatch(/^data:image\/jpeg;base64,/);
+        expect(mocks.errorItem.update).toHaveBeenCalledWith({
+            where: { id: 'e1' },
+            data: { originalImageUrl: body.originalImageUrl },
+        });
+        const savedBuf = Buffer.from(body.originalImageUrl.split(',')[1], 'base64');
+        const meta = await sharp(savedBuf).metadata();
+        expect(meta.exif).toBeUndefined();
     });
 
     it.each([

@@ -5,7 +5,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 
 export type PageTitlePart = string | null | undefined | false;
 
-/** 拼接浏览器标题，如「AI智能错题本-错题试卷-期中复习」，空片段自动忽略 */
+/** 拼接浏览器标题，如「学迹-错题试卷-期中复习」，空片段自动忽略 */
 export function formatPageTitle(base: string, parts: PageTitlePart[]): string {
     const segments = parts
         .map((part) => (typeof part === "string" ? part.trim() : ""))
