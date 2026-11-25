@@ -77,19 +77,35 @@ if (!apiBase.startsWith('https://')) problems.push('config.ts 的 API_BASE_URL �
 /** 用 TypeScript 转译后加载纯函数模块做冒烟测试 */
 function loadModule(relPath) {
   const code = fs.readFileSync(path.join(src, relPath), 'utf8');
-  const { outputText } = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } });
+  // 目标 ES2015：与真机老版本基础库能跑的语法一致（例如不能用正则后行断言、\p{...}）
+  const { outputText } = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2015 } });
+  if (/\(\?<[!=]/.test(outputText)) problems.push(`${relPath} 用了正则后行断言，旧版 iOS 不支持`);
   const module = { exports: {} };
-  new Function('module', 'exports', 'require', outputText)(module, module.exports, () => ({}));
+  const localRequire = (spec) => (spec.startsWith('.') ? loadModule(path.join(path.dirname(relPath), `${spec}.ts`)) : {});
+  new Function('module', 'exports', 'require', outputText)(module, module.exports, localRequire);
   return module.exports;
 }
 
 const text = loadModule('utils/text.ts');
-assert.equal(text.toPlainText('计算 $\\frac{1}{2} \\times 4$'), '计算 (1)/(2) × 4');
-assert.equal(text.toPlainText('**答案**：$x^{2}$'), '答案：x^2');
+assert.equal(text.toPlainText('计算 $\\frac{1}{2} \\times 4$'), '计算 1/2 × 4');
+assert.equal(text.toPlainText('**答案**：$x^{2}$'), '答案：x²');
+assert.equal(text.toPlainText('$\\ce{2H2 + O2 -> 2H2O}$'), '2H₂ + O₂ → 2H₂O');
+assert.equal(text.toPlainText('$\\ce{SO4^{2-}}$，$\\vec{F}$，$9.8\\,\\mathrm{m/s^2}$'), 'SO₄²⁻，F⃗，9.8 m/s²');
 assert.equal(text.toPlainText(null), '');
 assert.deepEqual(text.parseKnowledgePoints('["分数","乘法"]'), ['分数', '乘法']);
 assert.deepEqual(text.parseKnowledgePoints('分数，乘法'), ['分数', '乘法']);
 assert.equal(text.formatDate('2026-11-25T08:00:00.000Z').length, 10);
+
+const req = loadModule('utils/request.ts');
+for (let i = 0; i < 20; i += 1) assert.match(req.newRequestId(), /^[a-f0-9]{32}$/);
+assert.notEqual(req.newRequestId(), req.newRequestId());
+// 多图识别：只有"没拿到响应"（网络超时 / 网关断开）才轮询结果，业务错误直接显示
+assert.equal(req.isLostResponse({ errMsg: 'uploadFile:fail timeout' }), true);
+assert.equal(req.isLostResponse(new req.ApiError(504, '')), true);
+assert.equal(req.isLostResponse(new req.ApiError(502, '')), true);
+assert.equal(req.isLostResponse(new req.ApiError(500, 'AI_TIMEOUT_ERROR')), false);
+assert.equal(req.isLostResponse(new req.ApiError(429, 'AI_DAILY_LIMIT_EXCEEDED')), false);
+assert.equal(req.toChineseMessage(new req.ApiError(429, 'AI_DAILY_LIMIT_EXCEEDED')), '今天的 AI 识别次数用完了，明天再来');
 
 const share = loadModule('utils/share.ts');
 const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz012345';

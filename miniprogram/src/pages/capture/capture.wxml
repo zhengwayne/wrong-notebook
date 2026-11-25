@@ -6,53 +6,77 @@
 
   <block wx:else>
     <!-- 1 选照片 -->
-    <view wx:if="{{!imagePath}}" class="pick">
+    <view wx:if="{{!photos.length}}" class="pick">
       <view class="pick-tile pick-main" hover-class="press" data-source="camera" bindtap="onChoose">
         <image class="ic-xl" src="/assets/icons/camera-w.svg" />
         <view class="pick-label">拍照</view>
       </view>
       <view class="pick-tile" hover-class="press" data-source="album" bindtap="onChoose">
-        <image class="ic-lg" src="/assets/icons/image-p.svg" />
-        <view class="pick-label-sm">相册</view>
+        <image class="ic-lg" src="/assets/icons/images-p.svg" />
+        <view class="pick-label-sm">相册多选</view>
+        <view class="pick-hint">最多 {{maxPhotos}} 张</view>
       </view>
       <view class="tips">
         <view class="tip"><image class="ic ic-sm" src="/assets/icons/check-s.svg" />拍平、拍清楚</view>
-        <view class="tip"><image class="ic ic-sm" src="/assets/icons/check-s.svg" />一张可以有好几道题</view>
+        <view class="tip"><image class="ic ic-sm" src="/assets/icons/check-s.svg" />一张可以有好几道题，几页卷子一起选</view>
+        <view class="tip"><image class="ic ic-sm" src="/assets/icons/check-s.svg" />各科都行：数理化生、英语、语文……</view>
       </view>
     </view>
 
     <block wx:else>
-      <view class="photo">
-        <image class="preview" src="{{imagePath}}" mode="widthFix" bindtap="onPreview" />
-        <view wx:if="{{!analyzing && !items.length}}" class="retake" hover-class="press" bindtap="onRetake"><image class="ic ic-sm" src="/assets/icons/rotate-ccw-w.svg" /><text>重拍</text></view>
+      <!-- 照片网格：点开看大图，右上角删除，长按调整顺序；识别中显示每张的状态 -->
+      <view class="grid-head row-between">
+        <view class="row"><image class="ic" src="/assets/icons/images-p.svg" /><text class="grid-title">{{photos.length}} 张</text></view>
+        <view wx:if="{{!analyzing && !saving}}" class="link-muted" hover-class="press" bindtap="onClearAll"><image class="ic ic-sm" src="/assets/icons/rotate-ccw-m.svg" />重选</view>
       </view>
+      <view class="grid">
+        <view wx:for="{{photos}}" wx:key="key" class="thumb" data-index="{{index}}" bindtap="onPreview" bindlongpress="onPhotoMenu">
+          <image class="thumb-img" src="{{item.path}}" mode="aspectFill" />
+          <view class="thumb-no">{{index + 1}}</view>
+          <view wx:if="{{item.status === 'ready' && !analyzing && !saving}}" class="thumb-x" data-index="{{index}}" catchtap="onRemovePhoto"><image class="ic-xs" src="/assets/icons/x-w.svg" /></view>
+          <view wx:if="{{item.status === 'queued'}}" class="thumb-mask"><image class="ic" src="/assets/icons/clock-w.svg" /></view>
+          <view wx:if="{{item.status === 'working'}}" class="thumb-mask"><view class="spinner spinner-w"></view></view>
+          <view wx:if="{{item.status === 'done'}}" class="thumb-badge ok"><image class="ic-xs" src="/assets/icons/check-w.svg" />{{item.count}}</view>
+          <view wx:if="{{item.status === 'failed'}}" class="thumb-mask fail" data-index="{{index}}" catchtap="onRetryPhoto">
+            <image class="ic" src="/assets/icons/refresh-cw-w.svg" />
+            <text class="thumb-retry">重试</text>
+          </view>
+          <view wx:if="{{item.status === 'done' && !analyzing && !saving}}" class="thumb-x" data-index="{{index}}" catchtap="onRemovePhoto"><image class="ic-xs" src="/assets/icons/x-w.svg" /></view>
+        </view>
+        <view wx:if="{{photos.length < maxPhotos && !analyzing && !saving}}" class="thumb thumb-add" hover-class="press" bindtap="onChoose">
+          <image class="ic-lg" src="/assets/icons/plus-p.svg" />
+        </view>
+      </view>
+      <view wx:if="{{photos.length > 1 && !analyzing && !items.length}}" class="muted hint">长按照片可调整顺序</view>
 
       <!-- 2 存到哪 + 识别 -->
-      <block wx:if="{{!items.length}}">
-        <view class="card dest">
-          <picker range="{{notebooks}}" range-key="name" value="{{notebookIndex}}" bindchange="onNotebookChange" disabled="{{analyzing}}">
-            <view class="cell">
-              <image class="ic" src="/assets/icons/book-open-p.svg" />
-              <text class="flex-1">{{notebooks.length ? notebooks[notebookIndex].name : '自动按学科归类'}}</text>
-              <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
-            </view>
-          </picker>
+      <view wx:if="{{!items.length || analyzing}}" class="card dest">
+        <picker range="{{notebooks}}" range-key="name" value="{{notebookIndex}}" bindchange="onNotebookChange" disabled="{{analyzing}}">
           <view class="cell">
-            <image class="ic" src="/assets/icons/user-p.svg" />
-            <text class="flex-1">{{learnerName}}</text>
+            <image class="ic" src="/assets/icons/book-open-p.svg" />
+            <text class="flex-1">{{notebooks.length ? notebooks[notebookIndex].name : '自动按学科归类'}}</text>
+            <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
           </view>
+        </picker>
+        <view class="cell">
+          <image class="ic" src="/assets/icons/user-p.svg" />
+          <text class="flex-1">{{learnerName}}</text>
         </view>
+      </view>
 
-        <view wx:if="{{analyzing}}" class="card progress-card">
-          <view class="row">
-            <view class="spinner"></view>
-            <text class="flex-1 progress-text">{{progressText}}</text>
-            <text class="muted">{{elapsed}} 秒</text>
-          </view>
-          <view class="progress-track"><view class="progress-bar" style="width: {{progress}}%"></view></view>
-          <view class="muted center">一般要半分钟到一分半，可以先放下手机</view>
+      <view wx:if="{{analyzing}}" class="card progress-card">
+        <view class="row">
+          <view class="spinner"></view>
+          <text class="flex-1 progress-text">{{progressText}}</text>
+          <text class="muted">{{doneCount}}/{{photos.length}} · {{elapsed}} 秒</text>
         </view>
-        <button wx:else class="btn" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-w.svg" />AI 识别</button>
+        <view class="progress-track"><view class="progress-bar" style="width: {{progress}}%"></view></view>
+        <view class="muted center">每张半分钟到一分半，认好一张先显示一张</view>
+      </view>
+      <block wx:elif="{{!saving}}">
+        <button wx:if="{{failedPhotos}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/refresh-cw-p.svg" />重试 {{failedPhotos}} 张</button>
+        <button wx:elif="{{doneCount === 0}}" class="btn" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-w.svg" />AI 识别{{photos.length > 1 ? ' ' + photos.length + ' 张' : ''}}</button>
+        <button wx:elif="{{doneCount < photos.length}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-p.svg" />识别新加的 {{photos.length - doneCount}} 张</button>
       </block>
     </block>
 
@@ -62,17 +86,23 @@
     <block wx:if="{{items.length}}">
       <view class="result-head row-between">
         <text class="result-title">识别出 {{items.length}} 题</text>
-        <text wx:if="{{failedCount}}" class="warning">{{failedCount}} 题没认出来</text>
+        <text class="muted">点题号勾选</text>
       </view>
       <view wx:for="{{items}}" wx:key="index" class="card q-card {{item.selected ? 'q-on' : ''}}">
         <view class="row-between q-head" data-index="{{index}}" bindtap="onToggleItem">
           <view class="row">
             <view class="check {{item.selected ? 'check-on' : ''}}"><image wx:if="{{item.selected}}" class="check-ic" src="/assets/icons/check-w.svg" /></view>
             <text class="q-no">第 {{index + 1}} 题</text>
+            <view wx:if="{{photos.length > 1}}" class="photo-tag"><image class="ic-xs" src="/assets/icons/image-m.svg" />{{item.photoNo}}</view>
+            <view wx:if="{{item.subject}}" class="tag subject-tag">{{item.subject}}</view>
           </view>
           <view class="badge {{item.statusClass}}">{{item.statusLabel}}</view>
         </view>
-        <textarea class="textarea" auto-height maxlength="20000" value="{{item.questionText}}" data-index="{{index}}" bindinput="onEditQuestion" />
+        <view wx:if="{{!item.editing}}" class="pre q-text" data-index="{{index}}" bindtap="onEditToggle">{{item.questionPlain || '（只认出图，点这里补题目）'}}<image class="ic ic-sm edit-ic" src="/assets/icons/pencil-m.svg" /></view>
+        <block wx:else>
+          <textarea class="textarea" auto-height maxlength="20000" value="{{item.questionText}}" data-index="{{index}}" bindinput="onEditQuestion" />
+          <view class="link-muted done-edit" data-index="{{index}}" bindtap="onEditToggle"><image class="ic ic-sm" src="/assets/icons/check-p.svg" />改好了</view>
+        </block>
         <view class="section-label">答案</view>
         <view class="pre">{{item.answerPlain}}</view>
         <block wx:if="{{item.mistakePlain}}">
@@ -82,8 +112,8 @@
         <view wx:if="{{item.knowledgePoints.length}}" class="wrap kps"><view wx:for="{{item.knowledgePoints}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
       </view>
       <view class="save-bar">
-        <button class="btn btn-ghost btn-small" bindtap="onRetake"><image class="ic ic-sm" src="/assets/icons/rotate-ccw-m.svg" />重拍</button>
-        <button class="btn flex-1" disabled="{{saving || selectedCount === 0}}" bindtap="onSave"><image class="ic" src="/assets/icons/check-w.svg" />{{saving ? '保存中' : '保存 ' + selectedCount + ' 题'}}</button>
+        <button class="btn btn-ghost btn-small" disabled="{{analyzing || saving}}" bindtap="onClearAll"><image class="ic ic-sm" src="/assets/icons/rotate-ccw-m.svg" />重拍</button>
+        <button class="btn flex-1" disabled="{{analyzing || saving || selectedCount === 0}}" bindtap="onSave"><image class="ic" src="/assets/icons/check-w.svg" />{{saving ? '保存中' : (analyzing ? '还在认…' : '保存 ' + selectedCount + ' 题')}}</button>
       </view>
     </block>
   </block>

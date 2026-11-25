@@ -100,11 +100,16 @@ const MESSAGE_ZH: Record<string, string> = {
   AI_SERVICE_UNAVAILABLE: 'AI 服务暂时不可用',
   AI_RESPONSE_ERROR: 'AI 返回内容无法解析，请重试',
   AI_AUTH_ERROR: 'AI 服务密钥无效，请联系管理员',
+  AI_DAILY_LIMIT_EXCEEDED: '今天的 AI 识别次数用完了，明天再来',
+  'AI service is busy, please retry later': 'AI 正忙，稍后点重试',
+  AI_OUTPUT_TRUNCATED: '题目太多没认完，试试拍得少一点',
 };
 
 export function toChineseMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === 'KID_MODE_RESTRICTED') return '专注做题模式下不能这样操作，请家长先解锁';
+    if (error.status === 413 && !MESSAGE_ZH[error.message]) return '图片太大，请压缩后再试';
+    if ((error.status === 502 || error.status === 504) && !error.message) return '服务器响应超时，请重试';
     return MESSAGE_ZH[error.message] || error.message || `请求失败（${error.status}）`;
   }
   if (error && typeof error === 'object' && 'errMsg' in error) {
@@ -172,16 +177,27 @@ export function request<T>(path: string, options: RequestOptions = {}): Promise<
   });
 }
 
+export interface UploadOptions {
+  /** 请求编号（32 位十六进制）：服务端暂存结果，上传超时或网关断开后可用 fetchStoredResponse 取回 */
+  requestId?: string;
+  timeout?: number;
+}
+
 /** wx.uploadFile 上传图片（multipart，字段名 file） */
-export function uploadImage<T>(path: string, filePath: string, formData: Record<string, string> = {}): Promise<T> {
+export function uploadImage<T>(
+  path: string,
+  filePath: string,
+  formData: Record<string, string> = {},
+  options: UploadOptions = {},
+): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
       url: `${API_BASE_URL}${path}`,
       filePath,
       name: 'file',
       formData,
-      header: buildHeaders(),
-      timeout: 180000,
+      header: buildHeaders(options.requestId ? { 'x-request-id': options.requestId } : {}),
+      timeout: options.timeout ?? 180000,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(parseBody(res.data) as T);
@@ -193,4 +209,36 @@ export function uploadImage<T>(path: string, filePath: string, formData: Record<
       fail: reject,
     });
   });
+}
+
+/** 32 位十六进制请求编号（只用于找回自己的结果，按账号隔离，不需要密码学强度） */
+export function newRequestId(): string {
+  let id = '';
+  while (id.length < 32) id += Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');
+  return id.slice(0, 32);
+}
+
+export type StoredResponse<T> =
+  | { state: 'running' }
+  | { state: 'done'; status: number; body: T }
+  | { state: 'missing' };
+
+/** 查询带请求编号的耗时请求：进行中 / 已结束（含状态码与结果）/ 没到达服务端或已过期 */
+export async function fetchStoredResponse<T>(requestId: string): Promise<StoredResponse<T>> {
+  try {
+    const res = await request<{ state: 'running' } | { state: 'done'; status: number; body: T }>(
+      `/api/requests/${requestId}`,
+      { timeout: 15000 },
+    );
+    return res;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return { state: 'missing' };
+    throw error;
+  }
+}
+
+/** 上传是否可能已经到达服务端、只是没拿到响应（网络超时、网关断开），此时应轮询结果而不是直接失败 */
+export function isLostResponse(error: unknown): boolean {
+  if (error instanceof ApiError) return !error.message && [502, 504, 524].includes(error.status);
+  return Boolean(error && typeof error === 'object' && 'errMsg' in error);
 }

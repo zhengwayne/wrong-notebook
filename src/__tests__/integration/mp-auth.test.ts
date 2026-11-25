@@ -36,6 +36,7 @@ import { PATCH as PATCH_USER } from '@/app/api/user/route';
 import { POST as CREATE_LEARNER } from '@/app/api/learners/route';
 import { GET as LIST_NOTEBOOKS } from '@/app/api/notebooks/route';
 import { POST as MP_ANALYZE } from '@/app/api/mp/analyze/route';
+import { GET as GET_STORED_REQUEST } from '@/app/api/requests/[id]/route';
 import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
 import { GET as LIST_LEARNERS } from '@/app/api/learners/route';
@@ -528,12 +529,47 @@ describe('Bearer 令牌访问现有接口', () => {
 });
 
 describe('/api/mp/analyze multipart 上传', () => {
-    function multipart(token: string, file?: Blob, extra: Record<string, string> = {}) {
+    function multipart(token: string, file?: Blob, extra: Record<string, string> = {}, headers: Record<string, string> = {}) {
         const form = new FormData();
         if (file) form.append('file', file, 'question.png');
         for (const [key, value] of Object.entries(extra)) form.append(key, value);
-        return new Request('http://localhost/api/mp/analyze', { method: 'POST', headers: bearer(token), body: form });
+        return new Request('http://localhost/api/mp/analyze', { method: 'POST', headers: bearer(token, headers), body: form });
     }
+
+    function storedRequest(id: string, token?: string) {
+        return GET_STORED_REQUEST(
+            new Request(`http://localhost/api/requests/${id}`, { headers: token ? bearer(token) : {} }),
+            { params: Promise.resolve({ id }) },
+        );
+    }
+
+    it('多图逐张识别：带请求编号的识别结果可用 Bearer 令牌轮询取回，别人取不到', async () => {
+        const token = await loginAndBind();
+        mocks.analyzeImage
+            .mockResolvedValueOnce({ questionText: '第一页题', answerText: '1', analysis: 'a', knowledgePoints: [], subject: '数学' })
+            .mockResolvedValueOnce({ questionText: '第二页题', answerText: '2', analysis: 'b', knowledgePoints: [], subject: '数学' });
+        const png = new Blob([Buffer.from(SAMPLE_PNG_BASE64, 'base64')], { type: 'image/png' });
+        const ids = ['a'.repeat(32), 'b'.repeat(32)];
+        for (const id of ids) {
+            const res = await MP_ANALYZE(multipart(token, png, { language: 'zh' }, { 'x-request-id': id }));
+            expect(res.status).toBe(200);
+        }
+
+        const first = await storedRequest(ids[0], token);
+        expect(first.status).toBe(200);
+        const firstBody = await first.json();
+        expect(firstBody.state).toBe('done');
+        expect(firstBody.status).toBe(200);
+        expect(firstBody.body.questionText).toBe('第一页题');
+        expect(firstBody.body.imageDataUrl).toMatch(/^data:image\/png;base64,/);
+        expect((await (await storedRequest(ids[1], token)).json()).body.questionText).toBe('第二页题');
+
+        // 没登录、别的账号、不存在的编号都拿不到
+        expect((await storedRequest(ids[0])).status).toBe(401);
+        const { body: stranger } = await wechatLogin('openid-stranger');
+        expect((await storedRequest(ids[0], stranger.token)).status).toBe(404);
+        expect((await storedRequest('c'.repeat(32), token)).status).toBe(404);
+    });
 
     it('上传图片后返回识别结果与规范化后的原图', async () => {
         const token = await loginAndBind();
