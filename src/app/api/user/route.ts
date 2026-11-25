@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { compare, hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { conflict, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
+import { conflict, notFound, badRequest, forbidden, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { syncMasteryLevels } from "@/lib/mastery";
 import { userUpdateSchema } from "@/lib/user-profile-schema";
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
 import { deleteUserAccount, UserDeletionError } from "@/lib/user-deletion";
 import { defineApiRoute } from "@/lib/server/api-route";
 import type { Prisma } from "@prisma/client";
@@ -90,6 +91,12 @@ export const PATCH = defineApiRoute({ auth: 'user' }, async (req, { user: actorU
             updateData.reviewAlgorithmVersion = reviewAlgorithmVersion;
         }
 
+        // 仅微信登录的账号不能在这里改邮箱或设密码：否则等于绕过网页端注册开关自行开通网页登录。
+        // 需要网页登录时，在小程序「我的 → 关联网页账号」关联已有账号。
+        if (isWechatPlaceholderEmail(actorUser.email) && ((email && email.trim()) || (password && password.length > 0))) {
+            return forbidden("WECHAT_ONLY_ACCOUNT");
+        }
+
         // 验证邮箱格式（如果提供了邮箱），归一化为小写并检查是否已被他人占用
         // 支持标准邮箱和本地邮箱（如 admin@localhost）
         if (email && email.trim()) {
@@ -99,6 +106,10 @@ export const PATCH = defineApiRoute({ auth: 'user' }, async (req, { user: actorU
                 return badRequest("Invalid email format");
             }
             if (normalizedEmail !== normalizeEmail(actorUser.email)) {
+                // wechat.local 是仅微信账号的保留占位域名，任何账号都不能改成这个域名
+                if (isWechatPlaceholderEmail(normalizedEmail)) {
+                    return badRequest("Reserved email domain");
+                }
                 const occupied = await findUserByEmailInsensitive(prisma, normalizedEmail, { id: true, email: true });
                 if (occupied && occupied.id !== actorUser.id) {
                     return conflict("Email already in use");

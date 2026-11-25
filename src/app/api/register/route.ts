@@ -8,6 +8,7 @@ import { getClientIp, registerIpLimiter } from "@/lib/rate-limit"
 import { defaultActivePersona, serializePersonas, uniquePersonas } from "@/lib/personas"
 import { ChildLearnerLimitError, createChildLearner, MAX_CHILD_LEARNERS } from "@/lib/learners"
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account"
 
 const userSchema = z.object({
     // 支持标准邮箱和本地邮箱（如 user@localhost），统一归一化为小写
@@ -45,6 +46,8 @@ export async function POST(req: Request) {
         if (!parsed.success) return validationError("Invalid registration data", parsed.error.flatten().fieldErrors)
         const { email: rawEmail, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = parsed.data
         const email = normalizeEmail(rawEmail)
+        // wechat.local 是小程序仅微信账号的保留占位域名，不允许注册
+        if (isWechatPlaceholderEmail(email)) return validationError("Invalid registration data", { email: ["Reserved email domain"] })
 
         const existingUser = await findUserByEmailInsensitive(prisma, email, { id: true })
 

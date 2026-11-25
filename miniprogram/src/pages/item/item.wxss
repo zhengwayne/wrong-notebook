@@ -1,4 +1,28 @@
-.question { font-size: 30rpx; }
-.image { width: 100%; border-radius: 16rpx; margin-top: 20rpx; background-color: var(--xj-secondary); }
-.tags { margin-top: 16rpx; }
-.formula-tip { margin-top: 16rpx; }
+.steps { display: flex; align-items: center; justify-content: center; margin: 4rpx 0 24rpx; }
+.step { display: flex; align-items: center; font-size: 24rpx; color: var(--xj-muted-fg); }
+.step-no { width: 36rpx; height: 36rpx; line-height: 36rpx; text-align: center; border-radius: 50%; background-color: var(--xj-border); color: #FFFFFF; font-size: 22rpx; margin-right: 8rpx; }
+.step-on { color: var(--xj-primary); font-weight: 600; }
+.step-on .step-no { background-color: var(--xj-primary); }
+.step-done .step-no { background-color: var(--xj-success); }
+.step-line { width: 48rpx; height: 2rpx; background-color: var(--xj-border); margin: 0 12rpx; }
+
+.meta { margin-bottom: 20rpx; }
+.meta .ic { margin-right: 8rpx; }
+.meta-text { font-size: 24rpx; }
+.question { font-size: 32rpx; line-height: 1.75; }
+.image { width: 100%; border-radius: 20rpx; margin-top: 24rpx; background-color: var(--xj-secondary); display: block; }
+.kps { margin-top: 20rpx; }
+.tip { margin-top: 24rpx; font-size: 24rpx; }
+.center-title { justify-content: center; }
+
+.judge { display: flex; justify-content: space-around; padding: 8rpx 0; }
+.judge-2 { justify-content: center; gap: 96rpx; margin-top: 24rpx; }
+.judge-btn { display: flex; flex-direction: column; align-items: center; font-size: 28rpx; color: var(--xj-text-2); min-width: 120rpx; }
+.judge-ic { width: 112rpx; height: 112rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 12rpx; }
+.judge-ok { background-color: var(--xj-success); }
+.judge-bad { background-color: var(--xj-danger); }
+.judge-idk { background-color: var(--xj-warning); }
+.recorded { display: flex; align-items: center; justify-content: center; color: var(--xj-success); font-size: 28rpx; padding: 16rpx 0; }
+.recorded .ic { margin-right: 10rpx; }
+.reveal { margin-top: 24rpx; }
+.ic-after { margin-left: 12rpx; margin-right: 0; }

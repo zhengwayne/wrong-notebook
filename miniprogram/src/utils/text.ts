@@ -49,6 +49,13 @@ export const MASTERY_LABEL: Record<string, string> = {
   mastered: '已掌握',
 };
 
+/** 掌握情况徽标图标（颜色与 .badge-* 一致） */
+export const MASTERY_ICON: Record<string, string> = {
+  new: '/assets/icons/circle-dot-o.svg',
+  reviewing: '/assets/icons/refresh-cw-p.svg',
+  mastered: '/assets/icons/circle-check-s.svg',
+};
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);

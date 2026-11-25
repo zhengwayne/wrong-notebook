@@ -5,8 +5,8 @@ import type { ChildLearner, MpLoginResponse, MpSessionResponse, MpUser } from '.
 const LEARNER_KEY_PREFIX = 'xueji.mp.learner:';
 
 export interface LoginOutcome {
-  user?: MpUser;
-  bindTicket?: string;
+  user: MpUser;
+  created: boolean;
 }
 
 function wxLoginCode(): Promise<string> {
@@ -18,23 +18,29 @@ function wxLoginCode(): Promise<string> {
   });
 }
 
-/** 微信登录：已绑定直接拿到令牌；未绑定返回绑定凭证 */
+/** 微信一键登录：已用过直接进入；第一次用会自动建一个只用微信登录的账号 */
 export async function loginWithWechat(): Promise<LoginOutcome> {
   const code = await wxLoginCode();
   const res = await request<MpLoginResponse>('/api/mp/login', { method: 'POST', data: { code } });
-  if (res.status === 'ok' && res.token) {
-    setToken(res.token);
-    return { user: res.user };
-  }
-  return { bindTicket: res.bindTicket };
+  if (!res.token) throw new Error('登录失败，请重试');
+  setToken(res.token);
+  return { user: res.user, created: Boolean(res.created) };
 }
 
-export async function bindAccount(bindTicket: string, email: string, password: string): Promise<MpUser | undefined> {
-  const res = await request<MpLoginResponse>('/api/mp/bind', {
-    method: 'POST',
-    data: { bindTicket, email, password },
-  });
-  if (res.token) setToken(res.token);
+/**
+ * 可选：把当前微信关联到网页端已有账号（邮箱 + 密码）。
+ * 成功后换成网页账号的令牌，原来的空微信账号由服务端删除；微信账号里已有数据时服务端会拒绝。
+ */
+export async function linkWebAccount(email: string, password: string): Promise<MpUser> {
+  const res = await request<MpLoginResponse>('/api/mp/bind', { method: 'POST', data: { email, password } });
+  if (!res.token) throw new Error('关联失败，请重试');
+  setToken(res.token);
+  wx.removeStorageSync('xueji.mp.kidLock');
+  return res.user;
+}
+
+export async function updateDisplayName(name: string): Promise<MpUser> {
+  const res = await request<{ user: MpUser }>('/api/mp/profile', { method: 'POST', data: { name } });
   return res.user;
 }
 

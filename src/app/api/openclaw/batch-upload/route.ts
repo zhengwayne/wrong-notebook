@@ -22,6 +22,7 @@ import { LearnerNotFoundError } from "@/lib/learners";
 import { resolveLearningScope, type LearningScope } from "@/lib/learning-scope";
 import { ImageValidationError, normalizeImageBuffer } from "@/lib/server/image-normalize";
 import { findUserByEmailInsensitive, findUserByLoginIdentifier, normalizeEmail } from "@/lib/email";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit";
 
 const logger = createLogger('api:openclaw:batch-upload');
@@ -325,6 +326,8 @@ export async function POST(req: Request) {
 
             // 从数据库查找用户（支持邮箱大小写不敏感或用户名精确匹配），存在与否统一报 401 防止账户枚举
             user = await findUserByLoginIdentifier(prisma, username);
+            // 仅微信登录的账号（占位邮箱）不能用账号密码登录
+            if (user && isWechatPlaceholderEmail(user.email)) user = null;
             const isPasswordValid = user ? await compare(password, user.password) : false;
 
             if (!user || !isPasswordValid) {

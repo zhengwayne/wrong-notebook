@@ -46,6 +46,29 @@ for (const file of files) {
   if (/appsecret\s*[:=]\s*['"][0-9a-f]{32}['"]/i.test(text)) problems.push(`疑似写入了 AppSecret：${rel}`);
 }
 
+// 图标：所有引用的 SVG 都已生成；标签栏图标为 81×81 PNG 且小于 40KB
+for (const file of files) {
+  if (!/\.(wxml|ts|json)$/.test(file)) continue;
+  const text = fs.readFileSync(file, 'utf8');
+  for (const match of text.matchAll(/\/assets\/icons\/[a-z0-9-]+\.svg/g)) {
+    if (!fs.existsSync(path.join(src, match[0]))) problems.push(`缺少图标 ${match[0]}（先运行 npm run icons）：${path.relative(root, file)}`);
+  }
+}
+for (const tab of app.tabBar?.list ?? []) {
+  for (const key of ['iconPath', 'selectedIconPath']) {
+    const iconFile = tab[key] ? path.join(src, tab[key]) : '';
+    if (!iconFile || !fs.existsSync(iconFile)) { problems.push(`标签栏缺少图标：${tab.pagePath} ${key}`); continue; }
+    const buf = fs.readFileSync(iconFile);
+    const isPng = buf.subarray(1, 4).toString('ascii') === 'PNG';
+    const width = isPng ? buf.readUInt32BE(16) : 0;
+    const height = isPng ? buf.readUInt32BE(20) : 0;
+    if (!isPng || width !== 81 || height !== 81) problems.push(`标签栏图标须为 81×81 PNG：${tab[key]}`);
+    if (buf.length >= 40 * 1024) problems.push(`标签栏图标须小于 40KB：${tab[key]}`);
+  }
+}
+const assetBytes = walk(path.join(src, 'assets')).reduce((sum, file) => sum + fs.statSync(file).size, 0);
+if (assetBytes > 200 * 1024) problems.push(`图片资源超过 200KB（${assetBytes} 字节），注意包体`);
+
 const projectConfig = JSON.parse(fs.readFileSync(path.join(root, 'project.config.json'), 'utf8'));
 const config = fs.readFileSync(path.join(src, 'config.ts'), 'utf8');
 const apiBase = /API_BASE_URL\s*=\s*'([^']+)'/.exec(config)?.[1] ?? '';

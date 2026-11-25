@@ -1336,6 +1336,7 @@ export const en = {
     admin: {
         title: "User Management",
         users: "Users",
+        wechatOnly: "WeChat login only (mini program)",
         role: "Role",
         status: "Status",
         actions: "Actions",

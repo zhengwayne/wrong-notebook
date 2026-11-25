@@ -9,6 +9,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useTimeZone } from "@/contexts/TimeZoneContext";
 import { formatDateTime } from "@/lib/date-time";
 import type { AdminUserStats } from "@/types/api";
+import { displayAccountEmail } from "@/lib/wechat-account";
 
 /** 管理员仪表盘的用户列表：可展开查看每个用户的使用统计 */
 export function UserTable({ users, onViewDetail }: { users: AdminUserStats[]; onViewDetail: (userId: string) => void }) {
@@ -44,7 +45,7 @@ export function UserTable({ users, onViewDetail }: { users: AdminUserStats[]; on
                                         )}
                                     </div>
                                 </td>
-                                <td className="p-3 text-muted-foreground">{user.email}</td>
+                                <td className="p-3 text-muted-foreground">{displayAccountEmail(user.email, t.admin.wechatOnly)}</td>
                                 <td className="p-3 text-center">{user.notebookCount}</td>
                                 <td className="p-3 text-center font-medium">{user.errorCount}</td>
                                 <td className="p-3 text-center">{user.practiceCount}</td>
@@ -88,7 +89,7 @@ export function UserTable({ users, onViewDetail }: { users: AdminUserStats[]; on
                                             <Badge variant="default" className="text-xs">{t.admin?.admin || "Admin"}</Badge>
                                         )}
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{user.email}</div>
+                                    <div className="text-sm text-muted-foreground">{displayAccountEmail(user.email, t.admin.wechatOnly)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Badge variant={user.isActive ? "default" : "destructive"} className="text-xs">

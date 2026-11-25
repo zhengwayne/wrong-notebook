@@ -9,6 +9,7 @@ import { TOO_MANY_ATTEMPTS } from "@/lib/auth-errors"
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit"
 import { isPersona, parsePersonas } from "@/lib/personas"
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account"
 
 const logger = createLogger('auth');
 
@@ -80,7 +81,8 @@ export const authOptions: NextAuthOptions = {
 
                 const user = await findUserByEmailInsensitive(prisma, credentials.email)
 
-                if (!user) {
+                // 小程序自动注册的仅微信账号使用占位邮箱，永远不能用于网页登录（与账号不存在同样处理）
+                if (!user || isWechatPlaceholderEmail(user.email)) {
                     logger.debug('User not found');
                     recordFailure();
                     return null

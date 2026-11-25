@@ -1,18 +1,28 @@
 <view class="container">
-  <view class="card">
-    <view class="muted">{{learnerName}} · 今日待复习</view>
-    <view class="due-count">{{total}}<text class="muted"> 题</text></view>
-    <view class="gap"></view>
-    <button class="btn" disabled="{{items.length === 0}}" bindtap="onStart">开始复习</button>
-  </view>
-  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
-  <view wx:for="{{items}}" wx:key="id" class="list-item" data-id="{{item.id}}" bindtap="onOpen">
-    <view class="list-item-text">{{item.plain}}</view>
-    <view class="row-between">
-      <text class="muted">第 {{item.stage}} 轮复习</text>
-      <text class="status-{{item.masteryStatus}}">{{item.statusLabel}}</text>
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <block wx:if="{{total > 0}}">
+    <view class="hero">
+      <view class="muted">{{learnerName}} · 今天</view>
+      <view class="hero-count">{{total}}<text class="hero-unit">题</text></view>
+      <button class="btn start" bindtap="onStart"><image class="ic" src="/assets/icons/arrow-right-w.svg" />开始复习</button>
     </view>
+
+    <view wx:for="{{items}}" wx:key="id" class="list-item" hover-class="press" data-id="{{item.id}}" bindtap="onOpen">
+      <view class="list-item-text">{{item.plain}}</view>
+      <view class="list-meta">
+        <view class="round"><image class="ic ic-sm" src="/assets/icons/refresh-cw-m.svg" /><text>第 {{item.stage}} 轮</text></view>
+        <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+      </view>
+    </view>
+  </block>
+
+  <view wx:elif="{{!loading && !error}}" class="empty done">
+    <image class="ic-xl" src="/assets/icons/party-popper-p.svg" />
+    <view class="done-title">今天复习完啦</view>
+    <view>{{learnerName === '我自己' ? '你' : learnerName}}真棒，明天见</view>
+    <button class="btn btn-secondary btn-small" bindtap="onOpenNotebook"><image class="ic ic-sm" src="/assets/icons/book-open-a.svg" />看看错题本</button>
   </view>
-  <view wx:if="{{!loading && items.length === 0}}" class="empty">今天没有要复习的题，去错题本看看吧</view>
-  <view wx:if="{{loading}}" class="empty">加载中…</view>
+
+  <view wx:if="{{loading && total === 0}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>

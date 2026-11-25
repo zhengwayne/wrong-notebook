@@ -151,6 +151,12 @@ export const mpLoginIpLimiter = new RateLimiter({ limit: 60, windowMs: FIFTEEN_M
 /** 同一 IP 每小时最多提交 10 次注册或初始化 */
 export const registerIpLimiter = new RateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
 
+/** 小程序自动注册新账号：同一 IP 每小时最多 20 个（学校等共用出口 IP 留余量），只在真正建号时计数 */
+export const mpSignupIpLimiter = new RateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 });
+/** 小程序自动注册全站兜底：每小时最多 300 个新账号（未开启 TRUST_PROXY 取不到来源 IP 时也有上限） */
+export const mpSignupGlobalLimiter = new RateLimiter({ limit: 300, windowMs: 60 * 60 * 1000 });
+export const MP_SIGNUP_GLOBAL_KEY = "mp-signup:all";
+
 /** 每用户每分钟最多合成 60 次，给动画逐段请求留出余量 */
 export const ttsUserLimiter = new RateLimiter({ limit: 60, windowMs: 60 * 1000 });
 

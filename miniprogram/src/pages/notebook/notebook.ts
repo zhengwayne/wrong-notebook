@@ -1,6 +1,6 @@
 import { loadContext } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
-import { formatDate, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
+import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemSummary, Notebook, PageResult } from '../../utils/types';
 
 interface ListRow {
@@ -9,6 +9,7 @@ interface ListRow {
   kps: string[];
   masteryStatus: string;
   statusLabel: string;
+  statusIcon: string;
   date: string;
 }
 
@@ -18,10 +19,11 @@ function toRow(item: ErrorItemSummary): ListRow {
   const status = item.masteryStatus || 'new';
   return {
     id: item.id,
-    plain: toPlainText(item.questionText) || '（无题目文字，点开看原图）',
-    kps: parseKnowledgePoints(item.knowledgePoints).slice(0, 3),
+    plain: toPlainText(item.questionText) || '（只有图片，点开看）',
+    kps: parseKnowledgePoints(item.knowledgePoints).slice(0, 2),
     masteryStatus: status,
     statusLabel: MASTERY_LABEL[status] || '',
+    statusIcon: MASTERY_ICON[status] || MASTERY_ICON.new,
     date: formatDate(item.createdAt),
   };
 }
@@ -30,19 +32,21 @@ Page({
   data: {
     learnerId: null as string | null,
     learnerName: '',
+    kidMode: false,
+    showFilters: false,
     notebooks: [] as Notebook[],
     subjectId: '',
     mastery: '',
     timeRange: 'all',
     query: '',
     masteryOptions: [
-      { value: '', label: '全部' },
-      { value: 'new', label: '待复习' },
-      { value: 'reviewing', label: '复习中' },
-      { value: 'mastered', label: '已掌握' },
+      { value: '', label: '全部', icon: '', iconOn: '' },
+      { value: 'new', label: '待复习', icon: '/assets/icons/circle-dot-o.svg', iconOn: '/assets/icons/circle-dot-w.svg' },
+      { value: 'reviewing', label: '复习中', icon: '/assets/icons/refresh-cw-p.svg', iconOn: '/assets/icons/refresh-cw-w.svg' },
+      { value: 'mastered', label: '已掌握', icon: '/assets/icons/circle-check-s.svg', iconOn: '/assets/icons/circle-check-w.svg' },
     ],
     timeOptions: [
-      { value: 'all', label: '全部时间' },
+      { value: 'all', label: '不限时间' },
       { value: 'week', label: '近一周' },
       { value: 'month', label: '近一月' },
     ],
@@ -63,7 +67,7 @@ Page({
       const ctx = await loadContext();
       if (!ctx) return;
       const changed = ctx.learnerId !== this.data.learnerId || this.data.page === 0;
-      this.setData({ learnerId: ctx.learnerId, learnerName: ctx.learnerName });
+      this.setData({ learnerId: ctx.learnerId, learnerName: ctx.learnerName, kidMode: ctx.kidMode });
       const notebooks = await request<Notebook[]>('/api/notebooks', { query: { learnerId: ctx.learnerId } });
       this.setData({ notebooks });
       if (changed) await this.reload();
@@ -133,6 +137,14 @@ Page({
   onTimeRange(e: WechatMiniprogram.BaseEvent) {
     this.setData({ timeRange: String(e.currentTarget.dataset.value || 'all') });
     void this.reload();
+  },
+
+  onToggleFilters() {
+    this.setData({ showFilters: !this.data.showFilters });
+  },
+
+  onCapture() {
+    wx.navigateTo({ url: '/pages/capture/capture' });
   },
 
   onOpen(e: WechatMiniprogram.BaseEvent) {

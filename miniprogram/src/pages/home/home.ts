@@ -5,10 +5,19 @@ import type { PageResult, ErrorItemSummary } from '../../utils/types';
 interface LearnerOption { id: string | null; name: string }
 
 const PERSONAS = [
-  { value: 'parent', label: '家长' },
-  { value: 'teacher', label: '老师' },
-  { value: 'self', label: '学生自学' },
+  { value: 'parent', label: '家长', hint: '帮孩子整理错题', icon: '/assets/icons/users-m.svg', iconOn: '/assets/icons/users-p.svg' },
+  { value: 'self', label: '学生', hint: '自己整理错题', icon: '/assets/icons/notebook-pen-m.svg', iconOn: '/assets/icons/notebook-pen-p.svg' },
+  { value: 'teacher', label: '老师', hint: '批改在网页端', icon: '/assets/icons/graduation-cap-m.svg', iconOn: '/assets/icons/graduation-cap-p.svg' },
 ];
+
+function greetingNow(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return '夜深了';
+  if (hour < 11) return '早上好';
+  if (hour < 14) return '中午好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
+}
 
 Page({
   data: {
@@ -18,6 +27,7 @@ Page({
     saving: false,
     personaOptions: PERSONAS.map((item) => ({ ...item, checked: item.value === 'parent' })),
     displayName: '',
+    greeting: '你好',
     userId: '',
     isParent: false,
     kidMode: false,
@@ -53,7 +63,8 @@ Page({
         ready: true,
         error: '',
         needPersona: !user.personasConfirmed,
-        displayName: user.name || user.email,
+        displayName: user.name || '同学',
+        greeting: greetingNow(),
         userId: user.id,
         isParent: user.personas.includes('parent'),
         kidMode: ctx.kidMode,

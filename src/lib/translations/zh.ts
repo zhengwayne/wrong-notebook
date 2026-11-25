@@ -1332,6 +1332,7 @@ export const zh = {
     admin: {
         title: "用户管理",
         users: "用户列表",
+        wechatOnly: "仅微信登录（小程序）",
         role: "角色",
         status: "状态",
         actions: "操作",

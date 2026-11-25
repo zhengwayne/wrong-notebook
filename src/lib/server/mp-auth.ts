@@ -1,15 +1,16 @@
 /**
- * 微信小程序登录：wx.login 的 code 换 openid（code2session），openid 绑定现有账号后签发 Bearer 令牌。
+ * 微信小程序登录：wx.login 的 code 换 openid（code2session）；已绑定直接登录，未绑定自动建一个仅微信登录的账号，签发 Bearer 令牌。
  * - AppID / AppSecret 只从环境变量读取（WECHAT_MP_APPID / WECHAT_MP_APPSECRET），代码里不写任何密钥；
  * - 数据库只存令牌的 SHA-256 摘要；session_key 用不到，不落库也不回传；
  * - 令牌记录签发时的 authVersion，改密或禁用后立即失效，与网页端 NextAuth 会话的吊销规则一致。
  */
 import crypto from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import { hash } from 'bcryptjs';
+import { Prisma, type PrismaClient } from '@prisma/client';
+import { isWechatPlaceholderEmail, WECHAT_PLACEHOLDER_EMAIL_DOMAIN } from '@/lib/wechat-account';
 
 export const MP_TOKEN_PREFIX = 'xjmp_';
 export const MP_DEFAULT_SESSION_TTL_DAYS = 30;
-export const MP_BIND_TICKET_TTL_SECONDS = 10 * 60;
 /** 单张图片原始体积上限，与新建错题、文件夹导入单图上限一致 */
 export const MP_UPLOAD_MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** multipart 额外开销（边界、表单字段） */
@@ -28,6 +29,15 @@ export function getMiniProgramConfig(env: NodeJS.ProcessEnv = process.env): Mini
     const appSecret = env.WECHAT_MP_APPSECRET?.trim() ?? '';
     if (!appId || !appSecret) return null;
     return { appId, appSecret };
+}
+
+/**
+ * 未绑定的微信是否自动注册新账号。默认开启，且不受网页端 ALLOW_REGISTRATION 影响：
+ * 微信身份已由 code2session 校验，用户只用微信即可使用；需要关闭时设 WECHAT_MP_AUTO_SIGNUP=false。
+ */
+export function isMiniProgramAutoSignupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    const raw = env.WECHAT_MP_AUTO_SIGNUP?.trim().toLowerCase();
+    return !(raw === 'false' || raw === '0' || raw === 'off' || raw === 'no');
 }
 
 export function getMiniProgramSessionTtlMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -109,56 +119,151 @@ export async function code2Session(
     };
 }
 
-// ---------- 绑定凭证（未绑定的 openid 用账号密码完成一次绑定） ----------
+// ---------- 仅微信登录的账号（自动注册） ----------
 
-interface BindTicketPayload {
-    appId: string;
-    openid: string;
-    unionid?: string;
-    exp: number;
+function openidDigest(appId: string, openid: string): string {
+    return crypto.createHash('sha256').update(`${appId}:${openid}`, 'utf8').digest('hex');
 }
 
-function bindTicketKey(env: NodeJS.ProcessEnv = process.env): string | null {
-    const secret = env.NEXTAUTH_SECRET;
-    if (secret) return `mp-bind-v1:${secret}`;
-    if (env.NODE_ENV !== 'production') return `mp-bind-dev-ephemeral:${process.cwd()}`;
-    return null;
+/** 由 appId + openid 确定性生成占位邮箱：同一微信永远对应同一个邮箱，唯一索引保证并发登录只建一个账号 */
+export function buildWechatPlaceholderEmail(appId: string, openid: string): string {
+    return `wx_${openidDigest(appId, openid).slice(0, 24)}@${WECHAT_PLACEHOLDER_EMAIL_DOMAIN}`;
 }
 
-/** 签发 10 分钟有效的绑定凭证：openid 不直接下发给前端可伪造，只放进 HMAC 签名的票据 */
-export function signBindTicket(input: Omit<BindTicketPayload, 'exp'>, now = Date.now()): string {
-    const key = bindTicketKey();
-    if (!key) throw new Error('Missing NEXTAUTH_SECRET for mini program bind ticket');
-    const payload: BindTicketPayload = { ...input, exp: Math.floor(now / 1000) + MP_BIND_TICKET_TTL_SECONDS };
-    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-    const sig = crypto.createHmac('sha256', key).update(body).digest('base64url');
-    return `${body}.${sig}`;
+export function buildWechatDefaultName(appId: string, openid: string): string {
+    return `微信用户${openidDigest(appId, openid).slice(-4).toUpperCase()}`;
 }
 
-export function verifyBindTicket(ticket: string, expectedAppId: string, now = Date.now()): BindTicketPayload | null {
-    const key = bindTicketKey();
-    if (!key || typeof ticket !== 'string') return null;
-    const parts = ticket.split('.');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-    const [body, sig] = parts;
-    const expected = crypto.createHmac('sha256', key).update(body).digest('base64url');
-    const a = Buffer.from(sig, 'utf8');
-    const b = Buffer.from(expected, 'utf8');
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    try {
-        const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as Partial<BindTicketPayload>;
-        if (typeof parsed.appId !== 'string' || typeof parsed.openid !== 'string' || typeof parsed.exp !== 'number') return null;
-        if (parsed.appId !== expectedAppId) return null;
-        if (parsed.exp <= Math.floor(now / 1000)) return null;
-        return {
-            appId: parsed.appId,
-            openid: parsed.openid,
-            exp: parsed.exp,
-            ...(typeof parsed.unionid === 'string' ? { unionid: parsed.unionid } : {}),
-        };
-    } catch {
-        return null;
+/** 随机且不公开的口令做 bcrypt：没有任何人知道明文；网页登录另外按占位邮箱直接拒绝 */
+async function unusablePasswordHash(): Promise<string> {
+    return hash(crypto.randomBytes(32).toString('base64url'), 10);
+}
+
+export { isWechatPlaceholderEmail };
+
+const MP_LOGIN_USER_SELECT = {
+    id: true, email: true, name: true, role: true, isActive: true, authVersion: true,
+    personas: true, activePersona: true, personasConfirmedAt: true,
+} satisfies Prisma.UserSelect;
+
+export type MiniProgramLoginUser = Prisma.UserGetPayload<{ select: typeof MP_LOGIN_USER_SELECT }>;
+
+type AccountDb = Pick<PrismaClient, 'user' | 'wechatBinding'>;
+
+export async function findBoundMiniProgramUser(db: AccountDb, appId: string, openid: string) {
+    return db.wechatBinding.findUnique({
+        where: { appId_openid: { appId, openid } },
+        select: { id: true, user: { select: MP_LOGIN_USER_SELECT } },
+    });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+export type EnsureMiniProgramAccountResult =
+    | { kind: 'existing'; bindingId: string; user: MiniProgramLoginUser }
+    | { kind: 'created'; bindingId: string; user: MiniProgramLoginUser }
+    | { kind: 'signup_disabled' };
+
+/**
+ * 按 openid 找到账号；没有时（允许自动注册的前提下）建一个仅微信登录的新账号并绑定，一次写入完成。
+ * 并发的同一 openid：占位邮箱与 (appId, openid) 都有唯一索引，后到的写入失败后回读已建好的账号，保证只建一个。
+ * 占位账号的绑定若被删除（例如管理员清理），下次登录按占位邮箱重新挂回原账号，数据不丢。
+ */
+export async function ensureMiniProgramAccount(
+    db: AccountDb,
+    input: { appId: string; openid: string; unionid?: string },
+    options: { allowSignup: boolean; beforeCreate?: () => boolean },
+): Promise<EnsureMiniProgramAccountResult> {
+    const { appId, openid } = input;
+    const placeholderEmail = buildWechatPlaceholderEmail(appId, openid);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        const bound = await findBoundMiniProgramUser(db, appId, openid);
+        if (bound) return { kind: 'existing', bindingId: bound.id, user: bound.user };
+
+        // 绑定丢失但占位账号还在：重新挂回原账号
+        const orphan = await db.user.findUnique({ where: { email: placeholderEmail }, select: MP_LOGIN_USER_SELECT });
+        if (orphan) {
+            try {
+                const binding = await db.wechatBinding.create({
+                    data: { appId, openid, unionid: input.unionid ?? null, userId: orphan.id },
+                    select: { id: true },
+                });
+                return { kind: 'existing', bindingId: binding.id, user: orphan };
+            } catch (error) {
+                if (!isUniqueViolation(error)) throw error;
+                continue;
+            }
+        }
+
+        if (!options.allowSignup) return { kind: 'signup_disabled' };
+        if (attempt === 0 && options.beforeCreate && !options.beforeCreate()) return { kind: 'signup_disabled' };
+
+        try {
+            const created = await db.user.create({
+                data: {
+                    email: placeholderEmail,
+                    password: await unusablePasswordHash(),
+                    name: buildWechatDefaultName(appId, openid),
+                    wechatBindings: { create: { appId, openid, unionid: input.unionid ?? null } },
+                },
+                select: { ...MP_LOGIN_USER_SELECT, wechatBindings: { where: { appId }, select: { id: true } } },
+            });
+            const { wechatBindings, ...user } = created;
+            return { kind: 'created', bindingId: wechatBindings[0]?.id ?? '', user };
+        } catch (error) {
+            if (!isUniqueViolation(error)) throw error;
+            // 并发请求已经建好了，回到循环开头读取
+        }
     }
+    throw new Error('Failed to resolve mini program account after concurrent retries');
+}
+
+/**
+ * 仅微信账号里是否已有学习数据（错题、孩子、试卷、复习记录等）。
+ * 有数据时不允许“关联网页账号”，避免数据被丢下或混进另一个账号。
+ * 不算数据的：自学身份自动生成的“本人”学习者、打开错题本时自动建的空白默认错题本（数学 / 英语）、
+ * 识别结果的临时恢复缓存（AsyncOperation）；AI 用量记录会随关联迁到网页账号。
+ */
+/** GET /api/notebooks 在没有错题本时自动建的默认错题本名称（空的不算用户数据） */
+const AUTO_DEFAULT_NOTEBOOK_NAMES = ['数学', '英语'] as const;
+
+export async function countWechatAccountData(
+    db: PrismaClient | Prisma.TransactionClient,
+    userId: string,
+): Promise<{ total: number; detail: Record<string, number> }> {
+    const where = { userId };
+    const [
+        errorItems, childLearners, parentPapers, examPapers, practiceRecords, subjects, customTags,
+        gradingClasses, gradingTasks, variantRuns, knowledgeMasteries, learningPaths, dailyHomeworks,
+        itemMemories, sourceImports,
+    ] = await Promise.all([
+        db.errorItem.count({ where }),
+        db.learner.count({ where: { userId, kind: { not: 'self' } } }),
+        db.parentPaper.count({ where }),
+        db.examPaper.count({ where }),
+        db.practiceRecord.count({ where }),
+        db.subject.count({
+            where: { userId, OR: [{ errorItems: { some: {} } }, { name: { notIn: [...AUTO_DEFAULT_NOTEBOOK_NAMES] } }] },
+        }),
+        db.knowledgeTag.count({ where }),
+        db.gradingClass.count({ where }),
+        db.gradingTask.count({ where }),
+        db.variantRun.count({ where }),
+        db.knowledgeMastery.count({ where }),
+        db.learningPath.count({ where }),
+        db.dailyHomeworkItem.count({ where }),
+        db.itemMemory.count({ where }),
+        db.sourceImport.count({ where }),
+    ]);
+    const detail = {
+        errorItems, childLearners, parentPapers, examPapers, practiceRecords, subjects, customTags,
+        gradingClasses, gradingTasks, variantRuns, knowledgeMasteries, learningPaths, dailyHomeworks,
+        itemMemories, sourceImports,
+    };
+    return { total: Object.values(detail).reduce((sum, n) => sum + n, 0), detail };
 }
 
 // ---------- 会话 ----------
@@ -236,7 +341,10 @@ export async function revokeUserMiniProgramSessions(db: SessionDb, userId: strin
 
 export interface MiniProgramUserProfile {
     id: string;
-    email: string;
+    /** 仅微信登录的账号为 null（不暴露占位邮箱） */
+    email: string | null;
+    /** true：只用微信登录、尚未关联网页账号 */
+    wechatOnly: boolean;
     name: string | null;
     role: string;
     personas: string[];
@@ -255,7 +363,8 @@ export function toMiniProgramUserProfile(user: {
 }, parse: (raw: string) => string[]): MiniProgramUserProfile {
     return {
         id: user.id,
-        email: user.email,
+        email: isWechatPlaceholderEmail(user.email) ? null : user.email,
+        wechatOnly: isWechatPlaceholderEmail(user.email),
         name: user.name,
         role: user.role,
         personas: parse(user.personas),

@@ -72,6 +72,22 @@ describe('authorize 默认密码标记', () => {
     });
 });
 
+describe('authorize 拒绝仅微信登录账号的占位邮箱', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // 即使密码比对“通过”（例如有人猜中随机口令），占位邮箱也不能登录网页端
+        mocks.compare.mockResolvedValue(true);
+    });
+
+    it('wechat.local 占位邮箱一律返回 null', async () => {
+        const placeholder = 'wx_0123456789abcdef01234567@wechat.local';
+        mocks.findUnique.mockResolvedValue({ ...adminRow, role: 'user', email: placeholder });
+        expect(await authorize(placeholder, 'anything')).toBeNull();
+        expect(await authorize(placeholder.toUpperCase(), 'anything')).toBeNull();
+        expect(mocks.compare).not.toHaveBeenCalled();
+    });
+});
+
 describe('jwt 回调', () => {
     beforeEach(() => {
         vi.clearAllMocks();

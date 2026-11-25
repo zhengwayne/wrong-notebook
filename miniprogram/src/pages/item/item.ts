@@ -1,6 +1,6 @@
 import { loadContext, takeNextReview } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
-import { formatDate, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
+import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemDetail, PracticeQuestion } from '../../utils/types';
 
 interface ItemView {
@@ -16,6 +16,7 @@ interface ItemView {
   date: string;
   masteryStatus: string;
   statusLabel: string;
+  statusIcon: string;
 }
 
 interface PracticeView {
@@ -32,7 +33,7 @@ function toView(item: ErrorItemDetail): ItemView {
   const image = item.originalImageUrl && /^(data:image\/|https:\/\/)/.test(item.originalImageUrl) ? item.originalImageUrl : '';
   return {
     id: item.id,
-    question: toPlainText(item.questionText) || '（无题目文字，见下方原图）',
+    question: toPlainText(item.questionText) || '（题目见下方图片）',
     answer: toPlainText(item.answerText),
     analysis: toPlainText(item.analysis),
     wrongAnswer: toPlainText(item.wrongAnswerText),
@@ -43,6 +44,7 @@ function toView(item: ErrorItemDetail): ItemView {
     date: formatDate(item.createdAt),
     masteryStatus: status,
     statusLabel: MASTERY_LABEL[status] || '',
+    statusIcon: MASTERY_ICON[status] || MASTERY_ICON.new,
   };
 }
 
@@ -85,6 +87,7 @@ Page({
   },
 
   async onRecord(e: WechatMiniprogram.BaseEvent) {
+    if (this.data.saving || this.data.recorded) return;
     const result = String(e.currentTarget.dataset.result);
     this.setData({ saving: true, error: '' });
     try {
@@ -103,6 +106,7 @@ Page({
   },
 
   async onGenerate() {
+    if (this.data.generating) return;
     this.setData({ generating: true, error: '' });
     try {
       const res = await request<PracticeQuestion>('/api/practice/generate', {
@@ -111,7 +115,7 @@ Page({
         timeout: 120000,
       });
       if (res.pipeline) {
-        this.setData({ error: '已在后台出题（多步审核模式），请稍后在网页端「举一反三」查看。' });
+        this.setData({ error: '题目在后台生成中，稍后到网页端「举一反三」查看' });
         return;
       }
       this.setData({
@@ -137,7 +141,7 @@ Page({
 
   async onRecordPractice(e: WechatMiniprogram.BaseEvent) {
     const practice = this.data.practice;
-    if (!practice) return;
+    if (!practice || practice.saved || this.data.saving) return;
     const result = String(e.currentTarget.dataset.result);
     this.setData({ saving: true, error: '' });
     try {

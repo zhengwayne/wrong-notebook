@@ -1,31 +1,49 @@
 <view class="container">
-  <view class="muted">{{learnerName}} 的错题，共 {{total}} 题</view>
-  <view class="gap"></view>
-  <input class="input" confirm-type="search" placeholder="搜题目、知识点或题号" value="{{query}}" bindconfirm="onSearch" />
+  <view class="search">
+    <image class="ic ic-sm" src="/assets/icons/search-m.svg" />
+    <input class="search-input" confirm-type="search" placeholder="搜题目、知识点" placeholder-class="placeholder" value="{{query}}" bindconfirm="onSearch" />
+    <view class="filter-btn {{mastery || timeRange !== 'all' ? 'filter-on' : ''}}" hover-class="press" bindtap="onToggleFilters">
+      <image class="ic ic-sm" src="{{mastery || timeRange !== 'all' ? '/assets/icons/filter-w.svg' : '/assets/icons/filter-p.svg'}}" />
+    </view>
+  </view>
 
-  <scroll-view scroll-x class="filters">
-    <view class="chip {{subjectId === '' ? 'chip-active' : ''}}" data-id="" bindtap="onSubject">全部错题本</view>
+  <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="filters">
+    <view class="chip {{subjectId === '' ? 'chip-active' : ''}}" data-id="" bindtap="onSubject">全部</view>
     <view wx:for="{{notebooks}}" wx:key="id" class="chip {{subjectId === item.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSubject">{{item.name}}</view>
   </scroll-view>
-  <view class="wrap">
-    <view wx:for="{{masteryOptions}}" wx:key="value" class="chip {{mastery === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onMastery">{{item.label}}</view>
-  </view>
-  <view class="wrap">
-    <view wx:for="{{timeOptions}}" wx:key="value" class="chip {{timeRange === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onTimeRange">{{item.label}}</view>
-  </view>
 
-  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
-
-  <view wx:for="{{items}}" wx:key="id" class="list-item" data-id="{{item.id}}" bindtap="onOpen">
-    <view class="list-item-text">{{item.plain}}</view>
-    <view class="row-between meta">
-      <view class="wrap"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="chip">{{kp}}</view></view>
-      <text class="status-{{item.masteryStatus}}">{{item.statusLabel}}</text>
+  <view wx:if="{{showFilters}}" class="card filter-card">
+    <view class="wrap">
+      <view wx:for="{{masteryOptions}}" wx:key="value" class="chip {{mastery === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onMastery">
+        <image wx:if="{{item.icon}}" class="ic ic-sm" src="{{mastery === item.value ? item.iconOn : item.icon}}" />{{item.label}}
+      </view>
     </view>
-    <view class="muted">{{item.date}}</view>
+    <view class="wrap">
+      <view wx:for="{{timeOptions}}" wx:key="value" class="chip {{timeRange === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onTimeRange">{{item.label}}</view>
+    </view>
   </view>
 
-  <view wx:if="{{!loading && items.length === 0}}" class="empty">还没有符合条件的错题</view>
-  <view wx:if="{{loading}}" class="empty">加载中…</view>
-  <view wx:if="{{!loading && items.length > 0 && page >= totalPages}}" class="empty">没有更多了</view>
+  <view class="count muted">{{learnerName}} · {{total}} 题</view>
+
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <view wx:for="{{items}}" wx:key="id" class="list-item" hover-class="press" data-id="{{item.id}}" bindtap="onOpen">
+    <view class="list-item-text">{{item.plain}}</view>
+    <view class="list-meta">
+      <view class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
+      <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+    </view>
+    <view class="date">{{item.date}}</view>
+  </view>
+
+  <view wx:if="{{!loading && items.length === 0 && !error}}" class="empty">
+    <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
+    <view wx:if="{{query || subjectId || mastery || timeRange !== 'all'}}">没找到，换个条件试试</view>
+    <block wx:else>
+      <view>还没有错题</view>
+      <button wx:if="{{!kidMode}}" class="btn btn-small" bindtap="onCapture"><image class="ic ic-sm" src="/assets/icons/camera-w.svg" />拍一道</button>
+    </block>
+  </view>
+  <view wx:if="{{loading}}" class="loading-row"><view class="spinner"></view>加载中</view>
+  <view wx:if="{{!loading && items.length > 0 && page >= totalPages}}" class="end muted">— 到底了 —</view>
 </view>

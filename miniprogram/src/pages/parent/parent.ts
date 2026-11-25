@@ -4,11 +4,20 @@ import { extractShareToken } from '../../utils/share';
 import type { ChildLearner, ParentHomeResponse } from '../../utils/types';
 
 const STEP_STATUS: Record<string, string> = {
-  pending: '待完成',
+  pending: '待做',
   in_progress: '进行中',
-  completed: '已完成',
-  skipped: '已跳过',
+  completed: '完成',
+  skipped: '跳过',
 };
+
+const STEP_ICON: Record<string, string> = {
+  pending: '/assets/icons/circle-dot-o.svg',
+  in_progress: '/assets/icons/clock-p.svg',
+  completed: '/assets/icons/circle-check-s.svg',
+  skipped: '/assets/icons/circle-x-m.svg',
+};
+
+type WeakPoint = NonNullable<ParentHomeResponse['child']>['weakPoints'][number] & { percent: number };
 
 Page({
   data: {
@@ -17,10 +26,10 @@ Page({
     importing: false,
     error: '',
     children: [] as ChildLearner[],
-    child: null as (NonNullable<ParentHomeResponse['child']> & { today: Array<{ title: string; reason: string; statusLabel: string }> }) | null,
+    child: null as (NonNullable<ParentHomeResponse['child']> & { today: Array<{ title: string; reason: string; statusLabel: string; icon: string }> }) | null,
     accuracy: '—',
     trend: [] as Array<{ date: string; label: string; height: number }>,
-    weakPoints: [] as NonNullable<ParentHomeResponse['child']>['weakPoints'],
+    weakPoints: [] as WeakPoint[],
   },
 
   onShow() {
@@ -50,7 +59,14 @@ Page({
         userId: ctx.session.user.id,
         children: res.children,
         child: child
-          ? { ...child, today: child.today.map((step) => ({ ...step, statusLabel: STEP_STATUS[step.status] || step.status })) }
+          ? {
+            ...child,
+            today: child.today.map((step) => ({
+              ...step,
+              statusLabel: STEP_STATUS[step.status] || step.status,
+              icon: STEP_ICON[step.status] || STEP_ICON.pending,
+            })),
+          }
           : null,
         accuracy: child && child.practiceSummary.attempted > 0
           ? `${Math.round((child.practiceSummary.correct / child.practiceSummary.attempted) * 100)}%`
@@ -62,7 +78,12 @@ Page({
             height: Math.round((day.attempted / maxAttempted) * 100),
           }))
           : [],
-        weakPoints: child ? child.weakPoints.slice(0, 5) : [],
+        weakPoints: child
+          ? child.weakPoints.slice(0, 5).map((point) => ({
+            ...point,
+            percent: point.itemCount > 0 ? Math.round((point.unmasteredCount / point.itemCount) * 100) : 0,
+          }))
+          : [],
       });
     } catch (error) {
       this.setData({ error: toChineseMessage(error) });
@@ -76,6 +97,10 @@ Page({
     void this.load();
   },
 
+  onOpenMe() {
+    wx.switchTab({ url: '/pages/me/me' });
+  },
+
   onScanFeedback() {
     const child = this.data.child;
     if (!child) return;
@@ -84,7 +109,7 @@ Page({
       success: async (res) => {
         const token = extractShareToken(res.result || '');
         if (!token) {
-          wx.showToast({ title: '不是学迹的反馈二维码', icon: 'none' });
+          wx.showToast({ title: '不是学迹的反馈码', icon: 'none' });
           return;
         }
         this.setData({ importing: true });
@@ -94,8 +119,8 @@ Page({
             data: { token, learnerId: child.id },
           });
           wx.showModal({
-            title: '导入完成',
-            content: `导入 ${result.importedCount} 道错题${result.skippedCount ? `，${result.skippedCount} 道已存在` : ''}`,
+            title: '导入好了',
+            content: `${child.name}新增 ${result.importedCount} 道错题${result.skippedCount ? `，${result.skippedCount} 道之前就有` : ''}`,
             showCancel: false,
           });
           void this.load();

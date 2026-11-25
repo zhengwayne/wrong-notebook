@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { z } from "zod";
-import { accountDisabled, conflict, createErrorResponse, ErrorCode, forbidden, tooManyRequests } from "@/lib/api-errors";
+import { accountDisabled, badRequest, conflict, createErrorResponse, ErrorCode, forbidden, tooManyRequests } from "@/lib/api-errors";
 import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
 import { createLogger } from "@/lib/logger";
@@ -10,34 +10,55 @@ import { prisma } from "@/lib/prisma";
 import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit";
 import { defineApiRoute } from "@/lib/server/api-route";
 import {
+    countWechatAccountData,
     getMiniProgramConfig,
+    hashMiniProgramToken,
     issueMiniProgramSession,
+    readMiniProgramBearer,
     toMiniProgramUserProfile,
-    verifyBindTicket,
 } from "@/lib/server/mp-auth";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
 
 const logger = createLogger("api:mp:bind");
 
 const bodySchema = z.object({
-    bindTicket: z.string().min(1).max(2048),
     email: z.string().trim().min(1).max(320),
     password: z.string().min(1).max(256),
 });
 
+class LinkAbort extends Error {
+    constructor(readonly reason: "HAS_DATA" | "OPENID_TAKEN" | "STALE", readonly detail?: Record<string, number>) {
+        super(reason);
+    }
+}
+
 /**
- * POST /api/mp/bind { bindTicket, email, password }：用现有账号密码把微信 openid 绑定到账号，只需一次。
- * 与网页登录共用账号和 IP 失败限流；仍在使用默认管理员密码的账号须先在网页端改密。
+ * POST /api/mp/bind { email, password }（需小程序登录）：可选的“关联网页账号”。
+ * 只允许仅微信登录的账号使用：校验网页账号的邮箱密码后，把当前微信改绑到网页账号，之后微信直接登录网页账号。
+ * 安全规则：
+ * - 仅微信账号里已有学习数据（错题、孩子、试卷等）时拒绝关联（409 WECHAT_ACCOUNT_HAS_DATA），不合并、不丢数据；
+ * - 关联成功后删除这个空的仅微信账号（AI 用量记录迁到网页账号），作废它的全部小程序会话；
+ * - 与网页登录共用账号和 IP 失败限流；仍在使用默认管理员密码的账号须先在网页端改密；
+ * - 网页账号此前绑定过别的微信时改绑到当前微信，旧微信的小程序会话全部作废。
  */
 export const POST = defineApiRoute(
-    { auth: "public", maxBodyBytes: 4096, bodySchema },
-    async (req, { body }) => {
+    { auth: "user", maxBodyBytes: 4096, bodySchema },
+    async (req, { body, user: current }) => {
         const config = getMiniProgramConfig();
         if (!config) {
             return createErrorResponse("MP_NOT_CONFIGURED", 503, ErrorCode.OPERATION_NOT_ALLOWED);
         }
-        const ticket = verifyBindTicket(body.bindTicket, config.appId);
-        if (!ticket) {
-            return createErrorResponse("INVALID_BIND_TICKET", 400, ErrorCode.BAD_REQUEST);
+        const token = readMiniProgramBearer(req.headers.get("authorization"));
+        if (!token) return badRequest("MP_TOKEN_REQUIRED");
+        const currentSession = await prisma.miniProgramSession.findUnique({
+            where: { tokenHash: hashMiniProgramToken(token) },
+            select: { userId: true, appId: true, openid: true },
+        });
+        if (!currentSession || currentSession.userId !== current.id || currentSession.appId !== config.appId) {
+            return badRequest("MP_TOKEN_REQUIRED");
+        }
+        if (!isWechatPlaceholderEmail(current.email)) {
+            return conflict("ALREADY_LINKED");
         }
 
         const ip = getClientIp(req.headers);
@@ -49,63 +70,83 @@ export const POST = defineApiRoute(
             if (ip) loginIpLimiter.hit(ip);
         };
 
-        const user = await findUserByEmailInsensitive(prisma, body.email);
-        if (!user) {
+        // 占位邮箱不是可登录的网页账号：与“账号不存在”同样处理
+        const target = isWechatPlaceholderEmail(body.email) ? null : await findUserByEmailInsensitive(prisma, body.email);
+        if (!target || isWechatPlaceholderEmail(target.email)) {
             recordFailure();
             return createErrorResponse("INVALID_CREDENTIALS", 401, ErrorCode.UNAUTHORIZED);
         }
-        if (!user.isActive) return accountDisabled();
-        if (!(await compare(body.password, user.password))) {
+        if (!target.isActive) return accountDisabled();
+        if (!(await compare(body.password, target.password))) {
             recordFailure();
             return createErrorResponse("INVALID_CREDENTIALS", 401, ErrorCode.UNAUTHORIZED);
         }
         loginAccountLimiter.reset(accountKey);
-        if (isDefaultAdminPassword(user.role, body.password)) {
+        if (isDefaultAdminPassword(target.role, body.password)) {
             return forbidden("MUST_CHANGE_PASSWORD");
         }
+        if (target.id === current.id) return conflict("ALREADY_LINKED");
 
-        const outcome = await prisma.$transaction(async (tx) => {
-            const byOpenid = await tx.wechatBinding.findUnique({
-                where: { appId_openid: { appId: config.appId, openid: ticket.openid } },
-                select: { userId: true },
-            });
-            if (byOpenid && byOpenid.userId !== user.id) return "openid_taken" as const;
-            if (!byOpenid) {
-                // 账号此前绑定过另一个微信：改绑到当前微信，旧微信的小程序会话全部作废
+        const { appId, openid } = currentSession;
+        try {
+            await prisma.$transaction(async (tx) => {
+                // 先写一笔（作废这个微信账号的所有会话版本），让事务拿到 SQLite 写锁：
+                // 之后到提交前其他请求都无法写入，数据检查与删除之间不会插入新数据；中途放弃时整笔回滚。
+                await tx.user.update({ where: { id: current.id }, data: { authVersion: { increment: 1 } } });
+                const data = await countWechatAccountData(tx, current.id);
+                if (data.total > 0) throw new LinkAbort("HAS_DATA", data.detail);
+
+                const binding = await tx.wechatBinding.findUnique({
+                    where: { appId_openid: { appId, openid } },
+                    select: { id: true, userId: true },
+                });
+                if (!binding) throw new LinkAbort("STALE");
+                if (binding.userId !== current.id) throw new LinkAbort("OPENID_TAKEN");
+
                 const previous = await tx.wechatBinding.findUnique({
-                    where: { appId_userId: { appId: config.appId, userId: user.id } },
+                    where: { appId_userId: { appId, userId: target.id } },
                     select: { id: true, openid: true },
                 });
                 if (previous) {
                     await tx.miniProgramSession.updateMany({
-                        where: { userId: user.id, appId: config.appId, openid: previous.openid, revokedAt: null },
+                        where: { userId: target.id, appId, openid: previous.openid, revokedAt: null },
                         data: { revokedAt: new Date() },
                     });
                     await tx.wechatBinding.delete({ where: { id: previous.id } });
                 }
-                await tx.wechatBinding.create({
-                    data: { appId: config.appId, openid: ticket.openid, unionid: ticket.unionid ?? null, userId: user.id, lastLoginAt: new Date() },
+
+                await tx.wechatBinding.update({
+                    where: { id: binding.id },
+                    data: { userId: target.id, lastLoginAt: new Date() },
                 });
+                await tx.aiUsage.updateMany({ where: { userId: current.id }, data: { userId: target.id } });
+                // 空的仅微信账号随之删除（会话、当日 AI 计数等随级联删除）
+                await tx.user.delete({ where: { id: current.id } });
+            });
+        } catch (error) {
+            if (error instanceof LinkAbort) {
+                if (error.reason === "HAS_DATA") {
+                    return createErrorResponse("WECHAT_ACCOUNT_HAS_DATA", 409, ErrorCode.CONFLICT, error.detail);
+                }
+                if (error.reason === "OPENID_TAKEN") return conflict("WECHAT_ALREADY_BOUND");
+                return badRequest("MP_TOKEN_REQUIRED");
             }
-            return "bound" as const;
-        });
-        if (outcome === "openid_taken") {
-            return conflict("WECHAT_ALREADY_BOUND");
+            throw error;
         }
 
         const issued = await issueMiniProgramSession(prisma, {
-            userId: user.id,
-            authVersion: user.authVersion ?? 0,
-            appId: config.appId,
-            openid: ticket.openid,
+            userId: target.id,
+            authVersion: target.authVersion ?? 0,
+            appId,
+            openid,
         });
-        logger.info({ userId: user.id }, "Mini program account bound");
+        logger.info({ fromUserId: current.id, userId: target.id }, "Mini program WeChat account linked to web account");
 
         return NextResponse.json({
             status: "ok",
             token: issued.token,
             expiresAt: issued.expiresAt.toISOString(),
-            user: toMiniProgramUserProfile(user, parsePersonas),
+            user: toMiniProgramUserProfile(target, parsePersonas),
         });
     },
 );

@@ -1,6 +1,6 @@
 # Privacy policy
 
-[简体中文](PRIVACY.md) · Updated: October 30, 2026
+[简体中文](PRIVACY.md) · Updated: November 25, 2026
 
 ## Scope and storage
 
@@ -12,7 +12,7 @@ AI API keys and endpoints, and credentials for a MiniMax Code account that the u
 
 ## Third-party services
 
-- When signing in through the WeChat mini program, the instance exchanges the temporary `wx.login` code with WeChat for the openid under that mini program (the session_key is not stored), and keeps the openid-to-account binding plus a hash of the sign-in token. Both are removed on unbinding or account deletion. Photos taken or picked in the mini program are uploaded only to the connected instance.
+- When signing in through the WeChat mini program, the instance exchanges the temporary `wx.login` code with WeChat for the openid under that mini program (the session_key is not stored), and keeps the openid-to-account binding plus a hash of the sign-in token. The first WeChat sign-in creates a WeChat-only account automatically: no phone number, email, avatar or nickname is collected; the account gets an undeliverable placeholder email (`@wechat.local`) that can never be used to sign in on the web, and a default display name (“微信用户” plus four characters) that the user can change. Users may optionally link the WeChat account to an existing web account; to delete a WeChat-only account, ask the instance administrator. Binding and tokens are removed on unbinding or account deletion. Photos taken or picked in the mini program are uploaded only to the connected instance.
 - AI recognition, explanations, exercises and animations send the question content, images, answers or prompts needed for the task to the AI provider and endpoint configured by the administrator. Users and administrators choose whether to use these features and services.
 - Cloud speech sends narration text to the configured speech provider. Browser speech uses browser-provided capabilities; processing depends on the browser and selected voice.
 - After the user signs in to MiniMax Code, login, token refresh and AI requests connect to MiniMax. Automatic check-in also periodically sends authenticated check-in requests. Connecting an account is optional, and the user can sign out in Settings.

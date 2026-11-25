@@ -1,6 +1,6 @@
 import { loadContext, setReviewQueue } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
-import { MASTERY_LABEL, toPlainText } from '../../utils/text';
+import { MASTERY_ICON, MASTERY_LABEL, toPlainText } from '../../utils/text';
 import type { ErrorItemSummary, PageResult } from '../../utils/types';
 
 interface DueRow {
@@ -9,6 +9,7 @@ interface DueRow {
   stage: number;
   masteryStatus: string;
   statusLabel: string;
+  statusIcon: string;
 }
 
 Page({
@@ -44,10 +45,11 @@ Page({
           const status = item.masteryStatus || 'new';
           return {
             id: item.id,
-            plain: toPlainText(item.questionText) || '（无题目文字，点开看原图）',
+            plain: toPlainText(item.questionText) || '（只有图片，点开看）',
             stage: (item.reviewStage ?? 0) + 1,
             masteryStatus: status,
             statusLabel: MASTERY_LABEL[status] || '',
+            statusIcon: MASTERY_ICON[status] || MASTERY_ICON.new,
           };
         }),
       });
@@ -63,6 +65,10 @@ Page({
     if (ids.length === 0) return;
     setReviewQueue(ids);
     wx.navigateTo({ url: `/pages/item/item?id=${encodeURIComponent(ids[0])}&mode=review` });
+  },
+
+  onOpenNotebook() {
+    wx.switchTab({ url: '/pages/notebook/notebook' });
   },
 
   onOpen(e: WechatMiniprogram.BaseEvent) {

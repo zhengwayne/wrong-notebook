@@ -1,22 +1,23 @@
 <view class="container">
-  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
-  <view wx:if="{{children.length === 0 && !loading}}" class="card">
-    <view class="card-title">还没有孩子档案</view>
-    <view class="muted">在「我的 → 添加孩子」里建一个档案，之后录入的错题会归到孩子名下。</view>
+  <view wx:if="{{children.length === 0 && !loading && !error}}" class="empty">
+    <image class="ic-xl" src="/assets/icons/baby-l.svg" />
+    <view>还没有孩子档案</view>
+    <button class="btn btn-small" bindtap="onOpenMe"><image class="ic ic-sm" src="/assets/icons/user-plus-w.svg" />去添加</button>
   </view>
 
   <block wx:if="{{child}}">
-    <scroll-view scroll-x class="children">
-      <view wx:for="{{children}}" wx:key="id" class="chip {{item.id === child.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSwitchChild">{{item.name}}（{{item.itemCount}}）</view>
+    <scroll-view wx:if="{{children.length > 1}}" scroll-x enhanced show-scrollbar="{{false}}" class="children">
+      <view wx:for="{{children}}" wx:key="id" class="chip {{item.id === child.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSwitchChild">{{item.name}}</view>
     </scroll-view>
 
     <view class="card">
-      <view class="card-title">近 7 天练习</view>
-      <view class="row-between">
-        <view><view class="stat">{{child.practiceSummary.attempted}}</view><view class="muted">做题次数</view></view>
-        <view><view class="stat">{{child.practiceSummary.correct}}</view><view class="muted">做对</view></view>
-        <view><view class="stat">{{accuracy}}</view><view class="muted">正确率</view></view>
+      <view class="card-title"><image class="ic" src="/assets/icons/chart-column-p.svg" />近 7 天</view>
+      <view class="stats">
+        <view class="stat-box"><view class="stat">{{child.practiceSummary.attempted}}</view><view class="muted">做题</view></view>
+        <view class="stat-box"><view class="stat stat-ok">{{child.practiceSummary.correct}}</view><view class="muted">做对</view></view>
+        <view class="stat-box"><view class="stat">{{accuracy}}</view><view class="muted">正确率</view></view>
       </view>
       <view class="bars">
         <view wx:for="{{trend}}" wx:key="date" class="bar-col">
@@ -27,35 +28,40 @@
     </view>
 
     <view class="card">
-      <view class="card-title">薄弱知识点</view>
-      <view wx:if="{{child.weakPoints.length === 0}}" class="muted">暂时没有明显的薄弱点。</view>
-      <view wx:for="{{weakPoints}}" wx:key="knowledgePoint" class="weak row-between">
-        <text>{{item.knowledgePoint}}</text>
-        <text class="muted">{{item.unmasteredCount}} 题未掌握 / 共 {{item.itemCount}} 题</text>
+      <view class="card-title"><image class="ic" src="/assets/icons/target-p.svg" />要加强</view>
+      <view wx:if="{{weakPoints.length === 0}}" class="mini-empty"><image class="ic" src="/assets/icons/smile-s.svg" />暂时没有薄弱点</view>
+      <view wx:for="{{weakPoints}}" wx:key="knowledgePoint" class="weak">
+        <view class="row-between"><text class="weak-name">{{item.knowledgePoint}}</text><text class="muted">{{item.unmasteredCount}}/{{item.itemCount}}</text></view>
+        <view class="weak-track"><view class="weak-bar" style="width: {{item.percent}}%"></view></view>
       </view>
     </view>
 
     <view class="card">
-      <view class="card-title">今天的学习任务</view>
-      <view wx:if="{{child.today.length === 0}}" class="muted">今天没有安排任务。</view>
+      <view class="card-title"><image class="ic" src="/assets/icons/list-checks-p.svg" />今天</view>
+      <view wx:if="{{child.today.length === 0}}" class="mini-empty"><image class="ic" src="/assets/icons/smile-s.svg" />今天没有任务</view>
       <view wx:for="{{child.today}}" wx:key="title" class="task">
-        <view class="row-between"><text class="task-title">{{item.title}}</text><text class="muted">{{item.statusLabel}}</text></view>
-        <view class="muted">{{item.reason}}</view>
+        <image class="ic" src="{{item.icon}}" />
+        <view class="flex-1">
+          <view class="task-title">{{item.title}}</view>
+          <view wx:if="{{item.reason}}" class="muted">{{item.reason}}</view>
+        </view>
+        <text class="muted">{{item.statusLabel}}</text>
       </view>
     </view>
 
     <view wx:if="{{child.latestPaper}}" class="card">
-      <view class="card-title">最近一份试卷</view>
-      <view>{{child.latestPaper.title || '未命名试卷'}}</view>
-      <view class="muted">共 {{child.latestPaper.questionCount}} 题<text wx:if="{{child.latestPaper.correctCount !== null}}">，答对 {{child.latestPaper.correctCount}} 题</text></view>
-      <view class="muted">整卷批改与订正请在网页端「家长 → 试卷」操作。</view>
+      <view class="card-title"><image class="ic" src="/assets/icons/file-text-p.svg" />最近试卷</view>
+      <view class="row-between">
+        <text class="flex-1 paper-title">{{child.latestPaper.title || '未命名试卷'}}</text>
+        <text class="muted">{{child.latestPaper.correctCount !== null ? child.latestPaper.correctCount + '/' : ''}}{{child.latestPaper.questionCount}} 题</text>
+      </view>
     </view>
 
-    <view class="card">
-      <view class="card-title">导入老师的批改反馈</view>
-      <view class="muted">老师在学迹里批改后会给出反馈二维码或链接，扫码即可把错题导入到 {{child.name}} 的错题本。</view>
-      <view class="gap"></view>
-      <button class="btn btn-outline" disabled="{{importing}}" bindtap="onScanFeedback">{{importing ? '导入中…' : '扫码导入'}}</button>
-    </view>
+    <button class="btn btn-outline" disabled="{{importing}}" bindtap="onScanFeedback">
+      <view wx:if="{{importing}}" class="spinner"></view>
+      <image wx:else class="ic" src="/assets/icons/scan-line-p.svg" />{{importing ? '导入中' : '扫老师的反馈码'}}
+    </button>
   </block>
+
+  <view wx:if="{{loading && !child}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>

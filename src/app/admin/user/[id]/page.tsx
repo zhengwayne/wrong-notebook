@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AdminUserDetail } from "@/types/api";
+import { displayAccountEmail } from "@/lib/wechat-account";
 
 export default function AdminUserDetailPage() {
     const { timeZone } = useTimeZone()
@@ -87,7 +88,7 @@ export default function AdminUserDetailPage() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold">{data.user.name || "N/A"}</h1>
-                        <p className="text-sm text-muted-foreground">{data.user.email}</p>
+                        <p className="text-sm text-muted-foreground">{displayAccountEmail(data.user.email, t.admin.wechatOnly)}</p>
                     </div>
                     {data.user.role === "admin" && (
                         <Badge variant="default">{t.admin?.admin || "Admin"}</Badge>

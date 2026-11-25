@@ -2,7 +2,10 @@
 
 export interface MpUser {
   id: string;
-  email: string;
+  /** 仅微信登录的账号为 null */
+  email: string | null;
+  /** true：只用微信登录，还没关联网页账号 */
+  wechatOnly: boolean;
   name: string | null;
   role: string;
   personas: string[];
@@ -11,12 +14,12 @@ export interface MpUser {
 }
 
 export interface MpLoginResponse {
-  status: 'ok' | 'needs_bind';
-  token?: string;
-  expiresAt?: string;
-  user?: MpUser;
-  bindTicket?: string;
-  expiresIn?: number;
+  status: 'ok';
+  /** 本次登录自动新建了账号 */
+  created?: boolean;
+  token: string;
+  expiresAt: string;
+  user: MpUser;
 }
 
 export interface MpSessionResponse {

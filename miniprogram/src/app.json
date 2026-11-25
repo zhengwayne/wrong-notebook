@@ -10,22 +10,42 @@
     "pages/parent/parent"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#F8F7FC",
+    "navigationBarBackgroundColor": "#F6F5FB",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "学迹",
-    "backgroundColor": "#F8F7FC",
+    "backgroundColor": "#F6F5FB",
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#5A5568",
+    "color": "#8A8499",
     "selectedColor": "#6B5CA5",
-    "backgroundColor": "#FDFCFF",
+    "backgroundColor": "#FFFFFF",
     "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/home/home", "text": "首页" },
-      { "pagePath": "pages/notebook/notebook", "text": "错题本" },
-      { "pagePath": "pages/review/review", "text": "复习" },
-      { "pagePath": "pages/me/me", "text": "我的" }
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "assets/tabbar/home.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/notebook/notebook",
+        "text": "错题本",
+        "iconPath": "assets/tabbar/notebook.png",
+        "selectedIconPath": "assets/tabbar/notebook-active.png"
+      },
+      {
+        "pagePath": "pages/review/review",
+        "text": "复习",
+        "iconPath": "assets/tabbar/review.png",
+        "selectedIconPath": "assets/tabbar/review-active.png"
+      },
+      {
+        "pagePath": "pages/me/me",
+        "text": "我的",
+        "iconPath": "assets/tabbar/me.png",
+        "selectedIconPath": "assets/tabbar/me-active.png"
+      }
     ]
   },
   "networkTimeout": {

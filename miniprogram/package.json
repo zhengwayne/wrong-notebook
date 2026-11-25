@@ -5,9 +5,10 @@
   "license": "MIT",
   "description": "学迹微信小程序（原生小程序 + TypeScript），后端复用学迹网页端 API",
   "scripts": {
+    "icons": "node scripts/build-icons.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "node scripts/check.mjs",
-    "build": "npm run typecheck && npm run check"
+    "build": "npm run icons && npm run typecheck && npm run check"
   },
   "devDependencies": {
     "miniprogram-api-typings": "5.3.1",

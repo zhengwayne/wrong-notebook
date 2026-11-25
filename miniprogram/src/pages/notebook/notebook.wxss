@@ -1,3 +1,12 @@
+.search { display: flex; align-items: center; height: 88rpx; padding: 0 8rpx 0 28rpx; border-radius: 44rpx; background-color: var(--xj-card); margin-bottom: 20rpx; }
+.search-input { flex: 1; height: 88rpx; margin: 0 16rpx; font-size: 30rpx; }
+.filter-btn { width: 72rpx; height: 72rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background-color: var(--xj-accent); }
+.filter-on { background-color: var(--xj-primary); }
 .filters { white-space: nowrap; margin-bottom: 4rpx; }
 .filters .chip { display: inline-flex; }
-.meta { margin-top: 12rpx; align-items: flex-start; }
+.filter-card { padding-bottom: 16rpx; }
+.count { margin: 4rpx 4rpx 16rpx; }
+.kps { flex: 1; min-width: 0; overflow: hidden; max-height: 56rpx; }
+.kps .tag { margin-bottom: 0; }
+.date { color: var(--xj-muted-fg); font-size: 24rpx; margin-top: 12rpx; }
+.end { text-align: center; padding: 32rpx 0; font-size: 24rpx; }

@@ -9,6 +9,7 @@ import { createLogger } from "@/lib/logger";
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit";
 import { claimSetupToken } from "@/lib/setup-token";
 import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
 
 const logger = createLogger("api:initialize");
 
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     if (!parsed.success) return validationError("Invalid initialization data", parsed.error.issues);
     const { token, email: rawEmail, name, password } = parsed.data;
     const email = normalizeEmail(rawEmail);
+    if (isWechatPlaceholderEmail(email)) return badRequest("Reserved email domain");
 
     try {
         if (await isInitialized()) return conflict("Already initialized");

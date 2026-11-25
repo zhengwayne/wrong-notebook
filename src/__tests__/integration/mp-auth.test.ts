@@ -1,6 +1,7 @@
 // @vitest-environment node
 /**
- * 微信小程序登录与 Bearer 鉴权：code 换会话、账号密码一次绑定、令牌吊销、专注锁与跨账号 404、multipart 识别上传。
+ * 微信小程序登录与 Bearer 鉴权：微信一键登录自动建号（并发只建一个）、可选关联网页账号的规则、
+ * 占位邮箱不能用于网页登录、令牌吊销、专注锁与跨账号 404、multipart 识别上传。
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -30,21 +31,25 @@ import { POST as MP_LOGIN } from '@/app/api/mp/login/route';
 import { POST as MP_BIND } from '@/app/api/mp/bind/route';
 import { DELETE as MP_LOGOUT, GET as MP_SESSION } from '@/app/api/mp/session/route';
 import { DELETE as MP_UNBIND, GET as MP_BINDING } from '@/app/api/mp/binding/route';
+import { POST as MP_PROFILE } from '@/app/api/mp/profile/route';
+import { PATCH as PATCH_USER } from '@/app/api/user/route';
+import { POST as CREATE_LEARNER } from '@/app/api/learners/route';
+import { GET as LIST_NOTEBOOKS } from '@/app/api/notebooks/route';
 import { POST as MP_ANALYZE } from '@/app/api/mp/analyze/route';
 import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
 import { GET as LIST_LEARNERS } from '@/app/api/learners/route';
 import { GET as REVIEW_DUE } from '@/app/api/review/due/route';
 import { isApiAllowedInKidMode, KID_MODE_COOKIE_NAME, signKidModeToken } from '@/lib/kid-mode-lock';
-import { loginAccountLimiter, loginIpLimiter, mpLoginIpLimiter } from '@/lib/rate-limit';
+import { loginAccountLimiter, loginIpLimiter, MP_SIGNUP_GLOBAL_KEY, mpLoginIpLimiter, mpSignupGlobalLimiter, mpSignupIpLimiter } from '@/lib/rate-limit';
 import {
+    buildWechatPlaceholderEmail,
     code2Session,
     hashMiniProgramToken,
     readMiniProgramBearer,
-    signBindTicket,
-    verifyBindTicket,
     WechatLoginError,
 } from '@/lib/server/mp-auth';
+import { isWechatPlaceholderEmail } from '@/lib/wechat-account';
 import { proxy } from '@/proxy';
 
 const APP_ID = 'wx-test-app';
@@ -64,11 +69,18 @@ function bearer(token: string, extra: Record<string, string> = {}) {
     return { authorization: `Bearer ${token}`, ...extra };
 }
 
+async function wechatLogin(openid = nextOpenid) {
+    nextOpenid = openid;
+    const res = await MP_LOGIN(jsonRequest('/api/mp/login', { code: `code-${openid}` }));
+    return { status: res.status, body: await res.json() };
+}
+
+/** 微信登录；若还是仅微信账号，则用网页账号关联（覆盖“可选关联”的主流程），返回网页账号的令牌 */
 async function loginAndBind(email = 'parent@example.com', password = 'ParentPass123!') {
-    const login = await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'code-1' }));
-    const loginBody = await login.json();
-    if (loginBody.status === 'ok') return loginBody.token as string;
-    const bind = await MP_BIND(jsonRequest('/api/mp/bind', { bindTicket: loginBody.bindTicket, email, password }));
+    const login = await wechatLogin();
+    expect(login.status).toBe(200);
+    if (!login.body.user.wechatOnly) return login.body.token as string;
+    const bind = await MP_BIND(jsonRequest('/api/mp/bind', { email, password }, bearer(login.body.token)));
     expect(bind.status).toBe(200);
     return (await bind.json()).token as string;
 }
@@ -102,11 +114,17 @@ beforeEach(async () => {
     for (const key of ['parent@example.com', 'other@example.com', 'admin@localhost']) loginAccountLimiter.reset(key);
     loginIpLimiter.reset('203.0.113.10');
     mpLoginIpLimiter.reset('203.0.113.10');
+    mpSignupIpLimiter.reset('203.0.113.10');
+    mpSignupGlobalLimiter.reset(MP_SIGNUP_GLOBAL_KEY);
+    vi.stubEnv('WECHAT_MP_AUTO_SIGNUP', '');
+    vi.stubEnv('ALLOW_REGISTRATION', 'false');
+    vi.stubEnv('TRUST_PROXY', '');
 
     await database.miniProgramSession.deleteMany();
     await database.wechatBinding.deleteMany();
     await database.errorItem.deleteMany();
     await database.learner.deleteMany();
+    await database.aiUsage.deleteMany();
     await database.user.deleteMany();
 
     const passwordHash = await bcrypt.hash('ParentPass123!', 4);
@@ -137,18 +155,8 @@ describe('mp-auth 工具函数', () => {
         expect(isApiAllowedInKidMode('/api/mp/session', 'DELETE')).toBe(false);
         expect(isApiAllowedInKidMode('/api/mp/binding', 'DELETE')).toBe(false);
         expect(isApiAllowedInKidMode('/api/mp/analyze', 'POST')).toBe(false);
-    });
-
-    it('绑定凭证校验签名、AppID 与有效期', () => {
-        const now = Date.now();
-        const ticket = signBindTicket({ appId: APP_ID, openid: 'o1' }, now);
-        expect(verifyBindTicket(ticket, APP_ID, now)?.openid).toBe('o1');
-        expect(verifyBindTicket(ticket, 'another-app', now)).toBeNull();
-        expect(verifyBindTicket(ticket, APP_ID, now + 11 * 60 * 1000)).toBeNull();
-        const [body, sig] = ticket.split('.');
-        const forged = Buffer.from(JSON.stringify({ appId: APP_ID, openid: 'victim', exp: 9e9 })).toString('base64url');
-        expect(verifyBindTicket(`${forged}.${sig}`, APP_ID, now)).toBeNull();
-        expect(verifyBindTicket(`${body}`, APP_ID, now)).toBeNull();
+        expect(isApiAllowedInKidMode('/api/mp/bind', 'POST')).toBe(false);
+        expect(isApiAllowedInKidMode('/api/mp/profile', 'POST')).toBe(false);
     });
 
     it('code2session 区分无效 code 与微信不可用，且不返回 session_key', async () => {
@@ -166,7 +174,7 @@ describe('mp-auth 工具函数', () => {
     });
 });
 
-describe('/api/mp/login 与 /api/mp/bind', () => {
+describe('/api/mp/login 微信一键登录（自动建号）', () => {
     it('未配置 AppID/AppSecret 时返回 503', async () => {
         vi.stubEnv('WECHAT_MP_APPSECRET', '');
         const res = await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'c' }));
@@ -174,70 +182,261 @@ describe('/api/mp/login 与 /api/mp/bind', () => {
         expect((await res.json()).message).toBe('MP_NOT_CONFIGURED');
     });
 
-    it('首次登录需要绑定；账号密码绑定后签发令牌，数据库只存摘要；再次登录直接成功', async () => {
-        const first = await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'c' }));
-        const firstBody = await first.json();
-        expect(firstBody.status).toBe('needs_bind');
-        expect(JSON.stringify(firstBody)).not.toContain('openid-parent');
+    it('第一次登录直接建一个仅微信账号并签发令牌（网页端关闭注册也不影响）；再次登录进入同一账号', async () => {
+        const usersBefore = await database.user.count();
+        const first = await wechatLogin('openid-new');
+        expect(first.status).toBe(200);
+        expect(first.body).toMatchObject({ status: 'ok', created: true });
+        expect(first.body.token).toMatch(/^xjmp_/);
+        expect(first.body.user).toMatchObject({ wechatOnly: true, email: null, personasConfirmed: false, role: 'user' });
+        expect(first.body.user.name).toMatch(/^微信用户[0-9A-F]{4}$/);
+        expect(JSON.stringify(first.body)).not.toContain('openid-new');
+        expect(JSON.stringify(first.body)).not.toContain('wechat.local');
 
-        const wrong = await MP_BIND(jsonRequest('/api/mp/bind', { bindTicket: firstBody.bindTicket, email: 'parent@example.com', password: 'nope' }));
-        expect(wrong.status).toBe(401);
+        const row = await database.user.findUniqueOrThrow({ where: { id: first.body.user.id } });
+        expect(row.email).toBe(buildWechatPlaceholderEmail(APP_ID, 'openid-new'));
+        expect(isWechatPlaceholderEmail(row.email)).toBe(true);
+        expect(row.password).toMatch(/^\$2[aby]\$/);
+        expect(await bcrypt.compare('', row.password)).toBe(false);
+        expect(await database.user.count()).toBe(usersBefore + 1);
 
-        const bind = await MP_BIND(jsonRequest('/api/mp/bind', { bindTicket: firstBody.bindTicket, email: 'PARENT@example.com', password: 'ParentPass123!' }));
-        expect(bind.status).toBe(200);
-        const bound = await bind.json();
-        expect(bound.token).toMatch(/^xjmp_/);
-        expect(bound.user).toMatchObject({ id: 'parent-1', personas: ['parent'], personasConfirmed: true });
+        const stored = await database.miniProgramSession.findFirstOrThrow({ where: { userId: row.id } });
+        expect(stored.tokenHash).toBe(hashMiniProgramToken(first.body.token));
+        expect(JSON.stringify(stored)).not.toContain(first.body.token);
 
-        const stored = await database.miniProgramSession.findFirstOrThrow({ where: { userId: 'parent-1' } });
-        expect(stored.tokenHash).toBe(hashMiniProgramToken(bound.token));
-        expect(JSON.stringify(stored)).not.toContain(bound.token);
+        const again = await wechatLogin('openid-new');
+        expect(again.body).toMatchObject({ status: 'ok', created: false });
+        expect(again.body.user.id).toBe(row.id);
+        expect(again.body.token).not.toBe(first.body.token);
+        expect(await database.user.count()).toBe(usersBefore + 1);
 
-        const again = await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'c2' }));
-        const againBody = await again.json();
-        expect(againBody.status).toBe('ok');
-        expect(againBody.token).not.toBe(bound.token);
+        // 新账号可以正常使用现有接口（会话、孩子列表）
+        const session = await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(again.body.token) }));
+        expect(session.status).toBe(200);
+        expect((await LIST_LEARNERS(new Request('http://localhost/api/learners', { headers: bearer(again.body.token) }))).status).toBe(200);
     });
 
-    it('伪造或过期的绑定凭证返回 400', async () => {
-        const res = await MP_BIND(jsonRequest('/api/mp/bind', { bindTicket: 'x.y', email: 'parent@example.com', password: 'ParentPass123!' }));
+    it('同一微信并发登录只建一个账号、一条绑定', async () => {
+        nextOpenid = 'openid-race';
+        const results = await Promise.all(
+            Array.from({ length: 6 }, (_, i) => MP_LOGIN(jsonRequest('/api/mp/login', { code: `race-${i}` }))),
+        );
+        const bodies = await Promise.all(results.map((res) => res.json()));
+        expect(results.map((res) => res.status)).toEqual([200, 200, 200, 200, 200, 200]);
+        expect(new Set(bodies.map((body) => body.user.id)).size).toBe(1);
+        expect(bodies.filter((body) => body.created).length).toBe(1);
+        expect(await database.user.count({ where: { email: buildWechatPlaceholderEmail(APP_ID, 'openid-race') } })).toBe(1);
+        expect(await database.wechatBinding.count({ where: { openid: 'openid-race' } })).toBe(1);
+        expect(await database.miniProgramSession.count({ where: { openid: 'openid-race' } })).toBe(6);
+    });
+
+    it('绑定记录丢失时按占位邮箱挂回原账号，不重复建号', async () => {
+        const first = await wechatLogin('openid-orphan');
+        await database.wechatBinding.deleteMany({ where: { openid: 'openid-orphan' } });
+        const again = await wechatLogin('openid-orphan');
+        expect(again.status).toBe(200);
+        expect(again.body.user.id).toBe(first.body.user.id);
+        expect(again.body.created).toBe(false);
+        expect(await database.wechatBinding.count({ where: { openid: 'openid-orphan' } })).toBe(1);
+    });
+
+    it('WECHAT_MP_AUTO_SIGNUP=false 时不建号（403），已有绑定照常登录', async () => {
+        const existing = await wechatLogin('openid-before');
+        vi.stubEnv('WECHAT_MP_AUTO_SIGNUP', 'false');
+        const usersBefore = await database.user.count();
+        const blocked = await wechatLogin('openid-blocked');
+        expect(blocked.status).toBe(403);
+        expect(blocked.body.message).toBe('MP_SIGNUP_DISABLED');
+        expect(await database.user.count()).toBe(usersBefore);
+        const ok = await wechatLogin('openid-before');
+        expect(ok.status).toBe(200);
+        expect(ok.body.user.id).toBe(existing.body.user.id);
+    });
+
+    it('同一 IP 建号过多时返回 429，老用户登录不受影响', async () => {
+        vi.stubEnv('TRUST_PROXY', 'true');
+        const existing = await wechatLogin('openid-regular');
+        for (let i = 0; i < 25; i += 1) mpSignupIpLimiter.hit('203.0.113.10');
+        const limited = await wechatLogin('openid-flood');
+        expect(limited.status).toBe(429);
+        expect(await database.user.count({ where: { email: buildWechatPlaceholderEmail(APP_ID, 'openid-flood') } })).toBe(0);
+        const ok = await wechatLogin('openid-regular');
+        expect(ok.status).toBe(200);
+        expect(ok.body.user.id).toBe(existing.body.user.id);
+    });
+
+    it('取不到来源 IP 时有全站建号上限兜底', async () => {
+        vi.stubEnv('TRUST_PROXY', '');
+        for (let i = 0; i < 300; i += 1) mpSignupGlobalLimiter.hit(MP_SIGNUP_GLOBAL_KEY);
+        expect((await wechatLogin('openid-global')).status).toBe(429);
+    });
+
+    it('禁用的账号无法用微信登录', async () => {
+        const { body } = await wechatLogin('openid-disabled');
+        await database.user.update({ where: { id: body.user.id }, data: { isActive: false } });
+        expect((await wechatLogin('openid-disabled')).status).toBe(401);
+    });
+
+    it('可以改显示名称；空名字被拒绝', async () => {
+        const { body } = await wechatLogin('openid-name');
+        const ok = await MP_PROFILE(jsonRequest('/api/mp/profile', { name: '  小明妈妈 ' }, bearer(body.token)));
+        expect(ok.status).toBe(200);
+        expect((await ok.json()).user).toMatchObject({ name: '小明妈妈', wechatOnly: true, email: null });
+        expect((await MP_PROFILE(jsonRequest('/api/mp/profile', { name: '   ' }, bearer(body.token)))).status).toBe(400);
+        expect((await MP_PROFILE(jsonRequest('/api/mp/profile', { name: '小明' }))).status).toBe(401);
+    });
+});
+
+describe('占位邮箱不能用于网页登录', () => {
+    function patchUser(token: string, data: unknown) {
+        return PATCH_USER(new Request('http://localhost/api/user', {
+            method: 'PATCH',
+            headers: bearer(token, { 'content-type': 'application/json' }),
+            body: JSON.stringify(data),
+        }));
+    }
+
+    it('仅微信账号不能自行设邮箱或密码（不绕过网页注册开关），改名字等其他设置照常', async () => {
+        const { body } = await wechatLogin('openid-upgrade');
+        const before = await database.user.findUniqueOrThrow({ where: { id: body.user.id } });
+        for (const payload of [{ password: 'NewPass123!' }, { email: 'mom@example.com' }, { email: 'mom@example.com', password: 'NewPass123!' }]) {
+            const res = await patchUser(body.token, payload);
+            expect(res.status).toBe(403);
+            expect((await res.json()).message).toBe('WECHAT_ONLY_ACCOUNT');
+        }
+        const after = await database.user.findUniqueOrThrow({ where: { id: body.user.id } });
+        expect(after.email).toBe(before.email);
+        expect(after.password).toBe(before.password);
+
+        const rename = await patchUser(body.token, { name: '小明爸爸' });
+        expect(rename.status).toBe(200);
+        expect((await database.user.findUniqueOrThrow({ where: { id: body.user.id } })).name).toBe('小明爸爸');
+    });
+
+    it('任何账号都不能把邮箱改成 wechat.local 域名', async () => {
+        const token = await loginAndBind();
+        const res = await patchUser(token, { email: 'someone@WeChat.Local' });
         expect(res.status).toBe(400);
+        expect((await database.user.findUniqueOrThrow({ where: { id: 'parent-1' } })).email).toBe('parent@example.com');
     });
 
-    it('同一微信已绑定其他账号时返回 409；账号改绑新微信会作废旧微信的会话', async () => {
-        const oldToken = await loginAndBind();
-        const ticket = (await (await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'c' }))).json()).bindTicket;
-        expect(ticket).toBeUndefined();
+    it('用占位邮箱关联网页账号按账号不存在处理', async () => {
+        const victim = await wechatLogin('openid-victim');
+        const attacker = await wechatLogin('openid-attacker');
+        const placeholder = buildWechatPlaceholderEmail(APP_ID, 'openid-victim');
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: placeholder, password: 'x' }, bearer(attacker.body.token)));
+        expect(res.status).toBe(401);
+        expect((await res.json()).message).toBe('INVALID_CREDENTIALS');
+        expect(await database.user.count({ where: { id: victim.body.user.id } })).toBe(1);
+    });
+});
 
-        const taken = await MP_BIND(jsonRequest('/api/mp/bind', {
-            bindTicket: signBindTicket({ appId: APP_ID, openid: 'openid-parent' }),
-            email: 'other@example.com',
-            password: 'ParentPass123!',
-        }));
-        expect(taken.status).toBe(409);
-
-        const rebind = await MP_BIND(jsonRequest('/api/mp/bind', {
-            bindTicket: signBindTicket({ appId: APP_ID, openid: 'openid-new-phone' }),
-            email: 'parent@example.com',
-            password: 'ParentPass123!',
-        }));
-        expect(rebind.status).toBe(200);
-        expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(oldToken) }))).status).toBe(401);
-        expect(await database.wechatBinding.count({ where: { userId: 'parent-1' } })).toBe(1);
+describe('/api/mp/bind 可选关联网页账号', () => {
+    it('需要小程序登录；密码错误 401', async () => {
+        expect((await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }))).status).toBe(401);
+        const { body } = await wechatLogin();
+        const wrong = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'nope' }, bearer(body.token)));
+        expect(wrong.status).toBe(401);
+        expect(await database.user.count({ where: { id: body.user.id } })).toBe(1);
     });
 
-    it('仍在使用默认管理员密码时拒绝绑定，要求先在网页端改密', async () => {
+    it('空的微信账号关联成功：微信改绑到网页账号，空账号删除，旧令牌失效，AI 用量迁移，再次微信登录直接进网页账号', async () => {
+        const { body } = await wechatLogin();
+        const wxUserId = body.user.id as string;
+        await database.aiUsage.create({ data: { userId: wxUserId, kind: 'analyze' } });
+        await database.learner.create({ data: { userId: wxUserId, kind: 'self', name: '我自己' } });
+        // 打开错题本会自动建空白默认错题本，不算数据
+        const notebooks = await LIST_NOTEBOOKS(new Request('http://localhost/api/notebooks', { headers: bearer(body.token) }));
+        expect(notebooks.status).toBe(200);
+        expect(await database.subject.count({ where: { userId: wxUserId } })).toBeGreaterThan(0);
+
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'PARENT@example.com', password: 'ParentPass123!' }, bearer(body.token)));
+        expect(res.status).toBe(200);
+        const linked = await res.json();
+        expect(linked.token).toMatch(/^xjmp_/);
+        expect(linked.user).toMatchObject({ id: 'parent-1', wechatOnly: false, email: 'parent@example.com', personas: ['parent'] });
+
+        expect(await database.user.count({ where: { id: wxUserId } })).toBe(0);
+        expect(await database.aiUsage.count({ where: { userId: 'parent-1' } })).toBe(1);
+        expect(await database.wechatBinding.findFirst({ where: { openid: 'openid-parent' } })).toMatchObject({ userId: 'parent-1' });
+        expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(body.token) }))).status).toBe(401);
+        expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(linked.token) }))).status).toBe(200);
+        expect(await database.errorItem.count({ where: { userId: 'parent-1' } })).toBe(1);
+        expect(await database.subject.count({ where: { userId: wxUserId } })).toBe(0);
+
+        const again = await wechatLogin();
+        expect(again.body).toMatchObject({ created: false });
+        expect(again.body.user.id).toBe('parent-1');
+    });
+
+    it('微信账号里已有数据（孩子或错题）时拒绝关联，什么都不改', async () => {
+        const { body } = await wechatLogin();
+        await database.user.update({ where: { id: body.user.id }, data: { personas: JSON.stringify(['parent']), activePersona: 'parent', personasConfirmedAt: new Date() } });
+        const created = await CREATE_LEARNER(jsonRequest('/api/learners', { name: '小宝' }, bearer(body.token)));
+        expect(created.status).toBeLessThan(300);
+
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }, bearer(body.token)));
+        expect(res.status).toBe(409);
+        const payload = await res.json();
+        expect(payload.message).toBe('WECHAT_ACCOUNT_HAS_DATA');
+        expect(payload.details.childLearners).toBe(1);
+
+        expect(await database.user.count({ where: { id: body.user.id } })).toBe(1);
+        expect(await database.learner.count({ where: { userId: body.user.id } })).toBe(1);
+        expect(await database.wechatBinding.findFirst({ where: { openid: 'openid-parent' } })).toMatchObject({ userId: body.user.id });
+        expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(body.token) }))).status).toBe(200);
+
+        // 自己建的错题本（即使是空的）也算数据
+        const { body: nb } = await wechatLogin('openid-with-notebook');
+        await database.subject.create({ data: { userId: nb.user.id, name: '物理错题' } });
+        const nbBlocked = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }, bearer(nb.token)));
+        expect(nbBlocked.status).toBe(409);
+        expect((await nbBlocked.json()).details.subjects).toBe(1);
+
+        // 错题同样算数据
+        const { body: other } = await wechatLogin('openid-with-item');
+        await database.errorItem.create({ data: { userId: other.user.id, originalImageUrl: '', questionText: '3+3' } });
+        const blocked = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }, bearer(other.token)));
+        expect(blocked.status).toBe(409);
+        expect(await database.errorItem.count({ where: { userId: other.user.id } })).toBe(1);
+    });
+
+    it('已是网页账号再调用返回 409 ALREADY_LINKED', async () => {
+        const token = await loginAndBind();
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'other@example.com', password: 'ParentPass123!' }, bearer(token)));
+        expect(res.status).toBe(409);
+        expect((await res.json()).message).toBe('ALREADY_LINKED');
+    });
+
+    it('网页账号之前绑过别的微信：改绑到当前微信，旧微信的会话全部作废', async () => {
+        const oldPhoneToken = await loginAndBind();
+        const { body } = await wechatLogin('openid-new-phone');
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }, bearer(body.token)));
+        expect(res.status).toBe(200);
+        expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(oldPhoneToken) }))).status).toBe(401);
+        const bindings = await database.wechatBinding.findMany({ where: { userId: 'parent-1' } });
+        expect(bindings.map((b) => b.openid)).toEqual(['openid-new-phone']);
+        // 旧微信再登录会变成一个新的仅微信账号，不会进入网页账号
+        const oldPhone = await wechatLogin('openid-parent');
+        expect(oldPhone.body.user.wechatOnly).toBe(true);
+        expect(oldPhone.body.user.id).not.toBe('parent-1');
+    });
+
+    it('仍在使用默认管理员密码时拒绝关联，要求先在网页端改密', async () => {
         await database.user.create({ data: { id: 'admin-1', email: 'admin@localhost', role: 'admin', password: await bcrypt.hash('123456', 4) } });
-        const ticket = signBindTicket({ appId: APP_ID, openid: 'openid-admin' });
-        const res = await MP_BIND(jsonRequest('/api/mp/bind', { bindTicket: ticket, email: 'admin@localhost', password: '123456' }));
+        const { body } = await wechatLogin('openid-admin');
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'admin@localhost', password: '123456' }, bearer(body.token)));
         expect(res.status).toBe(403);
         expect((await res.json()).message).toBe('MUST_CHANGE_PASSWORD');
+        expect(await database.wechatBinding.count({ where: { userId: 'admin-1' } })).toBe(0);
     });
 
-    it('禁用账号无法绑定，也无法用已绑定的微信登录', async () => {
-        await loginAndBind();
+    it('禁用的网页账号无法关联', async () => {
         await database.user.update({ where: { id: 'parent-1' }, data: { isActive: false } });
-        expect((await MP_LOGIN(jsonRequest('/api/mp/login', { code: 'c' }))).status).toBe(401);
+        const { body } = await wechatLogin();
+        const res = await MP_BIND(jsonRequest('/api/mp/bind', { email: 'parent@example.com', password: 'ParentPass123!' }, bearer(body.token)));
+        expect(res.status).not.toBe(200);
+        expect(await database.user.count({ where: { id: body.user.id } })).toBe(1);
     });
 });
 
@@ -274,6 +473,16 @@ describe('Bearer 令牌访问现有接口', () => {
         const res = await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(token) }));
         expect(res.status).toBe(401);
         expect((await res.json()).code).toBe('UNAUTHORIZED');
+    });
+
+    it('仅微信账号不能解绑（解绑后就进不来了），绑定保持不变', async () => {
+        const { body } = await wechatLogin('openid-only');
+        const res = await MP_UNBIND(new Request('http://localhost/api/mp/binding', { method: 'DELETE', headers: bearer(body.token) }));
+        expect(res.status).toBe(409);
+        expect((await res.json()).message).toBe('WECHAT_ONLY_ACCOUNT');
+        expect(await database.wechatBinding.count({ where: { openid: 'openid-only' } })).toBe(1);
+        const binding = await MP_BINDING(new Request('http://localhost/api/mp/binding', { headers: bearer(body.token) }));
+        expect(await binding.json()).toMatchObject({ bound: true, wechatOnly: true });
     });
 
     it('退出只作废当前令牌；解绑作废全部令牌并删除绑定', async () => {

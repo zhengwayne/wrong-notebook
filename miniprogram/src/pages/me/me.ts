@@ -1,19 +1,34 @@
 import { loadContext } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
-import { logout, unbindWechat } from '../../utils/session';
+import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../utils/session';
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
 
-const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生自学' };
+const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生' };
+
+interface ChildRow extends ChildLearner {
+  initial: string;
+}
+
+function firstChar(text: string | null | undefined, fallback: string): string {
+  const value = (text || '').trim();
+  return value ? Array.from(value)[0] : fallback;
+}
 
 Page({
   data: {
     user: null as MpUser | null,
-    personaText: '',
+    avatarText: '学',
+    personaLabels: [] as string[],
     isParent: false,
-    children: [] as ChildLearner[],
+    children: [] as ChildRow[],
     kid: { active: false, learnerId: null, learnerName: null, hasPin: false, lockedUntil: null } as KidModeStatus,
     pin: '',
+    newPin: '',
+    newPin2: '',
     newChildName: '',
+    showLink: false,
+    linkEmail: '',
+    linkPassword: '',
     busy: false,
     error: '',
   },
@@ -30,9 +45,10 @@ Page({
       const kid = await request<KidModeStatus>('/api/parent/kid-mode');
       this.setData({
         user,
-        personaText: user.personas.map((p) => PERSONA_LABEL[p] || p).join('、') || '未选择',
+        avatarText: firstChar(user.name, '学'),
+        personaLabels: user.personas.map((p) => PERSONA_LABEL[p] || p),
         isParent: user.personas.includes('parent'),
-        children: ctx.children,
+        children: ctx.children.map((child) => ({ ...child, initial: firstChar(child.name, '娃') })),
         kid,
         error: '',
       });
@@ -41,8 +57,65 @@ Page({
     }
   },
 
+  onEditName() {
+    if (this.data.kid.active || !this.data.user) return;
+    wx.showModal({
+      title: '改名字',
+      editable: true,
+      placeholderText: '最多 30 个字',
+      content: this.data.user.name || '',
+      success: async (res) => {
+        if (!res.confirm) return;
+        const name = (res.content || '').trim();
+        if (!name) {
+          wx.showToast({ title: '名字不能为空', icon: 'none' });
+          return;
+        }
+        if (name.length > 30) {
+          wx.showToast({ title: '最多 30 个字', icon: 'none' });
+          return;
+        }
+        try {
+          const user = await updateDisplayName(name);
+          this.setData({ user, avatarText: firstChar(user.name, '学') });
+          wx.showToast({ title: '改好了', icon: 'success' });
+        } catch (error) {
+          wx.showToast({ title: toChineseMessage(error), icon: 'none' });
+        }
+      },
+    });
+  },
+
   onPin(e: WechatMiniprogram.Input) {
     this.setData({ pin: e.detail.value.replace(/\D/g, '').slice(0, 4) });
+  },
+
+  onNewPin(e: WechatMiniprogram.Input) {
+    this.setData({ newPin: e.detail.value.replace(/\D/g, '').slice(0, 4) });
+  },
+
+  onNewPin2(e: WechatMiniprogram.Input) {
+    this.setData({ newPin2: e.detail.value.replace(/\D/g, '').slice(0, 4) });
+  },
+
+  async onSetPin() {
+    if (this.data.busy) return;
+    if (this.data.newPin !== this.data.newPin2) {
+      wx.showToast({ title: '两次输入不一样', icon: 'none' });
+      return;
+    }
+    this.setData({ busy: true });
+    try {
+      // 第一次设置不需要原 PIN；修改 / 重置 PIN 仍在网页端（需要原 PIN 或登录密码）
+      await request('/api/parent/pin', { method: 'POST', data: { pin: this.data.newPin } });
+      this.setData({ newPin: '', newPin2: '' });
+      wx.showToast({ title: 'PIN 设好了', icon: 'success' });
+      await this.load();
+    } catch (error) {
+      wx.showToast({ title: toChineseMessage(error), icon: 'none' });
+    } finally {
+      this.setData({ busy: false });
+    }
   },
 
   onChildName(e: WechatMiniprogram.Input) {
@@ -50,20 +123,28 @@ Page({
   },
 
   async onAddChild() {
+    const name = this.data.newChildName.trim();
+    if (!name || this.data.busy) return;
+    this.setData({ busy: true });
     try {
-      await request('/api/learners', { method: 'POST', data: { name: this.data.newChildName } });
+      await request('/api/learners', { method: 'POST', data: { name } });
       this.setData({ newChildName: '' });
       await this.load();
     } catch (error) {
       wx.showToast({ title: toChineseMessage(error), icon: 'none' });
+    } finally {
+      this.setData({ busy: false });
     }
   },
 
   onLock(e: WechatMiniprogram.BaseEvent) {
     const learnerId = String(e.currentTarget.dataset.id);
+    const name = String(e.currentTarget.dataset.name || '');
     wx.showModal({
-      title: '开启专注做题模式？',
-      content: '开启后只能做题和复习，退出需要输入家长 PIN。',
+      title: `锁定给${name}？`,
+      content: '只能做题和复习，解锁要输家长 PIN',
+      confirmText: '锁定',
+      confirmColor: '#6B5CA5',
       success: async (res) => {
         if (!res.confirm) return;
         try {
@@ -77,6 +158,7 @@ Page({
   },
 
   async onUnlock() {
+    if (this.data.busy) return;
     this.setData({ busy: true });
     try {
       await request('/api/parent/kid-mode/unlock', { method: 'POST', data: { pin: this.data.pin } });
@@ -89,9 +171,47 @@ Page({
     }
   },
 
+  onToggleLink() {
+    this.setData({ showLink: !this.data.showLink });
+  },
+
+  onLinkEmail(e: WechatMiniprogram.Input) {
+    this.setData({ linkEmail: e.detail.value.trim() });
+  },
+
+  onLinkPassword(e: WechatMiniprogram.Input) {
+    this.setData({ linkPassword: e.detail.value });
+  },
+
+  onLink() {
+    if (this.data.busy) return;
+    wx.showModal({
+      title: '关联网页账号？',
+      content: '之后微信登录进入网页账号，当前这个空的微信账号会被删除',
+      confirmText: '关联',
+      confirmColor: '#6B5CA5',
+      success: async (res) => {
+        if (!res.confirm) return;
+        this.setData({ busy: true });
+        try {
+          await linkWebAccount(this.data.linkEmail, this.data.linkPassword);
+          this.setData({ linkPassword: '', linkEmail: '', showLink: false });
+          wx.showToast({ title: '关联好了', icon: 'success' });
+          setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 600);
+        } catch (error) {
+          this.setData({ linkPassword: '' });
+          wx.showModal({ title: '没有关联', content: toChineseMessage(error), showCancel: false });
+        } finally {
+          this.setData({ busy: false });
+        }
+      },
+    });
+  },
+
   onLogout() {
     wx.showModal({
       title: '退出登录？',
+      content: '下次点「微信一键登录」就能回来',
       success: async (res) => {
         if (!res.confirm) return;
         try {
@@ -106,7 +226,8 @@ Page({
   onUnbind() {
     wx.showModal({
       title: '解绑微信？',
-      content: '解绑后需要重新用账号密码绑定，所有设备上的小程序登录都会退出。学习数据不受影响。',
+      content: '解绑后这个微信会变成一个新账号。网页账号和数据不受影响，所有设备的小程序都会退出。',
+      confirmText: '解绑',
       confirmColor: '#A60028',
       success: async (res) => {
         if (!res.confirm) return;
@@ -121,6 +242,6 @@ Page({
   },
 
   onPrivacy() {
-    wx.openPrivacyContract({ fail: () => wx.showToast({ title: '请在小程序后台配置隐私保护指引', icon: 'none' }) });
+    wx.openPrivacyContract({ fail: () => wx.showToast({ title: '隐私指引暂时打不开', icon: 'none' }) });
   },
 });
