@@ -90,7 +90,7 @@ const text = loadModule('utils/text.ts');
 assert.equal(text.toPlainText('计算 $\\frac{1}{2} \\times 4$'), '计算 1/2 × 4');
 assert.equal(text.toPlainText('**答案**：$x^{2}$'), '答案：x²');
 assert.equal(text.toPlainText('$\\ce{2H2 + O2 -> 2H2O}$'), '2H₂ + O₂ → 2H₂O');
-assert.equal(text.toPlainText('$\\ce{SO4^{2-}}$，$\\vec{F}$，$9.8\\,\\mathrm{m/s^2}$'), 'SO₄²⁻，F⃗，9.8 m/s²');
+assert.equal(text.toPlainText('$\\ce{SO4^{2-}}$，$\\vec{F}$，$9.8\\,\\mathrm{m/s^2}$'), 'SO₄²⁻，向量F，9.8 m/s²');
 assert.equal(text.toPlainText(null), '');
 assert.deepEqual(text.parseKnowledgePoints('["分数","乘法"]'), ['分数', '乘法']);
 assert.deepEqual(text.parseKnowledgePoints('分数，乘法'), ['分数', '乘法']);

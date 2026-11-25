@@ -9,8 +9,8 @@
 const SUP: Record<string, string> = {
   0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹',
   '+': '⁺', '-': '⁻', '−': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
-  a: 'ᵃ', b: 'ᵇ', c: 'ᶜ', d: 'ᵈ', e: 'ᵉ', f: 'ᶠ', g: 'ᵍ', h: 'ʰ', i: 'ⁱ', j: 'ʲ', k: 'ᵏ', l: 'ˡ', m: 'ᵐ',
-  n: 'ⁿ', o: 'ᵒ', p: 'ᵖ', r: 'ʳ', s: 'ˢ', t: 'ᵗ', u: 'ᵘ', v: 'ᵛ', w: 'ʷ', x: 'ˣ', y: 'ʸ', z: 'ᶻ',
+  a: 'ᵃ', b: 'ᵇ', d: 'ᵈ', e: 'ᵉ', g: 'ᵍ', h: 'ʰ', i: 'ⁱ', j: 'ʲ', k: 'ᵏ', l: 'ˡ', m: 'ᵐ',
+  n: 'ⁿ', o: 'ᵒ', p: 'ᵖ', r: 'ʳ', s: 'ˢ', t: 'ᵗ', u: 'ᵘ', v: 'ᵛ', w: 'ʷ', x: 'ˣ', y: 'ʸ',
   T: 'ᵀ', '°': '°', '′': '′', '″': '″', '*': '*',
 };
 
@@ -18,7 +18,7 @@ const SUB: Record<string, string> = {
   0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉',
   '+': '₊', '-': '₋', '−': '₋', '=': '₌', '(': '₍', ')': '₎',
   a: 'ₐ', e: 'ₑ', o: 'ₒ', x: 'ₓ', h: 'ₕ', k: 'ₖ', l: 'ₗ', m: 'ₘ', n: 'ₙ', p: 'ₚ', s: 'ₛ', t: 'ₜ',
-  i: 'ᵢ', j: 'ⱼ', r: 'ᵣ', u: 'ᵤ', v: 'ᵥ', 'β': 'ᵦ', 'γ': 'ᵧ', 'ρ': 'ᵨ', 'φ': 'ᵩ', 'χ': 'ᵪ',
+  i: 'ᵢ', r: 'ᵣ', u: 'ᵤ', v: 'ᵥ', 'β': 'ᵦ', 'γ': 'ᵧ', 'ρ': 'ᵨ', 'φ': 'ᵩ', 'χ': 'ᵪ',
 };
 
 const SYMBOLS: Record<string, string> = {
@@ -76,7 +76,7 @@ const ORDINARY = /^[α-ωΑ-Ωϑϖϱςφ∠∡△□⊙∂∇ℏℓ¬]$/;
 
 const DOUBLE_STRUCK: Record<string, string> = { N: 'ℕ', Z: 'ℤ', Q: 'ℚ', R: 'ℝ', C: 'ℂ', P: 'ℙ' };
 
-/** 每个字符后加组合符号（上划线、矢量箭头等） */
+/** 每个字符后加组合符号（上划线等） */
 function combineEach(text: string, mark: string): string {
   return Array.from(text).map((ch) => (/\s/.test(ch) ? ch : ch + mark)).join('');
 }
@@ -278,13 +278,10 @@ class Parser {
         const body = this.arg();
         return Array.from(body).map((ch) => DOUBLE_STRUCK[ch] ?? ch).join('');
       }
-      case 'vec': return combineLast(this.arg(), '\u20D7');
-      case 'overrightarrow': case 'overleftrightarrow': return combineLast(this.arg(), '\u20D7');
-      case 'overleftarrow': return combineLast(this.arg(), '\u20D6');
-      case 'overline': case 'bar': {
-        const body = this.arg();
-        return Array.from(body).length === 1 ? combineEach(body, '\u0304') : combineEach(body, '\u0305');
-      }
+      // 手机字体大多没有组合箭头（U+20D7），矢量 / 向量写成「向量F」
+      case 'vec': case 'overrightarrow': case 'overleftrightarrow': case 'overleftarrow': return `向量${this.arg()}`;
+      // 组合上划线 U+0305 在 PingFang / SF 上能正常显示（线段 A̅B̅、平均数 x̅）；U+0304 会错位
+      case 'overline': case 'bar': return combineEach(this.arg(), '\u0305');
       case 'underline': return combineEach(this.arg(), '\u0332');
       case 'hat': case 'widehat': return combineLast(this.arg(), '\u0302');
       case 'tilde': case 'widetilde': return combineLast(this.arg(), '\u0303');
@@ -293,7 +290,8 @@ class Parser {
       case 'overset': case 'stackrel': {
         const over = this.arg();
         const base = this.arg();
-        if (over === '⌒') return `⌒${base}`;
+        // ⌒ 在手机字体里位置偏低，弧直接写成「弧AB」
+        if (over === '⌒') return `弧${base}`;
         if (over === '△' && base === '=') return '≜';
         if (base === '=' || base === '→' || base === '⟶') return `─${over}→`.replace('─→', '→');
         return `${base}${toSuperscript(over)}`;

@@ -25,7 +25,7 @@ describe('数学', () => {
     it('几何记号与方程组', () => {
         expect(t('$\\angle ABC = 90^\\circ$，$\\triangle ABC \\cong \\triangle DEF$')).toBe('∠ABC = 90°，△ABC ≅ △DEF');
         expect(t('$\\overline{AB} \\parallel CD$，$AB \\perp CD$')).toBe('A̅B̅ ∥ CD，AB ⊥ CD');
-        expect(t('弧 $\\overset{\\frown}{AB}$')).toBe('弧 ⌒AB');
+        expect(t('$\\overset{\\frown}{AB}$ 的长度')).toBe('弧AB 的长度');
         expect(t('$\\because a>b, \\therefore b<a$')).toBe('∵ a>b, ∴ b<a');
         expect(t('$$\\begin{cases} x+y=7 \\\\ 2x-y=4 \\end{cases}$$')).toBe('{ x+y=7；2x-y=4 }');
         expect(t('$\\mathbb{R}$、$x \\in \\mathbb{Z}$')).toBe('ℝ、x ∈ ℤ');
@@ -40,7 +40,9 @@ describe('物理', () => {
     it('单位、矢量、希腊字母、角标', () => {
         expect(t('$g = 9.8\\,\\mathrm{m/s^2}$')).toBe('g = 9.8 m/s²');
         expect(t('$\\pu{9.8 m/s^2}$')).toBe('9.8 m/s²');
-        expect(t('$\\vec{F}$ 与 $\\overrightarrow{AB}$')).toBe('F⃗ 与 AB⃗');
+        expect(t('$\\vec{F}$ 与 $\\overrightarrow{AB}$')).toBe('向量F 与 向量AB');
+        expect(t('平均数 $\\bar{x}$')).toBe('平均数 x\u0305');
+        expect(t('$e^{x}$、$x^{c}$')).toBe('eˣ、x^c');
         expect(t('$R = 10\\,\\Omega$，$\\lambda = 500\\,\\mathrm{nm}$，$\\mu$')).toBe('R = 10 Ω，λ = 500 nm，μ');
         expect(t('$v_0$、$E_k$、$F_{合}$、$v_{max}$')).toBe('v₀、Eₖ、F合、vₘₐₓ');
         expect(t('$\\Delta t = 3\\times 10^{-3}\\,\\mathrm{s}$')).toBe('Δt = 3× 10⁻³ s');
