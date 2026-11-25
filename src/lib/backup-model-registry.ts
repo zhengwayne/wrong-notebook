@@ -41,6 +41,8 @@ export const BACKUP_EXCLUDED_MODELS = {
     AsyncOperation: '当前实例后台任务、幂等记录与断线恢复运行态，不用于跨设备个人学习数据恢复',
     LearnerBackfillAudit: '本机数据库迁移与回填撤销审计日志，仅对当前 SQLite 实例有意义',
     SourceImport: '批改确认与家长试卷导入的本地并发去重映射，不用于跨设备个人学习数据恢复',
+    WechatBinding: '微信 openid 与本实例账号的登录绑定，属于身份凭据，换实例后需在小程序重新绑定',
+    MiniProgramSession: '小程序登录会话令牌摘要，属于当前实例的运行态凭据，不随学习数据迁移',
 } as const;
 
 /** OPT-11a 已交付全部多人与派生表导出，本列表严格保持为空 */

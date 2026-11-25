@@ -67,6 +67,8 @@ model User {
   sourceImports SourceImport[]
   asyncOperations AsyncOperation[]
   aiDailyQuotas   AiDailyQuota[]
+  wechatBindings  WechatBinding[]
+  miniProgramSessions MiniProgramSession[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -829,4 +831,39 @@ model DailyHomeworkItem {
   updatedAt        DateTime  @updatedAt
 
   @@index([userId, learnerId, dateKey])
+}
+
+/// 微信小程序 openid 与现有账号的绑定（同一小程序内一个 openid 只对应一个账号，一个账号只绑一个 openid）
+model WechatBinding {
+  id          String    @id @default(cuid())
+  appId       String
+  openid      String
+  unionid     String?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+
+  @@unique([appId, openid])
+  @@unique([appId, userId])
+  @@index([userId])
+}
+
+/// 小程序登录会话：只保存令牌的 SHA-256 摘要；改密/禁用（authVersion 变化）或解绑后立即失效
+model MiniProgramSession {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appId       String
+  openid      String
+  authVersion Int
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([appId, openid])
+  @@index([expiresAt])
 }

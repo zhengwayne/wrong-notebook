@@ -161,6 +161,8 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
     const upperMethod = method.toUpperCase();
     if (pathname === '/api/auth/session' && upperMethod === 'GET') return true;
     if (pathname === '/api/auth/csrf' && upperMethod === 'GET') return true;
+    // 小程序读取当前登录身份（只读，相当于网页端的 /api/auth/session）
+    if (pathname === '/api/mp/session' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode/unlock' && upperMethod === 'POST') return true;
 

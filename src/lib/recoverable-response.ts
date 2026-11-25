@@ -91,7 +91,7 @@ async function resolveRecoveryOwner(req: Request) {
     const context = getRequestContext();
     if (context?.userId) return { userId: context.userId, learnerId: context.kidModeLearnerId };
     try {
-        const actor = await resolveActor();
+        const actor = await resolveActor(req);
         if (actor.kind !== "authenticated") return null;
         const { id: userId, authVersion } = actor.user;
         const lock = getKidModeLockFromRequest(req, { userId, authVersion });

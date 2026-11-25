@@ -5,6 +5,7 @@ import { kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { KID_MODE_COOKIE_NAME, isApiAllowedInKidMode, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
 import { isPersona, landingPath } from "@/lib/personas";
+import { hashMiniProgramToken, readMiniProgramBearer } from "@/lib/server/mp-auth";
 
 const logger = createLogger('proxy');
 
@@ -52,6 +53,21 @@ async function fetchDbSessionState(
     }
 }
 
+/** 网关层只读查询小程序会话对应的账号；失效会话交给路由自身鉴权返回 401 */
+async function peekMiniProgramActor(token: string): Promise<{ userId: string; authVersion: number } | null> {
+    try {
+        const { prisma } = await import("@/lib/prisma");
+        const row = await prisma.miniProgramSession.findUnique({
+            where: { tokenHash: hashMiniProgramToken(token) },
+            select: { userId: true, authVersion: true, expiresAt: true, revokedAt: true },
+        });
+        if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) return null;
+        return { userId: row.userId, authVersion: row.authVersion };
+    } catch {
+        return null;
+    }
+}
+
 function redirectToLoginClearingSession(req: NextRequest, callbackUrl?: string): NextResponse {
     const loginUrl = callbackUrl
         ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
@@ -69,6 +85,18 @@ export async function proxy(req: NextRequest) {
             return NextResponse.next();
         }
         try {
+            // 小程序 Bearer 请求没有 NextAuth Cookie：按令牌查出账号与 authVersion 后用同一套专注锁白名单拦截
+            const mpToken = readMiniProgramBearer(req.headers.get("authorization"));
+            if (mpToken) {
+                const mpActor = await peekMiniProgramActor(mpToken);
+                if (mpActor) {
+                    const kidLock = verifyKidModeToken(rawKidCookie, mpActor);
+                    if (kidLock && !isApiAllowedInKidMode(req.nextUrl.pathname, req.method)) {
+                        return kidModeRestricted();
+                    }
+                }
+                return NextResponse.next();
+            }
             const token = await getToken({
                 req,
                 secret: process.env.NEXTAUTH_SECRET,

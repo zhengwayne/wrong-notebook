@@ -32,15 +32,16 @@ export class PayloadTooLargeError extends Error {
 }
 
 /**
- * 按实际读取字节数流式读取请求体（不信任客户端可伪造的 Content-Length 头），超限立即取消读取并抛错。
+ * 按实际读取字节数流式读取请求体为原始字节（不信任客户端可伪造的 Content-Length 头），超限立即取消读取并抛错。
+ * multipart 上传等二进制请求体使用；文本 JSON 请求体用 readBodyWithinLimit。
  */
-export async function readBodyWithinLimit(request: Request, maxBytes: number): Promise<string> {
+export async function readBytesWithinLimit(request: Request, maxBytes: number): Promise<Buffer> {
     if (!request.body) {
-        const text = await request.text();
-        if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+        const buffer = Buffer.from(await request.arrayBuffer());
+        if (buffer.byteLength > maxBytes) {
             throw new PayloadTooLargeError();
         }
-        return text;
+        return buffer;
     }
 
     const reader = request.body.getReader();
@@ -64,7 +65,21 @@ export async function readBodyWithinLimit(request: Request, maxBytes: number): P
         reader.releaseLock();
     }
 
-    return Buffer.concat(chunks, totalBytes).toString('utf8');
+    return Buffer.concat(chunks, totalBytes);
+}
+
+/**
+ * 按实际读取字节数流式读取请求体（不信任客户端可伪造的 Content-Length 头），超限立即取消读取并抛错。
+ */
+export async function readBodyWithinLimit(request: Request, maxBytes: number): Promise<string> {
+    if (!request.body) {
+        const text = await request.text();
+        if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+            throw new PayloadTooLargeError();
+        }
+        return text;
+    }
+    return (await readBytesWithinLimit(request, maxBytes)).toString('utf8');
 }
 
 export interface RouteAuthPolicy<TSchema extends z.ZodTypeAny | undefined = z.ZodTypeAny | undefined> {
@@ -147,7 +162,7 @@ export function defineApiRoute<
             let session: Session | null = null;
 
             if (policy.auth !== 'public') {
-                const actor = await resolveActor();
+                const actor = await resolveActor(req);
 
                 if (policy.auth === 'optional') {
                     if (actor.kind === 'authenticated') {

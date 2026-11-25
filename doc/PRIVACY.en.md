@@ -12,6 +12,7 @@ AI API keys and endpoints, and credentials for a MiniMax Code account that the u
 
 ## Third-party services
 
+- When signing in through the WeChat mini program, the instance exchanges the temporary `wx.login` code with WeChat for the openid under that mini program (the session_key is not stored), and keeps the openid-to-account binding plus a hash of the sign-in token. Both are removed on unbinding or account deletion. Photos taken or picked in the mini program are uploaded only to the connected instance.
 - AI recognition, explanations, exercises and animations send the question content, images, answers or prompts needed for the task to the AI provider and endpoint configured by the administrator. Users and administrators choose whether to use these features and services.
 - Cloud speech sends narration text to the configured speech provider. Browser speech uses browser-provided capabilities; processing depends on the browser and selected voice.
 - After the user signs in to MiniMax Code, login, token refresh and AI requests connect to MiniMax. Automatic check-in also periodically sends authenticated check-in requests. Connecting an account is optional, and the user can sign out in Settings.

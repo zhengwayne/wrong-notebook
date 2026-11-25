@@ -145,6 +145,9 @@ const FIFTEEN_MINUTES = 15 * 60 * 1000;
 export const loginAccountLimiter = new RateLimiter({ limit: 5, windowMs: FIFTEEN_MINUTES });
 /** 同一 IP 15 分钟内登录失败 20 次即锁定，防止换着账号试 */
 export const loginIpLimiter = new RateLimiter({ limit: 20, windowMs: FIFTEEN_MINUTES });
+/** 小程序 code 换会话：每个来源 IP 15 分钟内最多 60 次 */
+export const mpLoginIpLimiter = new RateLimiter({ limit: 60, windowMs: FIFTEEN_MINUTES });
+
 /** 同一 IP 每小时最多提交 10 次注册或初始化 */
 export const registerIpLimiter = new RateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
 
