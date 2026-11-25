@@ -12,6 +12,7 @@ describe('数学', () => {
         expect(t('$x^2 + y^{10} = a_1 + a_{n+1}$')).toBe('x² + y¹⁰ = a₁ + aₙ₊₁');
         expect(t('$3 \\times 4 \\div 2 \\pm 1 \\leq 5 \\neq 6$')).toBe('3 × 4 ÷ 2 ± 1 ≤ 5 ≠ 6');
         expect(t('$e^{\\frac{1}{2}}$')).toBe('e^(1/2)');
+        expect(t('$\\frac{\\sqrt{12}}{2}$')).toBe('(√12)/2');
     });
 
     it('命令按完整名称匹配，不会把 \\left、\\int、\\top 拆坏', () => {

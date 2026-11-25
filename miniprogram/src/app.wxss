@@ -72,6 +72,7 @@ page {
 .btn-outline { background-color: var(--xj-card); color: var(--xj-primary); border: 2rpx solid var(--xj-primary); }
 .btn-outline[disabled] { background-color: var(--xj-card) !important; color: var(--xj-primary) !important; }
 .btn-ghost { background-color: transparent; color: var(--xj-text-2); font-weight: 500; }
+.btn-ghost[disabled] { background-color: transparent !important; color: var(--xj-text-2) !important; }
 .btn-danger-text { background-color: transparent; color: var(--xj-danger); font-weight: 500; }
 .btn-small { height: 72rpx; font-size: 28rpx; border-radius: 36rpx; padding: 0 28rpx; }
 .btn-row { display: flex; gap: 20rpx; }

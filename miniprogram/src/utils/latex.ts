@@ -113,7 +113,9 @@ export function toSubscript(text: string): string {
 function wrapFraction(text: string): string {
   const value = text.trim();
   if (Array.from(value).length <= 1) return value;
-  if (/^[A-Za-z0-9.′°²³⁰-⁹₀-₉√πα-ωΑ-Ω\u3400-\u9fff]+$/.test(value)) return value;
+  if (/^[A-Za-z0-9.′°²³⁰-⁹₀-₉πα-ωΑ-Ω\u3400-\u9fff]+$/.test(value)) return value;
+  // √12 这类根式单独做分子分母时加括号，免得 √12/2 被读成 √(12/2)
+  if (/^√[A-Za-z0-9.]+$/.test(value)) return `(${value})`;
   if (/^\(.*\)$/.test(value) && !/\).*\(/.test(value)) return value;
   return `(${value})`;
 }
