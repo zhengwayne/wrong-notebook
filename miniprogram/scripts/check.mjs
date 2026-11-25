@@ -74,6 +74,8 @@ assert.equal(share.extractShareToken(`https://xueji.example.com/share/submission
 assert.equal(share.extractShareToken(token), token);
 assert.equal(share.extractShareToken('https://example.com/other'), null);
 
+if (!/^wx[0-9a-f]{16}$/.test(projectConfig.appid) && projectConfig.appid !== 'touristappid') problems.push(`project.config.json 的 appid 格式不对：${projectConfig.appid}`);
+
 if (problems.length) {
   console.error(problems.map((p) => `✗ ${p}`).join('\n'));
   process.exit(1);

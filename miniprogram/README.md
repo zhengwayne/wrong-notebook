@@ -37,7 +37,9 @@ npm install --registry=https://registry.npmjs.org
 npm run build      # tsc 类型检查 + 静态检查
 ```
 
-微信开发者工具：「导入项目」选择仓库里的 `miniprogram/` 目录（不是仓库根目录）。TypeScript 由开发者工具内置的 `typescript` 编译插件编译，无需额外构建。本地调试时可在开发者工具「详情 → 本地设置」勾选「不校验合法域名」，并把 `src/config.ts` 指向测试服务器。
+当前配置：AppID `wx0f5bf175e2aae881`（企业主体），接口地址 `https://xueji.jjool.com`（与网页端同一域名）。
+
+微信开发者工具：「导入项目」选择仓库里的 `miniprogram/` 目录（不是仓库根目录），AppID 会自动读取 `project.config.json`。TypeScript 由开发者工具内置的 `typescript` 编译插件编译，无需额外构建。联调其他服务器时可在「详情 → 本地设置」勾选「不校验合法域名」并临时修改 `src/config.ts`，提交前改回。
 
 ## 服务端配置
 
@@ -54,11 +56,11 @@ WECHAT_MP_SESSION_TTL_DAYS=30
 
 ## 发布步骤
 
-1. 在微信公众平台注册小程序，拿到 AppID 和 AppSecret。教育类服务需要选对服务类目（如「教育 → 在线教育」或「教育信息服务」），按平台要求提交资质；个人主体能开放的教育类目有限，以后台实际可选为准。
-2. 准备一个**已完成 ICP 备案的域名**并配置 HTTPS（证书有效、TLS 1.2 及以上）。微信只允许 HTTPS 合法域名，不能用 IP，也不能用 HTTP。
-3. 小程序后台「开发管理 → 开发设置 → 服务器域名」：把该域名加入 **request 合法域名**、**uploadFile 合法域名**、**downloadFile 合法域名**。
-4. 服务器配置上面的环境变量并部署包含本迁移的版本。
-5. 修改 `project.config.json` 的 `appid`、`src/config.ts` 的 `API_BASE_URL`。
+1. 小程序已在企业主体下注册（AppID `wx0f5bf175e2aae881`）。服务类目选教育类（如「教育 → 在线教育」或「教育信息服务」），按平台要求提交资质，以后台实际可选为准。
+2. 域名 `xueji.jjool.com` 已备案并提供 HTTPS（证书有效、TLS 1.2 及以上）。微信只允许 HTTPS 合法域名，不能用 IP，也不能用 HTTP。
+3. 小程序后台「开发管理 → 开发设置 → 服务器域名」：把 `https://xueji.jjool.com` 加入 **request 合法域名**、**uploadFile 合法域名**、**downloadFile 合法域名**。
+4. 服务器配置上面的环境变量并部署包含本迁移的版本（AppSecret 只放服务器上 root 可读的环境文件）。
+5. `project.config.json` 的 `appid` 与 `src/config.ts` 的 `API_BASE_URL` 已是正式值，换环境时再改。
 6. 小程序后台「设置 → 服务内容声明 → 用户隐私保护指引」填写：收集账号（邮箱）、相册 / 摄像头（拍题）、微信 openid（登录）等用途；本小程序会调用 `wx.chooseMedia`、`wx.scanCode`、`wx.login`。登录页和「我的」页里的《用户隐私保护指引》链接打开的就是这里配置的内容。
 7. 开发者工具「上传」→ 后台提交审核 → 发布。
 

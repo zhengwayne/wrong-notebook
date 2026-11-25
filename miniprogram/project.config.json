@@ -2,7 +2,7 @@
   "description": "学迹 · 错题本 微信小程序",
   "miniprogramRoot": "src/",
   "compileType": "miniprogram",
-  "appid": "touristappid",
+  "appid": "wx0f5bf175e2aae881",
   "projectname": "xueji-miniprogram",
   "setting": {
     "useCompilerPlugins": [
