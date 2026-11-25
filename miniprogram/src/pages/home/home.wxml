@@ -1,0 +1,57 @@
+<view class="container">
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+
+  <block wx:if="{{needPersona}}">
+    <view class="card">
+      <view class="card-title">先选一下你的身份</view>
+      <view class="muted">可多选，之后可在网页端设置里修改。</view>
+      <view class="gap"></view>
+      <view class="wrap">
+        <view wx:for="{{personaOptions}}" wx:key="value" class="chip {{item.checked ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onTogglePersona">{{item.label}}</view>
+      </view>
+      <view class="gap"></view>
+      <button class="btn" disabled="{{saving}}" bindtap="onSavePersona">确定</button>
+    </view>
+  </block>
+
+  <block wx:elif="{{ready}}">
+    <view wx:if="{{kidMode}}" class="banner">专注做题模式：{{learnerName}}。只能做题和复习，退出需家长在「我的」里输入 PIN。</view>
+
+    <view class="card">
+      <view class="row-between">
+        <view>
+          <view class="muted">你好，{{displayName}}</view>
+          <view class="learner">当前：{{learnerName}}</view>
+        </view>
+        <picker wx:if="{{!kidMode && learnerOptions.length > 1}}" range="{{learnerOptions}}" range-key="name" value="{{learnerIndex}}" bindchange="onLearnerChange">
+          <view class="btn btn-small btn-secondary">切换</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="card due" bindtap="onOpenReview">
+      <view class="muted">今日待复习</view>
+      <view class="due-count">{{dueTotal}}<text class="muted"> 题</text></view>
+      <view class="muted">按记忆曲线安排，做完一题会自动排下一次复习时间</view>
+    </view>
+
+    <view class="grid">
+      <view wx:if="{{!kidMode}}" class="grid-item" bindtap="onCapture">
+        <view class="grid-title">拍照录题</view>
+        <view class="muted">拍照或从相册选，AI 识别讲解</view>
+      </view>
+      <view class="grid-item" bindtap="onOpenNotebook">
+        <view class="grid-title">错题本</view>
+        <view class="muted">按错题本、掌握情况筛选</view>
+      </view>
+      <view class="grid-item" bindtap="onOpenReview">
+        <view class="grid-title">复习</view>
+        <view class="muted">逐题复习、举一反三</view>
+      </view>
+      <view wx:if="{{isParent && !kidMode}}" class="grid-item" bindtap="onOpenParent">
+        <view class="grid-title">家长查看</view>
+        <view class="muted">薄弱点、练习情况、老师反馈</view>
+      </view>
+    </view>
+  </block>
+</view>

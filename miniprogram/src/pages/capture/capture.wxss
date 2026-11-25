@@ -1,0 +1,3 @@
+.preview { width: 100%; border-radius: 16rpx; margin-bottom: 20rpx; background-color: var(--xj-secondary); }
+.picker { display: flex; align-items: center; }
+.tags { margin-top: 16rpx; }

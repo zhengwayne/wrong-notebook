@@ -1,0 +1,52 @@
+<view class="container">
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view class="card" wx:if="{{user}}">
+    <view class="card-title">{{user.name || '学迹用户'}}</view>
+    <view class="muted">{{user.email}}</view>
+    <view class="muted">身份：{{personaText}}</view>
+  </view>
+
+  <view class="card" wx:if="{{isParent && !kid.active}}">
+    <view class="card-title">孩子档案</view>
+    <view wx:for="{{children}}" wx:key="id" class="row-between child-row"><text>{{item.name}}</text><text class="muted">{{item.itemCount}} 题</text></view>
+    <view wx:if="{{children.length < 3}}">
+      <view class="gap"></view>
+      <input class="input" placeholder="孩子的称呼，如 小宝" value="{{newChildName}}" bindinput="onChildName" />
+      <button class="btn btn-outline btn-small" disabled="{{!newChildName}}" bindtap="onAddChild">添加孩子</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{isParent}}">
+    <view class="card-title">孩子专注做题模式</view>
+    <block wx:if="{{kid.active}}">
+      <view class="muted">已锁定给 {{kid.learnerName}}：只能做题、复习，不能删题或改设置。</view>
+      <view class="gap"></view>
+      <input class="input" type="number" maxlength="4" password placeholder="输入 4 位家长 PIN 解锁" value="{{pin}}" bindinput="onPin" />
+      <button class="btn" disabled="{{pin.length !== 4 || busy}}" bindtap="onUnlock">解锁</button>
+    </block>
+    <block wx:else>
+      <view wx:if="{{!kid.hasPin}}" class="muted">请先在网页端「设置 → 家长 PIN」设置 4 位 PIN，再回来开启。</view>
+      <view wx:else>
+        <view class="muted">把手机交给孩子前开启，孩子只能做题和复习。</view>
+        <view class="gap"></view>
+        <view class="wrap">
+          <view wx:for="{{children}}" wx:key="id" class="chip" data-id="{{item.id}}" bindtap="onLock">锁定给 {{item.name}}</view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view class="card" wx:if="{{!kid.active}}">
+    <view class="card-title">账号</view>
+    <view class="muted">批量导入试卷、打印、统计报表、设置等完整功能请使用学迹网页端。</view>
+    <view class="gap"></view>
+    <view class="btn-row">
+      <button class="btn btn-secondary" bindtap="onLogout">退出登录</button>
+      <button class="btn btn-danger" bindtap="onUnbind">解绑微信</button>
+    </view>
+  </view>
+
+  <view class="links">
+    <text class="link" bindtap="onPrivacy">《用户隐私保护指引》</text>
+  </view>
+</view>

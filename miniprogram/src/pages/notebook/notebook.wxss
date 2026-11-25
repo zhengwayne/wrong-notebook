@@ -1,0 +1,3 @@
+.filters { white-space: nowrap; margin-bottom: 4rpx; }
+.filters .chip { display: inline-flex; }
+.meta { margin-top: 12rpx; align-items: flex-start; }

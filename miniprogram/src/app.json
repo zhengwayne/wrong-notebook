@@ -1,0 +1,39 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/login/login",
+    "pages/notebook/notebook",
+    "pages/review/review",
+    "pages/me/me",
+    "pages/capture/capture",
+    "pages/item/item",
+    "pages/parent/parent"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#F8F7FC",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "学迹",
+    "backgroundColor": "#F8F7FC",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#5A5568",
+    "selectedColor": "#6B5CA5",
+    "backgroundColor": "#FDFCFF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "首页" },
+      { "pagePath": "pages/notebook/notebook", "text": "错题本" },
+      { "pagePath": "pages/review/review", "text": "复习" },
+      { "pagePath": "pages/me/me", "text": "我的" }
+    ]
+  },
+  "networkTimeout": {
+    "request": 60000,
+    "uploadFile": 180000,
+    "downloadFile": 60000
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

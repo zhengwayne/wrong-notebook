@@ -101,3 +101,7 @@ __pycache__/
 
 # 安装包构建产物
 /dist/
+
+# 微信小程序：依赖与开发者工具的个人配置
+/miniprogram/node_modules/
+/miniprogram/project.private.config.json

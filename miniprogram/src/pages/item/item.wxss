@@ -1,0 +1,4 @@
+.question { font-size: 30rpx; }
+.image { width: 100%; border-radius: 16rpx; margin-top: 20rpx; background-color: var(--xj-secondary); }
+.tags { margin-top: 16rpx; }
+.formula-tip { margin-top: 16rpx; }

@@ -1,0 +1,78 @@
+<view class="container">
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view wx:if="{{reviewMode}}" class="banner">复习模式：先自己做一遍，再看答案，然后如实标记结果。</view>
+
+  <block wx:if="{{item}}">
+    <view class="card">
+      <view class="row-between">
+        <text class="muted">{{item.subjectName}} · {{item.date}}</text>
+        <text class="status-{{item.masteryStatus}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="gap"></view>
+      <view class="pre question">{{item.question}}</view>
+      <image wx:if="{{item.image}}" class="image" src="{{item.image}}" mode="widthFix" bindtap="onPreviewImage" />
+      <view class="wrap tags"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="chip">{{kp}}</view></view>
+    </view>
+
+    <view wx:if="{{!showAnswer}}">
+      <button class="btn btn-outline" bindtap="onReveal">看答案和解析</button>
+    </view>
+    <block wx:else>
+      <view class="card">
+        <view class="card-title">答案</view>
+        <view class="pre">{{item.answer}}</view>
+        <view class="section-label">解析</view>
+        <view class="pre">{{item.analysis}}</view>
+        <block wx:if="{{item.wrongAnswer}}">
+          <view class="section-label">当时的作答</view>
+          <view class="pre">{{item.wrongAnswer}}</view>
+        </block>
+        <block wx:if="{{item.mistake}}">
+          <view class="section-label">错因</view>
+          <view class="pre">{{item.mistake}}</view>
+        </block>
+        <view class="muted formula-tip">公式按纯文本显示，复杂公式请在网页端查看。</view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">这次做得怎么样？</view>
+        <view wx:if="{{kidMode}}" class="muted">专注模式下请用下方「举一反三」练习并记录结果。</view>
+        <view wx:else class="btn-row">
+          <button class="btn btn-small" disabled="{{saving}}" data-result="correct" bindtap="onRecord">做对了</button>
+          <button class="btn btn-small btn-secondary" disabled="{{saving}}" data-result="wrong" bindtap="onRecord">做错了</button>
+          <button class="btn btn-small btn-secondary" disabled="{{saving}}" data-result="not_attempted" bindtap="onRecord">不会做</button>
+        </view>
+        <view wx:if="{{recorded}}" class="success">已记录，系统会据此安排下次复习。</view>
+      </view>
+    </block>
+
+    <view class="card">
+      <view class="card-title">举一反三</view>
+      <view wx:if="{{!practice}}">
+        <view class="muted">AI 按这道题出一道同类新题，巩固同一个知识点。</view>
+        <view class="gap"></view>
+        <button class="btn btn-outline" disabled="{{generating}}" bindtap="onGenerate">{{generating ? '出题中…' : '出一道同类题'}}</button>
+      </view>
+      <block wx:else>
+        <view class="pre question">{{practice.question}}</view>
+        <view wx:if="{{!practice.revealed}}" class="gap"></view>
+        <button wx:if="{{!practice.revealed}}" class="btn btn-outline btn-small" bindtap="onRevealPractice">看答案</button>
+        <block wx:else>
+          <view class="section-label">答案</view>
+          <view class="pre">{{practice.answer}}</view>
+          <view class="section-label">解析</view>
+          <view class="pre">{{practice.analysis}}</view>
+          <view class="gap"></view>
+          <view wx:if="{{!practice.saved}}" class="btn-row">
+            <button class="btn btn-small" disabled="{{saving}}" data-result="correct" bindtap="onRecordPractice">做对了</button>
+            <button class="btn btn-small btn-secondary" disabled="{{saving}}" data-result="wrong" bindtap="onRecordPractice">做错了</button>
+          </view>
+          <view wx:else class="success">练习结果已保存。</view>
+        </block>
+      </block>
+    </view>
+
+    <button wx:if="{{reviewMode && nextId}}" class="btn" bindtap="onNext">下一题</button>
+    <button wx:elif="{{reviewMode}}" class="btn btn-secondary" bindtap="onFinish">今天的复习完成了</button>
+  </block>
+</view>

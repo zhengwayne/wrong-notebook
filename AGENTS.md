@@ -27,6 +27,7 @@ wrong-notebook 是一个错题本 Web 应用：上传题目图片或文字，由
 | `scripts/` | CI、部署、数据迁移和种子脚本；`scripts/package/` 为安装包构建 |
 | `packaging/` | npm、桌面版（Electron）、飞牛OS 安装包的启动器与配置，安卓 App（`android/`，单机版与客户端版），见 `doc/INSTALL_PACKAGES.md` |
 | `doc/` | 项目文档（部署、日志、Markdown、HTTPS 等） |
+| `miniprogram/` | 微信小程序（原生 + TypeScript，独立 package.json，不进服务端镜像），见 `miniprogram/README.md` |
 
 ## 常用命令
 

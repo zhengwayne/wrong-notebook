@@ -1,0 +1,32 @@
+<view class="container">
+  <view class="brand">
+    <view class="brand-name">学迹 · 错题本</view>
+    <view class="muted">拍照录错题，AI 讲解，按记忆曲线复习</view>
+  </view>
+
+  <view wx:if="{{!bindTicket}}" class="card">
+    <view class="card-title">微信登录</view>
+    <view class="muted">首次使用需要绑定一次学迹账号（网页端注册的邮箱和密码）。</view>
+    <view class="gap"></view>
+    <button class="btn" disabled="{{loading}}" bindtap="onWechatLogin">{{loading ? '登录中…' : '微信一键登录'}}</button>
+  </view>
+
+  <view wx:else class="card">
+    <view class="card-title">绑定学迹账号</view>
+    <view class="muted">输入网页端的登录邮箱和密码，只需绑定一次，之后微信直接登录。</view>
+    <view class="gap"></view>
+    <input class="input" type="text" placeholder="登录邮箱" value="{{email}}" bindinput="onEmail" />
+    <input class="input" password placeholder="密码" value="{{password}}" bindinput="onPassword" />
+    <button class="btn" disabled="{{loading || !email || !password}}" bindtap="onBind">{{loading ? '绑定中…' : '绑定并登录'}}</button>
+    <view class="gap"></view>
+    <button class="btn btn-secondary" bindtap="onCancelBind">返回</button>
+  </view>
+
+  <view class="agree row">
+    <checkbox-group bindchange="onAgree"><checkbox value="yes" checked="{{agreed}}" color="#6B5CA5" /></checkbox-group>
+    <text class="muted">我已阅读并同意</text>
+    <text class="link" bindtap="onOpenPrivacy">《用户隐私保护指引》</text>
+  </view>
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view class="muted tip">还没有账号？请先在学迹网页端注册。老师批量导入试卷（文件夹 / PDF）请使用网页端。</view>
+</view>

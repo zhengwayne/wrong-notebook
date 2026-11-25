@@ -1,0 +1,18 @@
+<view class="container">
+  <view class="card">
+    <view class="muted">{{learnerName}} · 今日待复习</view>
+    <view class="due-count">{{total}}<text class="muted"> 题</text></view>
+    <view class="gap"></view>
+    <button class="btn" disabled="{{items.length === 0}}" bindtap="onStart">开始复习</button>
+  </view>
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view wx:for="{{items}}" wx:key="id" class="list-item" data-id="{{item.id}}" bindtap="onOpen">
+    <view class="list-item-text">{{item.plain}}</view>
+    <view class="row-between">
+      <text class="muted">第 {{item.stage}} 轮复习</text>
+      <text class="status-{{item.masteryStatus}}">{{item.statusLabel}}</text>
+    </view>
+  </view>
+  <view wx:if="{{!loading && items.length === 0}}" class="empty">今天没有要复习的题，去错题本看看吧</view>
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+</view>

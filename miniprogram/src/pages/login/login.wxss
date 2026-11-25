@@ -1,0 +1,5 @@
+.brand { padding: 60rpx 0 40rpx; }
+.brand-name { font-size: 48rpx; font-weight: 700; color: var(--xj-primary); margin-bottom: 8rpx; }
+.agree { margin: 8rpx 0 24rpx; flex-wrap: wrap; }
+.link { color: var(--xj-primary); font-size: 24rpx; }
+.tip { margin-top: 24rpx; }

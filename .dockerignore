@@ -5,6 +5,8 @@ docker-compose*.yml
 
 # 依赖和构建产物
 node_modules
+# 微信小程序是独立客户端工程，不进服务端镜像
+miniprogram
 npm-debug.log
 .next
 .next-*
