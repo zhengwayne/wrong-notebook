@@ -35,7 +35,7 @@ export default defineConfig({
                 test: {
                     name: 'node',
                     environment: 'node',
-                    include: ['src/__tests__/**/*.test.ts'],
+                    include: ['src/__tests__/**/*.test.ts', 'miniprogram/tests/**/*.test.ts'],
                     exclude: ['node_modules', '.next', 'dist', ...DOM_UNIT_TESTS],
                 },
             },

@@ -1,9 +1,9 @@
 /**
- * 小程序公式转文本（miniprogram/src/utils/latex.ts）：小程序没有 KaTeX，各学科的 LaTeX / mhchem 写法要转成可读的 Unicode。
+ * 小程序公式转文本（src/utils/latex.ts，由根目录 vitest 运行；放在 src 外，不进小程序包，也不进服务端镜像）：小程序没有 KaTeX，各学科的 LaTeX / mhchem 写法要转成可读的 Unicode。
  */
 import { describe, expect, it } from 'vitest';
-import { convertChem, latexToPlainText as t } from '../../../miniprogram/src/utils/latex';
-import { toPlainText } from '../../../miniprogram/src/utils/text';
+import { convertChem, latexToPlainText as t } from '../src/utils/latex';
+import { toPlainText } from '../src/utils/text';
 
 describe('数学', () => {
     it('分式、根式、上下标、运算符', () => {
