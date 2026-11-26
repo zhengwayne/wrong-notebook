@@ -1,5 +1,5 @@
 import { loadContext, switchLearner } from '../../utils/context';
-import { request, toChineseMessage } from '../../utils/request';
+import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import type { PageResult, ErrorItemSummary } from '../../utils/types';
 
 interface LearnerOption { id: string | null; name: string }
@@ -56,6 +56,8 @@ Page({
         { id: null, name: '我自己' },
       ];
       const index = Math.max(0, options.findIndex((option) => option.id === ctx.learnerId));
+      // 先亮出专注锁条：后面的请求失败也不影响家长解锁
+      this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       const due = await request<PageResult<ErrorItemSummary>>('/api/review/due', {
         query: { page: 1, pageSize: 1, learnerId: ctx.learnerId },
       });
@@ -74,8 +76,13 @@ Page({
         dueTotal: due.total,
       });
     } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
+      this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     }
+  },
+
+  /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
+  onKidUnlocked() {
+    wx.reLaunch({ url: '/pages/home/home' });
   },
 
   onLearnerChange(e: WechatMiniprogram.PickerChange) {

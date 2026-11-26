@@ -34,6 +34,17 @@ for (const page of app.pages) {
 for (const tab of app.tabBar?.list ?? []) {
   if (!app.pages.includes(tab.pagePath)) problems.push(`tabBar 页面未在 pages 中注册：${tab.pagePath}`);
 }
+// 全局组件都有四个文件；每个 tab 页都放了专注锁条，保证专注模式下任何一页都能找到解锁入口
+for (const [name, comp] of Object.entries(app.usingComponents ?? {})) {
+  for (const ext of ['.ts', '.wxml', '.wxss', '.json']) {
+    if (!fs.existsSync(path.join(src, `${comp}${ext}`))) problems.push(`组件 ${name} 缺少文件：${comp}${ext}`);
+  }
+}
+for (const tab of app.tabBar?.list ?? []) {
+  const wxmlFile = path.join(src, `${tab.pagePath}.wxml`);
+  const wxml = fs.existsSync(wxmlFile) ? fs.readFileSync(wxmlFile, 'utf8') : '';
+  if (!/<kid-lock\b[^>]*bind:unlocked=/.test(wxml)) problems.push(`tab 页缺少专注锁条 <kid-lock bind:unlocked>：${tab.pagePath}`);
+}
 
 const files = walk(src);
 for (const file of files) {
@@ -112,6 +123,12 @@ const groups = loadModule('utils/photo-groups.ts');
 assert.deepEqual(groups.groupKeys([{ key: 'a', linkPrev: true }, { key: 'b', linkPrev: true }, { key: 'c', linkPrev: false }]), [['a', 'b'], ['c']]);
 assert.equal(groups.mergedSize([{ key: 'a', linkPrev: false }, { key: 'b', linkPrev: true }, { key: 'c', linkPrev: false }], 2), 3);
 assert.equal(groups.groupLabel([0, 1]), '1-2');
+
+// 专注模式解锁键盘：最多 4 位；网络失败归为可重试
+const kidLock = loadModule('utils/kid-lock.ts');
+assert.equal(['1', '2', '3', '4', '5'].reduce(kidLock.pressPinKey, ''), '1234');
+assert.equal(kidLock.classifyUnlockFailure({ errMsg: 'request:fail' }).kind, 'network');
+assert.equal(kidLock.classifyUnlockFailure(new req.ApiError(403, 'PIN 码错误，还可尝试 4 次')).kind, 'wrong');
 
 const share = loadModule('utils/share.ts');
 const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz012345';

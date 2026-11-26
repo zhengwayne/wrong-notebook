@@ -1,5 +1,5 @@
 import { loadContext, setReviewQueue } from '../../utils/context';
-import { request, toChineseMessage } from '../../utils/request';
+import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { MASTERY_ICON, MASTERY_LABEL, toPlainText } from '../../utils/text';
 import type { ErrorItemSummary, PageResult } from '../../utils/types';
 
@@ -15,6 +15,7 @@ interface DueRow {
 Page({
   data: {
     learnerName: '',
+    kidMode: false,
     items: [] as DueRow[],
     total: 0,
     loading: false,
@@ -35,6 +36,7 @@ Page({
     try {
       const ctx = await loadContext();
       if (!ctx) return;
+      this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       const res = await request<PageResult<ErrorItemSummary>>('/api/review/due', {
         query: { page: 1, pageSize: 50, learnerId: ctx.learnerId },
       });
@@ -54,10 +56,15 @@ Page({
         }),
       });
     } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
+      this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
+  onKidUnlocked() {
+    wx.reLaunch({ url: '/pages/home/home' });
   },
 
   onStart() {

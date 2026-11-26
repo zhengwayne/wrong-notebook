@@ -34,6 +34,11 @@ export function clearSession(): void {
   wx.removeStorageSync(KID_LOCK_KEY);
 }
 
+/** 本地丢弃专注锁（解锁成功、或服务端已判定锁失效时），避免残留状态把人困住 */
+export function clearKidLock(): void {
+  wx.removeStorageSync(KID_LOCK_KEY);
+}
+
 export function hasKidLockCookie(): boolean {
   return Boolean(wx.getStorageSync(KID_LOCK_KEY));
 }

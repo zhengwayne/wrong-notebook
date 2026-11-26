@@ -1,0 +1,36 @@
+<view class="kl-bar">
+  <image class="ic ic-sm" src="/assets/icons/lock-a.svg" />
+  <text class="flex-1 kl-title">专注模式 · {{learnerName || '孩子'}}</text>
+  <view class="kl-open" hover-class="press" bindtap="onOpen" aria-role="button" aria-label="家长解锁">
+    <image class="ic ic-sm" src="/assets/icons/lock-open-p.svg" /><text>解锁</text>
+  </view>
+</view>
+
+<view wx:if="{{open}}" class="kl-mask" bindtap="onClose" catchtouchmove="noop">
+  <view class="kl-sheet safe-bottom" catchtap="noop">
+    <view class="row-between">
+      <view class="row kl-head"><image class="ic" src="/assets/icons/lock-p.svg" />家长 PIN</view>
+      <image class="ic kl-x" src="/assets/icons/x-m.svg" bindtap="onClose" aria-role="button" aria-label="关闭" />
+    </view>
+
+    <view class="kl-dots">
+      <view wx:for="{{dots}}" wx:key="index" class="kl-dot {{item ? 'kl-dot-on' : ''}}" />
+    </view>
+
+    <view class="kl-status">
+      <block wx:if="{{busy}}"><view class="spinner" />校验中</block>
+      <block wx:elif="{{failKind === 'network'}}">
+        <image class="ic ic-sm" src="/assets/icons/wifi-off-d.svg" /><text class="danger">{{message}}</text>
+        <view class="kl-retry" hover-class="press" bindtap="onRetry"><image class="ic ic-sm" src="/assets/icons/refresh-cw-p.svg" />重试</view>
+      </block>
+      <text wx:elif="{{message}}" class="{{failKind === 'nopin' ? 'muted' : 'danger'}}">{{message}}</text>
+    </view>
+
+    <view class="kl-keys">
+      <view wx:for="{{keys}}" wx:key="index" class="kl-key {{item ? '' : 'kl-key-blank'}}" hover-class="{{item ? 'kl-key-press' : ''}}" data-key="{{item}}" bindtap="onKey">
+        <image wx:if="{{item === 'del'}}" class="ic" src="/assets/icons/delete-m.svg" />
+        <text wx:else>{{item}}</text>
+      </view>
+    </view>
+  </view>
+</view>

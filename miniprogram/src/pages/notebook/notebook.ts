@@ -1,5 +1,5 @@
 import { loadContext } from '../../utils/context';
-import { ApiError, request, toChineseMessage } from '../../utils/request';
+import { ApiError, hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import {
   DEFAULT_NOTEBOOK_STAGE,
@@ -95,20 +95,39 @@ Page({
       if (!ctx) return;
       const changed = ctx.learnerId !== this.data.learnerId || this.data.page === 0;
       this.setData({ learnerId: ctx.learnerId, learnerName: ctx.learnerName, kidMode: ctx.kidMode });
+      // 专注模式下错题列表 / 错题本接口都被专注锁网关拒绝（与网页端一致），只显示锁条和去复习入口
+      if (ctx.kidMode) {
+        this.setData({ items: [], notebooks: [], page: 0, error: '' });
+        return;
+      }
       const notebooks = await request<Notebook[]>('/api/notebooks', { query: { learnerId: ctx.learnerId } });
       this.setData({ notebooks });
       if (changed) await this.reload();
     } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
+      this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     }
   },
 
+  /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
+  onKidUnlocked() {
+    wx.reLaunch({ url: '/pages/home/home' });
+  },
+
+  onGoReview() {
+    wx.switchTab({ url: '/pages/review/review' });
+  },
+
   async onPullDownRefresh() {
+    if (this.data.kidMode) {
+      wx.stopPullDownRefresh();
+      return;
+    }
     await this.reload();
     wx.stopPullDownRefresh();
   },
 
   onReachBottom() {
+    if (this.data.kidMode) return;
     if (this.data.page < this.data.totalPages) void this.loadPage(this.data.page + 1);
   },
 

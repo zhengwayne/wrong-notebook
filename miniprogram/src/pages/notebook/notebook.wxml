@@ -1,67 +1,78 @@
 <view class="container">
-  <view class="search">
-    <image class="ic ic-sm" src="/assets/icons/search-m.svg" />
-    <input class="search-input" confirm-type="search" placeholder="搜题目、知识点" placeholder-class="placeholder" value="{{query}}" bindconfirm="onSearch" />
-    <view class="filter-btn {{mastery || timeRange !== 'all' ? 'filter-on' : ''}}" hover-class="press" bindtap="onToggleFilters">
-      <image class="ic ic-sm" src="{{mastery || timeRange !== 'all' ? '/assets/icons/filter-w.svg' : '/assets/icons/filter-p.svg'}}" />
-    </view>
+  <kid-lock wx:if="{{kidMode}}" learner-name="{{learnerName}}" bind:unlocked="onKidUnlocked" />
+
+  <!-- 专注模式与网页端一致：错题列表、错题本管理都要家长解锁后才能看 -->
+  <view wx:if="{{kidMode}}" class="empty">
+    <image class="ic-xl" src="/assets/icons/lock-l.svg" />
+    <view>专注模式只做题、复习</view>
+    <button class="btn btn-small" bindtap="onGoReview"><image class="ic ic-sm" src="/assets/icons/refresh-cw-w.svg" />去复习</button>
   </view>
 
-  <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="filters">
-    <view class="chip {{subjectId === '' ? 'chip-active' : ''}}" data-id="" bindtap="onSubject">全部</view>
-    <view wx:for="{{notebooks}}" wx:key="id" class="chip {{subjectId === item.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSubject">{{item.name}}</view>
-    <view wx:if="{{!kidMode}}" class="chip chip-add" hover-class="press" bindtap="onCreateOpen"><image class="ic ic-sm" src="/assets/icons/plus-p.svg" /></view>
-  </scroll-view>
-
-  <!-- 新建错题本：学段、学科与网页端相同 -->
-  <view wx:if="{{creating}}" class="card create-card">
-    <view class="create-head row-between">
-      <view class="row"><image class="ic" src="/assets/icons/book-open-p.svg" /><text class="create-title">新建错题本</text></view>
-      <view class="create-x" hover-class="press" bindtap="onCreateCancel"><image class="ic ic-sm" src="/assets/icons/x-m.svg" /></view>
-    </view>
-    <view class="wrap">
-      <view wx:for="{{stageOptions}}" wx:key="value" class="chip {{newStage === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewStage">{{item.label}}</view>
-    </view>
-    <view class="wrap">
-      <view wx:for="{{subjectOptions}}" wx:key="value" class="chip {{newSubject === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewSubject">{{item.label}}</view>
-    </view>
-    <input class="input create-name" maxlength="50" value="{{newName}}" placeholder="名称" placeholder-class="placeholder" bindinput="onNewName" />
-    <button class="btn" disabled="{{createBusy}}" bindtap="onCreateSubmit"><image class="ic" src="/assets/icons/check-w.svg" />{{createBusy ? '正在建' : '建好'}}</button>
-    <view class="muted create-hint">学段和学科建好后不能改；拍题时选「自动按学科归类」会自动建</view>
-  </view>
-
-  <view wx:if="{{showFilters}}" class="card filter-card">
-    <view class="wrap">
-      <view wx:for="{{masteryOptions}}" wx:key="value" class="chip {{mastery === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onMastery">
-        <image wx:if="{{item.icon}}" class="ic ic-sm" src="{{mastery === item.value ? item.iconOn : item.icon}}" />{{item.label}}
+  <block wx:else>
+    <view class="search">
+      <image class="ic ic-sm" src="/assets/icons/search-m.svg" />
+      <input class="search-input" confirm-type="search" placeholder="搜题目、知识点" placeholder-class="placeholder" value="{{query}}" bindconfirm="onSearch" />
+      <view class="filter-btn {{mastery || timeRange !== 'all' ? 'filter-on' : ''}}" hover-class="press" bindtap="onToggleFilters">
+        <image class="ic ic-sm" src="{{mastery || timeRange !== 'all' ? '/assets/icons/filter-w.svg' : '/assets/icons/filter-p.svg'}}" />
       </view>
     </view>
-    <view class="wrap">
-      <view wx:for="{{timeOptions}}" wx:key="value" class="chip {{timeRange === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onTimeRange">{{item.label}}</view>
+
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="filters">
+      <view class="chip {{subjectId === '' ? 'chip-active' : ''}}" data-id="" bindtap="onSubject">全部</view>
+      <view wx:for="{{notebooks}}" wx:key="id" class="chip {{subjectId === item.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSubject">{{item.name}}</view>
+      <view wx:if="{{!kidMode}}" class="chip chip-add" hover-class="press" bindtap="onCreateOpen"><image class="ic ic-sm" src="/assets/icons/plus-p.svg" /></view>
+    </scroll-view>
+
+    <!-- 新建错题本：学段、学科与网页端相同 -->
+    <view wx:if="{{creating}}" class="card create-card">
+      <view class="create-head row-between">
+        <view class="row"><image class="ic" src="/assets/icons/book-open-p.svg" /><text class="create-title">新建错题本</text></view>
+        <view class="create-x" hover-class="press" bindtap="onCreateCancel"><image class="ic ic-sm" src="/assets/icons/x-m.svg" /></view>
+      </view>
+      <view class="wrap">
+        <view wx:for="{{stageOptions}}" wx:key="value" class="chip {{newStage === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewStage">{{item.label}}</view>
+      </view>
+      <view class="wrap">
+        <view wx:for="{{subjectOptions}}" wx:key="value" class="chip {{newSubject === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewSubject">{{item.label}}</view>
+      </view>
+      <input class="input create-name" maxlength="50" value="{{newName}}" placeholder="名称" placeholder-class="placeholder" bindinput="onNewName" />
+      <button class="btn" disabled="{{createBusy}}" bindtap="onCreateSubmit"><image class="ic" src="/assets/icons/check-w.svg" />{{createBusy ? '正在建' : '建好'}}</button>
+      <view class="muted create-hint">学段和学科建好后不能改；拍题时选「自动按学科归类」会自动建</view>
     </view>
-  </view>
 
-  <view class="count muted">{{learnerName}} · {{total}} 题</view>
-
-  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
-
-  <view wx:for="{{items}}" wx:key="id" class="list-item" hover-class="press" data-id="{{item.id}}" bindtap="onOpen">
-    <view class="list-item-text">{{item.plain}}</view>
-    <view class="list-meta">
-      <view class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
-      <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+    <view wx:if="{{showFilters}}" class="card filter-card">
+      <view class="wrap">
+        <view wx:for="{{masteryOptions}}" wx:key="value" class="chip {{mastery === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onMastery">
+          <image wx:if="{{item.icon}}" class="ic ic-sm" src="{{mastery === item.value ? item.iconOn : item.icon}}" />{{item.label}}
+        </view>
+      </view>
+      <view class="wrap">
+        <view wx:for="{{timeOptions}}" wx:key="value" class="chip {{timeRange === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onTimeRange">{{item.label}}</view>
+      </view>
     </view>
-    <view class="date">{{item.date}}</view>
-  </view>
 
-  <view wx:if="{{!loading && items.length === 0 && !error}}" class="empty">
-    <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
-    <view wx:if="{{query || subjectId || mastery || timeRange !== 'all'}}">没找到，换个条件试试</view>
-    <block wx:else>
-      <view>还没有错题</view>
-      <button wx:if="{{!kidMode}}" class="btn btn-small" bindtap="onCapture"><image class="ic ic-sm" src="/assets/icons/camera-w.svg" />拍一道</button>
-    </block>
-  </view>
-  <view wx:if="{{loading}}" class="loading-row"><view class="spinner"></view>加载中</view>
-  <view wx:if="{{!loading && items.length > 0 && page >= totalPages}}" class="end muted">— 到底了 —</view>
+    <view class="count muted">{{learnerName}} · {{total}} 题</view>
+
+    <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+    <view wx:for="{{items}}" wx:key="id" class="list-item" hover-class="press" data-id="{{item.id}}" bindtap="onOpen">
+      <view class="list-item-text">{{item.plain}}</view>
+      <view class="list-meta">
+        <view class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
+        <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+      </view>
+      <view class="date">{{item.date}}</view>
+    </view>
+
+    <view wx:if="{{!loading && items.length === 0 && !error}}" class="empty">
+      <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
+      <view wx:if="{{query || subjectId || mastery || timeRange !== 'all'}}">没找到，换个条件试试</view>
+      <block wx:else>
+        <view>还没有错题</view>
+        <button wx:if="{{!kidMode}}" class="btn btn-small" bindtap="onCapture"><image class="ic ic-sm" src="/assets/icons/camera-w.svg" />拍一道</button>
+      </block>
+    </view>
+    <view wx:if="{{loading}}" class="loading-row"><view class="spinner"></view>加载中</view>
+    <view wx:if="{{!loading && items.length > 0 && page >= totalPages}}" class="end muted">— 到底了 —</view>
+  </block>
 </view>

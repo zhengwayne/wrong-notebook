@@ -1,4 +1,5 @@
 <view class="container safe-bottom">
+  <kid-lock wx:if="{{kidMode}}" learner-name="{{kid.learnerName || learnerName}}" bind:unlocked="onKidUnlocked" />
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
   <block wx:if="{{user}}">
@@ -15,15 +16,6 @@
           <text wx:else class="muted email">{{user.email}}</text>
           <text wx:for="{{personaLabels}}" wx:key="*this" class="tag">{{item}}</text>
         </view>
-      </view>
-    </view>
-
-    <!-- 专注模式进行中：家长输入 PIN 解锁 -->
-    <view wx:if="{{kid.active}}" class="card">
-      <view class="card-title"><image class="ic" src="/assets/icons/lock-p.svg" />专注模式 · {{kid.learnerName}}</view>
-      <view class="row pin-row">
-        <input class="input pin-input" type="number" maxlength="4" password placeholder="家长 PIN" placeholder-class="placeholder" value="{{pin}}" bindinput="onPin" />
-        <button class="btn pin-btn" disabled="{{pin.length !== 4 || busy}}" bindtap="onUnlock"><image class="ic" src="/assets/icons/lock-open-w.svg" />解锁</button>
       </view>
     </view>
 

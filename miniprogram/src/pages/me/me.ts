@@ -1,5 +1,5 @@
 import { loadContext } from '../../utils/context';
-import { request, toChineseMessage } from '../../utils/request';
+import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../utils/session';
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
 
@@ -22,7 +22,8 @@ Page({
     isParent: false,
     children: [] as ChildRow[],
     kid: { active: false, learnerId: null, learnerName: null, hasPin: false, lockedUntil: null } as KidModeStatus,
-    pin: '',
+    kidMode: false,
+    learnerName: '',
     newPin: '',
     newPin2: '',
     newChildName: '',
@@ -41,6 +42,8 @@ Page({
     try {
       const ctx = await loadContext();
       if (!ctx) return;
+      // 专注锁条先出来：即使下面读状态失败，家长也能解锁
+      this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       const { user } = ctx.session;
       const kid = await request<KidModeStatus>('/api/parent/kid-mode');
       this.setData({
@@ -50,11 +53,17 @@ Page({
         isParent: user.personas.includes('parent'),
         children: ctx.children.map((child) => ({ ...child, initial: firstChar(child.name, '娃') })),
         kid,
+        kidMode: ctx.kidMode || kid.active,
         error: '',
       });
     } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
+      this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     }
+  },
+
+  /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
+  onKidUnlocked() {
+    wx.reLaunch({ url: '/pages/home/home' });
   },
 
   onEditName() {
@@ -84,10 +93,6 @@ Page({
         }
       },
     });
-  },
-
-  onPin(e: WechatMiniprogram.Input) {
-    this.setData({ pin: e.detail.value.replace(/\D/g, '').slice(0, 4) });
   },
 
   onNewPin(e: WechatMiniprogram.Input) {
@@ -155,20 +160,6 @@ Page({
         }
       },
     });
-  },
-
-  async onUnlock() {
-    if (this.data.busy) return;
-    this.setData({ busy: true });
-    try {
-      await request('/api/parent/kid-mode/unlock', { method: 'POST', data: { pin: this.data.pin } });
-      this.setData({ pin: '' });
-      wx.reLaunch({ url: '/pages/home/home' });
-    } catch (error) {
-      wx.showToast({ title: toChineseMessage(error), icon: 'none' });
-    } finally {
-      this.setData({ busy: false });
-    }
   },
 
   onToggleLink() {

@@ -1,4 +1,5 @@
 <view class="container">
+  <kid-lock wx:if="{{kidMode}}" learner-name="{{learnerName}}" bind:unlocked="onKidUnlocked" />
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
   <!-- 第一次进来：选身份 -->
@@ -19,8 +20,6 @@
   </block>
 
   <block wx:elif="{{ready}}">
-    <view wx:if="{{kidMode}}" class="banner"><image class="ic ic-sm" src="/assets/icons/lock-a.svg" />专注模式 · {{learnerName}}</view>
-
     <!-- 问候 + 当前学习者 -->
     <view class="head row-between">
       <view class="flex-1">
