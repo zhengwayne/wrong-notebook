@@ -74,7 +74,7 @@ Page({
   start(words: Word[]) {
     this.setData({ loading: false, words, results: [], done: false, saved: false, wrongCount: 0 });
     if (words.length === 0) {
-      this.setData({ error: '这一关没有单词' });
+      this.setData({ error: this.data.review ? '今天没有要复习的词' : '这一关没有单词' });
       return;
     }
     this.show(0);

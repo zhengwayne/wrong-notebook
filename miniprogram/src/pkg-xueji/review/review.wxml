@@ -27,4 +27,4 @@
 
   <view wx:if="{{loading && total === 0}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
-<xj-tabbar active="review" />
+<xj-tabbar id="xj-tabbar" active="review" />

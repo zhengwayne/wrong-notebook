@@ -54,7 +54,7 @@ Page({
       });
       // 错题本待复习数：失败不影响入口
       request<PageResult<ErrorItemSummary>>('/api/review/due', { query: { page: 1, pageSize: 1, learnerId: ctx.learnerId } })
-        .then((due) => this.setData({ reviewDue: due.total }))
+        .then((due) => this.setData({ reviewDue: Number(due && due.total) || 0 }))
         .catch(() => undefined);
     } catch (error) {
       this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
