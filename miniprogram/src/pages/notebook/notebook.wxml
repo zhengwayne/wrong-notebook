@@ -10,7 +10,25 @@
   <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="filters">
     <view class="chip {{subjectId === '' ? 'chip-active' : ''}}" data-id="" bindtap="onSubject">全部</view>
     <view wx:for="{{notebooks}}" wx:key="id" class="chip {{subjectId === item.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSubject">{{item.name}}</view>
+    <view wx:if="{{!kidMode}}" class="chip chip-add" hover-class="press" bindtap="onCreateOpen"><image class="ic ic-sm" src="/assets/icons/plus-p.svg" /></view>
   </scroll-view>
+
+  <!-- 新建错题本：学段、学科与网页端相同 -->
+  <view wx:if="{{creating}}" class="card create-card">
+    <view class="create-head row-between">
+      <view class="row"><image class="ic" src="/assets/icons/book-open-p.svg" /><text class="create-title">新建错题本</text></view>
+      <view class="create-x" hover-class="press" bindtap="onCreateCancel"><image class="ic ic-sm" src="/assets/icons/x-m.svg" /></view>
+    </view>
+    <view class="wrap">
+      <view wx:for="{{stageOptions}}" wx:key="value" class="chip {{newStage === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewStage">{{item.label}}</view>
+    </view>
+    <view class="wrap">
+      <view wx:for="{{subjectOptions}}" wx:key="value" class="chip {{newSubject === item.value ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onNewSubject">{{item.label}}</view>
+    </view>
+    <input class="input create-name" maxlength="50" value="{{newName}}" placeholder="名称" placeholder-class="placeholder" bindinput="onNewName" />
+    <button class="btn" disabled="{{createBusy}}" bindtap="onCreateSubmit"><image class="ic" src="/assets/icons/check-w.svg" />{{createBusy ? '正在建' : '建好'}}</button>
+    <view class="muted create-hint">学段和学科建好后不能改；拍题时选「自动按学科归类」会自动建</view>
+  </view>
 
   <view wx:if="{{showFilters}}" class="card filter-card">
     <view class="wrap">

@@ -64,7 +64,7 @@
         <picker range="{{notebooks}}" range-key="name" value="{{notebookIndex}}" bindchange="onNotebookChange" disabled="{{analyzing}}">
           <view class="cell">
             <image class="ic" src="/assets/icons/book-open-p.svg" />
-            <text class="flex-1">{{notebooks.length ? notebooks[notebookIndex].name : '自动按学科归类'}}</text>
+            <text class="flex-1">{{notebooks[notebookIndex].name}}</text>
             <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
           </view>
         </picker>

@@ -164,6 +164,9 @@ function groupHas(id: string, key: string): boolean {
   return id.split('+').indexOf(key) >= 0;
 }
 
+/** 错题本选择的第一项：不指定，按识别出的学科归类 */
+const AUTO_NOTEBOOK: Notebook = { id: '', name: '自动按学科归类' };
+
 let keySeed = 0;
 let progressTimer: number | undefined;
 /** 页面卸载后停止派发与轮询 */
@@ -185,7 +188,7 @@ Page({
     learnerName: '',
     photos: [] as Photo[],
     maxPhotos: MAX_PHOTOS,
-    notebooks: [] as Notebook[],
+    notebooks: [AUTO_NOTEBOOK] as Notebook[],
     notebookIndex: 0,
     analyzing: false,
     saving: false,
@@ -219,7 +222,8 @@ Page({
       this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       if (ctx.kidMode) return;
       const notebooks = await request<Notebook[]>('/api/notebooks');
-      this.setData({ notebooks });
+      // 与网页端一致：默认不指定错题本，由 AI 判断学科后自动放进对应错题本（没有就新建，各学科都行）
+      this.setData({ notebooks: [AUTO_NOTEBOOK, ...notebooks], notebookIndex: 0 });
     } catch (error) {
       this.setData({ error: toChineseMessage(error) });
     }
@@ -353,6 +357,12 @@ Page({
     this.setData({ notebookIndex: Number(e.detail.value) });
   },
 
+  /** 选中的错题本；「自动按学科归类」返回 undefined */
+  chosenNotebook(): Notebook | undefined {
+    const notebook = this.data.notebooks[this.data.notebookIndex];
+    return notebook && notebook.id ? notebook : undefined;
+  },
+
   /**
    * 按连接关系重新分组，算出每张照片的显示状态、合并建议，以及当前分组对应的题目列表。
    * 所有改动照片和识别结果的地方最后都调用它。
@@ -476,7 +486,7 @@ Page({
     this.updateGroup(id, { status: 'working', error: '' });
     const requestId = newRequestId();
     try {
-      const notebook = this.data.notebooks[this.data.notebookIndex];
+      const notebook = this.chosenNotebook();
       let result: AnalyzeResponse;
       try {
         if (photos.length === 1) {
@@ -616,7 +626,7 @@ Page({
       wx.showToast({ title: '先勾选要保存的题', icon: 'none' });
       return;
     }
-    const notebook = this.data.notebooks[this.data.notebookIndex];
+    const notebook = this.chosenNotebook();
     const learnerId = currentLearnerId();
     this.setData({ saving: true, error: '' });
     let saved = 0;

@@ -1,7 +1,24 @@
 import { loadContext } from '../../utils/context';
-import { request, toChineseMessage } from '../../utils/request';
+import { ApiError, request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
+import {
+  DEFAULT_NOTEBOOK_STAGE,
+  defaultNotebookName,
+  NOTEBOOK_STAGES,
+  type NotebookStage,
+  type NotebookSubject,
+  STAGE_LABELS,
+  STAGE_SUBJECTS,
+  SUBJECT_LABELS,
+  subjectForStage,
+} from '../../utils/subjects';
 import type { ErrorItemSummary, Notebook, PageResult } from '../../utils/types';
+
+const STAGE_OPTIONS = NOTEBOOK_STAGES.map((value) => ({ value, label: STAGE_LABELS[value] }));
+
+function subjectOptions(stage: NotebookStage) {
+  return STAGE_SUBJECTS[stage].map((value) => ({ value, label: SUBJECT_LABELS[value] }));
+}
 
 interface ListRow {
   id: string;
@@ -56,6 +73,16 @@ Page({
     total: 0,
     loading: false,
     error: '',
+    // 新建错题本（学段、学科与网页端相同，只在新建时选择）
+    creating: false,
+    createBusy: false,
+    stageOptions: STAGE_OPTIONS,
+    subjectOptions: subjectOptions(DEFAULT_NOTEBOOK_STAGE),
+    newStage: DEFAULT_NOTEBOOK_STAGE as NotebookStage,
+    newSubject: STAGE_SUBJECTS[DEFAULT_NOTEBOOK_STAGE][0] as NotebookSubject,
+    newName: '',
+    /** 名称是自动填的（换学科时跟着变）；用户改过就不再自动改 */
+    nameAuto: true,
   },
 
   onShow() {
@@ -141,6 +168,68 @@ Page({
 
   onToggleFilters() {
     this.setData({ showFilters: !this.data.showFilters });
+  },
+
+  // ---------- 新建错题本 ----------
+
+  onCreateOpen() {
+    if (this.data.kidMode) return;
+    const stage = this.data.newStage;
+    const subject = subjectForStage(stage, this.data.newSubject);
+    this.setData({ creating: true, newSubject: subject, nameAuto: true, newName: this.autoName(stage, subject) });
+  },
+
+  onCreateCancel() {
+    this.setData({ creating: false });
+  },
+
+  autoName(stage: NotebookStage, subject: NotebookSubject): string {
+    return defaultNotebookName(stage, subject, this.data.notebooks.map((notebook) => notebook.name));
+  },
+
+  onNewStage(e: WechatMiniprogram.BaseEvent) {
+    const stage = e.currentTarget.dataset.value as NotebookStage;
+    const subject = subjectForStage(stage, this.data.newSubject);
+    this.setData({
+      newStage: stage,
+      newSubject: subject,
+      subjectOptions: subjectOptions(stage),
+      ...(this.data.nameAuto ? { newName: this.autoName(stage, subject) } : {}),
+    });
+  },
+
+  onNewSubject(e: WechatMiniprogram.BaseEvent) {
+    const subject = e.currentTarget.dataset.value as NotebookSubject;
+    this.setData({ newSubject: subject, ...(this.data.nameAuto ? { newName: this.autoName(this.data.newStage, subject) } : {}) });
+  },
+
+  onNewName(e: WechatMiniprogram.Input) {
+    this.setData({ newName: e.detail.value, nameAuto: false });
+  },
+
+  async onCreateSubmit() {
+    if (this.data.createBusy) return;
+    const name = this.data.newName.trim();
+    if (!name) {
+      wx.showToast({ title: '起个名字', icon: 'none' });
+      return;
+    }
+    this.setData({ createBusy: true });
+    try {
+      const created = await request<Notebook>('/api/notebooks', {
+        method: 'POST',
+        data: { name, stage: this.data.newStage, subjectKey: this.data.newSubject },
+      });
+      const notebooks = await request<Notebook[]>('/api/notebooks', { query: { learnerId: this.data.learnerId } });
+      this.setData({ notebooks, creating: false, subjectId: created.id });
+      wx.showToast({ title: '建好了', icon: 'success' });
+      await this.reload();
+    } catch (error) {
+      const message = error instanceof ApiError && error.status === 409 ? '已经有同名的错题本' : toChineseMessage(error);
+      wx.showToast({ title: message, icon: 'none' });
+    } finally {
+      this.setData({ createBusy: false });
+    }
   },
 
   onCapture() {
