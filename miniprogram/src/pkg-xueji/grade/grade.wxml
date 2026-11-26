@@ -36,7 +36,7 @@
     </view>
     <view wx:else class="muted hint">已初步标好对错，点下面的图标改判 · 标「待核对」的请重点看</view>
 
-    <view wx:if="{{!rows.length}}" class="empty">
+    <view wx:if="{{rows.length === 0}}" class="empty">
       <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
       <view>这几页没认出题目</view>
     </view>
