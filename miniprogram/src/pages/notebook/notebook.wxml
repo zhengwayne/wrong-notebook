@@ -1,5 +1,5 @@
 <view class="container">
-  <kid-lock wx:if="{{kidMode}}" learner-name="{{learnerName}}" bind:unlocked="onKidUnlocked" />
+  <kid-lock id="kid-lock" wx:if="{{kidMode}}" learner-name="{{learnerName}}" bind:unlocked="onKidUnlocked" />
 
   <!-- 专注模式与网页端一致：错题列表、错题本管理都要家长解锁后才能看 -->
   <view wx:if="{{kidMode}}" class="empty">

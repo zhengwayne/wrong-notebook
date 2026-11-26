@@ -1,5 +1,5 @@
 <view class="container safe-bottom">
-  <kid-lock wx:if="{{kidMode}}" learner-name="{{kid.learnerName || learnerName}}" bind:unlocked="onKidUnlocked" />
+  <kid-lock id="kid-lock" wx:if="{{kidMode}}" learner-name="{{kid.learnerName || learnerName}}" bind:unlocked="onKidUnlocked" />
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
   <block wx:if="{{user}}">
