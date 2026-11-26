@@ -16,7 +16,7 @@
 .link-muted { display: flex; align-items: center; min-height: 64rpx; padding: 0 8rpx; color: var(--xj-text-2); font-size: 26rpx; }
 .link-muted .ic { margin-right: 8rpx; }
 .grid { display: flex; flex-wrap: wrap; gap: 28rpx; margin-bottom: 16rpx; }
-.cell { position: relative; width: calc((100% - 56rpx) / 3); }
+.slot { position: relative; width: calc((100% - 56rpx) / 3); }
 .thumb { position: relative; width: 100%; padding-top: 100%; border-radius: 20rpx; overflow: hidden; background-color: var(--xj-secondary); box-sizing: border-box; }
 .thumb.in-group::after { content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; border: 4rpx solid var(--xj-primary); border-radius: 20rpx; pointer-events: none; }
 /* 两张照片之间的连接钮：骑在间隙正中；每行第一张的钮靠在左边缘 */

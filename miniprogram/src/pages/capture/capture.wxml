@@ -30,7 +30,7 @@
         <view wx:if="{{!analyzing && !saving}}" class="link-muted" hover-class="press" bindtap="onClearAll"><image class="ic ic-sm" src="/assets/icons/rotate-ccw-m.svg" />重选</view>
       </view>
       <view class="grid">
-        <view wx:for="{{photos}}" wx:key="key" class="cell">
+        <view wx:for="{{photos}}" wx:key="key" class="slot">
           <view class="thumb {{item.groupPos !== 'solo' ? 'in-group' : ''}}" data-index="{{index}}" bindtap="onPreview" bindlongpress="onPhotoMenu">
             <image class="thumb-img" src="{{item.path}}" mode="aspectFill" />
             <view class="thumb-no">{{index + 1}}</view>
@@ -50,7 +50,7 @@
             <image wx:else class="ic-xs" src="/assets/icons/link-m.svg" />
           </view>
         </view>
-        <view wx:if="{{photos.length < maxPhotos && !analyzing && !saving}}" class="cell">
+        <view wx:if="{{photos.length < maxPhotos && !analyzing && !saving}}" class="slot">
           <view class="thumb thumb-add" hover-class="press" bindtap="onChoose">
             <image class="ic-lg" src="/assets/icons/plus-p.svg" />
           </view>
