@@ -8,6 +8,7 @@ import { MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAGE_IMAGE_CHARS, omitPageImag
 import { startParentPaperRecognition } from "@/lib/parent-paper-recognize";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger("api:parent:papers:recognize");
 
@@ -35,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             await releaseAiQuota(user.id);
             return notFound("Paper not found");
         }
-        return NextResponse.json(wantsPageImages(req) ? started : { ...started, paper: omitPageImages(started.paper) }, { status: 202 });
+        return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? started : { ...started, paper: omitPageImages(started.paper) }), { status: 202 });
     } catch (error) {
         await releaseAiQuota(user.id);
         if (error instanceof z.ZodError) return validationError("Invalid recognition request", error.issues);

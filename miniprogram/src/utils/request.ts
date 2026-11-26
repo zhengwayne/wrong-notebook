@@ -100,23 +100,31 @@ const MESSAGE_ZH: Record<string, string> = {
   'Missing image data': '没有收到图片，请重新选择',
   'Payload too large': '图片太大，请压缩后再试',
   'Too many requests': '操作太频繁，请稍后再试',
-  AI_CONNECTION_FAILED: 'AI 服务连接失败，请稍后再试',
-  AI_TIMEOUT_ERROR: 'AI 识别超时，请重试',
-  AI_QUOTA_EXCEEDED: 'AI 额度已用完',
-  AI_SERVICE_UNAVAILABLE: 'AI 服务暂时不可用',
-  AI_RESPONSE_ERROR: 'AI 返回内容无法解析，请重试',
-  AI_AUTH_ERROR: 'AI 服务密钥无效，请联系管理员',
-  AI_DAILY_LIMIT_EXCEEDED: '今天的 AI 识别次数用完了，明天再来',
-  'AI service is busy, please retry later': 'AI 正忙，稍后点重试',
+  AI_CONNECTION_FAILED: '识别服务连接失败，请稍后再试',
+  AI_TIMEOUT_ERROR: '识别超时，请重试',
+  AI_QUOTA_EXCEEDED: '识别次数已用完',
+  AI_SERVICE_UNAVAILABLE: '识别服务暂时不可用',
+  AI_RESPONSE_ERROR: '识别结果异常，请重试',
+  AI_AUTH_ERROR: '识别服务配置异常，请联系管理员',
+  AI_DAILY_LIMIT_EXCEEDED: '今天的识别次数用完了，明天再来',
+  'AI service is busy, please retry later': '服务繁忙，稍后点重试',
+  MP_FEATURE_UNAVAILABLE: '小程序暂不提供这个功能，请在网页端使用',
   AI_OUTPUT_TRUNCATED: '题目太多没认完，试试拍得少一点',
 };
+
+/** 服务端原样透传的报错里不出现「AI / 模型」字样：小程序只做识别与对错标记 */
+export function neutralMessage(message: string): string {
+  if (!message) return '';
+  if (/(^|[^A-Za-z])AI([^A-Za-z]|$)|^AI_|LLM|GPT|\bmodel\b|模型|智能/i.test(message)) return '识别服务暂时不可用，请稍后再试';
+  return message;
+}
 
 export function toChineseMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === 'KID_MODE_RESTRICTED') return '专注做题模式下不能这样操作，请家长先解锁';
     if (error.status === 413 && !MESSAGE_ZH[error.message]) return '图片太大，请压缩后再试';
     if ((error.status === 502 || error.status === 504) && !error.message) return '服务器响应超时，请重试';
-    return MESSAGE_ZH[error.message] || error.message || `请求失败（${error.status}）`;
+    return MESSAGE_ZH[error.message] || neutralMessage(error.message) || `请求失败（${error.status}）`;
   }
   if (error && typeof error === 'object' && 'errMsg' in error) {
     const msg = String((error as { errMsg: unknown }).errMsg);
@@ -124,7 +132,7 @@ export function toChineseMessage(error: unknown): string {
     if (msg.includes('url not in domain list')) return '服务器域名未加入小程序合法域名';
     return '网络连接失败，请检查网络';
   }
-  return error instanceof Error ? error.message : '出了点问题，请重试';
+  return error instanceof Error ? neutralMessage(error.message) || '出了点问题，请重试' : '出了点问题，请重试';
 }
 
 function parseBody(data: unknown): unknown {

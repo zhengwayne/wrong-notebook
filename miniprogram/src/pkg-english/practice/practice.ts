@@ -6,6 +6,7 @@ import { ENGLISH_DEFAULTS, readModule, writeModule } from '../../utils/module-st
 import { loadRemoteJson } from '../../utils/remote-data';
 import { toChineseMessage } from '../../utils/request';
 import { speak, stopSpeaking } from '../../utils/speech';
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import { addToNotebook, isKidMode } from '../../utils/to-notebook';
 import { dictUrl, dueWords, findBook, isCorrectSpelling, letterMarks, levelCount, levelWords, scheduleWord, starsFor, toWords, wordToNotebook } from '../lib/words';
 import type { LetterMark, RawWord, Word } from '../lib/words';
@@ -23,6 +24,7 @@ Page({
     level: 0,
     levelTotal: 0,
     dictation: false,
+    speech: SHOW_SYNTH_MEDIA,
     words: [] as Word[],
     index: 0,
     word: null as Word | null,
@@ -47,7 +49,7 @@ Page({
   async onLoad(query: Record<string, string | undefined>) {
     const store = readModule('english', ENGLISH_DEFAULTS);
     const review = query.review === '1';
-    this.setData({ review, dictation: store.mode === 'dictation', kidMode: isKidMode() });
+    this.setData({ review, dictation: SHOW_SYNTH_MEDIA && store.mode === 'dictation', kidMode: isKidMode() });
     if (review) {
       wx.setNavigationBarTitle({ title: '今日复习' });
       this.start(dueWords(store.words, Date.now()));
@@ -91,7 +93,7 @@ Page({
 
   async play() {
     const word = this.data.word;
-    if (!word) return;
+    if (!word || !SHOW_SYNTH_MEDIA) return;
     const ok = await speak(word.name, 'en');
     if (!ok) wx.showToast({ title: '发音暂时不可用', icon: 'none' });
   },

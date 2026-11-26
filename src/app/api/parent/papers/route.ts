@@ -11,6 +11,7 @@ import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
 import { createParentPaper, listParentPapers, omitPageImages, wantsPageImages, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError, parentPaperSubjectKeySchema } from "@/lib/parent-papers";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { uprightImageDataUrl } from "@/lib/server/page-orientation";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger("api:parent:papers");
 
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
     if (!learnerId) return badRequest("learnerId is required");
     try {
         const papers = await listParentPapers(prisma, user.id, learnerId);
-        return NextResponse.json({ papers });
+        return NextResponse.json(mpSafeBody(req, { papers }));
     } catch (error) {
         if (error instanceof LearnerNotFoundError) return notFound("Child not found");
         logger.error({ error }, "Failed to list parent papers");
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
             answerKeyImages = normalizedKeys;
         }
         const paper = await createParentPaper(prisma, user.id, { ...body, pages, answerKeyImages });
-        return NextResponse.json(wantsPageImages(req) ? paper : omitPageImages(paper), { status: 201 });
+        return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? paper : omitPageImages(paper)), { status: 201 });
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid paper", error.issues);
         if (error instanceof ImageValidationError) return badRequest("Invalid page image");

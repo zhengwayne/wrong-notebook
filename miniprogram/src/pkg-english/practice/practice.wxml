@@ -21,7 +21,7 @@
     <input class="type-input" value="{{typed}}" focus="{{focus}}" maxlength="{{word.name.length + 4}}" bindinput="onInput" bindconfirm="onConfirm" confirm-type="next" placeholder="在这里拼写" placeholder-class="placeholder" adjust-position="{{true}}" hold-keyboard="{{true}}" disabled="{{solved}}" id="spell-input" />
 
     <view class="tools">
-      <view class="tool" hover-class="press" bindtap="play" id="btn-play"><image class="ic-lg" src="/assets/icons/volume-2-p.svg" /><text>发音</text></view>
+      <view wx:if="{{speech}}" class="tool" hover-class="press" bindtap="play" id="btn-play"><image class="ic-lg" src="/assets/icons/volume-2-p.svg" /><text>发音</text></view>
       <view class="tool" hover-class="press" bindtap="onHint" id="btn-hint"><image class="ic-lg" src="/assets/icons/lightbulb-p.svg" /><text>提示</text></view>
       <view class="tool" hover-class="press" bindtap="onReveal" id="btn-reveal"><image class="ic-lg" src="/assets/icons/eye-p.svg" /><text>看答案</text></view>
       <view class="tool" hover-class="press" bindtap="onSkip" id="btn-skip"><image class="ic-lg" src="/assets/icons/skip-forward-p.svg" /><text>跳过</text></view>

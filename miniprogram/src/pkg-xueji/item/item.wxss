@@ -26,3 +26,5 @@
 .recorded .ic { margin-right: 10rpx; }
 .reveal { margin-top: 24rpx; }
 .ic-after { margin-left: 12rpx; margin-right: 0; }
+.detail-link { display: flex; align-items: center; gap: 10rpx; margin: 0 0 24rpx; padding: 20rpx 24rpx; border-radius: 20rpx; background-color: var(--xj-card); color: var(--xj-primary); font-size: 28rpx; }
+.detail-sub { margin-left: auto; font-size: 24rpx; }

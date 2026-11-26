@@ -1,16 +1,14 @@
 import { loadContext, takeNextReview } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
-import type { ErrorItemDetail, PracticeQuestion } from '../../utils/types';
+import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
+import { copyWebLink, errorItemPath } from '../../utils/web-link';
 
 interface ItemView {
   id: string;
   question: string;
-  answer: string;
-  analysis: string;
   wrongAnswer: string;
-  mistake: string;
   image: string;
   kps: string[];
   subjectName: string;
@@ -20,25 +18,14 @@ interface ItemView {
   statusIcon: string;
 }
 
-interface PracticeView {
-  question: string;
-  answer: string;
-  analysis: string;
-  raw: PracticeQuestion;
-  revealed: boolean;
-  saved: boolean;
-}
-
 function toView(item: ErrorItemDetail): ItemView {
   const status = item.masteryStatus || 'new';
   const image = item.originalImageUrl && /^(data:image\/|https:\/\/)/.test(item.originalImageUrl) ? item.originalImageUrl : '';
   return {
     id: item.id,
     question: toPlainText(item.questionText) || '（题目见下方图片）',
-    answer: toPlainText(item.answerText),
-    analysis: toPlainText(item.analysis),
+    // 小程序只展示识别出的题目和当时的作答；答案、解析、错因在网页端查看
     wrongAnswer: toPlainText(item.wrongAnswerText),
-    mistake: toPlainText(item.mistakeAnalysis),
     image,
     kps: parseKnowledgePoints(item.knowledgePoints),
     subjectName: item.subject ? item.subject.name : '未分类',
@@ -58,8 +45,6 @@ Page({
     showAnswer: false,
     saving: false,
     recorded: false,
-    generating: false,
-    practice: null as PracticeView | null,
     nextId: '',
     error: '',
   },
@@ -76,6 +61,11 @@ Page({
     } catch (error) {
       this.setData({ error: toChineseMessage(error) });
     }
+  },
+
+  /** 查看详情：复制网页端错题页链接（答案和解析只在网页端） */
+  onCopyWebLink() {
+    if (this.data.id) copyWebLink(errorItemPath(this.data.id));
   },
 
   onReveal() {
@@ -98,67 +88,6 @@ Page({
         data: { errorItemId: this.data.id, result, source: 'manual', takenAt: new Date().toISOString() },
       });
       this.setData({ recorded: true });
-      this.prepareNext();
-    } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
-    } finally {
-      this.setData({ saving: false });
-    }
-  },
-
-  async onGenerate() {
-    if (this.data.generating) return;
-    this.setData({ generating: true, error: '' });
-    try {
-      const res = await request<PracticeQuestion>('/api/practice/generate', {
-        method: 'POST',
-        data: { errorItemId: this.data.id, language: 'zh' },
-        timeout: 120000,
-      });
-      if (res.pipeline) {
-        this.setData({ error: '题目在后台生成中，稍后到网页端「举一反三」查看' });
-        return;
-      }
-      this.setData({
-        practice: {
-          question: toPlainText(res.questionText),
-          answer: toPlainText(res.answerText),
-          analysis: toPlainText(res.analysis),
-          raw: res,
-          revealed: false,
-          saved: false,
-        },
-      });
-    } catch (error) {
-      this.setData({ error: toChineseMessage(error) });
-    } finally {
-      this.setData({ generating: false });
-    }
-  },
-
-  onRevealPractice() {
-    this.setData({ 'practice.revealed': true });
-  },
-
-  async onRecordPractice(e: WechatMiniprogram.BaseEvent) {
-    const practice = this.data.practice;
-    if (!practice || practice.saved || this.data.saving) return;
-    const result = String(e.currentTarget.dataset.result);
-    this.setData({ saving: true, error: '' });
-    try {
-      // 与网页端举一反三结果卡一致：附带新题内容，source 默认 practice（专注模式允许）
-      await request('/api/practice/record', {
-        method: 'POST',
-        data: {
-          errorItemId: this.data.id,
-          result,
-          subject: practice.raw.subject || null,
-          questionText: practice.raw.questionText,
-          answerText: practice.raw.answerText,
-          analysis: practice.raw.analysis,
-        },
-      });
-      this.setData({ 'practice.saved': true });
       this.prepareNext();
     } catch (error) {
       this.setData({ error: toChineseMessage(error) });

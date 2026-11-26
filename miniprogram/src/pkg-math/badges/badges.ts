@@ -1,12 +1,13 @@
 /** 徽章墙：按本机点亮记录计算，图片来自 math.jjool.com */
 import { MATH_DEFAULTS, MATH_PASS, readModule } from '../../utils/module-store';
 import { toChineseMessage } from '../../utils/request';
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import { ATTRIBUTION, computeBadges } from '../lib/course';
 import type { Badge } from '../lib/course';
 import { loadCourse } from '../lib/data';
 
 Page({
-  data: { loading: true, error: '', badges: [] as Badge[], got: 0, attribution: ATTRIBUTION },
+  data: { loading: true, error: '', badges: [] as Badge[], got: 0, attribution: ATTRIBUTION, showImages: SHOW_SYNTH_MEDIA },
 
   async onShow() {
     try {

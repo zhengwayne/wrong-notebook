@@ -11,6 +11,7 @@ import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { serializeRun } from "@/lib/variant/serialize";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
+import { rejectMiniProgramGeneration } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger('api:practice:generate');
 
@@ -21,6 +22,8 @@ const DIFFICULTIES = ['easy', 'medium', 'hard', 'harder'] as const;
  * 读取该错题最近一次生成的举一反三题目，没有时返回 { practice: null }
  */
 export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    const mpRejected = rejectMiniProgramGeneration(req);
+    if (mpRejected) return mpRejected;
     try {
         const errorItemId = new URL(req.url).searchParams.get("errorItemId");
         if (!errorItemId) {
@@ -47,6 +50,9 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 });
 
 async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
+    // 小程序只做识别与对错标记，不提供举一反三出新题
+    const mpRejected = rejectMiniProgramGeneration(req);
+    if (mpRejected) return mpRejected;
     try {
         const { errorItemId, language, difficulty } = await req.json();
 

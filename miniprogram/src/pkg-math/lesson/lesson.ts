@@ -1,6 +1,7 @@
 /** 一课：插图、要学会的知识点、先修知识，然后开始闯关。 */
 import { MATH_DEFAULTS, MATH_PASS, readModule } from '../../utils/module-store';
 import { toChineseMessage } from '../../utils/request';
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import { ATTRIBUTION, heroUrl, lessonMap, nodeMap } from '../lib/course';
 import { loadArt, loadCourse } from '../lib/data';
 
@@ -37,7 +38,7 @@ Page({
         name: n.name, lessonId: (n.lessons || []).find((lid) => course.path.includes(lid)) || '',
       }));
       wx.setNavigationBarTitle({ title: lesson.title });
-      this.setData({ loading: false, title: lesson.title, book: lesson.book, hero: heroUrl(id, art), points, prereqs });
+      this.setData({ loading: false, title: lesson.title, book: lesson.book, hero: heroUrl(id, art, SHOW_SYNTH_MEDIA), points, prereqs });
     } catch (error) {
       this.setData({ loading: false, error: toChineseMessage(error) });
     }

@@ -5,7 +5,7 @@
     <view class="slogan">拍一拍，错题不再错</view>
     <view class="features">
       <view class="feature"><image class="ic" src="/assets/icons/camera-p.svg" /><text>拍题</text></view>
-      <view class="feature"><image class="ic" src="/assets/icons/sparkles-p.svg" /><text>AI 讲解</text></view>
+      <view class="feature"><image class="ic" src="/assets/icons/notebook-pen-p.svg" /><text>错题归档</text></view>
       <view class="feature"><image class="ic" src="/assets/icons/calendar-check-p.svg" /><text>按时复习</text></view>
     </view>
   </view>

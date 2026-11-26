@@ -7,6 +7,7 @@ import { confirmParentPaper } from "@/lib/parent-paper-recognize";
 import { omitPageImages, ParentPaperStateError, wantsPageImages } from "@/lib/parent-papers";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger("api:parent:papers:confirm");
 
@@ -28,7 +29,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             : {};
         const result = await confirmParentPaper(prisma, user.id, id, body);
         if (!result) return notFound("Paper not found");
-        return NextResponse.json(wantsPageImages(req) ? result : { ...result, paper: omitPageImages(result.paper) });
+        return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? result : { ...result, paper: omitPageImages(result.paper) }));
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid confirm request", error.issues);
         if (error instanceof ParentPaperStateError) {

@@ -2,6 +2,7 @@
 import { ENGLISH_DEFAULTS, readModule } from '../../utils/module-store';
 import { toChineseMessage } from '../../utils/request';
 import { speak } from '../../utils/speech';
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import { addToNotebook, isKidMode } from '../../utils/to-notebook';
 import { wordToNotebook } from '../lib/words';
 
@@ -15,6 +16,7 @@ Page({
     allTotal: 0,
     kidMode: false,
     saving: false,
+    speech: SHOW_SYNTH_MEDIA,
   },
 
   onShow() {
@@ -38,6 +40,7 @@ Page({
   },
 
   async onSpeak(e: WechatMiniprogram.BaseEvent) {
+    if (!SHOW_SYNTH_MEDIA) return;
     const ok = await speak(String(e.currentTarget.dataset.name), 'en');
     if (!ok) wx.showToast({ title: '发音暂时不可用', icon: 'none' });
   },

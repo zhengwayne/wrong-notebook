@@ -5,6 +5,7 @@ import { createLogger } from "@/lib/logger";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 import { getParentPaper, omitPageImages, wantsPageImages } from "@/lib/parent-papers";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger("api:parent:papers:id");
 
@@ -17,7 +18,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         const { id } = await ctx.params;
         const paper = await getParentPaper(prisma, user.id, id);
         if (!paper) return notFound("Paper not found");
-        return NextResponse.json(wantsPageImages(req) ? paper : omitPageImages(paper));
+        return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? paper : omitPageImages(paper)));
     } catch (error) {
         logger.error({ error }, "Failed to load parent paper");
         return internalError("Failed to load paper");

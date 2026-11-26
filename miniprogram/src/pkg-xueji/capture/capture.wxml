@@ -45,7 +45,7 @@
             </view>
             <view wx:if="{{item.status === 'done' && !analyzing && !saving}}" class="thumb-x" data-index="{{index}}" catchtap="onRemovePhoto"><image class="ic-xs" src="/assets/icons/x-w.svg" /></view>
           </view>
-          <!-- 与前一张连成一题：实心为已连，橙色为 AI 建议合并 -->
+          <!-- 与前一张连成一题：实心为已连，橙色为建议合并 -->
           <view wx:if="{{!gradeMode && index > 0 && (item.linkPrev || item.suggest || (!analyzing && !saving))}}" class="link {{index % 3 === 0 ? 'link-row' : ''}} {{item.linkPrev ? 'link-on' : (item.suggest ? 'link-hint' : '')}}" hover-class="press" data-index="{{index}}" catchtap="onLinkTap">
             <image wx:if="{{item.linkPrev || item.suggest}}" class="ic-xs" src="/assets/icons/link-w.svg" />
             <image wx:else class="ic-xs" src="/assets/icons/link-m.svg" />
@@ -97,8 +97,8 @@
       <block wx:elif="{{!saving}}">
         <button wx:if="{{gradeMode}}" class="btn" bindtap="onGrade"><image class="ic" src="/assets/icons/list-checks-w.svg" />批改{{photos.length > 1 ? ' ' + photos.length + ' 页' : ''}}</button>
         <button wx:elif="{{failedPhotos}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/refresh-cw-p.svg" />重试 {{failedPhotos}} 张</button>
-        <button wx:elif="{{doneCount === 0}}" class="btn" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-w.svg" />AI 识别{{photos.length > 1 ? ' ' + photos.length + ' 张' : ''}}</button>
-        <button wx:elif="{{doneCount < photos.length}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-p.svg" />识别新加的 {{photos.length - doneCount}} 张</button>
+        <button wx:elif="{{doneCount === 0}}" class="btn" bindtap="onAnalyze"><image class="ic" src="/assets/icons/scan-line-w.svg" />识别{{photos.length > 1 ? ' ' + photos.length + ' 张' : ''}}</button>
+        <button wx:elif="{{doneCount < photos.length}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/scan-line-p.svg" />识别新加的 {{photos.length - doneCount}} 张</button>
       </block>
     </block>
 
@@ -124,12 +124,6 @@
         <block wx:else>
           <textarea class="textarea" auto-height maxlength="20000" value="{{item.questionText}}" data-index="{{index}}" bindinput="onEditQuestion" />
           <view class="link-muted done-edit" data-index="{{index}}" bindtap="onEditToggle"><image class="ic ic-sm" src="/assets/icons/check-p.svg" />改好了</view>
-        </block>
-        <view class="section-label">答案</view>
-        <view class="pre">{{item.answerPlain}}</view>
-        <block wx:if="{{item.mistakePlain}}">
-          <view class="section-label">错因</view>
-          <view class="pre">{{item.mistakePlain}}</view>
         </block>
         <view wx:if="{{item.knowledgePoints.length}}" class="wrap kps"><view wx:for="{{item.knowledgePoints}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
       </view>

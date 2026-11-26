@@ -11,6 +11,7 @@ import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { prisma } from "@/lib/prisma";
 import { defineApiRoute } from "@/lib/server/api-route";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger('api:review:due');
 
@@ -52,7 +53,7 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
         });
         const itemById = new Map(items.map((item) => [item.id, item]));
 
-        return NextResponse.json({
+        return NextResponse.json(mpSafeBody(req, {
             items: pageEntries.flatMap((entry) => {
                 const found = itemById.get(entry.id);
                 if (!found) return [];
@@ -69,7 +70,7 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
             pageSize,
             totalPages: Math.ceil(dueEntries.length / pageSize),
             algorithmVersion,
-        });
+        }));
     } catch (error) {
         logger.error({ error }, 'Failed to list due reviews');
         return internalError("Failed to list due reviews");

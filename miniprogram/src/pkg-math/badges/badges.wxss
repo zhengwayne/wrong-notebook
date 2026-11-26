@@ -7,3 +7,5 @@
 .b-name { font-size: 26rpx; font-weight: 600; margin-top: 8rpx; }
 .b-hint { font-size: 20rpx; color: var(--xj-muted-fg); }
 .foot { margin-top: 40rpx; text-align: center; font-size: 22rpx; }
+.b-ic { width: 120rpx; height: 120rpx; border-radius: 60rpx; background-color: var(--xj-primary); display: flex; align-items: center; justify-content: center; }
+.b-off .b-ic { background-color: var(--xj-accent); }

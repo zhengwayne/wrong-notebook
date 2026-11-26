@@ -11,12 +11,13 @@ import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
 import { defineApiRoute } from "@/lib/server/api-route";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
 import { studentKeyOf } from "@/lib/learners";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger('api:error-items:id');
 
 export const GET = defineApiRoute<Request, { id: string }>(
     { auth: 'user' },
-    async (_req, { user, params }) => {
+    async (req, { user, params }) => {
         const { id } = await params;
 
         try {
@@ -46,7 +47,7 @@ export const GET = defineApiRoute<Request, { id: string }>(
 
             const { learner, ...item } = errorItem;
             const learning = await getErrorItemLearningContext(user.id, item, learner ? studentKeyOf(learner) : undefined);
-            return NextResponse.json({ ...item, learning });
+            return NextResponse.json(mpSafeBody(req, { ...item, learning }));
         } catch (error) {
             logger.error({ error }, 'Error fetching item');
             return internalError("Failed to fetch error item");
@@ -188,7 +189,7 @@ export const PUT = defineApiRoute<Request, { id: string }>(
             include: { tags: true },
         });
 
-        return NextResponse.json(updated);
+        return NextResponse.json(mpSafeBody(req, updated));
     } catch (error) {
         logger.error({ error }, 'Error updating item');
         return internalError("Failed to update error item");

@@ -8,6 +8,7 @@ import { updateParentPaperQuestion } from "@/lib/parent-paper-recognize";
 import { omitPageImages, ParentPaperStateError, ParentPaperValidationError, wantsPageImages } from "@/lib/parent-papers";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger("api:parent:papers:question");
 
@@ -37,7 +38,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; q
         const body = patchSchema.parse(await req.json());
         const paper = await updateParentPaperQuestion(prisma, user.id, id, questionId, body);
         if (!paper) return notFound("Paper not found");
-        return NextResponse.json(wantsPageImages(req) ? paper : omitPageImages(paper));
+        return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? paper : omitPageImages(paper)));
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid question update", error.issues);
         if (error instanceof ParentPaperValidationError) {

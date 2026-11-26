@@ -2,6 +2,7 @@
  * 学英语的纯逻辑（不依赖 wx，可单测）：词书、插图、拼写判定、间隔复习。
  * 词表与插图来自敲敲乐站点 lingo.jjool.com 的公开数据文件；这里的代码是为小程序重新写的，没有拷贝敲敲乐源码。
  */
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import type { WordState } from '../../utils/module-store';
 import { ART_STEMS } from './art-stems';
 
@@ -39,7 +40,8 @@ export function artStem(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
-export function artUrl(name: string): string {
+export function artUrl(name: string, enabled: boolean = SHOW_SYNTH_MEDIA): string {
+  if (!enabled) return '';
   if (!stemSet) stemSet = new Set(ART_STEMS.split('|'));
   const stem = artStem(name);
   return stemSet.has(stem) ? `${LINGO_BASE}/word-art/still/${stem}.webp` : '';

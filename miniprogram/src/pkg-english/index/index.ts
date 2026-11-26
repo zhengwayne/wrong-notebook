@@ -4,6 +4,7 @@ import { ENGLISH_DEFAULTS, englishDueCount, readModule, writeModule } from '../.
 import type { EnglishStore } from '../../utils/module-store';
 import { loadRemoteJson } from '../../utils/remote-data';
 import { toChineseMessage } from '../../utils/request';
+import { SHOW_SYNTH_MEDIA } from '../../config';
 import { BOOKS, dictUrl, findBook, levelCount } from '../lib/words';
 import type { RawWord } from '../lib/words';
 
@@ -14,6 +15,7 @@ Page({
     books: BOOKS.map((book) => ({ id: book.id, label: book.label })),
     bookId: ENGLISH_DEFAULTS.book,
     mode: 'spell' as EnglishStore['mode'],
+    speech: SHOW_SYNTH_MEDIA,
     levels: [] as LevelCell[],
     total: 0,
     due: 0,
@@ -28,7 +30,7 @@ Page({
     const store = readModule('english', ENGLISH_DEFAULTS);
     this.setData({
       bookId: findBook(store.book).id,
-      mode: store.mode,
+      mode: SHOW_SYNTH_MEDIA ? store.mode : 'spell',
       due: englishDueCount(store),
       learned: Object.keys(store.words).length,
     });

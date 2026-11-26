@@ -4,7 +4,7 @@
  * 因此本模块免费、非商业，并在页面底部署名。
  */
 export const MATH_BASE = 'https://math.jjool.com';
-export const ATTRIBUTION = '知识图谱：cn-math-taxonomy（CC BY-NC 4.0）· 插图由 AI 生成 · 免费、非商业';
+export const ATTRIBUTION = '知识图谱：cn-math-taxonomy（CC BY-NC 4.0）· 免费、非商业';
 
 export interface KNode { id: string; name: string; grade?: number; semester?: string; domain?: string; chapter?: string; description?: string; mastery?: string[]; lessons?: string[] }
 export interface Lesson { id: string; book: string; bookSlug: string; no: number; title: string; nodes: string[]; primary?: string; prereqNodes?: string[] }
@@ -67,7 +67,8 @@ export function campChapters(course: Course, key: string): ChapterGroup[] {
   return groups;
 }
 
-export function heroUrl(lessonId: string, art: string[]): string {
+export function heroUrl(lessonId: string, art: string[], enabled = false): string {
+  if (!enabled) return '';
   const path = `img/lessons/${lessonId}-hero.webp`;
   return art.includes(path) ? `${MATH_BASE}/${path}` : '';
 }

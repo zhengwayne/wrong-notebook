@@ -14,7 +14,7 @@
     <view wx:for="{{books}}" wx:key="id" class="chip {{item.id === bookId ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onPickBook">{{item.label}}</view>
   </scroll-view>
 
-  <view class="seg">
+  <view wx:if="{{speech}}" class="seg">
     <view class="seg-item {{mode === 'spell' ? 'seg-on' : ''}}" data-mode="spell" bindtap="onPickMode">看中文拼写</view>
     <view class="seg-item {{mode === 'dictation' ? 'seg-on' : ''}}" data-mode="dictation" bindtap="onPickMode">听音拼写</view>
   </view>
@@ -30,5 +30,5 @@
       </view>
     </view>
   </block>
-  <view class="foot muted">词表与插图：敲敲乐（lingo.jjool.com）· 发音：学迹语音合成</view>
+  <view class="foot muted">词表：敲敲乐（lingo.jjool.com）</view>
 </view>

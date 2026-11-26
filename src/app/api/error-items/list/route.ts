@@ -11,6 +11,7 @@ import { isShortId } from "@/lib/short-id";
 import { isMasteryStatus, masteryStatusOf, masteryStatusWhere } from "@/lib/mastery-status";
 import { ERROR_ITEM_LIST_SELECT, ERROR_ITEM_PRINT_SELECT } from "@/lib/error-list-select";
 import { defineApiRoute } from "@/lib/server/api-route";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger('api:error-items:list');
 
@@ -126,7 +127,7 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
 
         const totalPages = Math.ceil(total / pageSize);
 
-        return NextResponse.json({
+        return NextResponse.json(mpSafeBody(req, {
             items: errorItems.map(({ _count, ...item }) => ({
                 ...item,
                 masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability, user.masteryThreshold),
@@ -135,7 +136,7 @@ export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
             page,
             pageSize,
             totalPages,
-        });
+        }));
     } catch (error) {
         logger.error({ error }, 'Error fetching items');
         return internalError("Failed to fetch error items");

@@ -40,8 +40,8 @@ describe('学英语', () => {
     it('插图文件名与站点一致，只给有图的词出地址', () => {
         expect(artStem("jack-o'-lantern")).toBe('jack-o_-lantern');
         expect(artStem('bicycle/bike')).toBe('bicycle_bike');
-        expect(artUrl('above')).toBe('https://lingo.jjool.com/word-art/still/above.webp');
-        expect(artUrl('zzzz-not-a-word')).toBe('');
+        expect(artUrl('above', true)).toBe('https://lingo.jjool.com/word-art/still/above.webp');
+        expect(artUrl('zzzz-not-a-word', true)).toBe('');
     });
     it('拼写忽略大小写、多余空格、弯引号；逐字母标对错', () => {
         expect(isCorrectSpelling('O’Clock', "o'clock")).toBe(true);

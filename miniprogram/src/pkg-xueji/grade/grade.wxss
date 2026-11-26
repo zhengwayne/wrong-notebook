@@ -45,7 +45,7 @@
 .ans { margin-top: 10rpx; font-size: 26rpx; color: var(--xj-text-2); align-items: flex-start; }
 .ans .ic { margin: 4rpx 10rpx 0 0; }
 .one-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.cause { margin-top: 12rpx; padding: 16rpx 20rpx; border-radius: 16rpx; background-color: var(--xj-danger-bg); color: var(--xj-danger); font-size: 26rpx; line-height: 1.5; }
 
 .save-bar { position: sticky; bottom: 0; display: flex; padding: 20rpx 0 calc(20rpx + env(safe-area-inset-bottom)); background-color: var(--xj-bg); }
 .ic-xs { width: 28rpx; height: 28rpx; }
+.detail-link { display: inline-flex; align-items: center; gap: 6rpx; margin-top: 12rpx; padding: 8rpx 16rpx; border-radius: 999rpx; background-color: var(--xj-accent); color: var(--xj-primary); font-size: 24rpx; }

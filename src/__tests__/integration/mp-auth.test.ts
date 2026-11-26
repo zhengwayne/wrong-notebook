@@ -41,6 +41,7 @@ import { GET as GET_ERROR_ITEM } from '@/app/api/error-items/[id]/route';
 import { DELETE as CLEAR_ERRORS } from '@/app/api/error-items/clear/route';
 import { GET as LIST_LEARNERS } from '@/app/api/learners/route';
 import { GET as REVIEW_DUE } from '@/app/api/review/due/route';
+import { POST as PRACTICE_GENERATE } from '@/app/api/practice/generate/route';
 import { isApiAllowedInKidMode, KID_MODE_COOKIE_NAME, signKidModeToken } from '@/lib/kid-mode-lock';
 import { loginAccountLimiter, loginIpLimiter, MP_SIGNUP_GLOBAL_KEY, mpLoginIpLimiter, mpSignupGlobalLimiter, mpSignupIpLimiter } from '@/lib/rate-limit';
 import {
@@ -137,7 +138,7 @@ beforeEach(async () => {
     });
     await database.user.create({ data: { id: 'other-1', email: 'other@example.com', password: passwordHash } });
     await database.learner.create({ data: { id: 'child-a', userId: 'parent-1', kind: 'child', name: '小宝' } });
-    await database.errorItem.create({ data: { id: 'err-own', userId: 'parent-1', learnerId: 'child-a', originalImageUrl: '', questionText: '1+1' } });
+    await database.errorItem.create({ data: { id: 'err-own', userId: 'parent-1', learnerId: 'child-a', originalImageUrl: '', questionText: '1+1', answerText: '2', analysis: '一加一等于二', mistakeAnalysis: '算错了' } });
     await database.errorItem.create({ data: { id: 'err-other', userId: 'other-1', originalImageUrl: '', questionText: '2+2' } });
 });
 
@@ -450,6 +451,12 @@ describe('Bearer 令牌访问现有接口', () => {
 
         const own = await GET_ERROR_ITEM(new Request('http://localhost/api/error-items/err-own', { headers: bearer(token) }), { params: Promise.resolve({ id: 'err-own' }) });
         expect(own.status).toBe(200);
+        // 小程序只识别、不生成：答案 / 解析 / 错因不经小程序返回，题目文字照常
+        const ownBody = await own.json();
+        expect(ownBody).toMatchObject({ questionText: '1+1', answerText: '', analysis: '', mistakeAnalysis: '' });
+        const mpGenerate = await PRACTICE_GENERATE(jsonRequest('/api/practice/generate', { errorItemId: 'err-own', language: 'zh' }, bearer(token)));
+        expect(mpGenerate.status).toBe(403);
+        expect((await mpGenerate.json()).message).toBe('MP_FEATURE_UNAVAILABLE');
         const other = await GET_ERROR_ITEM(new Request('http://localhost/api/error-items/err-other', { headers: bearer(token) }), { params: Promise.resolve({ id: 'err-other' }) });
         expect(other.status).toBe(403);
         await database.learner.create({ data: { id: 'child-other', userId: 'other-1', kind: 'child', name: '别人家孩子' } });
