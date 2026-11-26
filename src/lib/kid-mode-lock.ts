@@ -163,6 +163,9 @@ export function isApiAllowedInKidMode(pathname: string, method: string): boolean
     if (pathname === '/api/auth/csrf' && upperMethod === 'GET') return true;
     // 小程序读取当前登录身份（只读，相当于网页端的 /api/auth/session）
     if (pathname === '/api/mp/session' && upperMethod === 'GET') return true;
+    // 小程序「查看详情」签发一次性网页链接、浏览器兑换：专注锁随链接带到网页端，目标页面同样受专注模式限制
+    if (pathname === '/api/mp/web-link' && upperMethod === 'POST') return true;
+    if (pathname === '/api/auth/mp-handoff' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode' && upperMethod === 'GET') return true;
     if (pathname === '/api/parent/kid-mode/unlock' && upperMethod === 'POST') return true;
 

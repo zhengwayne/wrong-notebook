@@ -69,6 +69,7 @@ model User {
   aiDailyQuotas   AiDailyQuota[]
   wechatBindings  WechatBinding[]
   miniProgramSessions MiniProgramSession[]
+  webHandoffTokens WebHandoffToken[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -865,5 +866,26 @@ model MiniProgramSession {
 
   @@index([userId])
   @@index([appId, openid])
+  @@index([expiresAt])
+}
+
+/// 小程序「查看详情」一次性网页登录令牌：只存 SHA-256 摘要，约 5 分钟过期，用一次即作废，绑定账号与目标页面
+model WebHandoffToken {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 签发时所用的小程序会话；兑换时该会话须仍有效
+  mpSessionId  String
+  /// 目标页面（站内相对路径）
+  nextPath     String
+  authVersion  Int
+  /// 签发时小程序处于孩子专注锁：保存同一把已签名的锁，兑换时写入浏览器，网页端沿用同样的限制
+  kidLock      String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
   @@index([expiresAt])
 }

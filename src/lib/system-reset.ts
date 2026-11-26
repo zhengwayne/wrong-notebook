@@ -69,6 +69,7 @@ export async function performSystemReset(
         await tx.learnerBackfillAudit.deleteMany({});
         await tx.sourceImport.deleteMany({});
         await tx.asyncOperation.deleteMany({});
+        await tx.webHandoffToken.deleteMany({});
         await tx.miniProgramSession.deleteMany({});
         await tx.wechatBinding.deleteMany({});
         await tx.learner.deleteMany({});

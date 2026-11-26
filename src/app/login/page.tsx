@@ -30,7 +30,8 @@ function LoginForm() {
     usePageTitle(t.pageTitle.login);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
+    // 小程序「查看详情」链接失效（过期或已用过）时跳到这里
+    const [error, setError] = useState(() => searchParams.get("handoff") === "expired" ? "链接已失效，请回到小程序重新点「查看详情」" : "");
     const [loading, setLoading] = useState(false);
     const [allowRegistration, setAllowRegistration] = useState<boolean | null>(null);
     // 尚未创建管理员时提示使用初始化链接；未知时按已初始化处理，不显示提示

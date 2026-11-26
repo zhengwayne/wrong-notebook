@@ -187,8 +187,11 @@ describe('POST /api/admin/system-reset 全模型与缓存清理 DMMF 护栏', ()
         await db.wechatBinding.create({
             data: { appId: 'wx-reset', openid: 'openid-admin', userId: admin.id },
         });
-        await db.miniProgramSession.create({
+        const mpSession = await db.miniProgramSession.create({
             data: { tokenHash: 'a'.repeat(64), userId: admin.id, appId: 'wx-reset', openid: 'openid-admin', authVersion: 0, expiresAt: new Date(Date.now() + 3600_000) },
+        });
+        await db.webHandoffToken.create({
+            data: { tokenHash: 'b'.repeat(64), userId: admin.id, mpSessionId: mpSession.id, nextPath: '/error-items/x', authVersion: 0, expiresAt: new Date(Date.now() + 300_000) },
         });
 
         // 准备磁盘 TTS 缓存、遗留 background-tasks.json、AsyncOperation 与 recoverable-response 缓存
