@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { consumeAiQuota } from '@/lib/ai-quota';
+import { aiQuotaRefs, reserveAiQuota } from '@/lib/ai-quota';
 import { badRequest, conflict, notFound, tooManyRequests } from '@/lib/api-errors';
 import { imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER } from '@/lib/grading-api';
 import { loadTaskRoster, scheduleGrading } from '@/lib/grading-service';
@@ -127,9 +127,10 @@ export const POST = defineApiRoute(
                 return conflict('该同学已提交过本次作业，如需重交请联系老师');
             }
 
-            const quotaLimited = await consumeAiQuota(task.user, 'grade');
-            if (quotaLimited) {
-                return quotaLimited;
+            // 算在老师名下，判分成功才算一次
+            const quota = await reserveAiQuota(task.user, 'grade');
+            if (quota.limited) {
+                return quota.limited;
             }
 
             const submission = await prisma.gradingSubmission.create({
@@ -144,7 +145,11 @@ export const POST = defineApiRoute(
                     images: JSON.stringify(normalizedImages),
                 },
                 select: { id: true },
+            }).catch(async (error) => {
+                await quota.release();
+                throw error;
             });
+            await quota.attach(aiQuotaRefs.gradingSubmission(submission.id));
 
             scheduleGrading([submission.id], body.language);
             return NextResponse.json({ submitted: true, submissionId: submission.id }, { status: 202 });

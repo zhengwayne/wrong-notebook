@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequest, conflict, notFound } from "@/lib/api-errors";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { aiQuotaRefs, reserveAiQuota } from "@/lib/ai-quota";
 import { CrossTenantOperationError, IdempotencyConflictError, runIdempotentOperation } from "@/lib/async-operations";
 import { FOLDER_IMPORT_MAX_BODY_BYTES, identitySchema, imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER } from "@/lib/grading-api";
 import { loadTaskRoster, resolveMatch, scheduleGrading, takenStudentIds } from "@/lib/grading-service";
@@ -42,7 +42,7 @@ class InvalidImage extends Error {}
  */
 export const POST = defineApiRoute(
     { auth: "user", maxBodyBytes: FOLDER_IMPORT_MAX_BODY_BYTES, bodySchema },
-    async (_req, { user, params, body }) => {
+    async (req, { user, params, body }) => {
         const { id } = await (params as Promise<{ id: string }>);
         const task = await prisma.gradingTask.findFirst({
             where: { id, userId: user.id },
@@ -74,18 +74,25 @@ export const POST = defineApiRoute(
                         if (error instanceof ImageValidationError) throw new InvalidImage();
                         throw error;
                     }
-                    const limited = await consumeAiQuota(user, "grade");
-                    if (limited) throw new QuotaExceeded(limited);
+                    const quota = await reserveAiQuota(user, "grade", { request: req });
+                    if (quota.limited) throw new QuotaExceeded(quota.limited);
 
                     const identityData = body.studentId
                         ? { studentId: body.studentId, matchStatus: "manual", matchReason: JSON.stringify({ code: "manual" }) }
                         : body.identity && hasIdentity(body.identity)
                             ? resolveMatch(body.identity, roster, await takenStudentIds(id))
                             : {};
-                    const submission = await prisma.gradingSubmission.create({
-                        data: { taskId: id, images: JSON.stringify(images), ...identityData },
-                        select: { id: true, studentId: true, matchStatus: true },
-                    });
+                    let submission: { id: string; studentId: string | null; matchStatus: string | null };
+                    try {
+                        submission = await prisma.gradingSubmission.create({
+                            data: { taskId: id, images: JSON.stringify(images), ...identityData },
+                            select: { id: true, studentId: true, matchStatus: true },
+                        });
+                    } catch (error) {
+                        await quota.release();
+                        throw error;
+                    }
+                    await quota.attach(aiQuotaRefs.gradingSubmission(submission.id));
                     scheduleGrading([submission.id], body.language);
                     return { id: submission.id, studentId: submission.studentId ?? null, matchStatus: submission.matchStatus ?? null };
                 },

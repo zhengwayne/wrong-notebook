@@ -9,10 +9,12 @@ import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-
 import { uprightImageDataUrl } from "@/lib/server/page-orientation";
 import { startBackgroundTask, type BackgroundTaskHandle } from "@/lib/background-tasks";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
-import { isNotebookSubject } from "@/lib/notebook-scope";
+import { isNotebookSubject, type NotebookSubject } from "@/lib/notebook-scope";
 import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { createLogger } from "@/lib/logger";
 import { resolveNotebookForSubject } from "@/lib/notebook-resolver";
+import { confirmAiReservation, releaseAiReservation } from "@/lib/ai-quota";
+import { dominantSubject, inferSubjectFromContent } from "@/lib/subject-infer";
 import {
     applyAnswerKeyToReview,
     effectiveVerdict,
@@ -142,7 +144,7 @@ export async function startParentPaperRecognition(
     db: PrismaClient,
     userId: string,
     paperId: string,
-    params: { answerKeyImages?: string[]; language?: "zh" | "en" } = {},
+    params: { answerKeyImages?: string[]; language?: "zh" | "en"; quotaReservationId?: string | null } = {},
 ): Promise<{ paper: ParentPaperDetail; taskId: string } | null> {
     const existing = await db.parentPaper.findFirst({
         where: { id: paperId, userId },
@@ -179,7 +181,7 @@ export async function startParentPaperRecognition(
         total: existing.pages.length + (answerKeyImages.length ? 1 : 0),
     });
 
-    const job = runParentPaperRecognition(db, userId, paperId, language, task);
+    const job = runParentPaperRecognition(db, userId, paperId, language, task, params.quotaReservationId ?? null);
     inflightRecognitions.set(paperId, job);
     void job.finally(() => {
         if (inflightRecognitions.get(paperId) === job) inflightRecognitions.delete(paperId);
@@ -196,6 +198,7 @@ async function runParentPaperRecognition(
     paperId: string,
     language: "zh" | "en",
     task: BackgroundTaskHandle,
+    quotaReservationId: string | null = null,
 ): Promise<void> {
     try {
         const paper = await db.parentPaper.findFirst({
@@ -252,6 +255,14 @@ async function runParentPaperRecognition(
             logger.warn({ error, paperId }, "Parent paper verification skipped");
         }
         const provenanceId = await recordAiProvenance(db, { task: "exam-read", role: "vision" });
+        // 没选学科时：识别没给学科的题按内容推断，推断不出按整卷主学科
+        const recognizedFallback = isNotebookSubject(paper.subjectKey) ? null : paperDominantSubject(questions);
+        const hintFor = (question: ParentReviewQuestion): string | null => {
+            if (question.subjectHint && inferSubjectFromName(question.subjectHint)) return question.subjectHint;
+            if (isNotebookSubject(paper.subjectKey)) return SUBJECT_NAMES[paper.subjectKey];
+            const inferred = inferSubjectFromContent(questionSubjectText(question)) ?? recognizedFallback;
+            return inferred ? SUBJECT_NAMES[inferred] : question.subjectHint || null;
+        };
 
         await db.$transaction(async (tx) => {
             await tx.parentPaperQuestion.deleteMany({ where: { paperId } });
@@ -270,7 +281,7 @@ async function runParentPaperRecognition(
                         errorCause: question.errorCause,
                         knowledgePoints: JSON.stringify(question.knowledgePoints),
                         bbox: question.bbox ? JSON.stringify(question.bbox) : null,
-                        subjectHint: question.subjectHint || (isNotebookSubject(paper.subjectKey) ? SUBJECT_NAMES[paper.subjectKey] : null),
+                        subjectHint: hintFor(question),
                         provenanceId,
                         selected: shouldImportVerdict(question.verdict),
                     })),
@@ -289,8 +300,14 @@ async function runParentPaperRecognition(
 
         task.setProgress(pages.length + (answerKeyImages.length ? 1 : 0));
         task.succeed();
+        // 整份卷子算一次：认出至少 1 道题才确认，一道都没认出则退回
+        if (quotaReservationId) {
+            if (questions.length > 0) await confirmAiReservation(quotaReservationId);
+            else await releaseAiReservation(quotaReservationId);
+        }
     } catch (error) {
         logger.error({ error, paperId }, "Parent paper recognition failed");
+        if (quotaReservationId) await releaseAiReservation(quotaReservationId);
         try {
             await db.parentPaper.update({
                 where: { id: paperId },
@@ -321,13 +338,40 @@ async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: 
     return ids;
 }
 
-export function subjectNameForPaper(title: string | null, subjectHint: string | null, subjectKey?: string | null): string {
+/**
+ * 卷子题目放进哪个错题本：选了学科按学科；否则按识别给的学科、卷名；
+ * 都判断不出时按题目内容推断（content），再退到整份卷子的主学科（paperFallback），最后才是「其他」。
+ */
+export function subjectNameForPaper(
+    title: string | null,
+    subjectHint: string | null,
+    subjectKey?: string | null,
+    options: { content?: string | null; paperFallback?: NotebookSubject | null } = {},
+): string {
     if (isNotebookSubject(subjectKey) && SUBJECT_NAMES[subjectKey]) return SUBJECT_NAMES[subjectKey];
-    const raw = (subjectHint || title || "").trim();
-    const key = inferSubjectFromName(raw);
-    if (key && SUBJECT_NAMES[key]) return SUBJECT_NAMES[key];
-    if (subjectHint?.trim()) return subjectHint.trim();
+    const fromHint = inferSubjectFromName((subjectHint || "").trim());
+    if (fromHint && SUBJECT_NAMES[fromHint]) return SUBJECT_NAMES[fromHint];
+    const fromTitle = inferSubjectFromName((title || "").trim());
+    if (fromTitle && SUBJECT_NAMES[fromTitle]) return SUBJECT_NAMES[fromTitle];
+    const fromContent = inferSubjectFromContent(options.content) ?? options.paperFallback ?? null;
+    if (fromContent && SUBJECT_NAMES[fromContent]) return SUBJECT_NAMES[fromContent];
+    const hint = subjectHint?.trim();
+    if (hint && hint !== "其他") return hint;
     return "其他";
+}
+
+/** 题目内容用于推断学科的文字 */
+function questionSubjectText(question: { questionText?: string | null; correctAnswer?: string | null; studentAnswer?: string | null }): string {
+    return [question.questionText, question.correctAnswer, question.studentAnswer].filter(Boolean).join(" ");
+}
+
+/** 整份卷子的主学科：逐题按识别学科或内容推断后取最多的 */
+export function paperDominantSubject(questions: Array<{ subjectHint?: string | null; questionText?: string | null; correctAnswer?: string | null; studentAnswer?: string | null }>): NotebookSubject | null {
+    return dominantSubject(questions.map((question) => {
+        const fromHint = inferSubjectFromName((question.subjectHint || "").trim());
+        if (isNotebookSubject(fromHint)) return fromHint;
+        return inferSubjectFromContent(questionSubjectText(question));
+    }));
 }
 
 export async function updateParentPaperQuestion(
@@ -452,6 +496,7 @@ export async function confirmParentPaper(
         }
 
         let count = 0;
+        const paperFallback = isNotebookSubject(paper.subjectKey) ? null : paperDominantSubject(toImport);
         for (const question of toImport) {
             const existingImport = await tx.sourceImport.findUnique({
                 where: {
@@ -471,7 +516,10 @@ export async function confirmParentPaper(
                 continue;
             }
 
-            const subjectName = subjectNameForPaper(paper.title, question.subjectHint, paper.subjectKey);
+            const subjectName = subjectNameForPaper(paper.title, question.subjectHint, paper.subjectKey, {
+                content: questionSubjectText(question),
+                paperFallback,
+            });
             const notebook = await resolveNotebookForSubject(userId, subjectName, tx);
             const subjectKey = inferSubjectFromName(subjectName) || "other";
             const knowledgePoints = (() => {

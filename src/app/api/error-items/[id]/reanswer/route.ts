@@ -6,7 +6,7 @@ import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-err
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { resolveNotebookScope, SUBJECT_DISPLAY_NAMES } from "@/lib/notebook-scope";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:error-items:reanswer');
@@ -54,13 +54,14 @@ async function handlePost(
         const image = item.originalImageUrl?.startsWith('data:') ? item.originalImageUrl : undefined;
 
         const questionText = item.questionText;
-        const limited = await consumeAiQuota(user, 'reanswer');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'reanswer', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const result = await trackBackgroundTask(
+        // 给出了解答或解析才算一次
+        const result = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'reanswer', subject: describeQuestion(item), link: `/error-items/${id}` },
             () => getAIService(image ? 'vision' : 'text').reanswerQuestion(questionText, language, subject, image, item.gradeSemester)
-        );
+        ), (answer) => Boolean(answer.answerText.trim() || answer.analysis.trim()));
         if (!result.answerText.trim() && !result.analysis.trim()) {
             return badRequest("EMPTY_ANSWER");
         }

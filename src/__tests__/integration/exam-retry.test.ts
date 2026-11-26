@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/prisma', () => ({ prisma: { examPaper: { findUnique: mocks.findUnique, update: mocks.update } } }));
 vi.mock('@/lib/current-user', () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 vi.mock('@/lib/exam', () => ({ generateExamPaper: mocks.generateExamPaper }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
@@ -53,13 +53,13 @@ describe('POST /api/exams/:id/retry', () => {
 
         expect(response.status).toBe(200);
         expect(mocks.update).toHaveBeenCalledWith({ where: { id: 'paper-1' }, data: { status: 'generating' } });
-        expect(mocks.generateExamPaper).toHaveBeenCalledWith('paper-1', 'en');
+        expect(mocks.generateExamPaper).toHaveBeenCalledWith('paper-1', 'en', null);
     });
 
     it('没有请求体或语言无效时默认中文', async () => {
         await retry();
         await retry({ language: 'fr' });
-        expect(mocks.generateExamPaper.mock.calls).toEqual([['paper-1', 'zh'], ['paper-1', 'zh']]);
+        expect(mocks.generateExamPaper.mock.calls).toEqual([['paper-1', 'zh', null], ['paper-1', 'zh', null]]);
     });
 
     it('AI 额度用完时返回 429，试卷状态保持不变', async () => {

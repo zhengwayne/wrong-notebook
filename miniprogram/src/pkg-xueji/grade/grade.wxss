@@ -49,3 +49,8 @@
 .save-bar { position: sticky; bottom: 0; display: flex; padding: 20rpx 0 calc(20rpx + env(safe-area-inset-bottom)); background-color: var(--xj-bg); }
 .ic-xs { width: 28rpx; height: 28rpx; }
 .detail-link { display: inline-flex; align-items: center; gap: 6rpx; margin-top: 12rpx; padding: 8rpx 16rpx; border-radius: 999rpx; background-color: var(--xj-accent); color: var(--xj-primary); font-size: 24rpx; }
+
+.pick { padding: 32rpx; }
+.pick-title { font-size: 34rpx; font-weight: 600; margin-bottom: 8rpx; }
+.pick-hint { margin-bottom: 24rpx; }
+.pick-chips { display: flex; flex-wrap: wrap; margin-bottom: 16rpx; }

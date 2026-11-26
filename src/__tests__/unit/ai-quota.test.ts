@@ -9,59 +9,37 @@ vi.mock('@/lib/prisma', () => ({ prisma: { aiUsage: mocks.aiUsage } }));
 vi.mock('@/lib/config', () => ({ getAppConfig: () => mocks.config, getAppTimeZone: () => 'Asia/Shanghai' }));
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
-import { consumeAiQuota, countTodayAiUsage } from '@/lib/ai-quota';
+import { countTodayAiUsage, reserveAiQuota, runWithAiQuota } from '@/lib/ai-quota';
 
-const student = { id: 'kid', role: 'user' };
+describe('reserveAiQuota（无完整数据库时）', () => {
+    beforeEach(() => vi.clearAllMocks());
 
-describe('consumeAiQuota', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        mocks.config = { aiDailyLimit: 3 };
-        mocks.aiUsage.count.mockResolvedValue(0);
-        mocks.aiUsage.create.mockResolvedValue({});
-    });
-
-    it('未达上限时记录一次调用并放行', async () => {
-        mocks.aiUsage.count.mockResolvedValue(2);
-
-        expect(await consumeAiQuota(student, 'practice')).toBeNull();
-        expect(mocks.aiUsage.create).toHaveBeenCalledWith({ data: { userId: 'kid', kind: 'practice' } });
-    });
-
-    it('达到上限时返回 429，不再记录', async () => {
-        mocks.aiUsage.count.mockResolvedValue(3);
-
-        const response = await consumeAiQuota(student, 'analyze');
-
-        expect(response?.status).toBe(429);
-        expect(await response?.json()).toEqual({ message: 'AI_DAILY_LIMIT_EXCEEDED', code: 'AI_DAILY_LIMIT_EXCEEDED', details: { limit: 3 } });
+    it('统计不可用时放行且不计数，不影响正常使用', async () => {
+        const quota = await reserveAiQuota({ id: 'kid', role: 'user' }, 'analyze');
+        expect(quota.limited).toBeNull();
+        expect(quota.id).toBeNull();
+        await quota.confirm();
+        await quota.release();
         expect(mocks.aiUsage.create).not.toHaveBeenCalled();
     });
 
-    it('管理员和未设上限时不受限制，但记录用量', async () => {
-        mocks.aiUsage.count.mockResolvedValue(99);
-        expect(await consumeAiQuota({ id: 'parent', role: 'admin' }, 'exam')).toBeNull();
-
-        mocks.config = { aiDailyLimit: 0 };
-        expect(await consumeAiQuota(student, 'exam')).toBeNull();
-        expect(mocks.aiUsage.count).not.toHaveBeenCalled();
-        expect(mocks.aiUsage.create).toHaveBeenCalledTimes(2);
-    });
-
-    it('统计失败时放行，不影响正常使用', async () => {
-        mocks.aiUsage.count.mockRejectedValue(new Error('database locked'));
-        expect(await consumeAiQuota(student, 'grade')).toBeNull();
+    it('runWithAiQuota：成功按判定结算，抛错时退回并继续抛出', async () => {
+        const quota = { settle: vi.fn(async () => {}), release: vi.fn(async () => {}) } as unknown as Parameters<typeof runWithAiQuota>[0];
+        expect(await runWithAiQuota(quota, async () => ({ n: 0 }), (r) => r.n > 0)).toEqual({ n: 0 });
+        expect(quota.settle).toHaveBeenCalledWith(false);
+        await expect(runWithAiQuota(quota, async () => { throw new Error('AI_TIMEOUT_ERROR'); })).rejects.toThrow('AI_TIMEOUT_ERROR');
+        expect(quota.release).toHaveBeenCalledTimes(1);
     });
 });
 
 describe('countTodayAiUsage', () => {
-    it('按应用时区的今天统计', async () => {
+    it('按应用时区的今天只统计已确认（成功）的调用', async () => {
         mocks.aiUsage.count.mockResolvedValue(5);
 
         // 北京时间 2026-10-20 01:00
         expect(await countTodayAiUsage('kid', new Date('2026-10-19T17:00:00Z'))).toBe(5);
         expect(mocks.aiUsage.count).toHaveBeenCalledWith({
-            where: { userId: 'kid', createdAt: { gte: new Date('2026-10-19T16:00:00Z'), lt: new Date('2026-10-20T16:00:00Z') } },
+            where: { userId: 'kid', status: 'confirmed', createdAt: { gte: new Date('2026-10-19T16:00:00Z'), lt: new Date('2026-10-20T16:00:00Z') } },
         });
     });
 });

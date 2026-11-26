@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({ get prisma() { return mocks.prisma; } }));
 vi.mock("@/lib/current-user", () => ({ getCurrentUser: vi.fn(async () => mocks.currentUser) }));
-vi.mock("@/lib/ai-quota", () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 vi.mock("@/lib/grading-service", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/lib/grading-service")>();
     return {

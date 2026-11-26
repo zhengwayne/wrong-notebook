@@ -7,7 +7,7 @@ import { createLogger } from "@/lib/logger";
 import { DEFAULT_EXAM_PICK_RULE, EXAM_DIFFICULTIES, EXAM_PICK_RULES, EXAM_SCOPES, MAX_EXAM_QUESTIONS, generateExamPaper, selectSourceItems } from "@/lib/exam";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime } from "@/lib/date-time";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import { LearnerNotFoundError } from "@/lib/learners";
 import { readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 
@@ -118,8 +118,9 @@ export async function POST(req: Request) {
         const title = parsed.data.title
             || `${notebooks.map((notebook) => notebook.name).join('、')} ${formatDateTime(new Date(), 'yyyy-MM-dd HH:mm', getAppTimeZone())}`;
 
-        const limited = await consumeAiQuota(user, 'exam');
-        if (limited) return limited;
+        // 生成出至少 1 道题才算一次，后台生成结束时结算
+        const quota = await reserveAiQuota(user, 'exam', { request: req });
+        if (quota.limited) return quota.limited;
 
         const paper = await prisma.examPaper.create({
             data: {
@@ -140,9 +141,12 @@ export async function POST(req: Request) {
                 },
             },
             select: { id: true, title: true, requestedCount: true, _count: { select: { questions: true } } },
+        }).catch(async (error) => {
+            await quota.release();
+            throw error;
         });
 
-        void generateExamPaper(paper.id, language || 'zh');
+        void generateExamPaper(paper.id, language || 'zh', quota.reused ? null : quota.id);
 
         logger.info({ paperId: paper.id, count: sources.length, requested: count }, 'Exam paper created');
         return NextResponse.json({

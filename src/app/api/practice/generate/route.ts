@@ -4,7 +4,7 @@ import { notFound, internalError, kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { parseLastPractice } from "@/lib/last-practice";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota, type AiQuotaReservation } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { startItemPipeline, startLegacyRun } from "@/lib/variant/service";
 import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
@@ -53,6 +53,7 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
     // 小程序只做识别与对错标记，不提供举一反三出新题
     const mpRejected = rejectMiniProgramGeneration(req);
     if (mpRejected) return mpRejected;
+    let quota: AiQuotaReservation | undefined;
     try {
         const { errorItemId, language, difficulty } = await req.json();
 
@@ -77,20 +78,24 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
             tags = [];
         }
 
-        const limited = await consumeAiQuota(user, 'practice');
-        if (limited) return limited;
+        quota = await reserveAiQuota(user, 'practice', { request: req });
+        if (quota.limited) return quota.limited;
 
         const targetDifficulty = DIFFICULTIES.find(d => d === difficulty) ?? 'medium';
 
         // 默认走分阶段规划-验算-审核；儿童专注模式无法访问 /variants 审核页，直接生成练习题
         if (!kidLearnerId && user.variantPipelineEnabled !== false) {
-            const started = await startItemPipeline(user, errorItemId, language || 'zh', targetDifficulty, { skipQuota: true });
-            if (!started) return notFound("Item not found");
+            // 流水线在后台跑，生成出题目时由它确认，失败退回
+            const started = await startItemPipeline(user, errorItemId, language || 'zh', targetDifficulty, { skipQuota: true, quota });
+            if (!started) {
+                await quota.release();
+                return notFound("Item not found");
+            }
             const run = await prisma.variantRun.findFirst({ where: { id: started.id, userId: user.id }, include: { items: { orderBy: { index: 'asc' } } } });
             return NextResponse.json({ pipeline: true, run: run ? serializeRun(run) : { id: started.id } });
         }
 
-        const generated = await trackBackgroundTask(
+        const generated = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'practice', subject: describeQuestion(errorItemWithSubject), link: `/error-items/${errorItemId}` },
             () => startLegacyRun({
                 user,
@@ -103,9 +108,10 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
                 figureSvg: errorItemWithSubject.figureSvg,
                 subjectName: errorItemWithSubject.subject?.name || "其他",
             })
-        );
+        ), (result) => Boolean(result.questionText?.trim()));
         return NextResponse.json({ ...generated, pipeline: false });
     } catch (error) {
+        await quota?.release();
         const busy = toConcurrencyErrorResponse(error);
         if (busy) return busy;
         logger.error({ error }, 'Error generating practice');

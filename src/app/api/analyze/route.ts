@@ -11,7 +11,7 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         return badRequest("Invalid JSON body");
     }
     if (!body || typeof body !== "object") return badRequest("Missing image data");
-    return analyzeImageForUser(user, body);
+    return analyzeImageForUser(user, body, { request: req });
 }
 
 /** 耗时 AI 请求：浏览器中断连接后，前端可通过 /api/requests/:id 取回响应 */

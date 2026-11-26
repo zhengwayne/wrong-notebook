@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, type AiQuotaReservation } from "@/lib/ai-quota";
 import { badRequest, internalError, notFound, unauthorized } from "@/lib/api-errors";
 import { getCurrentUser } from "@/lib/current-user";
 import { createLogger } from "@/lib/logger";
@@ -14,10 +14,11 @@ const logger = createLogger('api:error-items:mastery');
  * 用户手动触发单道错题的 AI 掌握概率评估；录题、判重命中与练习作答不再隐式调用 AI。
  */
 export async function POST(
-    _req: Request,
+    req: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
+    let quota: AiQuotaReservation | undefined;
 
     try {
         const user = await getCurrentUser();
@@ -44,8 +45,8 @@ export async function POST(
             return badRequest("NO_PRACTICE_HISTORY");
         }
 
-        const limited = await consumeAiQuota(user, 'mastery');
-        if (limited) return limited;
+        quota = await reserveAiQuota(user, 'mastery', { request: req });
+        if (quota.limited) return quota.limited;
 
         await evaluateErrorItemMastery(id, { useAi: true });
 
@@ -61,6 +62,8 @@ export async function POST(
                 _count: { select: { practiceRecords: true } },
             },
         });
+        // AI 评估失败会回退规则估算，这种不算
+        await quota.settle(updated?.masterySource === 'ai');
         if (!updated) {
             return notFound("Item not found");
         }
@@ -75,6 +78,7 @@ export async function POST(
             masteryEvaluatedAt: updated.masteryEvaluatedAt,
         });
     } catch (error) {
+        await quota?.release();
         logger.error({ error, errorItemId: id }, 'Manual AI mastery evaluation failed');
         return internalError("Failed to evaluate mastery");
     }

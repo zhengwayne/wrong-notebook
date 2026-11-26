@@ -22,6 +22,7 @@ import {
 } from "@/lib/grading";
 import type { AnswerSourceKind, KeyQuestion, KeyQuestionInput } from "@/lib/grading";
 import { flagDuplicate, hasIdentity, matchStudent, type MatchResult, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
+import { aiQuotaRefs, settleAiReservationsByRef } from "@/lib/ai-quota";
 
 const logger = createLogger('grading');
 
@@ -218,8 +219,13 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         where: { id: submissionId },
         include: { task: { include: { questions: { orderBy: { order: 'asc' } } } } },
     });
-    if (!submission) return;
-    if (submission.status === 'confirmed' || submission.status === 'grading') return;
+    const quotaRef = aiQuotaRefs.gradingSubmission(submissionId);
+    // 没判分就结束的（答卷已删、已确认）退回预留；正在由另一路判分的交给那一路结算
+    if (!submission || submission.status === 'confirmed') {
+        await settleAiReservationsByRef(quotaRef, false);
+        return;
+    }
+    if (submission.status === 'grading') return;
 
     const claimed = await prisma.gradingSubmission.updateMany({
         where: { id: submissionId, status: { notIn: ['confirmed', 'grading'] } },
@@ -323,8 +329,11 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             await tx.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) });
         });
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');
+        // 每份答卷判分成功才算一次
+        await settleAiReservationsByRef(quotaRef, true);
     } catch (error) {
         logger.error({ error, submissionId }, '答卷判分失败');
+        await settleAiReservationsByRef(quotaRef, false);
         await prisma.gradingSubmission.updateMany({
             where: { id: submissionId, status: { not: 'confirmed' } },
             data: { status: 'failed', error: getErrorMessage(error).slice(0, 500) },

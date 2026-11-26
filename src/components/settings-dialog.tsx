@@ -114,14 +114,15 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                     <Settings className="h-5 w-5" />
                 </Button>
             </DialogTrigger>
-            <DialogContent ref={dialogContentRef} data-testid="settings-dialog" className="flex flex-col w-[calc(100vw-2rem)] sm:max-w-[900px] h-[85vh] max-h-[85vh] overflow-y-auto [scrollbar-gutter:stable]">
-                <DialogHeader>
-                    <DialogTitle>{t.settings?.title || "Settings"}</DialogTitle>
-                    <DialogDescription>{t.settings?.desc || "Manage your preferences and data."}</DialogDescription>
-                </DialogHeader>
-
+            {/* 标题和标签栏固定在顶部，只有下面的内容区滚动（滚动条在对话框右侧） */}
+            <DialogContent data-testid="settings-dialog" className="flex flex-col gap-0 overflow-hidden p-0 w-[calc(100vw-2rem)] sm:max-w-[900px] h-[85vh] max-h-[85vh]">
                 <UserProfileProvider enabled={open}>
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full min-h-0 flex-1 flex-col">
+                        <div data-testid="settings-header" className="shrink-0 space-y-4 border-b bg-card px-6 pb-3 pt-6">
+                        <DialogHeader className="pr-6">
+                            <DialogTitle>{t.settings?.title || "Settings"}</DialogTitle>
+                            <DialogDescription>{t.settings?.desc || "Manage your preferences and data."}</DialogDescription>
+                        </DialogHeader>
                         <TabsList className={`grid w-full grid-cols-4 ${isAdmin ? "sm:grid-cols-7" : "sm:grid-cols-4"} gap-1 h-auto`}>
                             <SettingsTab value="general" icon={<Languages className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.general || "General"} />
                             <SettingsTab value="account" icon={<User className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.account || "Account"} />
@@ -135,8 +136,9 @@ export function SettingsDialog({ defaultOpen = false }: { defaultOpen?: boolean 
                             <SettingsTab value="danger" icon={<AlertTriangle className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.danger || "Danger"} />
                             <SettingsTab value="about" icon={<Info className="h-4 w-4 sm:mr-2" />} label={t.settings?.tabs?.about || "About"} />
                         </TabsList>
+                        </div>
 
-                        <div data-testid="settings-tab-panel" className="min-h-0 flex-1">
+                        <div ref={dialogContentRef} data-testid="settings-tab-panel" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 [scrollbar-gutter:stable]">
                         <Suspense fallback={<SettingsPanelFallback />}>
                         <TabsContent value="general" className="space-y-4 py-4">
                             {activeTab === "general" && (

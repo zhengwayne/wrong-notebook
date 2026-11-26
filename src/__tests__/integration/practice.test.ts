@@ -204,7 +204,7 @@ describe('/api/practice', () => {
                 'error-item-1',
                 'zh',
                 'medium',
-                { skipQuota: true },
+                { skipQuota: true, quota: expect.objectContaining({ confirm: expect.any(Function), release: expect.any(Function) }) },
             );
             expect(mocks.mockAIService.generateSimilarQuestion).not.toHaveBeenCalled();
             expect(mocks.mockPrismaErrorItem.update).not.toHaveBeenCalled();

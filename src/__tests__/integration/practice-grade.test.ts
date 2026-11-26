@@ -15,7 +15,7 @@ vi.mock('@/lib/prisma', () => ({ prisma: { user: mocks.user, errorItem: mocks.er
 vi.mock('@/lib/ai', () => ({ getAIService: () => ({ gradeAnswer: mocks.gradeAnswer }) }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 
 import { POST } from '@/app/api/practice/grade/route';
 
@@ -67,7 +67,7 @@ describe('POST /api/practice/grade', () => {
         mocks.consumeAiQuota.mockResolvedValue(new Response(JSON.stringify({ message: 'AI_DAILY_LIMIT_EXCEEDED' }), { status: 429 }));
 
         expect((await grade({ errorItemId: 'item-1', userAnswer: '2' })).status).toBe(429);
-        expect(mocks.consumeAiQuota).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'grade');
+        expect(mocks.consumeAiQuota).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'grade', expect.anything());
         expect(mocks.gradeAnswer).not.toHaveBeenCalled();
     });
 

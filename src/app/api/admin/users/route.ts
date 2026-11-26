@@ -34,7 +34,8 @@ export const GET = defineApiRoute({ auth: 'admin', unauthenticatedStatus: 403 },
         const { start, end } = getDayRange(new Date(), getAppTimeZone())
         const usage = await prisma.aiUsage.groupBy({
             by: ['userId'],
-            where: { createdAt: { gte: start, lt: end } },
+            // 只统计成功（已确认）的调用；预留中、失败退回的不算
+            where: { status: 'confirmed', createdAt: { gte: start, lt: end } },
             _count: { _all: true },
         })
         const usageByUser = new Map(usage.map((entry) => [entry.userId, entry._count._all]))

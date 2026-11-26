@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({ get prisma() { return mocks.prisma; } }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn(async () => mocks.session) }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/lib/ai-quota", () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 vi.mock("@/lib/grading-service", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/grading-service")>()),
     scheduleGrading: mocks.scheduleGrading,

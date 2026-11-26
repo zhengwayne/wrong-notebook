@@ -84,12 +84,31 @@ describe('POST /api/ai/models - 地址校验', () => {
         expect(body.error).toMatch(/base URL/i);
     });
 
-    it('Gemini 的 API Key 在查询参数中编码', async () => {
+    it('Gemini 的 API Key 放在请求头，不进 URL', async () => {
         mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ models: [] }) });
 
         await POST(makeRequest({ provider: 'gemini', apiKey: 'a&b=c' }));
 
-        expect(mockFetch.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=a%26b%3Dc');
+        expect(mockFetch.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000');
+        expect(mockFetch.mock.calls[0][1].headers).toMatchObject({ 'x-goog-api-key': 'a&b=c' });
+    });
+
+    it('Gemini 的 Base URL 已带 /v1beta 时直接接 /models', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ models: [{ name: 'models/gemini-3-flash' }] }) });
+
+        const res = await POST(makeRequest({ provider: 'gemini', apiKey: 'k', baseUrl: 'https://proxy.example.com/v1beta/' }));
+
+        expect(mockFetch.mock.calls[0][0]).toBe('https://proxy.example.com/v1beta/models?pageSize=1000');
+        expect((await res.json()).models[0].id).toBe('gemini-3-flash');
+    });
+
+    it('OpenAI 兼容：请求 {Base URL}/models，兼容 { models: [...] } 格式并去重', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ models: [{ name: 'models/qwen-max' }, { id: 'qwen-max' }, { id: 'qwen-vl' }] }) });
+
+        const res = await POST(makeRequest({ provider: 'openai', apiKey: 'k', baseUrl: 'https://compat.example.com/v1/' }));
+
+        expect(mockFetch.mock.calls[0][0]).toBe('https://compat.example.com/v1/models');
+        expect((await res.json()).models.map((m: { id: string }) => m.id)).toEqual(['qwen-max', 'qwen-vl']);
     });
 });
 
@@ -171,7 +190,7 @@ describe('POST /api/ai/models - Gemini provider', () => {
         await POST(req);
 
         expect(mockFetch).toHaveBeenCalledWith(
-            'https://custom.google.com/v1beta/models?key=my-key',
+            'https://custom.google.com/v1beta/models?pageSize=1000',
             expect.any(Object)
         );
     });
@@ -314,7 +333,8 @@ describe('POST /api/ai/models - OpenAI provider', () => {
             headers: { 'Content-Type': 'application/json' },
         }));
         expect(geminiRes.status).toBe(200);
-        expect(mockFetch.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=AIza-vision-key');
+        expect(mockFetch.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000');
+        expect(mockFetch.mock.calls[0][1].headers).toMatchObject({ 'x-goog-api-key': 'AIza-vision-key' });
 
         mockGetAppConfig.mockReturnValueOnce({
             aiProvider: 'openai',
@@ -330,11 +350,12 @@ describe('POST /api/ai/models - OpenAI provider', () => {
 
         const openaiRes = await POST(new NextRequest('http://localhost/api/ai/models', {
             method: 'POST',
-            body: JSON.stringify({ provider: 'openai', apiKey: '********', role: 'vision', instanceId: 'inst-b', baseUrl: 'http://192.168.1.50:11434/v1' }),
+            body: JSON.stringify({ provider: 'openai', apiKey: '********', role: 'vision', instanceId: 'inst-b', baseUrl: 'https://b.example.com/v1' }),
             headers: { 'Content-Type': 'application/json' },
         }));
         expect(openaiRes.status).toBe(200);
-        expect(mockFetch.mock.calls[1][0]).toBe('http://192.168.1.50:11434/v1/models');
+        // 用已保存的密钥时请求的是该实例保存的地址
+        expect(mockFetch.mock.calls[1][0]).toBe('https://b.example.com/v1/models');
         expect(mockFetch.mock.calls[1][1]).toMatchObject({
             redirect: 'error',
             headers: expect.objectContaining({ Authorization: 'Bearer sk-second' }),
@@ -348,6 +369,44 @@ describe('POST /api/ai/models - OpenAI provider', () => {
             expect(res.status).toBe(400);
             expect((await res.json()).models).toEqual([]);
         }
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('POST /api/ai/models - 用已保存的密钥', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetServerSession.mockResolvedValue(adminSession);
+        mockGetAppConfig.mockReturnValue({
+            aiProvider: 'openai',
+            openai: { activeInstanceId: 'i1', instances: [{ id: 'i1', name: 'A', apiKey: 'sk-stored', baseUrl: 'https://saved.example.com/v1', model: 'm' }] },
+        });
+    });
+
+    it('掩码时服务端取已保存的密钥请求已保存的 Base URL，响应里不含密钥', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: 'gpt-x' }] }) });
+
+        const res = await POST(makeRequest({ provider: 'openai', apiKey: '********', instanceId: 'i1', baseUrl: 'https://saved.example.com/v1/' }));
+        const text = await res.text();
+
+        expect(mockFetch.mock.calls[0][0]).toBe('https://saved.example.com/v1/models');
+        expect(mockFetch.mock.calls[0][1].headers).toMatchObject({ Authorization: 'Bearer sk-stored' });
+        expect(text).not.toContain('sk-stored');
+        expect(JSON.parse(text).models[0].id).toBe('gpt-x');
+    });
+
+    it('掩码时改了 Base URL：拒绝，不把已保存的密钥发到新地址', async () => {
+        const res = await POST(makeRequest({ provider: 'openai', apiKey: '********', instanceId: 'i1', baseUrl: 'https://evil.example.com/v1' }));
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('BASE_URL_CHANGED');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('没有已保存的密钥时返回 400', async () => {
+        const res = await POST(makeRequest({ provider: 'openai', apiKey: '********', instanceId: 'missing' }));
+        expect(res.status).toBe(400);
         expect(mockFetch).not.toHaveBeenCalled();
     });
 });

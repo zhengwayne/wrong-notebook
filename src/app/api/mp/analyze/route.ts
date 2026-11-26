@@ -93,7 +93,7 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         mimeType: upload.mimeType,
         subjectId: upload.subjectId,
         language: upload.language,
-    }, { includeImageDataUrl: true });
+    }, { includeImageDataUrl: true, request: req });
 }
 
 export const POST = defineApiRoute({ auth: "user" }, withRecoverableResponse(handlePost));

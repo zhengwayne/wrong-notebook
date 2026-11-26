@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { generateExamPaper } from "@/lib/exam";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 
 const logger = createLogger('api:exams:retry');
 
@@ -34,11 +34,17 @@ export async function POST(
 
         const body = retrySchema.safeParse(await req.json().catch(() => ({})));
         // 先检查 AI 额度：额度用完时不能把试卷改成「生成中」，否则会一直卡住
-        const limited = await consumeAiQuota(user, 'exam');
-        if (limited) return limited;
-        await prisma.examPaper.update({ where: { id }, data: { status: 'generating' } });
+        const quota = await reserveAiQuota(user, 'exam', { request: req });
+        if (quota.limited) return quota.limited;
+        try {
+            await prisma.examPaper.update({ where: { id }, data: { status: 'generating' } });
+        } catch (error) {
+            await quota.release();
+            throw error;
+        }
 
-        void generateExamPaper(id, body.success ? body.data.language || 'zh' : 'zh');
+        // 重新生成出至少 1 道题才算一次
+        void generateExamPaper(id, body.success ? body.data.language || 'zh' : 'zh', quota.reused ? null : quota.id);
 
         return NextResponse.json({ success: true });
     } catch (error) {

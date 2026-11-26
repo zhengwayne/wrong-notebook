@@ -4,7 +4,7 @@ import { forbidden, notFound, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { getAIService } from "@/lib/ai";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 
@@ -54,8 +54,8 @@ async function handlePost(
             });
         }
 
-        const limited = await consumeAiQuota(user, 'geogebra');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'geogebra', { request: req });
+        if (quota.limited) return quota.limited;
 
         const aiService = getAIService('text');
 
@@ -65,10 +65,10 @@ async function handlePost(
         const answerText = body.answerText || errorItem.answerText || "";
         const previousErrors = body.previousErrors || "";
 
-        const result = await trackBackgroundTask(
+        const result = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'geogebra', subject: describeQuestion(errorItem), link: `/error-items/${id}` },
             () => aiService.analyzeForGeogebra(questionText, answerText, errorItem.analysis || "", previousErrors)
-        );
+        ));
 
         // If suitable, save the commands to the database
         if (result.suitable && result.commands.length > 0) {

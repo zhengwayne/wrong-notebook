@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { consumeAiQuota, releaseAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import { conflict, forbidden, notFound, unauthorized, badRequest, validationError, internalError } from "@/lib/api-errors";
 import { getCurrentUser } from "@/lib/current-user";
 import { createLogger } from "@/lib/logger";
@@ -23,22 +23,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!user) return unauthorized();
     if (!parsePersonas(user.personas).includes("parent")) return forbidden("Parent persona required");
 
-    const limited = await consumeAiQuota(user, "grade");
-    if (limited) return limited;
+    const { id } = await ctx.params;
+    // 一份卷子（不论几页）算一次；后台识别出至少 1 道题才确认，失败退回
+    const quota = await reserveAiQuota(user, "grade", { request: req });
+    if (quota.limited) return quota.limited;
 
     try {
-        const { id } = await ctx.params;
         const body = req.headers.get("content-type")?.includes("application/json")
             ? bodySchema.parse(await req.json().catch(() => ({})))
             : {};
-        const started = await startParentPaperRecognition(prisma, user.id, id, body);
+        const started = await startParentPaperRecognition(prisma, user.id, id, { ...body, quotaReservationId: quota.id });
         if (!started) {
-            await releaseAiQuota(user.id);
+            await quota.release();
             return notFound("Paper not found");
         }
         return NextResponse.json(mpSafeBody(req, wantsPageImages(req) ? started : { ...started, paper: omitPageImages(started.paper) }), { status: 202 });
     } catch (error) {
-        await releaseAiQuota(user.id);
+        await quota.release();
         if (error instanceof z.ZodError) return validationError("Invalid recognition request", error.issues);
         if (error instanceof ParentPaperStateError) {
             if (error.message === "ALREADY_RECOGNIZING") return conflict("Recognition already in progress");

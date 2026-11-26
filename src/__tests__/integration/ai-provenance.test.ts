@@ -32,7 +32,7 @@ vi.mock('@/lib/config', () => ({
     getAppConfig: () => mocks.appConfig,
     getAppTimeZone: () => 'Asia/Shanghai',
 }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: vi.fn(async () => null) }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock(async () => null));
 vi.mock('@/lib/learning-path/service', () => ({ scheduleLearningPathReplan: (...args: unknown[]) => mocks.replan(...args) }));
 vi.mock('@/lib/mastery', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/mastery')>()),

@@ -8,6 +8,7 @@ import { DEFAULT_MASTERY_THRESHOLD, masteryStatusWhere } from "@/lib/mastery-sta
 import { startBackgroundTask, trackBackgroundTask } from "@/lib/background-tasks";
 import { resolveNotebookScope, SUBJECT_DISPLAY_NAMES } from "@/lib/notebook-scope";
 import type { BackgroundTaskHandle } from "@/lib/background-tasks";
+import { confirmAiReservation, releaseAiReservation } from "@/lib/ai-quota";
 
 const logger = createLogger('exam');
 
@@ -147,8 +148,13 @@ const runningPapers = new Set<string>();
 /**
  * 生成试卷中尚未成功的题目（新建试卷、重试失败题目、服务重启后续生成均调用此函数）
  */
-export async function generateExamPaper(paperId: string, language: 'zh' | 'en' = 'zh'): Promise<void> {
-    if (runningPapers.has(paperId)) return;
+export async function generateExamPaper(paperId: string, language: 'zh' | 'en' = 'zh', quotaReservationId: string | null = null): Promise<void> {
+    // 本次生成出至少 1 道题才算一次 AI 调用，否则退回预留
+    let produced = 0;
+    if (runningPapers.has(paperId)) {
+        if (quotaReservationId) await releaseAiReservation(quotaReservationId);
+        return;
+    }
     runningPapers.add(paperId);
     let task: BackgroundTaskHandle | null = null;
     try {
@@ -157,6 +163,7 @@ export async function generateExamPaper(paperId: string, language: 'zh' | 'en' =
             select: { userId: true, title: true, difficulty: true, questions: { where: { status: { not: 'ready' } }, select: { id: true } } },
         });
         if (!paper) return;
+        const pendingIds = paper.questions.map((question) => question.id);
 
         const queue = paper.questions.map((question) => question.id);
         const total = queue.length;
@@ -174,7 +181,8 @@ export async function generateExamPaper(paperId: string, language: 'zh' | 'en' =
         };
         await Promise.all(Array.from({ length: Math.min(GENERATION_CONCURRENCY, queue.length) }, worker));
 
-        const questions = await prisma.examQuestion.findMany({ where: { paperId }, select: { status: true } });
+        const questions = await prisma.examQuestion.findMany({ where: { paperId }, select: { id: true, status: true } });
+        produced = questions.filter((question) => question.status === 'ready' && pendingIds.includes(question.id)).length;
         const paperStatus = summarizePaperStatus(questions.map((question) => question.status));
         await prisma.examPaper.update({ where: { id: paperId }, data: { status: paperStatus } });
         task?.setProgress(done, total, questions.filter((question) => question.status === 'failed').length);
@@ -185,6 +193,10 @@ export async function generateExamPaper(paperId: string, language: 'zh' | 'en' =
         task?.fail(error);
     } finally {
         runningPapers.delete(paperId);
+        if (quotaReservationId) {
+            if (produced > 0) await confirmAiReservation(quotaReservationId);
+            else await releaseAiReservation(quotaReservationId);
+        }
     }
 }
 

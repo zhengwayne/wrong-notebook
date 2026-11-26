@@ -90,30 +90,54 @@ function resolveMockCompletion(messages: ChatMessage[]): string {
 
     return [
         '<item>',
-        '<questionText>E2E 模拟错题：解方程 $x + 2 = 5$</questionText>',
-        '<answerText>$x = 3$</answerText>',
+        '<question_text>E2E 模拟错题：解方程 $x + 2 = 5$</question_text>',
+        '<answer_text>$x = 3$</answer_text>',
         '<analysis>移项得 $x = 3$。</analysis>',
-        '<knowledgePoints>一元一次方程</knowledgePoints>',
+        '<knowledge_points>一元一次方程</knowledge_points>',
         '<subject>数学</subject>',
         '</item>',
     ].join('\n');
 }
 
+export type MockChatMode = 'ok' | 'error' | 'empty';
+
 export interface MockAiServer {
     baseUrl: string;
     requests: string[];
+    /** 最近一次 /models 请求携带的 Authorization 头 */
+    lastModelsAuth: () => string | undefined;
+    /** 切换对话接口：正常 / 返回 500 / 返回空内容 */
+    setChatMode: (mode: MockChatMode) => void;
+    /** 设置 /models 返回的模型；传 null 让该接口返回 500 */
+    setModels: (models: string[] | null) => void;
     close: () => Promise<void>;
 }
 
 /** 启动监听 127.0.0.1 随机端口的本地 OpenAI 兼容 Mock 服务端 */
 export async function startMockAiServer(): Promise<MockAiServer> {
     const requests: string[] = [];
+    let chatMode: MockChatMode = 'ok';
+    let models: string[] | null = ['gpt-4o-mini'];
+    let modelsAuth: string | undefined;
 
     const server = http.createServer((req, res) => {
         const url = req.url || '';
         if (req.method === 'GET' && url.endsWith('/models')) {
+            modelsAuth = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined;
+            if (!models) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: 'mock models failure' } }));
+                return;
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ object: 'list', data: [{ id: 'gpt-4o-mini', object: 'model' }] }));
+            res.end(JSON.stringify({ object: 'list', data: models.map((id) => ({ id, object: 'model' })) }));
+            return;
+        }
+
+        if (req.method === 'POST' && url.endsWith('/chat/completions') && chatMode === 'error') {
+            requests.push(url);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'mock upstream failure' } }));
             return;
         }
 
@@ -126,7 +150,7 @@ export async function startMockAiServer(): Promise<MockAiServer> {
                         model?: string;
                         messages?: ChatMessage[];
                     };
-                    const content = resolveMockCompletion(body.messages || []);
+                    const content = chatMode === 'empty' ? '没有识别到题目。' : resolveMockCompletion(body.messages || []);
                     requests.push(url);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
@@ -163,6 +187,9 @@ export async function startMockAiServer(): Promise<MockAiServer> {
     return {
         baseUrl: `http://127.0.0.1:${addr.port}/v1`,
         requests,
+        lastModelsAuth: () => modelsAuth,
+        setChatMode: (mode) => { chatMode = mode; },
+        setModels: (next) => { models = next; },
         close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
     };
 }

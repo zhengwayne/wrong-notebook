@@ -1382,6 +1382,12 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'id
   const examChineseRules = generateChineseTranscriptionRules(subject, null, false);
 
   if (mode === 'parent_review') {
+    // 没选学科的卷子：让模型逐题给出学科，确认时按它放进对应错题本，避免都落到「其他」
+    const subjectHintRule = subject?.trim()
+      ? ''
+      : language === 'en'
+        ? '\n- subjectHint: the subject was not specified, so infer it from the question content and set one of "数学", "语文", "英语", "物理", "化学", "生物", "历史", "地理", "政治".'
+        : '\n- subjectHint：本卷未指定学科，请按题目内容判断学科，填「数学」「语文」「英语」「物理」「化学」「生物」「历史」「地理」「政治」之一。';
     return language === 'en'
       ? `You are helping a parent grade a child's exam paper. The images are the student's answers in page order (the first image is page 0). Split the paper into questions and judge each one. If no official answer key is provided, give the correct answer or a concise solution yourself, with a confidence score. Do not give a total score for the paper.
 
@@ -1393,7 +1399,7 @@ Rules:
 - verdict: "correct" (fully right), "wrong" (incorrect or blank), or "partial" (partly right).
 - confidence: a number from 0 to 1. Use a value below 0.7 when the photo is unclear or you are unsure.
 - errorCause: one or two sentences on why it is wrong or partial; empty when correct.
-- knowledgePoints: 1-3 knowledge point names.
+- knowledgePoints: 1-3 knowledge point names.${subjectHintRule}
 - type: "objective" when there is a unique definite answer, otherwise "subjective".
 - bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to the full image you are given (the same image shown to the parent). The box must tightly cover only this question: the stem, choices or student work, and a very small margin. Do not include the page header, other questions, or blank table/background. If questions sit in columns, the box must stay in that column and must not span the full page width. Stacked items should not overlap their neighbors. Do not box only the question number. Use null if the location is unclear. Do not use pixel coordinates.
 - If data.questions is provided as an answer key, judge objective items against it; still assess subjective items yourself.
@@ -1412,7 +1418,7 @@ Output format:
 - verdict：correct（完全正确）、wrong（错误或未作答）、partial（部分正确）。
 - confidence：0 到 1 的小数，表示你对该判定的把握。看不清或没有把握时低于 0.7。
 - errorCause：判为 wrong 或 partial 时，用一两句话说明错因；正确时可为空。
-- knowledgePoints：1~3 个知识点名称。
+- knowledgePoints：1~3 个知识点名称。${subjectHintRule}
 - type：有唯一确定答案的为 objective，否则 subjective。
 - bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例，且相对于你收到的整张图片（与家长看到的是同一张图）。框必须只紧紧罩住这一道题：题干、选项或学生作答，只留很小边距。不要框到卷头、其他题目或桌面背景。若题目分栏排列，框必须留在该栏内，不要拉满整页宽度。上下相邻的题不要互相重叠。不要只框题号。若无法确定位置，bbox 为 null。不要使用像素坐标。
 - 如果输入中提供了标准答案清单 data.questions，客观题必须对照标准答案判断；主观题仍由你评估。

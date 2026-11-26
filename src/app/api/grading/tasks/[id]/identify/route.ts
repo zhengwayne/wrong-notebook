@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { badRequest, internalError, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
 import { createLogger } from "@/lib/logger";
@@ -34,17 +34,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         throw error;
     }
 
-    const limited = await consumeAiQuota(user, 'grade');
-    if (limited) return limited;
+    const quota = await reserveAiQuota(user, 'grade', { request: req });
+    if (quota.limited) return quota.limited;
 
     try {
         const read = await getAIService('vision').readExamPaper({ mode: 'identify', images: [splitDataUrl(normalizedUrl)], language: parsed.data.language });
         const identity = { className: read.className, studentNo: read.studentNo, name: read.studentName };
+        // 读出卷头信息才算一次
+        await quota.settle(hasIdentity(identity));
         if (!hasIdentity(identity)) return NextResponse.json({ identity, match: null, alreadySubmitted: false });
         const match = matchStudent(identity, await loadTaskRoster(task));
         const taken = match.studentId ? await takenStudentIds(id) : new Set<string>();
         return NextResponse.json({ identity, match, alreadySubmitted: !!match.studentId && taken.has(match.studentId) });
     } catch (error) {
+        await quota.release();
         logger.error({ error, taskId: id }, '卷头识别失败');
         return internalError("Failed to read paper header");
     }

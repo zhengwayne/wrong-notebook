@@ -1515,6 +1515,12 @@ export const en = {
         noVisionModel: "No vision model found, please enter manually",
         fetchFailed: "Failed to fetch models",
         enterManually: ", please enter manually",
+        searchPlaceholder: "Type or search a model name",
+        showList: "Show model list",
+        noMatch: "No matching model; the typed name will be used",
+        loaded: "Loaded {count} models",
+        baseUrlChanged: "Base URL was changed: save settings first, or re-enter the API key, then refresh",
+        apiKeyRequired: "No API key available: enter and save one first",
     },
     pagination: {
         showing: "Showing {start}-{end} of {total}",

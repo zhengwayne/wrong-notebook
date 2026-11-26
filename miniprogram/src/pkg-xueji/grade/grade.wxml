@@ -1,6 +1,18 @@
 <view class="container safe-bottom">
+  <!-- 选学科后开始 -->
+  <view wx:if="{{step === 'pick'}}" class="card pick">
+    <view class="pick-title">这份是哪一科？</view>
+    <view class="muted pick-hint">{{pageCount}} 页 · {{learnerName}} · 选「自动」会按题目内容归到对应错题本</view>
+    <view class="pick-chips">
+      <view wx:for="{{subjectChoices}}" wx:key="value" id="subject-{{item.value || 'auto'}}"
+        class="chip {{subjectKey === item.value ? 'chip-active' : ''}}" hover-class="press"
+        data-value="{{item.value}}" bindtap="onPickSubject" aria-role="button" aria-label="{{item.label}}">{{item.label}}</view>
+    </view>
+    <button id="btn-grade-start" class="btn" bindtap="onStart"><image class="ic" src="/assets/icons/check-w.svg" />开始批改</button>
+  </view>
+
   <!-- 上传 / 识别中 -->
-  <view wx:if="{{step === 'upload' || step === 'recognizing'}}" class="card wait">
+  <view wx:elif="{{step === 'upload' || step === 'recognizing'}}" class="card wait">
     <view class="spinner wait-spin"></view>
     <view class="wait-text">{{progressText}}</view>
     <view class="muted">{{pageCount}} 页 · {{learnerName}}<text wx:if="{{step === 'recognizing'}}"> · {{elapsed}} 秒</text></view>

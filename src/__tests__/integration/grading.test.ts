@@ -36,7 +36,7 @@ vi.mock('@/lib/prisma', () => ({
     },
 }));
 vi.mock('@/lib/current-user', () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 vi.mock('@/lib/grading-service', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/grading-service')>()),
     scheduleGrading: mocks.scheduleGrading,

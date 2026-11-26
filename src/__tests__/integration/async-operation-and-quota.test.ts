@@ -39,7 +39,7 @@ vi.mock("@/lib/logger", () => ({
 import { GET as GET_REQUEST_RESULT } from "@/app/api/requests/[id]/route";
 import { GET as GET_TASKS } from "@/app/api/tasks/route";
 import { POST as RECOGNIZE_PAPER } from "@/app/api/parent/papers/[id]/recognize/route";
-import { consumeAiQuota, releaseAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import {
     CrossTenantOperationError,
     findOwnedAsyncOperation,
@@ -287,11 +287,11 @@ describe("AiDailyQuota 原子配额预留与释放", () => {
         });
 
         const results = await Promise.all(
-            Array.from({ length: 20 }, () => consumeAiQuota({ id: "user-a", role: "user" }, "analyze")),
+            Array.from({ length: 20 }, () => reserveAiQuota({ id: "user-a", role: "user" }, "analyze")),
         );
 
-        const allowed = results.filter((res) => res === null);
-        const blocked = results.filter((res): res is NonNullable<typeof res> => res !== null);
+        const allowed = results.filter((res) => res.limited === null);
+        const blocked = results.map((res) => res.limited).filter((res): res is NonNullable<typeof res> => res !== null);
 
         expect(allowed).toHaveLength(1);
         expect(blocked).toHaveLength(19);
@@ -328,13 +328,10 @@ describe("AiDailyQuota 原子配额预留与释放", () => {
         const quotaAfter404 = await db.aiDailyQuota.findFirstOrThrow({ where: { userId: "user-a" } });
         expect(quotaAfter404.count).toBe(0);
 
-        // releaseAiQuota 也不会扣成负数
-        await releaseAiQuota("user-a");
-        const quotaNonNeg = await db.aiDailyQuota.findFirstOrThrow({ where: { userId: "user-a" } });
-        expect(quotaNonNeg.count).toBe(0);
+        expect(await db.aiUsage.count({ where: { userId: "user-a", status: "released" } })).toBe(1);
 
         // 真正占满 1 次后，下一次应直接返 429（此处模拟已达上限）
-        await consumeAiQuota({ id: "user-a", role: "user" }, "grade");
+        await reserveAiQuota({ id: "user-a", role: "user" }, "grade");
         const blockedRes = await RECOGNIZE_PAPER(
             new Request(`http://localhost/api/parent/papers/${paper.id}/recognize`, { method: "POST" }),
             { params: Promise.resolve({ id: paper.id }) },

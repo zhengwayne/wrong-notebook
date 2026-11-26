@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getNotebookCandidateTags } from "@/lib/ai/tag-service";
 import { resolveNotebookScope } from "@/lib/notebook-scope";
 import type { CandidateTags } from "@/lib/ai";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { getFixedQuestionGrade, resolveQuestionGrade } from "@/lib/question-grade";
 import { getAppTimeZone } from "@/lib/config";
@@ -62,8 +62,8 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
             }
         }
 
-        const limited = await consumeAiQuota(user, 'reanswer');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'reanswer', { request: req });
+        if (quota.limited) return quota.limited;
 
         const aiService = getAIService(cleanImageBase64 ? 'vision' : 'text');
         // 新录入的文字题遵循账户规则，已有题目的重新解题沿用其手工年级。
@@ -71,10 +71,10 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
         const targetGrade = gradeSemester ?? (gradeProfile ? getFixedQuestionGrade(gradeProfile, getAppTimeZone()) : undefined);
 
         // 根据是否有图片选择不同的重新解题方式
-        const result = await trackBackgroundTask(
+        const result = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'reanswer', subject: describeQuestion({ questionText }) },
             () => aiService.reanswerQuestion(questionText, language, subject, cleanImageBase64, targetGrade, candidateTags)
-        );
+        ), (answer) => Boolean(answer.answerText?.trim() || answer.analysis?.trim()));
 
         logger.info('Reanswer successful');
 

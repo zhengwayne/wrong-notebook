@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Dialog,
     DialogContent,
@@ -16,7 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useNotebookScopeLabels } from "@/components/notebook-scope-label";
 
 import { useLanguage } from "@/contexts/LanguageContext";
-import { DEFAULT_NOTEBOOK_STAGE, NOTEBOOK_STAGES, STAGE_SUBJECTS, type NotebookStage, type NotebookSubject } from "@/lib/notebook-scope";
+import { DEFAULT_NOTEBOOK_STAGE, NOTEBOOK_STAGES, STAGE_SUBJECTS, stageFromEducationStage, type NotebookStage, type NotebookSubject } from "@/lib/notebook-scope";
+import { apiClient } from "@/lib/api-client";
+import type { UserProfile } from "@/types/api";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 
@@ -39,8 +41,27 @@ export function CreateNotebookDialog({ open, onOpenChange, onCreate }: CreateNot
     const [loading, setLoading] = useState(false);
     const { t } = useLanguage();
     const { stageLabel, subjectLabel } = useNotebookScopeLabels();
+    const stageTouched = useRef(false);
+
+    // 学段默认跟随个人资料里的学段（初中、高中可选全部学科），用户手动改过就不再覆盖
+    useEffect(() => {
+        if (!open) return;
+        let cancelled = false;
+        apiClient.get<UserProfile>("/api/user").then((profile) => {
+            if (cancelled || stageTouched.current) return;
+            const profileStage = stageFromEducationStage(profile?.educationStage);
+            setStage(profileStage);
+            setSubjectKey((current) => (STAGE_SUBJECTS[profileStage].includes(current) ? current : STAGE_SUBJECTS[profileStage][0]));
+        }).catch(() => {
+            // 读不到资料时保持默认学段
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [open]);
 
     const handleStageChange = (value: NotebookStage) => {
+        stageTouched.current = true;
         setStage(value);
         // 切换学段后，原学科不在可选范围内时改为该学段的第一个学科
         if (!STAGE_SUBJECTS[value].includes(subjectKey)) {

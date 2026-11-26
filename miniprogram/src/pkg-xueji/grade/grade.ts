@@ -26,6 +26,7 @@ import {
 import { clearPendingPaper, markGradeFinished, savePendingPaper } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
 import { copyWebLink, paperPath } from '../../utils/web-link';
+import { NOTEBOOK_SUBJECTS, SUBJECT_LABELS } from '../../utils/subjects';
 
 /** 每页压到这个以内再上传（服务端单页上限 3MB 字符） */
 const PAGE_TARGET_BYTES = 700 * 1024;
@@ -34,7 +35,10 @@ const POLL_MS = 3000;
 const POLL_MAX_MS = 10 * 60 * 1000;
 const IMG = '?images=0';
 
-type Step = 'upload' | 'recognizing' | 'review' | 'done' | 'failed';
+type Step = 'pick' | 'upload' | 'recognizing' | 'review' | 'done' | 'failed';
+
+/** 学科选择：不选时按题目内容自动归到对应错题本 */
+const SUBJECT_CHOICES = [{ value: '', label: '自动' }, ...NOTEBOOK_SUBJECTS.map((value) => ({ value, label: SUBJECT_LABELS[value] }))];
 
 interface Row {
   id: string;
@@ -105,6 +109,7 @@ Page({
     learnerId: '',
     learnerName: '',
     subjectKey: '',
+    subjectChoices: SUBJECT_CHOICES,
     paperId: '',
     version: 0,
     rows: [] as Row[],
@@ -148,8 +153,20 @@ Page({
       subjectKey: draft.subjectKey || '',
       pageCount: draft.photos.length,
       hasPhotos: true,
+      step: 'pick',
     });
-    await this.create();
+  },
+
+  // ---------- 选学科 ----------
+
+  onPickSubject(e: WechatMiniprogram.BaseEvent) {
+    const value = String(e.currentTarget.dataset.value || '');
+    this.setData({ subjectKey: SUBJECT_CHOICES.some((choice) => choice.value === value) ? value : '' });
+  },
+
+  onStart() {
+    if (this.data.step !== 'pick') return;
+    void this.create();
   },
 
   onUnload() {

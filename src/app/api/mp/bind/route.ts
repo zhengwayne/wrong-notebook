@@ -120,7 +120,17 @@ export const POST = defineApiRoute(
                     data: { userId: target.id, lastLoginAt: new Date() },
                 });
                 await tx.aiUsage.updateMany({ where: { userId: current.id }, data: { userId: target.id } });
-                // 空的仅微信账号随之删除（会话、当日 AI 计数等随级联删除）
+                // 每日已用次数合并到网页账号，避免关联后当天额度被「清零」
+                const quotaRows = await tx.aiDailyQuota.findMany({ where: { userId: current.id }, select: { dayKey: true, count: true } });
+                for (const row of quotaRows) {
+                    if (row.count <= 0) continue;
+                    await tx.aiDailyQuota.upsert({
+                        where: { userId_dayKey: { userId: target.id, dayKey: row.dayKey } },
+                        create: { userId: target.id, dayKey: row.dayKey, count: row.count },
+                        update: { count: { increment: row.count } },
+                    });
+                }
+                // 空的仅微信账号随之删除（会话、原有当日计数等随级联删除）
                 await tx.user.delete({ where: { id: current.id } });
             });
         } catch (error) {

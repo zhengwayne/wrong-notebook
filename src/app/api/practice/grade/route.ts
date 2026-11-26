@@ -6,7 +6,7 @@ import { internalError, kidModeRestricted, notFound, validationError } from "@/l
 import { parseLastPractice } from "@/lib/last-practice";
 import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 import { getKidModeLearnerId } from "@/lib/server/request-context";
@@ -45,16 +45,16 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
             return notFound("Practice question not found");
         }
 
-        const limited = await consumeAiQuota(user, 'grade');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'grade', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const result = await getAIService('text').gradeAnswer({
+        const result = await runWithAiQuota(quota, () => getAIService('text').gradeAnswer({
             questionText: practice.questionText,
             answerText: practice.answerText,
             analysis: practice.analysis,
             userAnswer,
             language,
-        });
+        }));
         return NextResponse.json(result);
     } catch (error) {
         const busy = toConcurrencyErrorResponse(error);

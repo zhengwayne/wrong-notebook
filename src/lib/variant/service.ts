@@ -3,7 +3,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
-import { consumeAiQuota, type QuotaUser } from '@/lib/ai-quota';
+import { reserveAiQuota, type AiQuotaReservation, type QuotaUser } from '@/lib/ai-quota';
 import { getAIService } from '@/lib/ai';
 import { recordAiProvenance } from '@/lib/ai/provenance';
 import type { DifficultyLevel } from '@/lib/ai/types';
@@ -214,10 +214,13 @@ export async function startPipelineRun(options: {
     subjectLabel?: string;
     wait?: boolean;
     skipQuota?: boolean;
+    /** 调用方已预留的额度（skipQuota 时由这里结算） */
+    quota?: AiQuotaReservation;
 }): Promise<{ id: string }> {
-    if (!options.skipQuota) {
-        const limited = await consumeAiQuota(options.user, options.quotaKind ?? (options.kind === 'practice' ? 'practice' : 'exam'));
-        if (limited) throw new QuotaError(limited.status);
+    let quota: AiQuotaReservation | undefined = options.quota;
+    if (!options.skipQuota && !quota) {
+        quota = await reserveAiQuota(options.user, options.quotaKind ?? (options.kind === 'practice' ? 'practice' : 'exam'));
+        if (quota.limited) throw new QuotaError(quota.limited.status);
     }
     const run = await prisma.variantRun.create({
         data: {
@@ -243,12 +246,18 @@ export async function startPipelineRun(options: {
             topicSuggestion: options.topicSuggestion ? JSON.stringify(options.topicSuggestion) : null,
         },
         select: { id: true },
+    }).catch(async (error) => {
+        await quota?.release();
+        throw error;
     });
     const work = async () => {
         try {
             const result = await runVariantPipeline(options.input, createVariantAi(), { maxCalls: MAX_AI_CALLS_PER_RUN, maxRetries: MAX_GENERATE_RETRIES });
             await persistPipeline(run.id, result, options.title);
+            // 生成出至少 1 道题才算一次
+            await quota?.settle(countProducedVariants(result) > 0);
         } catch (error) {
+            await quota?.release();
             await failRun(run.id, error);
             if (options.wait) throw error;
         }
@@ -257,6 +266,11 @@ export async function startPipelineRun(options: {
     if (options.wait) await trackBackgroundTask(task, work);
     else void trackBackgroundTask(task, work);
     return { id: run.id };
+}
+
+/** 流水线里真正生成出题目的数量 */
+export function countProducedVariants(result: Pick<PipelineResult, 'items'>): number {
+    return result.items.filter((item) => typeof item.question?.questionText === 'string' && item.question.questionText.trim().length > 0).length;
 }
 
 export class QuotaError extends Error {
@@ -330,7 +344,7 @@ export async function startLegacyRun(options: {
     return { ...lastPractice, runId: run.id };
 }
 
-export async function startItemPipeline(user: QuotaUser, errorItemId: string, language: 'zh' | 'en', difficulty: VariantDifficulty, options: { skipQuota?: boolean } = {}) {
+export async function startItemPipeline(user: QuotaUser, errorItemId: string, language: 'zh' | 'en', difficulty: VariantDifficulty, options: { skipQuota?: boolean; quota?: AiQuotaReservation } = {}) {
     const item = await prisma.errorItem.findFirst({
         where: { id: errorItemId, userId: user.id },
         include: { subject: true, tags: { select: { name: true } } },
@@ -361,6 +375,7 @@ export async function startItemPipeline(user: QuotaUser, errorItemId: string, la
         quotaKind: 'practice',
         wait: true,
         skipQuota: options.skipQuota,
+        quota: options.quota,
     });
 }
 

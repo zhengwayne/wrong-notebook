@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { badRequest, internalError, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import { createLogger } from "@/lib/logger";
 import { readAnswerKeyFromImages } from "@/lib/grading-service";
 import { imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER } from "@/lib/grading-api";
@@ -34,13 +34,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         throw error;
     }
 
-    const limited = await consumeAiQuota(user, 'grade');
-    if (limited) return limited;
+    const quota = await reserveAiQuota(user, 'grade', { request: req });
+    if (quota.limited) return quota.limited;
     try {
         const questions = await readAnswerKeyFromImages(normalizedImages, parsed.data.language);
         await prisma.gradingTask.update({ where: { id }, data: { keyImageUrl: normalizedImages[0] } });
+        // 认出至少 1 道题才算一次
+        await quota.settle(questions.length > 0);
         return NextResponse.json({ questions });
     } catch (error) {
+        await quota.release();
         logger.error({ error }, '识别答案卷失败');
         return internalError("Failed to read answer key");
     }

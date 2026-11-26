@@ -290,10 +290,19 @@ model AiUsage {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind      String   // analyze | reanswer | practice | grade | figure | latex | geogebra | animation | exam | retag
-  createdAt DateTime @default(now())
+  kind       String    // analyze | reanswer | practice | grade | figure | latex | geogebra | animation | exam | retag | mastery
+  // reserved：已预留、结果未定；confirmed：成功，计入次数；released：失败已退回；expired：超时未结算已自动退回
+  status     String    @default("confirmed")
+  dayKey     String?   // 预留所在的应用时区日期（YYYY-MM-DD），退回时扣回这一天
+  requestKey String?   // 同一请求编号只预留一次
+  ref        String?   // 后台任务关联（如 parent-paper:<id>），任务结束时按它结算
+  settledAt  DateTime?
+  createdAt  DateTime  @default(now())
 
+  @@unique([userId, requestKey])
   @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([ref])
 }
 
 // ===== 老师收卷拍照改卷 =====

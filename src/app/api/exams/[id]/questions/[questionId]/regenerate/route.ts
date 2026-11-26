@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, badRequest, conflict, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { EXAM_REGENERATE_MODES, regenerateExamQuestion } from "@/lib/exam";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:exams:regenerate');
@@ -35,10 +35,11 @@ async function handlePost(
             return validationError("Invalid regenerate request", parsed.error.issues);
         }
 
-        const limited = await consumeAiQuota(user, 'exam');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'exam', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const updated = await regenerateExamQuestion(id, questionId, user.id, parsed.data.mode, parsed.data.language || 'zh');
+        // 生成失败（抛错）时退回
+        const updated = await runWithAiQuota(quota, () => regenerateExamQuestion(id, questionId, user.id, parsed.data.mode, parsed.data.language || 'zh'));
         return NextResponse.json(updated);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

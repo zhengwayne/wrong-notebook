@@ -11,7 +11,7 @@ import { createLogger } from "@/lib/logger";
 import { trackBackgroundTask } from "@/lib/background-tasks";
 import { getAppTimeZone } from "@/lib/config";
 import { getErrorMessage } from "@/lib/error-message";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, type AiQuotaReservation } from "@/lib/ai-quota";
 import { toAnalyzeImageResult } from "@/lib/ai/parse-analyze";
 import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
 import { recordAiProvenance } from "@/lib/ai/provenance";
@@ -35,6 +35,13 @@ export const MAX_ANALYZE_IMAGES = 3;
 export interface AnalyzeImageOptions {
     /** 小程序上传后需要拿回规范化后的图片保存错题，网页端已在本地持有图片 */
     includeImageDataUrl?: boolean;
+    /** 原始请求：取 x-request-id，同一请求编号重试只预留一次额度 */
+    request?: Request;
+}
+
+/** 识别算成功：至少认出 1 道有内容的题 */
+export function hasRecognizedQuestion(items: Array<{ questionText?: string | null }> | undefined | null): boolean {
+    return Boolean(items?.some((item) => typeof item?.questionText === "string" && item.questionText.trim().length > 0));
 }
 
 /**
@@ -44,6 +51,7 @@ export interface AnalyzeImageOptions {
  */
 export async function analyzeImageForUser(user: ActorUser, body: AnalyzeImageInput, options: AnalyzeImageOptions = {}): Promise<Response> {
     logger.info('Analyze API called');
+    let quota: AiQuotaReservation | undefined;
 
     try {
         const language = body.language === 'en' || body.language === 'zh' ? body.language : undefined;
@@ -131,9 +139,9 @@ export async function analyzeImageForUser(user: ActorUser, body: AnalyzeImageInp
         }
 
         logger.info({ userGrade, userGradeSemester, subject: subjectChinese }, 'Calling AI service for image analysis');
-        // 一组图片只调用一次 AI，按一次计
-        const limited = await consumeAiQuota(user, 'analyze');
-        if (limited) return limited;
+        // 一组图片只调用一次 AI，按一次计；认出至少 1 道题才确认，否则退回
+        quota = await reserveAiQuota(user, 'analyze', { request: options.request });
+        if (quota.limited) return quota.limited;
 
         const aiService = getAIService('vision');
         const analysisResult = await trackBackgroundTask(
@@ -164,8 +172,10 @@ export async function analyzeImageForUser(user: ActorUser, body: AnalyzeImageInp
             ...toAnalyzeImageResult(items, analysisResult.failedCount, provenanceId, analysisResult.continuity),
             pageCount: 1 + extraImages.length,
         };
+        await quota.settle(hasRecognizedQuestion(items));
         return NextResponse.json(imageDataUrl ? { ...result, imageDataUrl } : result);
     } catch (error) {
+        await quota?.release();
         const busy = toConcurrencyErrorResponse(error);
         if (busy) return busy;
         const message = getErrorMessage(error);

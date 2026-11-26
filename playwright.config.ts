@@ -11,6 +11,7 @@ const AI_FLOW_SPECS = [
     '**/parent-paper-flow.spec.ts',
     '**/teacher-grading-flow.spec.ts',
     '**/teacher-folder-import.spec.ts',
+    '**/ai-quota-and-settings.spec.ts',
 ];
 
 const RESET_SPECS = [

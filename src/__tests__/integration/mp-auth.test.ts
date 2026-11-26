@@ -127,6 +127,7 @@ beforeEach(async () => {
     await database.errorItem.deleteMany();
     await database.learner.deleteMany();
     await database.aiUsage.deleteMany();
+    await database.aiDailyQuota.deleteMany();
     await database.user.deleteMany();
 
     const passwordHash = await bcrypt.hash('ParentPass123!', 4);
@@ -346,6 +347,8 @@ describe('/api/mp/bind 可选关联网页账号', () => {
         const { body } = await wechatLogin();
         const wxUserId = body.user.id as string;
         await database.aiUsage.create({ data: { userId: wxUserId, kind: 'analyze' } });
+        await database.aiDailyQuota.create({ data: { userId: wxUserId, dayKey: '2026-11-26', count: 3 } });
+        await database.aiDailyQuota.create({ data: { userId: 'parent-1', dayKey: '2026-11-26', count: 2 } });
         await database.learner.create({ data: { userId: wxUserId, kind: 'self', name: '我自己' } });
         // 打开错题本会自动建空白默认错题本，不算数据
         const notebooks = await LIST_NOTEBOOKS(new Request('http://localhost/api/notebooks', { headers: bearer(body.token) }));
@@ -360,6 +363,8 @@ describe('/api/mp/bind 可选关联网页账号', () => {
 
         expect(await database.user.count({ where: { id: wxUserId } })).toBe(0);
         expect(await database.aiUsage.count({ where: { userId: 'parent-1' } })).toBe(1);
+        // 当日已用次数合并到网页账号
+        expect(await database.aiDailyQuota.findUnique({ where: { userId_dayKey: { userId: 'parent-1', dayKey: '2026-11-26' } } })).toMatchObject({ count: 5 });
         expect(await database.wechatBinding.findFirst({ where: { openid: 'openid-parent' } })).toMatchObject({ userId: 'parent-1' });
         expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(body.token) }))).status).toBe(401);
         expect((await MP_SESSION(new Request('http://localhost/api/mp/session', { headers: bearer(linked.token) }))).status).toBe(200);

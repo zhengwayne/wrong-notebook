@@ -92,6 +92,9 @@ describe("设置弹窗切换到账户标签时保持对话框稳定", () => {
         expect(dialogSrc).toContain('data-testid="settings-tab-panel"');
         expect(dialogSrc).toContain("h-[85vh]");
         expect(dialogSrc).toContain("[scrollbar-gutter:stable]");
+        // 标题与标签栏固定，只有内容区滚动
+        expect(dialogSrc).toMatch(/data-testid="settings-dialog" className="[^"]*overflow-hidden/);
+        expect(dialogSrc).toMatch(/data-testid="settings-tab-panel" className="[^"]*overflow-y-auto/);
         expect(dialogSrc).toContain("<Suspense");
     });
 
@@ -133,6 +136,9 @@ describe("设置弹窗切换到账户标签时保持对话框稳定", () => {
         expect(dialog!.contains(title)).toBe(true);
         expect(dialog!.contains(tablist)).toBe(true);
         expect(dialog!.contains(panel)).toBe(true);
+        // 标签栏在滚动区之外
+        expect(panel!.contains(tablist)).toBe(false);
+        expect(panel!.contains(title)).toBe(false);
         expect(mocks.update).not.toHaveBeenCalled();
     });
 });

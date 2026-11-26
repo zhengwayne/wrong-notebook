@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { getAIService } from "@/lib/ai";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
 
@@ -25,14 +25,14 @@ async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
             );
         }
 
-        const limited = await consumeAiQuota(user, 'geogebra');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'geogebra', { request: req });
+        if (quota.limited) return quota.limited;
 
         const aiService = getAIService('text');
-        const result = await trackBackgroundTask(
+        const result = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'geogebra', subject: describeQuestion({ questionText }) },
             () => aiService.analyzeForGeogebra(questionText, answerText || "", analysis || "")
-        );
+        ));
 
         logger.info({ suitable: result.suitable, commandCount: result.commands.length }, 'GeoGebra analysis complete');
 

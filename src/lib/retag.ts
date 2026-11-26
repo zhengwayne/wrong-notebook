@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getAppTimeZone } from "@/lib/config";
 import { startBackgroundTask } from "@/lib/background-tasks";
+import type { AiQuotaReservation } from '@/lib/ai-quota';
 
 const logger = createLogger('retag');
 
@@ -172,10 +173,12 @@ export function getRetagJob(userId: string, subjectId: string): RetagJobStatus |
 /**
  * 在后台为错题本中的全部题目重新生成知识点；同一错题本已在运行时直接返回当前状态
  */
-export async function startRetagJob(userId: string, subjectId: string): Promise<RetagJobStatus> {
+export async function startRetagJob(userId: string, subjectId: string, quota?: Pick<AiQuotaReservation, 'settle' | 'release'>): Promise<RetagJobStatus> {
     const key = jobKey(userId, subjectId);
     const existing = jobs.get(key);
     if (existing?.running) {
+        // 已在进行中：本次不另算
+        await quota?.release();
         return existing;
     }
 
@@ -218,6 +221,8 @@ export async function startRetagJob(userId: string, subjectId: string): Promise<
         status.finishedAt = new Date().toISOString();
         if (status.total > 0 && status.failed === status.total) task.fail('ALL_FAILED');
         else task.succeed();
+        // 整本重打算一次：至少 1 道题重打成功才确认
+        void quota?.settle(status.total - status.failed > 0);
         logger.info({ subjectId, total: status.total, failed: status.failed }, 'Retag job finished');
     });
 

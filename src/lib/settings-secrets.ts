@@ -201,6 +201,42 @@ function findProviderKeyFromScope(
     return undefined;
 }
 
+function findProviderConnFromScope(
+    scope: ProviderFieldsBag | TextAiConfig | undefined,
+    provider: string,
+    instanceId?: string,
+): { apiKey?: string; baseUrl?: string } | undefined {
+    if (!scope) return undefined;
+    if (provider === 'openai') {
+        const targetId = instanceId || scope.openai?.activeInstanceId;
+        const matched = targetId ? (scope.openai?.instances ?? []).find((item) => item.id === targetId) : undefined;
+        return matched?.apiKey ? { apiKey: matched.apiKey, baseUrl: matched.baseUrl } : undefined;
+    }
+    const conn = provider === 'gemini' ? scope.gemini
+        : provider === 'anthropic' ? scope.anthropic
+            : isVendorProvider(provider) ? scope[provider]
+                : undefined;
+    return conn?.apiKey ? { apiKey: conn.apiKey, baseUrl: (conn as { baseUrl?: string }).baseUrl } : undefined;
+}
+
+/**
+ * 供 /api/ai/models 使用：收到掩码时取已保存的密钥，以及与它一起保存的 Base URL。
+ * 用已保存的密钥时只能请求已保存的地址，避免把密钥发到临时改过的地址上。
+ */
+export function resolveStoredProviderConn(
+    params: { provider?: string; role?: AiModelRole; instanceId?: string },
+    current: AppConfig | undefined,
+): { apiKey: string; baseUrl?: string } | null {
+    const { provider, role, instanceId } = params;
+    if (!provider || !current) return null;
+    const searchOrder = role === 'text' ? [current.textAi, current] : [current, current.textAi];
+    for (const scope of searchOrder) {
+        const conn = findProviderConnFromScope(scope, provider, instanceId);
+        if (conn?.apiKey) return { apiKey: conn.apiKey, baseUrl: conn.baseUrl?.trim() || undefined };
+    }
+    return null;
+}
+
 /**
  * 供 /api/ai/test 与 /api/ai/models 使用：收到掩码 '********' 时按 role 与 instanceId 还原服务端真实密钥。
  * 对于 role='text' 且 textAi 尚未落库的场景，会自动回退查找 vision 顶层真实密钥。

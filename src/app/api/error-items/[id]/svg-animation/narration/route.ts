@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, type AiQuotaReservation } from "@/lib/ai-quota";
 import { embedNarration } from "@/lib/svg-animation";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
@@ -24,6 +24,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
     const language = body.language === 'en' ? 'en' : 'zh';
     const field = language === 'en' ? 'svgAnimationEn' : 'svgAnimation';
 
+    let quota: AiQuotaReservation | undefined;
     try {
         const user = await getCurrentUser();
         if (!user) {
@@ -42,8 +43,8 @@ async function handlePost(req: Request, { params }: RouteContext) {
             return badRequest("NO_ANIMATION");
         }
 
-        const limited = await consumeAiQuota(user, 'animation');
-        if (limited) return limited;
+        quota = await reserveAiQuota(user, 'animation', { request: req });
+        if (quota.limited) return quota.limited;
 
         const updated = await trackBackgroundTask(
             { userId: user.id, kind: 'svg_narration', subject: describeQuestion(item), link: `/error-items/${id}` },
@@ -58,6 +59,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
             if (error instanceof Error && error.message === "NO_VALID_NARRATION") return null;
             throw error;
         });
+        await quota.settle(Boolean(updated));
         if (!updated) {
             return badRequest("NO_VALID_NARRATION");
         }
@@ -65,6 +67,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
         logger.info({ errorItemId: id, language }, 'SVG narration generated');
         return NextResponse.json({ svgAnimation: updated, language });
     } catch (error) {
+        await quota?.release();
         const message = error instanceof Error ? error.message : String(error);
         logger.error({ error: message }, 'Error generating SVG narration');
         // AI 错误码交给前端映射为提示文案

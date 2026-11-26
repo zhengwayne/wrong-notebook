@@ -1511,6 +1511,12 @@ export const zh = {
         noVisionModel: "未找到支持vision的模型，请手动输入",
         fetchFailed: "获取模型列表失败",
         enterManually: "，请手动输入",
+        searchPlaceholder: "输入或搜索模型名称",
+        showList: "展开模型列表",
+        noMatch: "没有匹配的模型，可直接使用输入的名称",
+        loaded: "已获取 {count} 个模型",
+        baseUrlChanged: "Base URL 已修改：请先保存设置，或重新填写 API Key 后再刷新",
+        apiKeyRequired: "没有可用的 API Key：请先填写并保存",
     },
     pagination: {
         showing: "显示第 {start}-{end} 条，共 {total} 条",
