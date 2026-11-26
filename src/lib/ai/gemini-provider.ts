@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, AnalyzeExtraImage, FigureResult, StructuredCompletion } from "./types";
 import type { AnalyzeImageResult } from './types';
 import { parseJsonCompletion, usageFromGemini } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
@@ -141,7 +141,7 @@ export class GeminiProvider implements AIService {
         return result;
     }
 
-    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags, extraImages: AnalyzeExtraImage[] = []): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -150,6 +150,7 @@ export class GeminiProvider implements AIService {
         const prompt = generateAnalyzeRequest(language, grade, subject, {
             customTemplate: config.prompts?.analyze,
             ...tagOptions,
+            pageCount: 1 + extraImages.length,
         }, gradeSemester);
 
         logger.box('🔍 AI Image Analysis Request', {
@@ -187,6 +188,7 @@ export class GeminiProvider implements AIService {
                 [
                     { text: prompt.user },
                     { inlineData: { data: imageBase64, mimeType } },
+                    ...extraImages.map((image) => ({ inlineData: { data: image.base64, mimeType: image.mimeType } })),
                 ],
                 getInitialMaxTokens(this.modelName),
             );
@@ -201,7 +203,7 @@ export class GeminiProvider implements AIService {
 
             const parsed = parseAnalyzeResponse(text);
             const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
-            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount, undefined, parsed.continuity);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 

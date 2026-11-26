@@ -93,7 +93,11 @@ export interface AnalyzeResponse extends AnalyzedQuestion {
   items: AnalyzedQuestion[];
   failedCount?: number;
   provenanceId?: string;
+  /** 规范化后的原图；跨页题为几页拼好的一张 */
   imageDataUrl?: string;
+  /** AI 判断：开头接着上一页 / 结尾没写完（用于提示合成一题） */
+  continuity?: { startsMidQuestion: boolean; endsIncomplete: boolean };
+  pageCount?: number;
 }
 
 export interface PracticeQuestion {

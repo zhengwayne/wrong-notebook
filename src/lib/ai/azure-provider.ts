@@ -1,6 +1,6 @@
 import { AzureOpenAI } from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, StructuredCompletion, AnalyzeImageResult } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, AnalyzeExtraImage, FigureResult, StructuredCompletion, AnalyzeImageResult } from "./types";
 import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateReanswerRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -104,7 +104,8 @@ export class AzureOpenAIProvider implements AIService {
         grade?: GradeLevel | null,
         subject?: string | null,
         gradeSemester?: string | null,
-        candidateTags?: CandidateTags
+        candidateTags?: CandidateTags,
+        extraImages: AnalyzeExtraImage[] = []
     ): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
@@ -113,6 +114,7 @@ export class AzureOpenAIProvider implements AIService {
         const systemPrompt = generateAnalyzeRequest(language, grade, subject, {
             customTemplate: config.prompts?.analyze,
             ...tagOptions,
+            pageCount: 1 + extraImages.length,
         }, gradeSemester);
 
         logger.box('🔍 AI Image Analysis Request', {
@@ -145,6 +147,7 @@ export class AzureOpenAIProvider implements AIService {
                                     url: `data:${mimeType};base64,${imageBase64}`,
                                 },
                             },
+                            ...extraImages.map((image) => ({ type: "image_url" as const, image_url: { url: `data:${image.mimeType};base64,${image.base64}` } })),
                         ],
                     },
                 ],
@@ -166,7 +169,7 @@ export class AzureOpenAIProvider implements AIService {
             if (!text) throw new Error("Empty response from AI");
             const parsed = parseAnalyzeResponse(text);
             const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
-            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount, undefined, parsed.continuity);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 

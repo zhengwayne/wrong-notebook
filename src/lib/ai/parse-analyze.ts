@@ -100,15 +100,43 @@ export function parseOneAnalyzeItem(text: string): ParsedQuestionFromSchema {
     return validation.success ? validation.data : result;
 }
 
+/** 跨页衔接：图片开头是否接着上一页的题、结尾的题是否没写完（多页时针对第一页开头和最后一页结尾） */
+export interface PageContinuity {
+    startsMidQuestion: boolean;
+    endsIncomplete: boolean;
+}
+
 export interface ParseAnalyzeResult {
     items: ParsedQuestionFromSchema[];
     failedCount: number;
+    continuity?: PageContinuity;
+}
+
+const PAGE_CONTINUITY_RE = /<page_continuity>([\s\S]*?)(?:<\/page_continuity>|$)/i;
+
+function parseFlag(value: string | null): boolean {
+    return /^\s*(?:true|yes|是)\s*$/i.test(value ?? '');
+}
+
+/** 取出 <page_continuity> 块并从正文中去掉，避免干扰按题拆分；没有该块时返回 undefined */
+export function extractPageContinuity(text: string): { continuity?: PageContinuity; rest: string } {
+    const match = PAGE_CONTINUITY_RE.exec(text);
+    if (!match) return { rest: text };
+    const block = match[1];
+    return {
+        continuity: {
+            startsMidQuestion: parseFlag(extractXmlTag(block, 'starts_mid_question')),
+            endsIncomplete: parseFlag(extractXmlTag(block, 'ends_incomplete')),
+        },
+        rest: text.slice(0, match.index) + text.slice(match.index + match[0].length),
+    };
 }
 
 export function parseAnalyzeResponse(text: string): ParseAnalyzeResult {
     const items: ParsedQuestionFromSchema[] = [];
     let failedCount = 0;
-    const chunks = splitAnalyzeItems(text);
+    const { continuity, rest } = extractPageContinuity(text);
+    const chunks = splitAnalyzeItems(rest);
     for (const [index, chunk] of chunks.entries()) {
         try {
             items.push(parseOneAnalyzeItem(chunk));
@@ -120,25 +148,28 @@ export function parseAnalyzeResponse(text: string): ParseAnalyzeResult {
     if (items.length === 0) {
         throw new Error("Invalid AI response: Missing critical XML tags (<question_text>, <answer_text>, or <analysis>)");
     }
-    return { items, failedCount };
+    return { items, failedCount, ...(continuity ? { continuity } : {}) };
 }
 
 export type AnalyzeImageResult = ParsedQuestionFromSchema & {
     items: ParsedQuestionFromSchema[];
     failedCount?: number;
     provenanceId?: string | null;
+    continuity?: PageContinuity;
 };
 
 export function toAnalyzeImageResult(
     items: ParsedQuestionFromSchema[],
     failedCount = 0,
     provenanceId?: string | null,
+    continuity?: PageContinuity,
 ): AnalyzeImageResult {
     return {
         ...items[0],
         items,
         ...(failedCount > 0 ? { failedCount } : {}),
         ...(provenanceId ? { provenanceId } : {}),
+        ...(continuity ? { continuity } : {}),
     };
 }
 

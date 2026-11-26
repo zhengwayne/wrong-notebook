@@ -166,3 +166,63 @@ export async function normalizeOptionalImageDataUrl(
     const result = await normalizeImageDataUrl(trimmed, options);
     return result.dataUrl;
 }
+
+export interface StitchOptions {
+    /** 拼图最长边，默认与保存错题时的限边一致，保存时不会再被缩小 */
+    maxEdge?: number;
+    /** 图片之间的白色间隔（像素） */
+    gap?: number;
+}
+
+/**
+ * 把一道跨页题的几张照片（已规范化）按顺序拼成一张图，作为错题原图保存：
+ * 竖排（上下接）和横排（左右并排）里选每页能保留更多像素的一种；最长边不超过 maxEdge，输出 JPEG。
+ */
+export async function stitchImages(
+    pages: ReadonlyArray<Pick<NormalizedImageResult, 'buffer' | 'width' | 'height'>>,
+    options: StitchOptions = {},
+): Promise<NormalizedImageResult> {
+    if (pages.length === 0) throw new ImageValidationError('CORRUPTED_IMAGE', 'No images to stitch');
+    const maxEdge = options.maxEdge ?? DEFAULT_MAX_EDGE;
+    const gap = options.gap ?? 16;
+
+    // 竖排：统一宽度 W；横排：统一高度 H。各自求出满足最长边限制的缩放比例，取更大的
+    const refWidth = Math.max(...pages.map((p) => p.width));
+    const refHeight = Math.max(...pages.map((p) => p.height));
+    const gaps = gap * (pages.length - 1);
+    const verticalHeight = pages.reduce((sum, p) => sum + (p.height * refWidth) / p.width, 0);
+    const vScale = Math.min(1, maxEdge / refWidth, (maxEdge - gaps) / verticalHeight);
+    const horizontalWidth = pages.reduce((sum, p) => sum + (p.width * refHeight) / p.height, 0);
+    const hScale = Math.min(1, maxEdge / refHeight, (maxEdge - gaps) / horizontalWidth);
+    const vertical = vScale >= hScale;
+
+    const layout: Array<{ input: Buffer; left: number; top: number }> = [];
+    let offset = 0;
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+    for (const page of pages) {
+        const width = vertical ? Math.max(1, Math.round(refWidth * vScale)) : Math.max(1, Math.round((page.width * refHeight * hScale) / page.height));
+        const height = vertical ? Math.max(1, Math.round((page.height * refWidth * vScale) / page.width)) : Math.max(1, Math.round(refHeight * hScale));
+        const input = await sharp(page.buffer, { limitInputPixels: MAX_INPUT_PIXELS }).resize({ width, height, fit: 'fill' }).toBuffer();
+        layout.push({ input, left: vertical ? 0 : offset, top: vertical ? offset : 0 });
+        offset += (vertical ? height : width) + gap;
+        canvasWidth = vertical ? Math.max(canvasWidth, width) : offset - gap;
+        canvasHeight = vertical ? offset - gap : Math.max(canvasHeight, height);
+    }
+
+    const data = await sharp({
+        create: { width: canvasWidth, height: canvasHeight, channels: 3, background: { r: 255, g: 255, b: 255 } },
+    })
+        .composite(layout)
+        .jpeg({ quality: 85, mozjpeg: true })
+        .toBuffer();
+    const base64 = data.toString('base64');
+    return {
+        buffer: data,
+        base64,
+        mimeType: 'image/jpeg',
+        dataUrl: `data:image/jpeg;base64,${base64}`,
+        width: canvasWidth,
+        height: canvasHeight,
+    };
+}

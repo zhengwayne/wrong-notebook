@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletion, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, AnalyzeImageResult, StructuredCompletion } from "./types";
+import type { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, AnalyzeExtraImage, FigureResult, AnalyzeImageResult, StructuredCompletion } from "./types";
 import { parseJsonCompletion, usageFromOpenAi } from "./usage";
 import { generateGradeRecognitionRequest, generateAnalyzeRequest, generateSimilarQuestionRequest, generateGeogebraRequest, generateMasteryRequest, generateGradingRequest, generateTagSuggestRequest, generateFigureRequest, generateSvgAnimationRequest, generateSvgNarrationRequest, generateLatexFixRequest } from './prompt-requests';
 import { parseNarration, sanitizeSvgAnimation } from '../svg-animation';
@@ -156,7 +156,7 @@ export class OpenAIProvider implements AIService {
         }, initialMaxTokens, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'), this.model);
     }
 
-    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<AnalyzeImageResult> {
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags, extraImages: AnalyzeExtraImage[] = []): Promise<AnalyzeImageResult> {
         const config = getAppConfig();
 
         // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
@@ -166,12 +166,14 @@ export class OpenAIProvider implements AIService {
         const systemPrompt = generateAnalyzeRequest(language, grade, subject, {
             customTemplate: config.prompts?.analyze,
             ...tagOptions,
+            pageCount: 1 + extraImages.length,
         }, gradeSemester);
 
         logger.box('🔍 AI Image Analysis Request', {
             provider: 'OpenAI',
             endpoint: `${this.baseURL}/chat/completions`,
             imageSize: `${imageBase64.length} bytes`,
+            pageCount: 1 + extraImages.length,
             mimeType,
             model: this.model,
             language,
@@ -213,6 +215,7 @@ export class OpenAIProvider implements AIService {
                     content: [
                         { type: "text", text: systemPrompt.user },
                         { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+                        ...extraImages.map((image) => ({ type: "image_url" as const, image_url: { url: `data:${image.mimeType};base64,${image.base64}` } })),
                     ],
                 },
             ], initialMax);
@@ -232,7 +235,7 @@ export class OpenAIProvider implements AIService {
             if (!text) throw new Error("Empty response from AI");
             const parsed = parseAnalyzeResponse(text);
             const items = parsed.items.map((item) => normalizeAiQuestionTags(item, tagOptions));
-            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount);
+            const parsedResult = toAnalyzeImageResult(items, parsed.failedCount, undefined, parsed.continuity);
 
             logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
 

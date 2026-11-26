@@ -28,7 +28,7 @@ function safeSubject(value?: string | null): string | null {
 
 /** 保留候选清单是否存在、是否为空的信息，清单正文始终放在用户消息里。 */
 function inputOptions(options: PromptOptions): Record<string, unknown> {
-    return Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'customTemplate' && key !== 'providerHints'));
+    return Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'customTemplate' && key !== 'providerHints' && key !== 'pageCount'));
 }
 
 function referenceOptions(options: PromptOptions): PromptOptions {

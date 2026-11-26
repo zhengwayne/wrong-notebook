@@ -107,6 +107,12 @@ assert.equal(req.isLostResponse(new req.ApiError(500, 'AI_TIMEOUT_ERROR')), fals
 assert.equal(req.isLostResponse(new req.ApiError(429, 'AI_DAILY_LIMIT_EXCEEDED')), false);
 assert.equal(req.toChineseMessage(new req.ApiError(429, 'AI_DAILY_LIMIT_EXCEEDED')), '今天的 AI 识别次数用完了，明天再来');
 
+// 跨页题分组：编译到 ES2015 后仍可用
+const groups = loadModule('utils/photo-groups.ts');
+assert.deepEqual(groups.groupKeys([{ key: 'a', linkPrev: true }, { key: 'b', linkPrev: true }, { key: 'c', linkPrev: false }]), [['a', 'b'], ['c']]);
+assert.equal(groups.mergedSize([{ key: 'a', linkPrev: false }, { key: 'b', linkPrev: true }, { key: 'c', linkPrev: false }], 2), 3);
+assert.equal(groups.groupLabel([0, 1]), '1-2');
+
 const share = loadModule('utils/share.ts');
 const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz012345';
 assert.equal(share.extractShareToken(`https://xueji.example.com/share/submission/${token}`), token);

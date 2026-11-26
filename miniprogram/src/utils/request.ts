@@ -145,6 +145,8 @@ export interface RequestOptions {
   data?: Record<string, unknown> | unknown[];
   query?: Record<string, string | number | null | undefined>;
   timeout?: number;
+  /** 请求编号（32 位十六进制）：耗时的识别请求断线后可用 fetchStoredResponse 取回 */
+  requestId?: string;
 }
 
 export function buildQuery(query?: RequestOptions['query']): string {
@@ -161,7 +163,10 @@ export function request<T>(path: string, options: RequestOptions = {}): Promise<
       url: `${API_BASE_URL}${path}${buildQuery(options.query)}`,
       method: options.method ?? 'GET',
       data: options.data as WechatMiniprogram.IAnyObject | undefined,
-      header: buildHeaders(options.data ? { 'Content-Type': 'application/json' } : {}),
+      header: buildHeaders({
+        ...(options.data ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.requestId ? { 'x-request-id': options.requestId } : {}),
+      }),
       timeout: options.timeout ?? 60000,
       success: (res) => {
         captureKidLock(res.cookies, res.header as Record<string, unknown>);

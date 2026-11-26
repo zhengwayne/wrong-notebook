@@ -599,6 +599,88 @@ describe('/api/mp/analyze multipart 上传', () => {
         expect(mocks.analyzeImage).not.toHaveBeenCalled();
     });
 
+    async function pagePng(width: number, height: number, shade: number) {
+        const sharp = (await import('sharp')).default;
+        const buffer = await sharp({ create: { width, height, channels: 3, background: { r: shade, g: shade, b: shade } } }).png().toBuffer();
+        return buffer.toString('base64');
+    }
+
+    async function widthOf(base64: string) {
+        const sharp = (await import('sharp')).default;
+        return (await sharp(Buffer.from(base64, 'base64')).metadata()).width;
+    }
+
+    it('跨页题：几张图按顺序一次识别，只计 1 次用量，返回拼好的原图和跨页判断', async () => {
+        const token = await loginAndBind();
+        mocks.analyzeImage.mockResolvedValue({
+            questionText: '跨页题', answerText: '1', analysis: 'a', knowledgePoints: [], subject: '物理',
+            continuity: { startsMidQuestion: false, endsIncomplete: true },
+        });
+        const pages = [await pagePng(40, 60, 10), await pagePng(50, 60, 120), await pagePng(60, 60, 240)];
+        const usageBefore = await database.aiUsage.count();
+        const res = await MP_ANALYZE(new Request('http://localhost/api/mp/analyze', {
+            method: 'POST',
+            headers: bearer(token, { 'content-type': 'application/json', 'x-request-id': 'd'.repeat(32) }),
+            body: JSON.stringify({ images: pages, language: 'zh' }),
+        }));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.questionText).toBe('跨页题');
+        expect(body.pageCount).toBe(3);
+        expect(body.continuity).toEqual({ startsMidQuestion: false, endsIncomplete: true });
+        expect(body.imageDataUrl).toMatch(/^data:image\/jpeg;base64,/);
+        // 拼图包含三页：小图不放大，统一宽度后上下拼接（含两道 16px 间隔）
+        const sharp = (await import('sharp')).default;
+        const composite = await sharp(Buffer.from(body.imageDataUrl.split(',')[1], 'base64')).metadata();
+        expect([composite.width, composite.height]).toEqual([60, 90 + 72 + 60 + 32]);
+
+        expect(mocks.analyzeImage).toHaveBeenCalledTimes(1);
+        const call = mocks.analyzeImage.mock.calls[0];
+        expect(await widthOf(call[0])).toBe(40);
+        expect(call[7]).toHaveLength(2);
+        expect(await widthOf(call[7][0].base64)).toBe(50);
+        expect(await widthOf(call[7][1].base64)).toBe(60);
+        expect(await database.aiUsage.count()).toBe(usageBefore + 1);
+
+        // 断线后同样可以按编号取回
+        const stored = await GET_STORED_REQUEST(
+            new Request(`http://localhost/api/requests/${'d'.repeat(32)}`, { headers: bearer(token) }),
+            { params: Promise.resolve({ id: 'd'.repeat(32) }) },
+        );
+        expect((await stored.json()).body.pageCount).toBe(3);
+    });
+
+    it('跨页题：multipart 重复 file 字段也按顺序合成一次识别', async () => {
+        const token = await loginAndBind();
+        mocks.analyzeImage.mockResolvedValue({ questionText: '两页题', answerText: '1', analysis: 'a', knowledgePoints: [], subject: '数学' });
+        const form = new FormData();
+        form.append('file', new Blob([Buffer.from(await pagePng(30, 40, 0), 'base64')], { type: 'image/png' }), 'a.png');
+        form.append('file', new Blob([Buffer.from(await pagePng(70, 40, 200), 'base64')], { type: 'image/png' }), 'b.png');
+        const res = await MP_ANALYZE(new Request('http://localhost/api/mp/analyze', { method: 'POST', headers: bearer(token), body: form }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).pageCount).toBe(2);
+        const call = mocks.analyzeImage.mock.calls[0];
+        expect(await widthOf(call[0])).toBe(30);
+        expect(call[7].map((image: { mimeType: string }) => image.mimeType)).toEqual(['image/png']);
+    });
+
+    it('跨页题最多 3 张，坏图整组拒绝且不计用量', async () => {
+        const token = await loginAndBind();
+        const page = await pagePng(20, 20, 50);
+        const usageBefore = await database.aiUsage.count();
+        const post = (images: unknown) => MP_ANALYZE(new Request('http://localhost/api/mp/analyze', {
+            method: 'POST', headers: bearer(token, { 'content-type': 'application/json' }), body: JSON.stringify({ images }),
+        }));
+        const tooMany = await post([page, page, page, page]);
+        expect(tooMany.status).toBe(400);
+        expect((await tooMany.json()).message).toBe('TOO_MANY_IMAGES');
+        expect((await post([page, Buffer.from('not an image').toString('base64')])).status).toBe(400);
+        expect((await post([])).status).toBe(400);
+        expect((await post([page, 42])).status).toBe(400);
+        expect(mocks.analyzeImage).not.toHaveBeenCalled();
+        expect(await database.aiUsage.count()).toBe(usageBefore);
+    });
+
     it('未登录不能上传', async () => {
         const res = await MP_ANALYZE(new Request('http://localhost/api/mp/analyze', { method: 'POST', body: new FormData() }));
         expect(res.status).toBe(401);

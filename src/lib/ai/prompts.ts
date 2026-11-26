@@ -196,6 +196,22 @@ export interface PromptOptions {
   candidateTags?: CandidateTags;
   // 举一反三时原题的 SVG 配图，供 AI 参考重新画图
   originalFigureSvg?: string | null;
+  // 识别时一次发来的图片张数（同一道跨页题按顺序拍的几页），大于 1 时追加多页规则
+  pageCount?: number;
+}
+
+/** 跨页衔接判断：用于提示用户把相邻两张照片合成一题；放在输出协议里，自定义模板也生效 */
+export const PAGE_CONTINUITY_RULES = `【跨页衔接】在全部题目标签之后（不要放进任何 <item> 里），单独输出一次：
+<page_continuity><starts_mid_question>true 或 false</starts_mid_question><ends_incomplete>true 或 false</ends_incomplete></page_continuity>
+- starts_mid_question：图片最上方是从上一页接续过来的半道题（开头没有题号，题干、选项、表格或解答从中间开始）时为 true。
+- ends_incomplete：图片最下方的题目明显没有结束、要在下一页继续（题干、选项、表格或图被截断）时为 true。
+- 拿不准时填 false。`;
+
+/** 多张图片合成一道题时的识别规则；张数只取 2~3 的整数 */
+export function generateMultiPageRules(pageCount?: number): string {
+  const count = Number.isInteger(pageCount) ? Math.min(Math.max(pageCount as number, 1), 3) : 1;
+  if (count <= 1) return '';
+  return `【多页图片】这次共 ${count} 张图片，是同一份作业或试卷按顺序连续拍下的 ${count} 页（第 1 张在前）。跨页的同一道题必须合并成一条完整的题目输出，不要拆成两条，也不要重复输出；各页上独立完整的其他题照常按题拆开。page_continuity 只判断第 1 张的开头和最后 1 张的结尾。`;
 }
 
 /**
@@ -640,7 +656,9 @@ ${tagsString}
   // 旧自定义模板可能没有这些占位符，需要补上完整规则以保持行为。
   const appendix = [
     '请完整识别用户图片中的题目。多道题时按题拆开输出，已做对的题目不要收入。只根据可见作答判断对错，不要臆造错解。',
+    generateMultiPageRules(options?.pageCount),
     generateOutputContract('analyze'),
+    PAGE_CONTINUITY_RULES,
     // 未指定错题本时学科由 AI 判断，无法提前知道是否语文，统一附带转写规则
     generateChineseTranscriptionRules(subject, null, true),
     ...(options?.customTemplate ? [
