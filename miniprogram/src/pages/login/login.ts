@@ -1,5 +1,6 @@
 import { getToken, toChineseMessage } from '../../utils/request';
 import { fetchSession, loginWithWechat } from '../../utils/session';
+import { goHub } from '../../utils/nav';
 
 Page({
   data: {
@@ -12,7 +13,7 @@ Page({
     if (!getToken()) return;
     try {
       await fetchSession();
-      wx.switchTab({ url: '/pages/home/home' });
+      goHub();
     } catch {
       // 令牌失效时留在登录页
     }
@@ -35,7 +36,7 @@ Page({
     this.setData({ loading: true, error: '' });
     try {
       await loginWithWechat();
-      wx.switchTab({ url: '/pages/home/home' });
+      goHub();
     } catch (error) {
       this.setData({ error: toChineseMessage(error) });
     } finally {

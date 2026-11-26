@@ -1,0 +1,13 @@
+.top-row { display: flex; gap: 20rpx; margin-bottom: 28rpx; }
+.stat-card { flex: 1; display: flex; align-items: center; gap: 20rpx; padding: 28rpx; border-radius: 28rpx; background-color: var(--xj-card); }
+.stat-num { font-size: 40rpx; font-weight: 700; line-height: 1.2; }
+.books { white-space: nowrap; margin-bottom: 12rpx; }
+.seg { display: flex; padding: 6rpx; border-radius: 40rpx; background-color: var(--xj-secondary); margin-bottom: 12rpx; }
+.seg-item { flex: 1; height: 68rpx; line-height: 68rpx; text-align: center; border-radius: 34rpx; font-size: 26rpx; color: var(--xj-text-2); }
+.seg-on { background-color: var(--xj-card); color: var(--xj-primary); font-weight: 600; }
+.levels { display: flex; flex-wrap: wrap; gap: 20rpx; }
+.level { width: calc((100% - 60rpx) / 4); height: 128rpx; border-radius: 24rpx; background-color: var(--xj-card); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.level-done { background-color: var(--xj-accent); }
+.level-no { font-size: 36rpx; font-weight: 700; color: var(--xj-accent-fg); }
+.level-star { font-size: 22rpx; color: var(--xj-warning); height: 30rpx; line-height: 30rpx; }
+.foot { margin-top: 40rpx; text-align: center; font-size: 22rpx; }

@@ -76,3 +76,4 @@
     <view wx:if="{{!loading && items.length > 0 && page >= totalPages}}" class="end muted">— 到底了 —</view>
   </block>
 </view>
+<xj-tabbar active="notebook" />

@@ -2,6 +2,7 @@ import { loadContext, setReviewQueue } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { MASTERY_ICON, MASTERY_LABEL, toPlainText } from '../../utils/text';
 import type { ErrorItemSummary, PageResult } from '../../utils/types';
+import { PAGES, switchTo, goHub } from '../../utils/nav';
 
 interface DueRow {
   id: string;
@@ -64,23 +65,23 @@ Page({
 
   /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
   onKidUnlocked() {
-    wx.reLaunch({ url: '/pages/home/home' });
+    goHub();
   },
 
   onStart() {
     const ids = this.data.items.map((item) => item.id);
     if (ids.length === 0) return;
     setReviewQueue(ids);
-    wx.navigateTo({ url: `/pages/item/item?id=${encodeURIComponent(ids[0])}&mode=review` });
+    wx.navigateTo({ url: `${PAGES.xjItem}?id=${encodeURIComponent(ids[0])}&mode=review` });
   },
 
   onOpenNotebook() {
-    wx.switchTab({ url: '/pages/notebook/notebook' });
+    switchTo(PAGES.xjNotebook);
   },
 
   onOpen(e: WechatMiniprogram.BaseEvent) {
     const id = String(e.currentTarget.dataset.id);
     setReviewQueue([id, ...this.data.items.map((item) => item.id).filter((itemId) => itemId !== id)]);
-    wx.navigateTo({ url: `/pages/item/item?id=${encodeURIComponent(id)}&mode=review` });
+    wx.navigateTo({ url: `${PAGES.xjItem}?id=${encodeURIComponent(id)}&mode=review` });
   },
 });

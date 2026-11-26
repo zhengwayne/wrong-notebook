@@ -1,0 +1,15 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger">{{error}}</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>加载中</view>
+  <block wx:else>
+    <view class="muted center got">已获得 {{got}} / {{badges.length}}</view>
+    <view class="grid">
+      <view wx:for="{{badges}}" wx:key="id" class="b {{item.got ? '' : 'b-off'}}">
+        <image class="b-img" src="{{item.img}}" mode="aspectFit" lazy-load />
+        <view class="b-name">{{item.name}}</view>
+        <view class="b-hint">{{item.hint}}</view>
+      </view>
+    </view>
+    <view class="foot muted">{{attribution}}</view>
+  </block>
+</view>

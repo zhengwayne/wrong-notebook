@@ -1,0 +1,17 @@
+<view class="container safe-bottom">
+  <view class="seg">
+    <view class="seg-item {{tab === 'wrong' ? 'seg-on' : ''}}" data-tab="wrong" bindtap="onTab">拼错过 {{wrongTotal}}</view>
+    <view class="seg-item {{tab === 'all' ? 'seg-on' : ''}}" data-tab="all" bindtap="onTab">全部 {{allTotal}}</view>
+  </view>
+  <view wx:if="{{rows.length === 0}}" class="empty"><image class="ic-xl" src="/assets/icons/book-a-l.svg" />还没有单词</view>
+  <view wx:for="{{rows}}" wx:key="name" class="list-item row" hover-class="press" data-name="{{item.name}}" bindtap="onSpeak">
+    <view class="flex-1">
+      <view class="w-name">{{item.name}}</view>
+      <view class="muted">{{item.trans}}</view>
+    </view>
+    <view wx:if="{{item.wrong > 0}}" class="tag">错 {{item.wrong}}</view>
+    <view wx:if="{{item.due}}" class="tag">待复习</view>
+    <image class="ic" src="/assets/icons/volume-2-m.svg" />
+  </view>
+  <button wx:if="{{tab === 'wrong' && wrongTotal > 0 && !kidMode}}" class="btn save-all" disabled="{{saving}}" bindtap="onSaveAll" id="btn-save-all"><image class="ic" src="/assets/icons/notebook-pen-w.svg" />收进错题本</button>
+</view>

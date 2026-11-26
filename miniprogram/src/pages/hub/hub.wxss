@@ -1,0 +1,8 @@
+.hub-head { margin: 8rpx 0 32rpx; }
+.learner-chip { display: inline-flex; align-items: center; gap: 8rpx; height: 64rpx; padding: 0 24rpx; border-radius: 32rpx; background-color: var(--xj-accent); color: var(--xj-accent-fg); font-size: 26rpx; }
+.me-btn { display: flex; align-items: center; gap: 8rpx; height: 72rpx; padding: 0 24rpx; border-radius: 36rpx; background-color: var(--xj-card); color: var(--xj-primary); font-size: 28rpx; }
+.entry { display: flex; align-items: center; gap: 32rpx; padding: 44rpx 36rpx; margin-bottom: 28rpx; border-radius: 36rpx; background-color: var(--xj-card); }
+.entry-ic { width: 144rpx; height: 144rpx; border-radius: 40rpx; background-color: var(--xj-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.entry-img { width: 88rpx; height: 88rpx; }
+.entry-title { font-size: 40rpx; font-weight: 700; color: var(--xj-fg); }
+.entry-sub { font-size: 26rpx; color: var(--xj-muted-fg); margin-top: 6rpx; }

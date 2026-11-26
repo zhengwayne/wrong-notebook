@@ -1,0 +1,24 @@
+.progress { height: 12rpx; border-radius: 6rpx; background-color: var(--xj-accent); overflow: hidden; margin: 8rpx 0 8rpx; }
+.progress-bar { height: 100%; background-color: var(--xj-primary); }
+.word-card { background-color: var(--xj-card); border-radius: 32rpx; padding: 36rpx 32rpx; margin: 20rpx 0 28rpx; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.art { width: 320rpx; height: 320rpx; margin-bottom: 16rpx; border-radius: 24rpx; }
+.trans { font-size: 36rpx; font-weight: 600; }
+.phone { color: var(--xj-muted-fg); font-size: 28rpx; margin-top: 8rpx; }
+.answer { margin-top: 16rpx; font-size: 44rpx; font-weight: 700; color: var(--xj-warning); letter-spacing: 2rpx; }
+.answer-ok { color: var(--xj-success); }
+.sentence { margin-top: 16rpx; font-size: 26rpx; color: var(--xj-text-2); }
+.slots { display: flex; flex-wrap: wrap; justify-content: center; gap: 10rpx; margin-bottom: 20rpx; }
+.slot { min-width: 52rpx; height: 72rpx; line-height: 72rpx; text-align: center; border-bottom: 4rpx solid var(--xj-border); font-size: 40rpx; font-weight: 600; font-family: Menlo, monospace; }
+.slot-ok { color: var(--xj-success); border-bottom-color: var(--xj-success); }
+.slot-bad { color: var(--xj-danger); border-bottom-color: var(--xj-danger); }
+.slot-space { border-bottom: none; min-width: 24rpx; }
+.shake { animation: xj-shake 0.4s; }
+@keyframes xj-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-12rpx); } 75% { transform: translateX(12rpx); } }
+.type-input { height: 96rpx; border-radius: 24rpx; background-color: var(--xj-card); text-align: center; font-size: 36rpx; border: 2rpx solid var(--xj-border); }
+.tools { display: flex; justify-content: space-around; margin-top: 32rpx; }
+.tool { display: flex; flex-direction: column; align-items: center; gap: 6rpx; font-size: 24rpx; color: var(--xj-text-2); padding: 12rpx 20rpx; }
+.done-card { display: flex; flex-direction: column; align-items: center; padding: 48rpx 0 32rpx; }
+.done-stars { font-size: 56rpx; color: var(--xj-warning); letter-spacing: 8rpx; margin: 12rpx 0; }
+.wrong-row { display: flex; align-items: center; gap: 20rpx; padding: 12rpx 0; }
+.wrong-word { font-weight: 600; font-size: 32rpx; }
+.add-btn { margin-top: 20rpx; }

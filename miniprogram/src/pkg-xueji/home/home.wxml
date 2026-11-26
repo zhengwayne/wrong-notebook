@@ -64,3 +64,4 @@
 
   <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
+<xj-tabbar active="home" />

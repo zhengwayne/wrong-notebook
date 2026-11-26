@@ -23,6 +23,7 @@ import {
 } from '../../utils/photo-groups';
 import { toPlainText } from '../../utils/text';
 import type { AnalyzeResponse, AnalyzedQuestion, Notebook } from '../../utils/types';
+import { PAGES, switchTo } from '../../utils/nav';
 
 /** 一次最多选几张：与微信相册多选上限一致 */
 const MAX_PHOTOS = 9;
@@ -664,7 +665,7 @@ Page({
       wx.showToast({ title: duplicates ? `已保存 ${saved} 题，${duplicates} 题已存在` : `已保存 ${saved} 题`, icon: duplicates ? 'none' : 'success' });
       resetResults();
       this.syncPhotos([]);
-      setTimeout(() => wx.switchTab({ url: '/pages/notebook/notebook' }), 800);
+      setTimeout(() => switchTo(PAGES.xjNotebook), 800);
     } catch (error) {
       // 已保存的题从列表去掉，重试时不会重复保存
       allItems = allItems.filter((item) => !savedIds.has(item.id));

@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "错题本", "enablePullDownRefresh": true, "onReachBottomDistance": 120 }
+{"navigationBarTitleText": "错题本", "enablePullDownRefresh": true, "onReachBottomDistance": 120, "usingComponents": {"xj-tabbar": "/pkg-xueji/components/xj-tabbar/xj-tabbar"}}

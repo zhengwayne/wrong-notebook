@@ -1,0 +1,49 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>加载单词</view>
+
+  <block wx:elif="{{!done && word}}">
+    <view class="progress"><view class="progress-bar" style="width: {{(index) * 100 / words.length}}%"></view></view>
+    <view class="muted center">{{index + 1}} / {{words.length}}</view>
+
+    <view class="word-card">
+      <image wx:if="{{word.art && (!dictation || solved)}}" class="art" src="{{word.art}}" mode="aspectFit" lazy-load />
+      <view wx:if="{{!dictation || solved || revealed}}" class="trans">{{word.trans}}</view>
+      <view wx:else class="trans muted">听发音，拼出单词</view>
+      <view wx:if="{{word.phone && (!dictation || solved)}}" class="phone">/{{word.phone}}/</view>
+      <view wx:if="{{revealed || solved}}" class="answer {{solved ? 'answer-ok' : ''}}">{{word.name}}</view>
+      <view wx:if="{{solved && word.sentence}}" class="sentence">{{word.sentence}}<view class="muted">{{word.sentenceTrans}}</view></view>
+    </view>
+
+    <view class="slots {{shake ? 'shake' : ''}}">
+      <view wx:for="{{marks}}" wx:key="index" class="slot slot-{{item.mark}}">{{item.ch}}</view>
+    </view>
+    <input class="type-input" value="{{typed}}" focus="{{focus}}" maxlength="{{word.name.length + 4}}" bindinput="onInput" bindconfirm="onConfirm" confirm-type="next" placeholder="在这里拼写" placeholder-class="placeholder" adjust-position="{{true}}" hold-keyboard="{{true}}" disabled="{{solved}}" id="spell-input" />
+
+    <view class="tools">
+      <view class="tool" hover-class="press" bindtap="play" id="btn-play"><image class="ic-lg" src="/assets/icons/volume-2-p.svg" /><text>发音</text></view>
+      <view class="tool" hover-class="press" bindtap="onHint" id="btn-hint"><image class="ic-lg" src="/assets/icons/lightbulb-p.svg" /><text>提示</text></view>
+      <view class="tool" hover-class="press" bindtap="onReveal" id="btn-reveal"><image class="ic-lg" src="/assets/icons/eye-p.svg" /><text>看答案</text></view>
+      <view class="tool" hover-class="press" bindtap="onSkip" id="btn-skip"><image class="ic-lg" src="/assets/icons/skip-forward-p.svg" /><text>跳过</text></view>
+    </view>
+  </block>
+
+  <block wx:elif="{{done}}">
+    <view class="done-card">
+      <image class="ic-xl" src="/assets/icons/trophy-p.svg" />
+      <view class="done-stars">{{starText}}</view>
+      <view class="muted">拼对 {{results.length - wrongCount}} / {{results.length}}</view>
+    </view>
+    <view wx:if="{{wrongCount > 0}}" class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/circle-x-d.svg" />要再练的词</view>
+      <view wx:for="{{results}}" wx:key="name" wx:if="{{!item.ok}}" class="wrong-row"><text class="wrong-word">{{item.name}}</text><text class="muted flex-1">{{item.trans}}</text></view>
+      <button wx:if="{{!kidMode}}" class="btn btn-secondary btn-small add-btn" disabled="{{saving || saved}}" bindtap="onSaveWrong" id="btn-save-wrong"><image class="ic" src="/assets/icons/notebook-pen-p.svg" />{{saved ? '已收进错题本' : '收进错题本'}}</button>
+      <view wx:else class="muted">家长解锁后可收进错题本</view>
+    </view>
+    <view class="btn-row">
+      <button class="btn btn-outline" bindtap="onAgain">再来一次</button>
+      <button wx:if="{{!review && level + 1 < levelTotal}}" class="btn" bindtap="onNextLevel" id="btn-next-level">下一关</button>
+      <button wx:else class="btn" bindtap="onBack">返回</button>
+    </view>
+  </block>
+</view>

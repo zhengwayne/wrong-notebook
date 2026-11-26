@@ -2,6 +2,7 @@ import { loadContext, takeNextReview } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemDetail, PracticeQuestion } from '../../utils/types';
+import { PAGES, switchTo } from '../../utils/nav';
 
 interface ItemView {
   id: string;
@@ -173,10 +174,10 @@ Page({
 
   onNext() {
     if (!this.data.nextId) return;
-    wx.redirectTo({ url: `/pages/item/item?id=${encodeURIComponent(this.data.nextId)}&mode=review` });
+    wx.redirectTo({ url: `${PAGES.xjItem}?id=${encodeURIComponent(this.data.nextId)}&mode=review` });
   },
 
   onFinish() {
-    wx.switchTab({ url: '/pages/review/review' });
+    switchTo(PAGES.xjReview);
   },
 });

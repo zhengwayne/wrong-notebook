@@ -43,7 +43,8 @@ export function hasKidLockCookie(): boolean {
   return Boolean(wx.getStorageSync(KID_LOCK_KEY));
 }
 
-function buildHeaders(extra: Record<string, string> = {}): Record<string, string> {
+/** 带登录令牌与专注锁的请求头（wx.downloadFile 下载需要登录的文件时也用它） */
+export function buildHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;

@@ -1,0 +1,7 @@
+<view class="xj-tabbar-space"></view>
+<view class="xj-tabbar">
+  <view wx:for="{{tabs}}" wx:key="key" class="xj-tab {{item.key === active ? 'xj-tab-on' : ''}}" hover-class="press" data-key="{{item.key}}" bindtap="onTap" id="tab-{{item.key}}">
+    <image class="xj-tab-ic" src="{{item.key === active ? item.iconOn : item.icon}}" />
+    <text>{{item.text}}</text>
+  </view>
+</view>

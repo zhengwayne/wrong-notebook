@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "复习", "enablePullDownRefresh": true }
+{"navigationBarTitleText": "复习", "enablePullDownRefresh": true, "usingComponents": {"xj-tabbar": "/pkg-xueji/components/xj-tabbar/xj-tabbar"}}

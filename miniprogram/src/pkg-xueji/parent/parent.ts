@@ -2,6 +2,7 @@ import { loadContext, switchLearner } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
 import { extractShareToken } from '../../utils/share';
 import type { ChildLearner, ParentHomeResponse } from '../../utils/types';
+import { openMe } from '../../utils/nav';
 
 const STEP_STATUS: Record<string, string> = {
   pending: '待做',
@@ -98,7 +99,7 @@ Page({
   },
 
   onOpenMe() {
-    wx.switchTab({ url: '/pages/me/me' });
+    openMe();
   },
 
   onScanFeedback() {

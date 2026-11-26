@@ -3,6 +3,7 @@ import type { XuejiGlobalData } from '../app';
 import { clearKidLock, getToken, hasKidLockCookie, request } from './request';
 import { fetchChildren, fetchSession, resolveLearnerId, writeCurrentLearnerId } from './session';
 import type { ChildLearner, KidModeStatus, MpSessionResponse } from './types';
+import { goLogin } from './nav';
 
 export interface PageContext {
   session: MpSessionResponse;
@@ -19,7 +20,7 @@ function globalData(): XuejiGlobalData {
 /** 未登录时跳转登录页并返回 null */
 export async function loadContext(): Promise<PageContext | null> {
   if (!getToken()) {
-    wx.reLaunch({ url: '/pages/login/login' });
+    goLogin();
     return null;
   }
   const session = await fetchSession();

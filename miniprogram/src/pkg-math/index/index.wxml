@@ -1,0 +1,27 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger" bindtap="onRetry"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}（点我重试）</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>加载星图</view>
+  <block wx:else>
+    <view class="summary" hover-class="press" bindtap="onOpenBadges" id="math-badges">
+      <image class="ic-lg" src="/assets/icons/star-p.svg" />
+      <view class="flex-1"><view class="sum-num">{{stars}} <text class="muted">/ {{total}}</text></view><view class="muted">已点亮</view></view>
+      <view class="row badge-link"><image class="ic" src="/assets/icons/award-p.svg" /><text>徽章</text></view>
+    </view>
+    <scroll-view scroll-x class="camps" enhanced show-scrollbar="{{false}}">
+      <view wx:for="{{camps}}" wx:key="key" class="chip {{item.key === camp ? 'chip-active' : ''}}" data-key="{{item.key}}" bindtap="onPickCamp">{{item.label}}</view>
+    </scroll-view>
+    <view wx:for="{{groups}}" wx:key="chapter" wx:for-item="group">
+      <view class="section-label">{{group.chapter}}</view>
+      <view wx:for="{{group.stations}}" wx:key="id" class="station" hover-class="press" data-id="{{item.id}}" bindtap="onOpenLesson" id="station-{{item.id}}">
+        <view class="st-no {{item.lit ? 'st-lit' : ''}}">
+          <image wx:if="{{item.lit}}" class="ic" src="/assets/icons/star-w.svg" />
+          <text wx:else>{{item.no}}</text>
+        </view>
+        <view class="flex-1 st-title">{{item.title}}</view>
+        <text wx:if="{{item.score}}" class="muted">{{item.score}}分</text>
+        <image class="ic" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+    </view>
+    <view class="foot muted">{{attribution}}</view>
+  </block>
+</view>

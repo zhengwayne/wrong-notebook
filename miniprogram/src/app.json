@@ -1,13 +1,8 @@
 {
   "pages": [
-    "pages/home/home",
+    "pages/hub/hub",
     "pages/login/login",
-    "pages/notebook/notebook",
-    "pages/review/review",
-    "pages/me/me",
-    "pages/capture/capture",
-    "pages/item/item",
-    "pages/parent/parent"
+    "pages/me/me"
   ],
   "window": {
     "navigationBarBackgroundColor": "#F6F5FB",
@@ -15,38 +10,6 @@
     "navigationBarTitleText": "学迹",
     "backgroundColor": "#F6F5FB",
     "backgroundTextStyle": "dark"
-  },
-  "tabBar": {
-    "color": "#8A8499",
-    "selectedColor": "#6B5CA5",
-    "backgroundColor": "#FFFFFF",
-    "borderStyle": "white",
-    "list": [
-      {
-        "pagePath": "pages/home/home",
-        "text": "首页",
-        "iconPath": "assets/tabbar/home.png",
-        "selectedIconPath": "assets/tabbar/home-active.png"
-      },
-      {
-        "pagePath": "pages/notebook/notebook",
-        "text": "错题本",
-        "iconPath": "assets/tabbar/notebook.png",
-        "selectedIconPath": "assets/tabbar/notebook-active.png"
-      },
-      {
-        "pagePath": "pages/review/review",
-        "text": "复习",
-        "iconPath": "assets/tabbar/review.png",
-        "selectedIconPath": "assets/tabbar/review-active.png"
-      },
-      {
-        "pagePath": "pages/me/me",
-        "text": "我的",
-        "iconPath": "assets/tabbar/me.png",
-        "selectedIconPath": "assets/tabbar/me-active.png"
-      }
-    ]
   },
   "networkTimeout": {
     "request": 60000,
@@ -58,5 +21,48 @@
   "lazyCodeLoading": "requiredComponents",
   "usingComponents": {
     "kid-lock": "/components/kid-lock/kid-lock"
+  },
+  "subPackages": [
+    {
+      "root": "pkg-xueji",
+      "name": "xueji",
+      "pages": [
+        "home/home",
+        "notebook/notebook",
+        "review/review",
+        "capture/capture",
+        "item/item",
+        "parent/parent"
+      ]
+    },
+    {
+      "root": "pkg-english",
+      "name": "english",
+      "pages": [
+        "index/index",
+        "practice/practice",
+        "words/words"
+      ]
+    },
+    {
+      "root": "pkg-math",
+      "name": "math",
+      "pages": [
+        "index/index",
+        "lesson/lesson",
+        "quiz/quiz",
+        "badges/badges"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/hub/hub": {
+      "network": "all",
+      "packages": [
+        "xueji",
+        "english",
+        "math"
+      ]
+    }
   }
 }

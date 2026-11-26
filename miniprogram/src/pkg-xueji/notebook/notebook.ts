@@ -13,6 +13,7 @@ import {
   subjectForStage,
 } from '../../utils/subjects';
 import type { ErrorItemSummary, Notebook, PageResult } from '../../utils/types';
+import { PAGES, switchTo, goHub } from '../../utils/nav';
 
 const STAGE_OPTIONS = NOTEBOOK_STAGES.map((value) => ({ value, label: STAGE_LABELS[value] }));
 
@@ -110,11 +111,11 @@ Page({
 
   /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
   onKidUnlocked() {
-    wx.reLaunch({ url: '/pages/home/home' });
+    goHub();
   },
 
   onGoReview() {
-    wx.switchTab({ url: '/pages/review/review' });
+    switchTo(PAGES.xjReview);
   },
 
   async onPullDownRefresh() {
@@ -252,10 +253,10 @@ Page({
   },
 
   onCapture() {
-    wx.navigateTo({ url: '/pages/capture/capture' });
+    wx.navigateTo({ url: PAGES.xjCapture });
   },
 
   onOpen(e: WechatMiniprogram.BaseEvent) {
-    wx.navigateTo({ url: `/pages/item/item?id=${encodeURIComponent(String(e.currentTarget.dataset.id))}` });
+    wx.navigateTo({ url: `${PAGES.xjItem}?id=${encodeURIComponent(String(e.currentTarget.dataset.id))}` });
   },
 });

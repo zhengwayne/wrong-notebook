@@ -1,6 +1,7 @@
 import { loadContext, switchLearner } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import type { PageResult, ErrorItemSummary } from '../../utils/types';
+import { PAGES, switchTo, goHub } from '../../utils/nav';
 
 interface LearnerOption { id: string | null; name: string }
 
@@ -82,7 +83,7 @@ Page({
 
   /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
   onKidUnlocked() {
-    wx.reLaunch({ url: '/pages/home/home' });
+    goHub();
   },
 
   onLearnerChange(e: WechatMiniprogram.PickerChange) {
@@ -116,8 +117,8 @@ Page({
     }
   },
 
-  onCapture() { wx.navigateTo({ url: '/pages/capture/capture' }); },
-  onOpenNotebook() { wx.switchTab({ url: '/pages/notebook/notebook' }); },
-  onOpenReview() { wx.switchTab({ url: '/pages/review/review' }); },
-  onOpenParent() { wx.navigateTo({ url: '/pages/parent/parent' }); },
+  onCapture() { wx.navigateTo({ url: PAGES.xjCapture }); },
+  onOpenNotebook() { switchTo(PAGES.xjNotebook); },
+  onOpenReview() { switchTo(PAGES.xjReview); },
+  onOpenParent() { wx.navigateTo({ url: PAGES.xjParent }); },
 });

@@ -1,0 +1,47 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>出题中</view>
+
+  <block wx:elif="{{!done && q}}">
+    <view class="progress"><view class="progress-bar" style="width: {{index * 100 / questions.length}}%"></view></view>
+    <view class="muted center">{{index + 1}} / {{questions.length}}</view>
+    <view class="card q-card">
+      <text class="q-prompt" user-select>{{q.prompt}}</text>
+    </view>
+
+    <view wx:if="{{q.type === 'choice'}}">
+      <view wx:for="{{q.choices}}" wx:key="key" class="opt {{picked === item.key ? 'opt-on' : ''}} {{checked && item.key === q.answer ? 'opt-ok' : ''}} {{checked && picked === item.key && !ok ? 'opt-bad' : ''}}" hover-class="press" data-key="{{item.key}}" bindtap="onPick" id="opt-{{item.key}}">
+        <view class="opt-key">{{item.key}}</view><view class="flex-1">{{item.text}}</view>
+      </view>
+    </view>
+    <input wx:else class="ans-input" value="{{input}}" bindinput="onInput" bindconfirm="onCheck" placeholder="{{q.type === 'numeric' ? '填一个数（分数写成 1/2）' : '写下答案'}}" placeholder-class="placeholder" disabled="{{checked}}" focus="{{!checked}}" id="answer-input" />
+
+    <view wx:if="{{checked}}" class="feedback {{ok ? 'fb-ok' : 'fb-bad'}}">
+      <view class="row fb-title"><image class="ic" src="{{ok ? '/assets/icons/circle-check-s.svg' : '/assets/icons/circle-x-d.svg'}}" />{{ok ? '答对了' : '答案：' + q.answer}}</view>
+      <view wx:if="{{q.explanation}}" class="text-2 fb-exp">{{q.explanation}}</view>
+    </view>
+    <button wx:if="{{!checked}}" class="btn act" bindtap="onCheck" id="btn-check">提交</button>
+    <button wx:else class="btn act" bindtap="onNext" id="btn-next">{{index + 1 < questions.length ? '下一题' : '看成绩'}}</button>
+  </block>
+
+  <block wx:elif="{{done}}">
+    <view class="done-card">
+      <image class="ic-xl" src="{{lit ? '/assets/icons/star-p.svg' : '/assets/icons/target-p.svg'}}" />
+      <view class="score">{{score}}<text class="unit">分</text></view>
+      <view class="muted">{{lit ? '点亮这一课' : '80 分点亮，再试试'}}</view>
+    </view>
+    <view wx:if="{{wrongCount > 0}}" class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/circle-x-d.svg" />做错 {{wrongCount}} 道</view>
+      <view wx:for="{{answered}}" wx:key="index" wx:if="{{!item.ok}}" class="wrong-q">
+        <view class="list-item-text">{{item.q.prompt}}</view>
+        <view class="muted">你写：{{item.given}} · 答案：{{item.q.answer}}</view>
+      </view>
+      <button wx:if="{{!kidMode}}" class="btn btn-secondary btn-small add-btn" disabled="{{saving || saved}}" bindtap="onSaveWrong" id="btn-save-wrong"><image class="ic" src="/assets/icons/notebook-pen-p.svg" />{{saved ? '已收进错题本' : '收进错题本'}}</button>
+      <view wx:else class="muted">家长解锁后可收进错题本</view>
+    </view>
+    <view class="btn-row">
+      <button class="btn btn-outline" bindtap="onAgain">再闯一次</button>
+      <button class="btn" bindtap="onBack">返回</button>
+    </view>
+  </block>
+</view>

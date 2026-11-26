@@ -2,6 +2,7 @@ import { loadContext } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../utils/session';
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
+import { goHub, goLogin } from '../../utils/nav';
 
 const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生' };
 
@@ -63,7 +64,7 @@ Page({
 
   /** 家长在锁条里输对 PIN：回到首页按普通模式重新加载 */
   onKidUnlocked() {
-    wx.reLaunch({ url: '/pages/home/home' });
+    goHub();
   },
 
   onEditName() {
@@ -154,7 +155,7 @@ Page({
         if (!res.confirm) return;
         try {
           await request('/api/parent/kid-mode', { method: 'POST', data: { learnerId } });
-          wx.reLaunch({ url: '/pages/home/home' });
+          goHub();
         } catch (error) {
           wx.showToast({ title: toChineseMessage(error), icon: 'none' });
         }
@@ -188,7 +189,7 @@ Page({
           await linkWebAccount(this.data.linkEmail, this.data.linkPassword);
           this.setData({ linkPassword: '', linkEmail: '', showLink: false });
           wx.showToast({ title: '关联好了', icon: 'success' });
-          setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 600);
+          setTimeout(() => goHub(), 600);
         } catch (error) {
           this.setData({ linkPassword: '' });
           wx.showModal({ title: '没有关联', content: toChineseMessage(error), showCancel: false });
@@ -208,7 +209,7 @@ Page({
         try {
           await logout();
         } finally {
-          wx.reLaunch({ url: '/pages/login/login' });
+          goLogin();
         }
       },
     });
@@ -224,7 +225,7 @@ Page({
         if (!res.confirm) return;
         try {
           await unbindWechat();
-          wx.reLaunch({ url: '/pages/login/login' });
+          goLogin();
         } catch (error) {
           wx.showToast({ title: toChineseMessage(error), icon: 'none' });
         }

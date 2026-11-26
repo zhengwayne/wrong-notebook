@@ -1,0 +1,34 @@
+<view class="container safe-bottom">
+  <view class="top-row">
+    <view class="stat-card" hover-class="press" bindtap="onReview" id="en-review">
+      <image class="ic-lg" src="/assets/icons/rotate-ccw-p.svg" />
+      <view><view class="stat-num">{{due}}</view><view class="muted">今日复习</view></view>
+    </view>
+    <view class="stat-card" hover-class="press" bindtap="onOpenWords" id="en-words">
+      <image class="ic-lg" src="/assets/icons/book-a-p.svg" />
+      <view><view class="stat-num">{{learned}}</view><view class="muted">生词本</view></view>
+    </view>
+  </view>
+
+  <scroll-view scroll-x class="books" enhanced show-scrollbar="{{false}}">
+    <view wx:for="{{books}}" wx:key="id" class="chip {{item.id === bookId ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onPickBook">{{item.label}}</view>
+  </scroll-view>
+
+  <view class="seg">
+    <view class="seg-item {{mode === 'spell' ? 'seg-on' : ''}}" data-mode="spell" bindtap="onPickMode">看中文拼写</view>
+    <view class="seg-item {{mode === 'dictation' ? 'seg-on' : ''}}" data-mode="dictation" bindtap="onPickMode">听音拼写</view>
+  </view>
+
+  <view wx:if="{{error}}" class="banner danger" bindtap="onRetry"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}（点我重试）</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>加载词书</view>
+  <block wx:else>
+    <view class="section-label">共 {{total}} 词 · 每关 10 词</view>
+    <view class="levels">
+      <view wx:for="{{levels}}" wx:key="index" class="level {{item.stars ? 'level-done' : ''}}" hover-class="press" data-index="{{item.index}}" bindtap="onOpenLevel" id="level-{{item.index}}">
+        <view class="level-no">{{item.label}}</view>
+        <view class="level-star">{{item.starText}}</view>
+      </view>
+    </view>
+  </block>
+  <view class="foot muted">词表与插图：敲敲乐（lingo.jjool.com）· 发音：学迹语音合成</view>
+</view>
