@@ -41,7 +41,7 @@
       <view>这几页没认出题目</view>
     </view>
 
-    <view wx:for="{{rows}}" wx:key="id" class="card q {{item.verdict}}">
+    <view wx:for="{{rows}}" wx:key="id" wx:for-index="qi" class="card q {{item.verdict}}">
       <view class="row-between q-head">
         <view class="row">
           <text class="q-no">{{item.number}}</text>
@@ -53,13 +53,13 @@
           <view wx:for="{{verdicts}}" wx:for-item="v" wx:key="value"
             class="seg-btn {{item.verdict === v.value ? 'seg-on ' + v.cls : ''}} {{step === 'done' ? 'seg-off' : ''}}"
             hover-class="{{step === 'done' ? '' : 'press'}}"
-            data-index="{{index}}" data-value="{{v.value}}" bindtap="onVerdict"
+            data-index="{{qi}}" data-value="{{v.value}}" bindtap="onVerdict"
             aria-role="button" aria-label="{{v.label}}">
             <image class="ic" src="{{item.verdict === v.value ? v.iconOn : v.icon}}" />
           </view>
         </view>
       </view>
-      <view class="q-text {{item.open ? '' : 'clamp'}}" data-index="{{index}}" bindtap="onToggleOpen">{{item.question}}</view>
+      <view class="q-text {{item.open ? '' : 'clamp'}}" data-index="{{qi}}" bindtap="onToggleOpen">{{item.question}}</view>
       <view class="ans row"><image class="ic ic-sm" src="/assets/icons/pencil-m.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.studentAnswer}}</text></view>
       <view wx:if="{{item.correctAnswer && item.verdict !== 'correct'}}" class="ans row"><image class="ic ic-sm" src="/assets/icons/check-s.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.correctAnswer}}</text></view>
       <view wx:if="{{item.open && item.errorCause && item.verdict !== 'correct'}}" class="cause">{{item.errorCause}}</view>
