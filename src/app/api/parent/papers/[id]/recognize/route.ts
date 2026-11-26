@@ -4,7 +4,7 @@ import { consumeAiQuota, releaseAiQuota } from "@/lib/ai-quota";
 import { conflict, forbidden, notFound, unauthorized, badRequest, validationError, internalError } from "@/lib/api-errors";
 import { getCurrentUser } from "@/lib/current-user";
 import { createLogger } from "@/lib/logger";
-import { MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperStateError, ParentPaperValidationError } from "@/lib/parent-papers";
+import { MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAGE_IMAGE_CHARS, omitPageImages, ParentPaperStateError, ParentPaperValidationError, wantsPageImages } from "@/lib/parent-papers";
 import { startParentPaperRecognition } from "@/lib/parent-paper-recognize";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
@@ -35,7 +35,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             await releaseAiQuota(user.id);
             return notFound("Paper not found");
         }
-        return NextResponse.json(started, { status: 202 });
+        return NextResponse.json(wantsPageImages(req) ? started : { ...started, paper: omitPageImages(started.paper) }, { status: 202 });
     } catch (error) {
         await releaseAiQuota(user.id);
         if (error instanceof z.ZodError) return validationError("Invalid recognition request", error.issues);

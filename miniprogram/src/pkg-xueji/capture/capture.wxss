@@ -70,3 +70,10 @@
 .badge-blank { background-color: var(--xj-warning-bg); color: var(--xj-warning); }
 .badge-unknown { background-color: var(--xj-secondary); color: var(--xj-text-2); }
 .thumb-mask .spinner { margin-right: 0; }
+
+/* 整页批改 / 只挑错题 */
+.mode { display: flex; gap: 12rpx; padding: 8rpx 0 16rpx; }
+.mode-btn { flex: 1; display: flex; align-items: center; justify-content: center; height: 72rpx; border-radius: 36rpx; background-color: var(--xj-secondary); color: var(--xj-primary); font-size: 28rpx; font-weight: 600; }
+.mode-btn .ic { margin-right: 8rpx; }
+.mode-on { background-color: var(--xj-primary); color: var(--xj-primary-fg); }
+.resume { font-weight: 600; }

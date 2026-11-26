@@ -129,6 +129,18 @@ function parseBbox(value: string | null | undefined): QuestionBBox | null {
     }
 }
 
+/**
+ * 小程序等移动端在 URL 上带 ?images=0：响应里不返回整页图片 data URL。
+ * 判定页只看文字，每改一次判定都会拿到整份试卷详情，不带图可省下每次几 MB 的下载；默认（网页端）不变。
+ */
+export function wantsPageImages(req: Request): boolean {
+    return new URL(req.url).searchParams.get("images") !== "0";
+}
+
+export function omitPageImages<T extends { pages: Array<{ imageUrl: string }> }>(paper: T): T {
+    return { ...paper, pages: paper.pages.map((page) => ({ ...page, imageUrl: "" })) };
+}
+
 export function parseAnswerKeyImages(value: string | null | undefined): string[] {
     if (!value) return [];
     try {

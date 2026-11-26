@@ -8,7 +8,7 @@ import { runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 import { autoCropPaperImage } from "@/lib/parent-paper-autocrop";
-import { createParentPaper, listParentPapers, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError, parentPaperSubjectKeySchema } from "@/lib/parent-papers";
+import { createParentPaper, listParentPapers, omitPageImages, wantsPageImages, MAX_PARENT_ANSWER_KEY_IMAGES, MAX_PARENT_PAPER_PAGES, MAX_PARENT_PAGE_IMAGE_CHARS, ParentPaperValidationError, parentPaperSubjectKeySchema } from "@/lib/parent-papers";
 import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { uprightImageDataUrl } from "@/lib/server/page-orientation";
 
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
             answerKeyImages = normalizedKeys;
         }
         const paper = await createParentPaper(prisma, user.id, { ...body, pages, answerKeyImages });
-        return NextResponse.json(paper, { status: 201 });
+        return NextResponse.json(wantsPageImages(req) ? paper : omitPageImages(paper), { status: 201 });
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid paper", error.issues);
         if (error instanceof ImageValidationError) return badRequest("Invalid page image");

@@ -4,7 +4,7 @@ import { badRequest, conflict, forbidden, internalError, notFound, unauthorized,
 import { getCurrentUser } from "@/lib/current-user";
 import { createLogger } from "@/lib/logger";
 import { confirmParentPaper } from "@/lib/parent-paper-recognize";
-import { ParentPaperStateError } from "@/lib/parent-papers";
+import { omitPageImages, ParentPaperStateError, wantsPageImages } from "@/lib/parent-papers";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 
@@ -28,7 +28,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             : {};
         const result = await confirmParentPaper(prisma, user.id, id, body);
         if (!result) return notFound("Paper not found");
-        return NextResponse.json(result);
+        return NextResponse.json(wantsPageImages(req) ? result : { ...result, paper: omitPageImages(result.paper) });
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid confirm request", error.issues);
         if (error instanceof ParentPaperStateError) {

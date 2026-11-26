@@ -31,7 +31,7 @@ import { GET, POST } from "@/app/api/parent/papers/route";
 import { GET as GET_PAPER } from "@/app/api/parent/papers/[id]/route";
 import { POST as RECOGNIZE } from "@/app/api/parent/papers/[id]/recognize/route";
 import { POST as CONFIRM } from "@/app/api/parent/papers/[id]/confirm/route";
-import { PATCH as PATCH_QUESTION } from "@/app/api/parent/papers/[id]/questions/[questionId]/route";
+import { PATCH as PATCH_QUESTION, POST as POST_QUESTION } from "@/app/api/parent/papers/[id]/questions/[questionId]/route";
 import { failStaleRecognizingPapers, waitForParentPaperRecognition } from "@/lib/parent-paper-recognize";
 import { PARENT_PAPER_STATUS } from "@/lib/parent-papers";
 import { parseExamPaperByMode, type ExamPaperReadMode } from "@/lib/ai/exam-paper-read";
@@ -357,6 +357,70 @@ describe("parent paper recognition and confirm", () => {
             expect.objectContaining({ subjectName: "数学", count: 1 }),
         ]);
         expect(result.paper.importedNotebooks).toEqual(result.importedNotebooks);
+    });
+
+    it("serves the mini program flow without page images: all questions, 3-way override, wrong + partial imported", async () => {
+        mocks.readExamPaper.mockResolvedValue({
+            studentName: null, className: null, studentNo: null, questions: [],
+            reviewQuestions: [
+                { number: "1", type: "objective", questionText: "1+1", studentAnswer: "2", correctAnswer: "2", verdict: "correct", confidence: 0.95, errorCause: null, knowledgePoints: ["加法"], subjectHint: "数学", bbox: null },
+                { number: "2", type: "objective", questionText: "2+2", studentAnswer: "5", correctAnswer: "4", verdict: "wrong", confidence: 0.9, errorCause: "算错", knowledgePoints: ["加法"], subjectHint: "数学", bbox: null },
+                { number: "3", type: "subjective", questionText: "写出过程", studentAnswer: "只写了答案", correctAnswer: "略", verdict: "correct", confidence: 0.5, errorCause: null, knowledgePoints: [], subjectHint: "数学", bbox: null },
+            ],
+        });
+        const created = await POST(new Request("http://localhost/api/parent/papers?images=0", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ learnerId: "child-a", title: "小明 11月26日", pages: [{ imageUrl: IMAGE }, { imageUrl: IMAGE }] }),
+        }));
+        expect(created.status).toBe(201);
+        const paper = await created.json();
+        expect(paper.pages).toHaveLength(2);
+        expect(paper.pages.every((page: { imageUrl: string }) => page.imageUrl === "")).toBe(true);
+
+        const started = await RECOGNIZE(new Request(`http://localhost/api/parent/papers/${paper.id}/recognize?images=0`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: "zh" }),
+        }), { params: Promise.resolve({ id: paper.id }) });
+        expect(started.status).toBe(202);
+        expect((await started.json()).paper.pages[0].imageUrl).toBe("");
+        await waitForParentPaperRecognition(paper.id);
+
+        const loaded = await (await GET_PAPER(new Request(`http://localhost/api/parent/papers/${paper.id}?images=0`), { params: Promise.resolve({ id: paper.id }) })).json();
+        expect(loaded.questions.map((q: { effectiveVerdict: string }) => q.effectiveVerdict)).toEqual(["correct", "wrong", "correct"]);
+        expect(loaded.pages[0].imageUrl).toBe("");
+        // 网页端默认仍带图
+        const full = await (await GET_PAPER(new Request(`http://localhost/api/parent/papers/${paper.id}`), { params: Promise.resolve({ id: paper.id }) })).json();
+        expect(full.pages[0].imageUrl).toMatch(/^data:image\//);
+
+        // 小程序用 POST 别名（wx.request 不支持 PATCH）
+        const patch = async (questionId: string, body: Record<string, unknown>) => POST_QUESTION(new Request(`http://localhost/api/parent/papers/${paper.id}/questions/${questionId}?images=0`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        }), { params: Promise.resolve({ id: paper.id, questionId }) });
+        // 小程序三态切换：改成部分正确时一并勾选导入
+        const patched = await patch(loaded.questions[2].id, { overrideVerdict: "partial", selected: true });
+        expect(patched.status).toBe(200);
+        const afterPatch = await patched.json();
+        expect(afterPatch.pages[0].imageUrl).toBe("");
+        expect(afterPatch.questions[2]).toMatchObject({ effectiveVerdict: "partial", selected: true });
+
+        const confirmed = await CONFIRM(new Request(`http://localhost/api/parent/papers/${paper.id}/confirm?images=0`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: "zh", expectedVersion: afterPatch.version }),
+        }), { params: Promise.resolve({ id: paper.id }) });
+        expect(confirmed.status).toBe(200);
+        const result = await confirmed.json();
+        expect(result.importedCount).toBe(2);
+        expect(result.paper.pages[0].imageUrl).toBe("");
+        const items = await db.errorItem.findMany({ orderBy: { questionText: "asc" } });
+        expect(items.map((item) => item.questionText).sort()).toEqual(["2+2", "写出过程"]);
+        // 判对的题留在试卷记录里，不进错题本
+        const correct = await db.parentPaperQuestion.findFirst({ where: { paperId: paper.id, number: "1" } });
+        expect(correct).toMatchObject({ verdict: "correct", importedErrorItemId: null });
     });
 
     it("lists status for the current child", async () => {

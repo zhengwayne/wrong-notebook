@@ -32,7 +32,8 @@
         "review/review",
         "capture/capture",
         "item/item",
-        "parent/parent"
+        "parent/parent",
+        "grade/grade"
       ]
     },
     {

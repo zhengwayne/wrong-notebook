@@ -21,6 +21,8 @@ import {
   removePhotoAt,
   suggestMerge,
 } from '../../utils/photo-groups';
+import { setGradeDraft, subjectKeyFromNotebookName } from '../../utils/paper';
+import { readPendingPaper, takeGradeFinished } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
 import type { AnalyzeResponse, AnalyzedQuestion, Notebook } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
@@ -187,6 +189,11 @@ Page({
   data: {
     kidMode: false,
     learnerName: '',
+    learnerId: '',
+    /** 当前是家长给孩子录题：可以整页批改（与网页端「家长批改试卷」同一套） */
+    canGrade: false,
+    gradeMode: false,
+    pendingPaperId: '',
     photos: [] as Photo[],
     maxPhotos: MAX_PHOTOS,
     notebooks: [AUTO_NOTEBOOK] as Notebook[],
@@ -210,6 +217,16 @@ Page({
     void this.init();
   },
 
+  onShow() {
+    // 批改页点了「再拍一份」或已确认：清空照片重新开始
+    if (takeGradeFinished()) {
+      resetResults();
+      this.setData({ error: '' });
+      this.syncPhotos([]);
+    }
+    if (this.data.canGrade) this.setData({ pendingPaperId: readPendingPaper(this.data.learnerId)?.id || '' });
+  },
+
   onUnload() {
     alive = false;
     resetResults();
@@ -222,6 +239,13 @@ Page({
       if (!ctx) return;
       this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       if (ctx.kidMode) return;
+      const canGrade = ctx.session.user.personas.includes('parent') && ctx.children.some((child) => child.id === ctx.learnerId);
+      this.setData({
+        canGrade,
+        gradeMode: canGrade,
+        learnerId: ctx.learnerId || '',
+        pendingPaperId: canGrade ? readPendingPaper(ctx.learnerId)?.id || '' : '',
+      });
       const notebooks = await request<Notebook[]>('/api/notebooks');
       // 与网页端一致：默认不指定错题本，由 AI 判断学科后自动放进对应错题本（没有就新建，各学科都行）
       this.setData({ notebooks: [AUTO_NOTEBOOK, ...notebooks], notebookIndex: 0 });
@@ -352,6 +376,29 @@ Page({
     resetResults();
     this.setData({ error: '' });
     this.syncPhotos([]);
+  },
+
+  // ---------- 整页批改 ----------
+
+  onMode(e: WechatMiniprogram.BaseEvent) {
+    if (this.data.analyzing || this.data.saving || this.data.items.length) return;
+    this.setData({ gradeMode: e.currentTarget.dataset.mode === 'grade' });
+  },
+
+  /** 所有照片作为一份试卷的各页交给批改页（跨页的题由 AI 按页序处理，不用手动连） */
+  onGrade() {
+    if (!this.data.canGrade || !this.data.photos.length || this.data.analyzing || this.data.saving) return;
+    setGradeDraft({
+      learnerId: this.data.learnerId,
+      learnerName: this.data.learnerName,
+      subjectKey: subjectKeyFromNotebookName(this.chosenNotebook()?.name),
+      photos: this.data.photos.map((photo) => ({ path: photo.path, size: photo.size })),
+    });
+    wx.navigateTo({ url: PAGES.xjGrade });
+  },
+
+  onResumePaper() {
+    if (this.data.pendingPaperId) wx.navigateTo({ url: `${PAGES.xjGrade}?id=${encodeURIComponent(this.data.pendingPaperId)}` });
   },
 
   onNotebookChange(e: WechatMiniprogram.PickerChange) {

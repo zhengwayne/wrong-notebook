@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { createLogger } from "@/lib/logger";
 import { PARENT_REVIEW_VERDICTS } from "@/lib/parent-paper-review";
 import { updateParentPaperQuestion } from "@/lib/parent-paper-recognize";
-import { ParentPaperStateError, ParentPaperValidationError } from "@/lib/parent-papers";
+import { omitPageImages, ParentPaperStateError, ParentPaperValidationError, wantsPageImages } from "@/lib/parent-papers";
 import { parsePersonas } from "@/lib/personas";
 import { prisma } from "@/lib/prisma";
 
@@ -37,7 +37,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; q
         const body = patchSchema.parse(await req.json());
         const paper = await updateParentPaperQuestion(prisma, user.id, id, questionId, body);
         if (!paper) return notFound("Paper not found");
-        return NextResponse.json(paper);
+        return NextResponse.json(wantsPageImages(req) ? paper : omitPageImages(paper));
     } catch (error) {
         if (error instanceof z.ZodError) return validationError("Invalid question update", error.issues);
         if (error instanceof ParentPaperValidationError) {
@@ -52,3 +52,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; q
         return internalError("Failed to update question");
     }
 }
+
+/** POST 与 PATCH 相同：小程序 wx.request 不支持 PATCH 方法 */
+export const POST = PATCH;

@@ -174,6 +174,12 @@ assert.equal(['1', '2', '3', '4', '5'].reduce(kidLock.pressPinKey, ''), '1234');
 assert.equal(kidLock.classifyUnlockFailure({ errMsg: 'request:fail' }).kind, 'network');
 assert.equal(kidLock.classifyUnlockFailure(new req.ApiError(403, 'PIN 码错误，还可尝试 4 次')).kind, 'wrong');
 
+// 整页批改：三态与网页端一致，错误 / 部分正确进错题本
+const paper = loadModule('utils/paper.ts');
+assert.deepEqual(paper.VERDICTS, ['correct', 'partial', 'wrong']);
+assert.deepEqual(paper.verdictPatch('partial'), { overrideVerdict: 'partial', selected: true });
+assert.equal(paper.subjectKeyFromNotebookName('高中化学'), 'chemistry');
+
 const share = loadModule('utils/share.ts');
 const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz012345';
 assert.equal(share.extractShareToken(`https://xueji.example.com/share/submission/${token}`), token);

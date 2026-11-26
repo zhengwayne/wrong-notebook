@@ -5,6 +5,7 @@
   </view>
 
   <block wx:else>
+    <view wx:if="{{pendingPaperId && !photos.length}}" class="banner warn" hover-class="press" bindtap="onResumePaper"><image class="ic ic-sm" src="/assets/icons/clipboard-check-o.svg" /><text class="flex-1">上次的批改还没确认</text><text class="resume">继续</text></view>
     <!-- 1 选照片 -->
     <view wx:if="{{!photos.length}}" class="pick">
       <view class="pick-tile pick-main" hover-class="press" data-source="camera" bindtap="onChoose">
@@ -45,7 +46,7 @@
             <view wx:if="{{item.status === 'done' && !analyzing && !saving}}" class="thumb-x" data-index="{{index}}" catchtap="onRemovePhoto"><image class="ic-xs" src="/assets/icons/x-w.svg" /></view>
           </view>
           <!-- 与前一张连成一题：实心为已连，橙色为 AI 建议合并 -->
-          <view wx:if="{{index > 0 && (item.linkPrev || item.suggest || (!analyzing && !saving))}}" class="link {{index % 3 === 0 ? 'link-row' : ''}} {{item.linkPrev ? 'link-on' : (item.suggest ? 'link-hint' : '')}}" hover-class="press" data-index="{{index}}" catchtap="onLinkTap">
+          <view wx:if="{{!gradeMode && index > 0 && (item.linkPrev || item.suggest || (!analyzing && !saving))}}" class="link {{index % 3 === 0 ? 'link-row' : ''}} {{item.linkPrev ? 'link-on' : (item.suggest ? 'link-hint' : '')}}" hover-class="press" data-index="{{index}}" catchtap="onLinkTap">
             <image wx:if="{{item.linkPrev || item.suggest}}" class="ic-xs" src="/assets/icons/link-w.svg" />
             <image wx:else class="ic-xs" src="/assets/icons/link-m.svg" />
           </view>
@@ -56,11 +57,21 @@
           </view>
         </view>
       </view>
-      <view wx:if="{{suggestCount && !analyzing && !saving}}" class="banner warn"><image class="ic ic-sm" src="/assets/icons/link-o.svg" />可能跨页，点橙色圆钮合成一题</view>
+      <view wx:if="{{gradeMode}}" class="muted hint row"><image class="ic ic-sm hint-ic" src="/assets/icons/files-m.svg" />几张按页序算一份卷子 · 长按调顺序</view>
+      <view wx:elif="{{suggestCount && !analyzing && !saving}}" class="banner warn"><image class="ic ic-sm" src="/assets/icons/link-o.svg" />可能跨页，点橙色圆钮合成一题</view>
       <view wx:elif="{{photos.length > 1 && !analyzing && !items.length}}" class="muted hint row"><image class="ic ic-sm hint-ic" src="/assets/icons/link-m.svg" />跨页的题点中间连起来 · 长按调顺序</view>
 
       <!-- 2 存到哪 + 识别 -->
       <view wx:if="{{!items.length || analyzing}}" class="card dest">
+        <!-- 整页批改：每道题判 对 / 半对 / 错，可改判后确认；只挑错题：原来的快速录错题 -->
+        <view wx:if="{{canGrade}}" class="mode">
+          <view class="mode-btn {{gradeMode ? 'mode-on' : ''}}" hover-class="press" data-mode="grade" bindtap="onMode">
+            <image class="ic ic-sm" src="{{gradeMode ? '/assets/icons/list-checks-w.svg' : '/assets/icons/list-checks-p.svg'}}" />整页批改
+          </view>
+          <view class="mode-btn {{gradeMode ? '' : 'mode-on'}}" hover-class="press" data-mode="wrong" bindtap="onMode">
+            <image class="ic ic-sm" src="{{gradeMode ? '/assets/icons/x-p.svg' : '/assets/icons/x-w.svg'}}" />只挑错题
+          </view>
+        </view>
         <picker range="{{notebooks}}" range-key="name" value="{{notebookIndex}}" bindchange="onNotebookChange" disabled="{{analyzing}}">
           <view class="cell">
             <image class="ic" src="/assets/icons/book-open-p.svg" />
@@ -84,7 +95,8 @@
         <view class="muted center">每组半分钟到两分钟，认好一组先显示一组</view>
       </view>
       <block wx:elif="{{!saving}}">
-        <button wx:if="{{failedPhotos}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/refresh-cw-p.svg" />重试 {{failedPhotos}} 张</button>
+        <button wx:if="{{gradeMode}}" class="btn" bindtap="onGrade"><image class="ic" src="/assets/icons/list-checks-w.svg" />批改{{photos.length > 1 ? ' ' + photos.length + ' 页' : ''}}</button>
+        <button wx:elif="{{failedPhotos}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/refresh-cw-p.svg" />重试 {{failedPhotos}} 张</button>
         <button wx:elif="{{doneCount === 0}}" class="btn" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-w.svg" />AI 识别{{photos.length > 1 ? ' ' + photos.length + ' 张' : ''}}</button>
         <button wx:elif="{{doneCount < photos.length}}" class="btn btn-outline" bindtap="onAnalyze"><image class="ic" src="/assets/icons/sparkles-p.svg" />识别新加的 {{photos.length - doneCount}} 张</button>
       </block>
