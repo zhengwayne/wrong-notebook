@@ -34,7 +34,8 @@
         "item/item",
         "parent/parent",
         "grade/grade",
-        "guide/guide"
+        "guide/guide",
+        "webview/webview"
       ]
     },
     {

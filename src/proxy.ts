@@ -6,6 +6,7 @@ import { createLogger } from "@/lib/logger";
 import { KID_MODE_COOKIE_NAME, isApiAllowedInKidMode, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
 import { isPersona, landingPath } from "@/lib/personas";
 import { hashMiniProgramToken, readMiniProgramBearer } from "@/lib/server/mp-auth";
+import { siteVerifyName } from "@/lib/site-verify-path";
 
 const logger = createLogger('proxy');
 
@@ -78,6 +79,12 @@ function redirectToLoginClearingSession(req: NextRequest, callbackUrl?: string):
 }
 
 export async function proxy(req: NextRequest) {
+    // 站点根目录校验文件（如小程序业务域名 /<随机名>.txt）：公开，改写到读取配置目录的接口
+    const verifyName = siteVerifyName(req.nextUrl.pathname);
+    if (verifyName) {
+        return NextResponse.rewrite(new URL(`/api/site-verify/${verifyName}`, req.url));
+    }
+
     // 家长开启孩子专注做题锁时，在网关层统一拦截所有非白名单 API（包括未使用 defineApiRoute 的路由）；未带锁 Cookie 时零开销直通
     if (req.nextUrl.pathname.startsWith("/api/")) {
         const rawKidCookie = req.cookies.get(KID_MODE_COOKIE_NAME)?.value;

@@ -15,6 +15,7 @@ export const PAGES = {
   xjParent: '/pkg-xueji/parent/parent',
   xjGrade: '/pkg-xueji/grade/grade',
   xjGuide: '/pkg-xueji/guide/guide',
+  xjWebview: '/pkg-xueji/webview/webview',
   english: '/pkg-english/index/index',
   math: '/pkg-math/index/index',
 } as const;

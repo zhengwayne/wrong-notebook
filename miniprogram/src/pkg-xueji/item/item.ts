@@ -3,7 +3,7 @@ import { request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
-import { copyWebLink, errorItemPath } from '../../utils/web-link';
+import { errorItemPath, openWebPage } from '../../utils/web-link';
 import { GENERATED_LABEL } from '../../config';
 
 interface ItemView {
@@ -70,9 +70,9 @@ Page({
     }
   },
 
-  /** 查看详情：复制网页端错题页链接（复杂公式在网页端显示更完整） */
+  /** 查看详情：在小程序里打开网页端错题页（复杂公式显示更完整） */
   onCopyWebLink() {
-    if (this.data.id) copyWebLink(errorItemPath(this.data.id));
+    if (this.data.id) openWebPage(errorItemPath(this.data.id));
   },
 
   onReveal() {

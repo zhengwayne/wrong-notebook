@@ -115,6 +115,7 @@
     "review/due": { "auth": "user", "mechanism": "defineApiRoute" },
     "settings": { "auth": "user_or_admin", "mechanism": "defineApiRoute" },
     "setup": { "auth": "admin", "mechanism": "defineApiRoute" },
+    "site-verify/[name]": { "auth": "public", "mechanism": "public" },
     "stats/practice": { "auth": "user", "mechanism": "defineApiRoute" },
     "stats/practice/clear": { "auth": "user", "mechanism": "defineApiRoute" },
     "stats/repeated-mistakes": { "auth": "user", "mechanism": "defineApiRoute" },

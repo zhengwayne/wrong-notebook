@@ -25,7 +25,7 @@ import {
 } from '../../utils/paper';
 import { clearPendingPaper, markGradeFinished, savePendingPaper } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
-import { copyWebLink, paperPath } from '../../utils/web-link';
+import { openWebPage, paperPath } from '../../utils/web-link';
 import { GENERATED_LABEL } from '../../config';
 import { NOTEBOOK_SUBJECTS, SUBJECT_LABELS } from '../../utils/subjects';
 
@@ -306,9 +306,9 @@ Page({
     }
   },
 
-  /** 查看详情：复制网页端这份试卷的链接（网页端可看原图和完整内容） */
+  /** 查看详情：在小程序里打开网页端这份试卷（可看原图和完整内容） */
   onCopyWebLink() {
-    if (this.data.paperId) copyWebLink(paperPath(this.data.paperId));
+    if (this.data.paperId) openWebPage(paperPath(this.data.paperId));
   },
 
   onToggleOpen(e: WechatMiniprogram.BaseEvent) {

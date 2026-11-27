@@ -8,7 +8,7 @@ import {
   buildGuideView, fetchGuide, guideAction, isGuidePersona, ROSTER_EXAMPLE, setGuideVisible,
   type GuideStatus, type GuideView,
 } from '../../../utils/onboarding';
-import { resolveWebLink } from '../../../utils/web-link';
+import { openWebPage, resolveWebLink } from '../../../utils/web-link';
 
 /** 每个身份最近一次的进度（按钮跳转要用里面的 id） */
 const lastStatus: Record<string, GuideStatus> = {};
@@ -27,6 +27,7 @@ Component({
     sheetTitle: '',
     sheetDesc: '',
     sheetUrl: '',
+    sheetPath: '',
     sheetOneTime: false,
     sheetRoster: false,
     sheetLoading: false,
@@ -93,6 +94,7 @@ Component({
         sheetDesc: `在电脑浏览器打开下面的链接，会自动登录并进入${where}页。`,
         sheetUrl: '',
         sheetRoster: key === 'class',
+        sheetPath: path,
       });
       const link = await resolveWebLink(path);
       if (!link) {
@@ -104,6 +106,13 @@ Component({
     },
 
     onCloseSheet() { this.setData({ sheet: false }); },
+
+    /** 先在手机上看一眼：小程序里打开同一页（会重新申请一次性链接） */
+    onOpenHere() {
+      const path = this.data.sheetPath;
+      this.setData({ sheet: false });
+      if (path) openWebPage(path);
+    },
     noop() { /* 阻止点面板时关闭 */ },
 
     onCopyLink() {

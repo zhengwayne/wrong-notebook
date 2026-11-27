@@ -3,7 +3,7 @@ import { loadContext } from '../../utils/context';
 import { toChineseMessage } from '../../utils/request';
 import { goHub } from '../../utils/nav';
 import { guidePersonaFor, isGuidePersona, setGuideVisible, type GuidePersona } from '../../utils/onboarding';
-import { copyWebLink } from '../../utils/web-link';
+import { openWebPage } from '../../utils/web-link';
 
 const LABEL: Record<GuidePersona, string> = { teacher: '老师', parent: '家长', self: '学生' };
 
@@ -51,6 +51,6 @@ Page({
   },
 
   onHelp() {
-    void copyWebLink('/help');
+    openWebPage('/help');
   },
 });

@@ -40,6 +40,24 @@ describe('proxy', () => {
         vi.restoreAllMocks();
     });
 
+    describe('站点根目录校验文件', () => {
+        it('/<name>.txt 未登录也改写到 site-verify 接口，不跳登录', async () => {
+            vi.mocked(getToken).mockResolvedValue(null);
+            const response = await proxy(new NextRequest('http://localhost:3000/a1B2c3_d-4.txt'));
+            expect(response?.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/api/site-verify/a1B2c3_d-4');
+            expect(getToken).not.toHaveBeenCalled();
+        });
+
+        it('多级路径或其他扩展名照常走登录保护', async () => {
+            vi.mocked(getToken).mockResolvedValue(null);
+            for (const url of ['http://localhost:3000/x/a.txt', 'http://localhost:3000/a.txt.bak', 'http://localhost:3000/a..txt']) {
+                const response = await proxy(new NextRequest(url));
+                expect(response?.headers.get('x-middleware-rewrite')).toBeNull();
+                expect(response?.headers.get('location')).toContain('/login');
+            }
+        });
+    });
+
     describe('未认证用户', () => {
         it('应该重定向未认证用户到登录页', async () => {
             vi.mocked(getToken).mockResolvedValue(null);

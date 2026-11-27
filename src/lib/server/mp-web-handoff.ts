@@ -62,7 +62,7 @@ export function generateHandoffToken(): string {
     return `${TOKEN_PREFIX}${crypto.randomBytes(32).toString('base64url')}`;
 }
 
-function isHandoffTokenShape(token: unknown): token is string {
+export function isHandoffTokenShape(token: unknown): token is string {
     return typeof token === 'string' && token.startsWith(TOKEN_PREFIX) && token.length <= 80 && /^[A-Za-z0-9_-]+$/.test(token);
 }
 
@@ -187,4 +187,29 @@ export async function redeemWebHandoff(db: HandoffDb, token: unknown, next: unkn
             kidLock,
         },
     };
+}
+
+/**
+ * 只读查看一次性链接（浏览器确认页用）：不消耗令牌。可用时返回要登录的账号名（脱敏）供确认页显示，
+ * 这样别人发来的链接一眼能看出是不是自己的账号。
+ */
+export async function peekWebHandoff(
+    db: HandoffDb, token: unknown, next: unknown, now = new Date(),
+): Promise<{ ok: true; accountLabel: string; nextPath: string } | { ok: false; reason: 'INVALID' | 'EXPIRED' | 'USED' | 'MISMATCH' }> {
+    if (!isHandoffTokenShape(token)) return { ok: false, reason: 'INVALID' };
+    const row = await db.webHandoffToken.findUnique({ where: { tokenHash: hashHandoffToken(token) } });
+    if (!row) return { ok: false, reason: 'INVALID' };
+    if (row.usedAt) return { ok: false, reason: 'USED' };
+    if (row.expiresAt.getTime() <= now.getTime()) return { ok: false, reason: 'EXPIRED' };
+    if (normalizeHandoffNext(next) !== row.nextPath) return { ok: false, reason: 'MISMATCH' };
+    const user = await db.user.findUnique({ where: { id: row.userId }, select: { name: true } });
+    return { ok: true, accountLabel: maskAccountName(user?.name ?? ''), nextPath: row.nextPath };
+}
+
+/** 账号名脱敏：保留首字，其余用 * （最多 3 个）；没有名字时显示「你的账号」 */
+export function maskAccountName(name: string): string {
+    const chars = Array.from(name.trim());
+    if (chars.length === 0) return '你的账号';
+    if (chars.length === 1) return `${chars[0]}*`;
+    return `${chars[0]}${'*'.repeat(Math.min(chars.length - 1, 3))}`;
 }

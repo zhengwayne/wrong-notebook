@@ -15,7 +15,7 @@ vi.mock('../src/utils/request', async (importOriginal) => {
 
 import { API_BASE_URL, GENERATED_LABEL, SHOW_SYNTH_MEDIA } from '../src/config';
 import { ApiError, neutralMessage } from '../src/utils/request';
-import { COPIED_HINT, copyWebLink, errorItemPath, paperPath, plainWebUrl, resolveWebLink } from '../src/utils/web-link';
+import { COPIED_HINT, copyWebLink, errorItemPath, isWebPath, openWebPage, paperPath, plainWebUrl, resolveWebLink, webviewUrl } from '../src/utils/web-link';
 import { artUrl } from '../src/pkg-english/lib/words';
 import { ATTRIBUTION, heroUrl } from '../src/pkg-math/lib/course';
 
@@ -85,6 +85,7 @@ describe('查看详情：复制网页链接', () => {
   const wxMock = {
     showLoading: vi.fn(), hideLoading: vi.fn(), hideToast: vi.fn(), showToast: vi.fn(), showModal: vi.fn(),
     setClipboardData: vi.fn((opts: { data: string; success?: () => void }) => opts.success && opts.success()),
+    navigateTo: vi.fn(),
   };
   beforeEach(() => {
     requestMock.mockReset();
@@ -115,6 +116,26 @@ describe('查看详情：复制网页链接', () => {
     expect(await resolveWebLink('/error-items/cm1')).toEqual({ url: `${API_BASE_URL}/error-items/cm1`, oneTime: false });
     requestMock.mockResolvedValueOnce({ url: 'https://evil.example/x', expiresAt: '' });
     expect(await resolveWebLink('/error-items/cm1')).toEqual({ url: `${API_BASE_URL}/error-items/cm1`, oneTime: false });
+  });
+
+  it('在小程序里打开：跳到 web-view 页并带上站内路径', () => {
+    openWebPage('/error-items/cm1');
+    expect(wxMock.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: '/pkg-xueji/webview/webview?path=%2Ferror-items%2Fcm1' }));
+    expect(webviewUrl('/help')).toBe('/pkg-xueji/webview/webview?path=%2Fhelp');
+  });
+
+  it('只接受站内路径，不接受外站、查询串和锚点', () => {
+    for (const ok of ['/error-items/cm1', '/parent/papers/p1', '/help', '/grading/t_1/papers']) expect(isWebPath(ok)).toBe(true);
+    for (const bad of ['https://evil.example', '//evil.example', '/a?x=1', '/a#b', 'help', '', '/a/../b', null]) expect(isWebPath(bad)).toBe(false);
+    openWebPage('https://evil.example');
+    expect(wxMock.navigateTo).not.toHaveBeenCalled();
+  });
+
+  it('打不开 web-view 页时退回复制链接', async () => {
+    requestMock.mockResolvedValue({ url: `${API_BASE_URL}/api/auth/mp-handoff?t=xjwh_x&next=%2Fhelp`, expiresAt: '' });
+    wxMock.navigateTo.mockImplementationOnce((opts: { fail?: () => void }) => opts.fail && opts.fail());
+    openWebPage('/help');
+    await vi.waitFor(() => expect(wxMock.setClipboardData).toHaveBeenCalled());
   });
 
   it('专注模式不允许的页面不复制', async () => {

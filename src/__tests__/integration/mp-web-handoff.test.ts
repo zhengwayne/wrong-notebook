@@ -21,7 +21,7 @@ vi.mock('@/lib/auth', () => ({ authOptions: { cookies: { sessionToken: { options
 vi.mock('@/lib/logger', () => ({ createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
 import { POST as WEB_LINK } from '@/app/api/mp/web-link/route';
-import { GET as HANDOFF } from '@/app/api/auth/mp-handoff/route';
+import { GET as HANDOFF, POST as HANDOFF_POST } from '@/app/api/auth/mp-handoff/route';
 import { PATCH as PATCH_USER } from '@/app/api/user/route';
 import { isApiAllowedInKidMode, KID_MODE_COOKIE_NAME, signKidModeToken } from '@/lib/kid-mode-lock';
 import { generateMiniProgramToken, hashMiniProgramToken } from '@/lib/server/mp-auth';
@@ -65,9 +65,21 @@ async function mintUrl(token: string, path: string, extra: Record<string, string
     return new URL(body.url);
 }
 
-function redeem(url: URL | string) {
+/** 小程序 <web-view> 的 UA（微信在 web-view 里带 miniProgram） */
+const WEBVIEW_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50 NetType/WIFI Language/zh_CN miniProgram/wx0f5bf175e2aae881';
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+
+/** 小程序 web-view 里打开：GET 直接兑换 */
+function redeem(url: URL | string, headers: Record<string, string> = {}) {
     const u = new URL(String(url));
-    return HANDOFF(new Request(`http://localhost${u.pathname}${u.search}`));
+    return HANDOFF(new Request(`http://localhost${u.pathname}${u.search}`, { headers: { 'user-agent': WEBVIEW_UA, ...headers } }));
+}
+
+/** 浏览器确认页上点「继续打开」：POST 表单 */
+function confirmPost(url: URL | string) {
+    const u = new URL(String(url));
+    const body = new URLSearchParams({ t: u.searchParams.get('t') ?? '', next: u.searchParams.get('next') ?? '' });
+    return HANDOFF_POST(new Request(`http://localhost${u.pathname}`, { method: 'POST', body, headers: { 'user-agent': BROWSER_UA, 'content-type': 'application/x-www-form-urlencoded' } }));
 }
 
 function sessionCookie(res: Response): string | null {
@@ -177,6 +189,43 @@ describe('兑换 GET /api/auth/mp-handoff', () => {
         expect(res.headers.get('cache-control')).toBe('no-store');
     });
 
+    it('浏览器里 GET 只显示确认页、不消耗令牌，也不发会话；预览抓取多次都不影响', async () => {
+        const url = await mintUrl(await mpToken('wx-1'), '/error-items/e1');
+        for (let i = 0; i < 3; i += 1) {
+            const page = await HANDOFF(new Request(`http://localhost${url.pathname}${url.search}`, { headers: { 'user-agent': BROWSER_UA } }));
+            expect(page.status).toBe(200);
+            expect(page.headers.get('content-type')).toContain('text/html');
+            expect(page.headers.get('cache-control')).toBe('no-store');
+            expect(sessionCookie(page)).toBeNull();
+            const html = await page.text();
+            expect(html).toContain('继续打开');
+            expect(html).toContain('method="post"');
+            expect(html).toContain(`value="${url.searchParams.get('t')}"`);
+            expect(html).toMatch(/账号「.\*+」/);
+        }
+        const row = await database.webHandoffToken.findFirst({ orderBy: { createdAt: 'desc' } });
+        expect(row?.usedAt).toBeNull();
+        const res = await confirmPost(url);
+        expect(res.status).toBe(303);
+        expect(res.headers.get('location')).toBe(`${SITE}/error-items/e1`);
+        expect(sessionCookie(res)).toBeTruthy();
+        expect((await confirmPost(url)).headers.get('location')).toBe(`${SITE}/login?handoff=expired`);
+    });
+
+    it('确认页不回显乱填的参数：令牌或页面不合法直接跳登录页', async () => {
+        const bad = await HANDOFF(new Request('http://localhost/api/auth/mp-handoff?t=%3Cscript%3E&next=/error-items/e1', { headers: { 'user-agent': BROWSER_UA } }));
+        expect(bad.status).toBe(303);
+        expect(bad.headers.get('location')).toBe(`${SITE}/login?handoff=expired`);
+        const badNext = await HANDOFF(new Request('http://localhost/api/auth/mp-handoff?t=xjwh_abc&next=https://evil.example', { headers: { 'user-agent': BROWSER_UA } }));
+        expect(badNext.headers.get('location')).toBe(`${SITE}/login?handoff=expired`);
+        const used = await mintUrl(await mpToken('wx-1'), '/error-items/e1');
+        expect((await redeem(used)).status).toBe(303);
+        const usedPage = await HANDOFF(new Request(`http://localhost${used.pathname}${used.search}`, { headers: { 'user-agent': BROWSER_UA } }));
+        expect(usedPage.headers.get('location')).toBe(`${SITE}/login?handoff=expired`);
+        const notForm = await HANDOFF_POST(new Request('http://localhost/api/auth/mp-handoff', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } }));
+        expect(notForm.headers.get('location')).toBe(`${SITE}/login?handoff=expired`);
+    });
+
     it('只能用一次：第二次跳到登录页且不发会话', async () => {
         const url = await mintUrl(await mpToken('wx-1'), '/error-items/e1');
         expect((await redeem(url)).status).toBe(303);
@@ -260,6 +309,7 @@ describe('孩子专注锁', () => {
     it('签发和兑换接口在专注锁白名单里', () => {
         expect(isApiAllowedInKidMode('/api/mp/web-link', 'POST')).toBe(true);
         expect(isApiAllowedInKidMode('/api/auth/mp-handoff', 'GET')).toBe(true);
+        expect(isApiAllowedInKidMode('/api/auth/mp-handoff', 'POST')).toBe(true);
         expect(isApiAllowedInKidMode('/api/mp/web-link', 'GET')).toBe(false);
     });
 
