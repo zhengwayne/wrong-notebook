@@ -13,6 +13,7 @@ import { identityLabel, studentLabel } from "@/lib/grading-labels";
 import { groupCapturedPages, type CapturedPage, type GroupedPaper } from "@/lib/page-grouping";
 import { compressPaperImages } from "@/lib/use-paper-images";
 import type { GradingStudentInfo, IdentifyResponse } from "@/types/grading";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 interface ShotPage extends CapturedPage {
     image: string;
@@ -97,6 +98,7 @@ export function PaperCapture({ taskId, students, submittedIds, multiClass, onUpl
                 setPages((prev) => prev.filter((page) => !ids.includes(page.id)));
                 setUploadedCount((count) => count + result.ids.length);
                 onUploaded();
+                void reportOnboardingStep("teacher", "collect");
             } catch (error) {
                 setFailedUploadIds((prev) => new Set([...prev, ...ids]));
                 toast.error(t.grading.uploadFailed.replace("{error}", getApiErrorMessage(error) || getErrorMessage(error)));

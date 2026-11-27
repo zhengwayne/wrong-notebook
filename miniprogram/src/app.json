@@ -33,7 +33,8 @@
         "capture/capture",
         "item/item",
         "parent/parent",
-        "grade/grade"
+        "grade/grade",
+        "guide/guide"
       ]
     },
     {

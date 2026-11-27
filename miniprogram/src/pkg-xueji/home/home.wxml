@@ -31,6 +31,28 @@
       <view wx:elif="{{learnerOptions.length > 1}}" class="learner-chip"><image class="ic ic-sm" src="/assets/icons/users-p.svg" /><text>{{learnerName}}</text></view>
     </view>
 
+    <!-- 新手引导（进度和电脑端同步） -->
+    <xj-guide wx:if="{{guidePersona}}" persona="{{guidePersona}}" refresh="{{guideRefresh}}" />
+
+    <!-- 老师：收卷进度 -->
+    <view wx:if="{{isTeacher && collectLoaded}}" class="card collect">
+      <block wx:if="{{collect}}">
+        <view class="row-between">
+          <view class="card-title collect-title"><image class="ic" src="/assets/icons/clipboard-check-p.svg" />{{collect.title}}</view>
+          <text class="muted">{{collect.className}}</text>
+        </view>
+        <view class="row collect-nums">
+          <view class="collect-num"><text class="collect-big">{{collect.submitted}}</text><text class="muted">/{{collect.total}}</text><view class="muted">已交</view></view>
+          <view class="collect-num"><text class="collect-big">{{collect.confirmed}}</text><view class="muted">已确认</view></view>
+        </view>
+        <view wx:if="{{collect.submitted === 0}}" class="muted">还没有答卷。可以开启扫码交卷，把二维码发到班级群</view>
+      </block>
+      <block wx:else>
+        <view class="card-title collect-title"><image class="ic" src="/assets/icons/clipboard-check-p.svg" />收卷进度</view>
+        <view class="muted">还没有改卷任务。建好班级、新建改卷后，这里显示已交和已确认人数</view>
+      </block>
+    </view>
+
     <!-- 今日复习 -->
     <view class="due-card" hover-class="press" bindtap="onOpenReview">
       <view class="flex-1">

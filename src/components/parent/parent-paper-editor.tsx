@@ -16,6 +16,7 @@ import { MAX_PARENT_PAPER_PAGES } from "@/lib/parent-papers";
 import { NOTEBOOK_SUBJECTS, type NotebookSubject } from "@/lib/notebook-scope";
 import { blobToDataUrl, rotateDataUrl } from "@/lib/paper-page-edit";
 import { compressPaperImages } from "@/lib/use-paper-images";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 const ACCEPT = "image/*,.heic,.heif,image/heic,image/heif";
 
@@ -137,6 +138,7 @@ export function ParentPaperEditor({ learnerId, childName }: ParentPaperEditorPro
                 pages: pages.map((page) => ({ imageUrl: page.image })),
                 answerKeyImages: answerKeys.map((page) => page.image),
             });
+            void reportOnboardingStep("parent", "paper");
             try {
                 await apiClient.post(`/api/parent/papers/${paper.id}/recognize`, { language });
             } catch (recognizeError) {

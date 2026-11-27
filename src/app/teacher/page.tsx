@@ -13,11 +13,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { CauseList, ErrorRateList, HomeSection, scoreLabel } from "@/components/home/home-panels";
 import { ClassMasteryHeatmap } from "@/components/teacher/class-mastery-heatmap";
+import { OnboardingCard } from "@/components/onboarding/onboarding-card";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import type { ClassMasteryMatrix } from "@/lib/class-mastery-matrix";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useOnboarding } from "@/lib/onboarding-client";
 import { usePageTitle } from "@/lib/page-title";
 import { cn } from "@/lib/utils";
 import type { ClassCollectionStatus, ErrorCauseCount, KnowledgeErrorRate } from "@/lib/home-aggregates";
@@ -52,6 +54,7 @@ function TeacherHome() {
     const classId = params.get("classId") || "";
     const [data, setData] = useState<TeacherHomeData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const { status: onboarding } = useOnboarding("teacher");
 
     const load = useCallback(async (id?: string) => {
         setError(null);
@@ -94,8 +97,17 @@ function TeacherHome() {
                     )}
                 />
 
+                <OnboardingCard persona="teacher" />
+
                 {!data || data.classes.length === 0 ? (
-                    <EmptyState icon={Users} title={copy.emptyClasses} className="py-12" />
+                    onboarding?.visible ? null : (
+                        <EmptyState
+                            icon={Users}
+                            title={copy.emptyClasses}
+                            className="py-12"
+                            action={<Button asChild><Link href="/grading#roster"><Users className="h-4 w-4" aria-hidden="true" />{t.onboarding.teacher.emptyHome}</Link></Button>}
+                        />
+                    )
                 ) : (
                     <>
                         <section className="grid gap-3 md:grid-cols-2">

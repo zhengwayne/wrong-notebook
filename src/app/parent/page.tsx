@@ -24,6 +24,8 @@ import { withChildParam } from "@/lib/current-child";
 import type { PracticeTrendDay } from "@/lib/home-aggregates";
 import type { ParentPaperSummary } from "@/lib/parent-papers";
 import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
+import { OnboardingCard } from "@/components/onboarding/onboarding-card";
+import { useOnboarding } from "@/lib/onboarding-client";
 
 interface ParentHomeData {
     children: Array<{ id: string; name: string; itemCount: number }>;
@@ -53,6 +55,13 @@ function ParentHome() {
     const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [managing, setManaging] = useState(false);
+    const manageParam = params.get("manage") === "1";
+    const { status: onboarding } = useOnboarding("parent");
+    useEffect(() => {
+        // 引导「添加孩子」带 ?manage=1 直接展开孩子管理
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 跟随地址参数
+        if (manageParam) setManaging(true);
+    }, [manageParam]);
 
     const requestSeq = useRef(0);
     // 自动纠正网址时需要当前的其他参数；放在 ref 里，避免加载函数随任意参数变化而重新拉取
@@ -136,12 +145,14 @@ function ParentHome() {
                     )}
                 />
 
+                <OnboardingCard persona="parent" />
+
                 {managing && <ChildLearnersManager onChanged={() => void load(learnerId || undefined)} />}
 
                 {children.length === 0 ? (
                     <>
                         {!managing && <ChildLearnersManager onChanged={() => void load(learnerId || undefined)} />}
-                        <EmptyState icon={Users} title={copy.empty} className="py-8" />
+                        {!onboarding?.visible && <EmptyState icon={Users} title={copy.empty} className="py-8" />}
                     </>
                 ) : (
                     <>

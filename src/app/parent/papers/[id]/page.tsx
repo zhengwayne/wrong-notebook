@@ -22,6 +22,7 @@ import { summarizeParentPaperReview, type ImportedNotebookCount } from "@/lib/pa
 import { parentPaperStatusClass, parentPaperStatusLabel } from "@/lib/parent-paper-status";
 import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 interface PaperDetail {
     id: string;
@@ -128,6 +129,7 @@ export default function ParentPaperReviewPage() {
             const result = await apiClient.post<{ importedCount: number; paper: PaperDetail }>(`/api/parent/papers/${paperId}/confirm`, { language });
             setPaper(result.paper);
             toast.success(copy.importedCount.replace("{count}", String(result.importedCount)));
+            if (result.importedCount > 0) void reportOnboardingStep("parent", ["paper", "confirm"]);
         } catch (err) {
             frontendLogger.error("[ParentPaperReview]", "Failed to confirm paper", { error: err });
             toast.error(getApiErrorMessage(err) || copy.confirmError);

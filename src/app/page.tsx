@@ -25,6 +25,8 @@ import { useCurrentChild } from "@/lib/use-current-child";
 import { usePageTitle } from "@/lib/page-title";
 import { useQuestionImport } from "@/lib/use-question-import";
 import type { Notebook, PaginatedResponse } from "@/types/api";
+import { useSession } from "next-auth/react";
+import { OnboardingCard } from "@/components/onboarding/onboarding-card";
 
 /** 直接录入（不经 AI）提交的内容 */
 interface DirectEntry {
@@ -45,6 +47,7 @@ function HomeContent() {
     usePageTitle(t.pageTitle.home);
     const searchParams = useSearchParams();
     const { learnerId } = useCurrentChild();
+    const { data: session } = useSession();
     const initialNotebookId = searchParams.get("notebook");
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
@@ -109,6 +112,9 @@ function HomeContent() {
         { value: "direct" as const, icon: PenLine, label: t.app?.directInput || "Manual Entry" },
     ];
 
+    const activePersona = session?.user?.activePersona;
+    const showSelfGuide = !learnerId && (!activePersona || activePersona === "self");
+
     return (
         <PageContainer maxWidth={flow.step === "review" || flow.step === "confirm" ? "6xl" : "4xl"} className="space-y-6">
             <SnapshotWarningBanner />
@@ -123,7 +129,9 @@ function HomeContent() {
                         targetNotebook={initialNotebookId ? targetNotebook?.name : undefined}
                     />
 
-                    <div className="space-y-4">
+                    {showSelfGuide && <OnboardingCard persona="self" />}
+
+                    <div id="capture" className="scroll-mt-24 space-y-4">
                         <SegmentedControl
                             options={inputModes}
                             value={inputMode}

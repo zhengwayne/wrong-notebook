@@ -110,10 +110,16 @@ describe('目标页面校验（只允许站内相对路径）', () => {
     it('接受错题详情和家长试卷详情', () => {
         expect(normalizeHandoffNext('/error-items/cm123abc')).toBe('/error-items/cm123abc');
         expect(normalizeHandoffNext('/parent/papers/p_1-2')).toBe('/parent/papers/p_1-2');
+        expect(normalizeHandoffNext('/grading')).toBe('/grading');
+        expect(normalizeHandoffNext('/grading/t_1')).toBe('/grading/t_1');
+        expect(normalizeHandoffNext('/grading/t_1/papers')).toBe('/grading/t_1/papers');
+        expect(normalizeHandoffNext('/teacher')).toBe('/teacher');
+        expect(normalizeHandoffNext('/help')).toBe('/help');
     });
     it.each([
         'https://evil.example/error-items/1', '//evil.example/error-items/1', '/\\evil.example', '/error-items/1?x=1',
         '/error-items/1#a', '/error-items/../admin', '/error-items/%2e%2e', '/admin', '/settings', '/error-items/',
+        '/grading?tab=papers', '/grading/t1/submissions/s1', '/grading/', '/teacher/x', '/help/../admin',
         'javascript:alert(1)', '/error-items/a b', '/error-items/1\n', '', null, 42, `/error-items/${'a'.repeat(80)}`,
     ])('拒绝 %j', (value) => {
         expect(normalizeHandoffNext(value)).toBeNull();

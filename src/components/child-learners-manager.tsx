@@ -12,6 +12,7 @@ import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { toast } from "@/lib/feedback";
 import { MAX_CHILD_LEARNERS } from "@/lib/learners";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 export interface ChildLearner {
     id: string;
@@ -58,6 +59,7 @@ export function ChildLearnersManager({ className, onChanged }: { className?: str
             setName("");
             toast.success(copy.saved);
             onChanged?.();
+            void reportOnboardingStep("parent", "child");
         } catch (error) {
             toast.error(getApiErrorMessage(error) || copy.saveFailed);
         } finally {

@@ -37,6 +37,7 @@ import { classifyPdfError, getPdfPageCount, PdfReadError, renderPdfPages } from 
 import type { PaperIdentity } from "@/lib/student-match";
 import { compressPaperImages } from "@/lib/use-paper-images";
 import type { GradingStudentInfo } from "@/types/grading";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 const SKIP = "__skip";
 
@@ -206,6 +207,7 @@ export function FolderImport({ taskId, students, submittedIds, multiClass, onUpl
         if (failed > 0) toast.error(fi.finishedWithFailures.replace("{count}", String(uploaded)).replace("{failed}", String(failed)));
         else toast.success(fi.finished.replace("{count}", String(uploaded)));
         onUploaded();
+        if (uploaded > 0) void reportOnboardingStep("teacher", "collect");
     };
 
     const setChoice = (item: ImportItem, choice: string) => {

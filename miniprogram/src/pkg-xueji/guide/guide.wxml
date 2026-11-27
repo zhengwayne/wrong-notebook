@@ -1,0 +1,16 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+  <view wx:if="{{options.length > 1}}" class="wrap persona-tabs">
+    <view wx:for="{{options}}" wx:key="value" class="chip {{item.value === persona ? 'chip-active' : ''}}" data-value="{{item.value}}" bindtap="onSwitch">{{item.label}}</view>
+  </view>
+  <xj-guide wx:if="{{persona}}" persona="{{persona}}" refresh="{{refresh}}" always="{{true}}" />
+  <view class="card cells">
+    <view class="cell" hover-class="press" bindtap="onHelp">
+      <image class="ic" src="/assets/icons/circle-help-p.svg" />
+      <text class="flex-1">使用说明</text>
+      <text class="muted">复制网页链接</text>
+      <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+    </view>
+  </view>
+  <view class="footer muted">进度按真实数据自动打勾，电脑端和手机端同步</view>
+</view>

@@ -7,6 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "@/lib/feedback";
 import type { GradingSubmissionBrief } from "@/types/grading";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 export interface GreenBucketBannerProps {
     taskId: string;
@@ -42,6 +43,7 @@ export function GreenBucketBanner({ taskId, submissions, onConfirmed }: GreenBuc
                     .replace("{imported}", String(res.importedCount)),
             );
             onConfirmed();
+            void reportOnboardingStep("teacher", "confirm");
         } catch (error) {
             toast.error(error);
         } finally {

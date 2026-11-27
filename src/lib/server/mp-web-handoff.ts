@@ -22,7 +22,15 @@ export const webHandoffUserLimiter = new RateLimiter({ limit: 10, windowMs: 10 *
 export const webHandoffIpLimiter = new RateLimiter({ limit: 30, windowMs: 10 * 60 * 1000 });
 
 /** 允许打开的目标页面：错题详情、家长试卷详情（id 只允许常见的 cuid/uuid 字符） */
-const ALLOWED_TARGETS = [/^\/error-items\/[A-Za-z0-9_-]{1,64}$/, /^\/parent\/papers\/[A-Za-z0-9_-]{1,64}$/];
+const ALLOWED_TARGETS = [
+    /^\/error-items\/[A-Za-z0-9_-]{1,64}$/,
+    /^\/parent\/papers\/[A-Za-z0-9_-]{1,64}$/,
+    // 新手引导「在电脑上做」：老师的改卷页面与使用说明
+    /^\/grading$/,
+    /^\/grading\/[A-Za-z0-9_-]{1,64}(\/papers)?$/,
+    /^\/teacher$/,
+    /^\/help$/,
+];
 
 /**
  * 只接受站内相对路径：以单个 / 开头，不能是 //host 或 /\host，不带协议、控制字符、反斜杠、.. 段，

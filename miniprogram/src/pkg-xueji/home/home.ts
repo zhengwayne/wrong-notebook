@@ -2,13 +2,14 @@ import { loadContext, switchLearner } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import type { PageResult, ErrorItemSummary } from '../../utils/types';
 import { PAGES, switchTo, goHub } from '../../utils/nav';
+import { guidePersonaFor, latestCollect, type CollectProgress, type TeacherHomeClass } from '../../utils/onboarding';
 
 interface LearnerOption { id: string | null; name: string }
 
 const PERSONAS = [
   { value: 'parent', label: '家长', hint: '帮孩子整理错题', icon: '/assets/icons/users-m.svg', iconOn: '/assets/icons/users-p.svg' },
   { value: 'self', label: '学生', hint: '自己整理错题', icon: '/assets/icons/notebook-pen-m.svg', iconOn: '/assets/icons/notebook-pen-p.svg' },
-  { value: 'teacher', label: '老师', hint: '批改在网页端', icon: '/assets/icons/graduation-cap-m.svg', iconOn: '/assets/icons/graduation-cap-p.svg' },
+  { value: 'teacher', label: '老师', hint: '建班、改卷在电脑上；手机看进度', icon: '/assets/icons/graduation-cap-m.svg', iconOn: '/assets/icons/graduation-cap-p.svg' },
 ];
 
 function greetingNow(): string {
@@ -36,6 +37,11 @@ Page({
     learnerOptions: [] as LearnerOption[],
     learnerIndex: 0,
     dueTotal: 0,
+    guidePersona: '',
+    guideRefresh: 0,
+    isTeacher: false,
+    collect: null as CollectProgress | null,
+    collectLoaded: false,
   },
 
   onShow() {
@@ -75,9 +81,23 @@ Page({
         learnerOptions: options,
         learnerIndex: index,
         dueTotal: due.total,
+        guidePersona: ctx.kidMode ? '' : guidePersonaFor(user),
+        guideRefresh: this.data.guideRefresh + 1,
+        isTeacher: !ctx.kidMode && guidePersonaFor(user) === 'teacher',
       });
+      if (this.data.isTeacher) void this.loadCollect();
     } catch (error) {
       this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
+    }
+  },
+
+  /** 老师：最近一次改卷的收卷进度（读不到就只显示空提示） */
+  async loadCollect() {
+    try {
+      const home = await request<{ classes: TeacherHomeClass[] }>('/api/teacher/home');
+      this.setData({ collect: latestCollect(home.classes || []), collectLoaded: true });
+    } catch {
+      this.setData({ collect: null, collectLoaded: true });
     }
   },
 

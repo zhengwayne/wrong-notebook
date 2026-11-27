@@ -34,6 +34,8 @@ model User {
   activePersona        String?
   /// 首次确认身份的时间；为空则下次登录需要一次性确认
   personasConfirmedAt  DateTime?
+  /// 新手引导状态 JSON：{ dismissed: { teacher: ISO }, completedAt: { teacher: ISO } }
+  onboardingState      String    @default("{}")
 
   confirmBeforeImport Boolean @default(false) // 导入题目前是否进入人工校对页
   questionDuplicateThreshold Float @default(90) // 百分比，相似度严格大于此值时判重

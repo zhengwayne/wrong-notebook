@@ -52,6 +52,22 @@
       </view>
     </block>
 
+    <!-- 新手引导与帮助 -->
+    <view wx:if="{{!kid.active}}" class="card cells">
+      <view class="cell" hover-class="press" bindtap="onGuide">
+        <image class="ic" src="/assets/icons/list-checks-p.svg" />
+        <text class="flex-1">新手引导</text>
+        <text wx:if="{{guideTotal}}" class="muted">{{guideDone}}/{{guideTotal}}</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+      <view class="cell" hover-class="press" bindtap="onHelp">
+        <image class="ic" src="/assets/icons/circle-help-p.svg" />
+        <text class="flex-1">使用说明</text>
+        <text class="muted">复制网页链接</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+    </view>
+
     <!-- 账号 -->
     <view wx:if="{{!kid.active}}" class="card cells">
       <block wx:if="{{user.wechatOnly}}">

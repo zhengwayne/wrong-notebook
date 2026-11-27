@@ -86,6 +86,7 @@
     "notebooks": { "auth": "user", "mechanism": "defineApiRoute" },
     "notebooks/[id]": { "auth": "user", "mechanism": "defineApiRoute" },
     "notebooks/[id]/retag": { "auth": "user", "mechanism": "getCurrentUser" },
+    "onboarding": { "auth": "user", "mechanism": "defineApiRoute" },
     "openclaw/batch-upload": { "auth": "custom_key_or_credentials", "mechanism": "custom" },
     "parent/home": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/homeworks": { "auth": "user", "mechanism": "defineApiRoute" },

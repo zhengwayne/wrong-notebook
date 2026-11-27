@@ -10,6 +10,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { answeredDateToISOString, formatDateTime } from "@/lib/date-time";
 import type { PracticeResult } from "@/types/api";
+import { reportLearningProgress } from "@/lib/onboarding-client";
 
 interface PracticeRecordFormProps {
     errorItemId: string;
@@ -38,6 +39,7 @@ export function PracticeRecordForm({ errorItemId, onSaved, onCancel }: PracticeR
                 source: "manual",
                 takenAt: answeredDateToISOString(date, timeZone),
             });
+            reportLearningProgress("review");
             onSaved();
         } catch {
             setError(t.mastery.resultSaveFailed);

@@ -15,6 +15,7 @@ import { normalizeMistakeStatus } from "@/lib/mistake-status";
 import { fetchConfirmBeforeImport, saveParsedQuestion } from "@/lib/question-import";
 import type { ImportedQuestion } from "@/lib/question-import";
 import type { AnalyzeResponse, AppConfig } from "@/types/api";
+import { reportLearningProgress } from "@/lib/onboarding-client";
 
 /** 未配置时 AI 识别的超时（毫秒） */
 const DEFAULT_AI_TIMEOUT = 180000;
@@ -348,6 +349,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, importSubjectId
         try {
             const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", payload);
             toast.success(result.duplicate ? t.importFlow.duplicate : t.common.messages.saveSuccess);
+            if (!result.duplicate) reportLearningProgress("item", learnerId);
             if (result.duplicate) {
                 router.push(`/error-items/${result.id}`);
             } else if (payload.subjectId) {

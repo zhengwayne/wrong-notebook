@@ -173,6 +173,7 @@ it('家长首页加载只随 learnerId 变化：其他网址参数变化不重�
         if (pathname === '/api/parent/homeworks') {
             return { items: [], summary: { total: 0, completed: 0, estimatedMinutes: 0, streakDays: 0 } };
         }
+        if (pathname === '/api/onboarding') return null;
         homeCalls.push(searchParams.get('learnerId') ?? '');
         return {
             selectedLearnerId: 'A', children: [{ id: 'A', name: 'A' }],

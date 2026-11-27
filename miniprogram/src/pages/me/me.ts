@@ -2,7 +2,9 @@ import { loadContext } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../utils/session';
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
-import { goHub, goLogin } from '../../utils/nav';
+import { goHub, goLogin, PAGES } from '../../utils/nav';
+import { fetchGuide, guidePersonaFor, setGuideVisible, type GuidePersona } from '../../utils/onboarding';
+import { copyWebLink } from '../../utils/web-link';
 
 const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生' };
 
@@ -33,10 +35,37 @@ Page({
     linkPassword: '',
     busy: false,
     error: '',
+    guidePersona: 'self' as GuidePersona,
+    guideDone: 0,
+    guideTotal: 0,
   },
 
   onShow() {
     void this.load();
+  },
+
+  /** 新手引导进度 x/4（读不到就不显示数字） */
+  async loadGuide() {
+    try {
+      const status = await fetchGuide(this.data.guidePersona);
+      this.setData({ guideDone: status.doneCount, guideTotal: status.total });
+    } catch {
+      this.setData({ guideTotal: 0 });
+    }
+  },
+
+  /** 重新打开新手引导，并进入引导页 */
+  async onGuide() {
+    try {
+      await setGuideVisible(this.data.guidePersona, true);
+    } catch {
+      // 打开失败也能进引导页看步骤
+    }
+    wx.navigateTo({ url: `${PAGES.xjGuide}?persona=${this.data.guidePersona}` });
+  },
+
+  onHelp() {
+    void copyWebLink('/help');
   },
 
   async load() {
@@ -56,7 +85,9 @@ Page({
         kid,
         kidMode: ctx.kidMode || kid.active,
         error: '',
+        guidePersona: guidePersonaFor(user),
       });
+      if (!(ctx.kidMode || kid.active)) void this.loadGuide();
     } catch (error) {
       this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     }

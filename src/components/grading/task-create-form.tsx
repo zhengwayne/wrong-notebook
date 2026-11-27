@@ -17,6 +17,8 @@ import { getApiErrorMessage, getErrorMessage } from "@/lib/error-message";
 import type { ScoringMode } from "@/lib/grading-grades";
 import type { ExamPaperSummary } from "@/types/api";
 import type { GradingClassInfo } from "@/types/grading";
+import { InlineHint } from "@/components/onboarding/inline-hint";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 type KeySource = "ai_auto" | "quick" | "exam" | "photo";
 
@@ -75,6 +77,7 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
                 ...(source === "exam" && examPaperId ? { examPaperId } : {}),
             };
             const task = await apiClient.post<{ id: string }>("/api/grading/tasks", body);
+            void reportOnboardingStep("teacher", "task");
             router.push(`/grading/${task.id}?tab=${source === "photo" ? "key" : "capture"}`);
         } catch (err) {
             const lines = err instanceof ApiError ? (err.data as { details?: { lines?: number[] } })?.details?.lines : undefined;
@@ -155,6 +158,7 @@ export function TaskCreateForm({ classes }: TaskCreateFormProps) {
                         )}
                         {source === "quick" && (
                             <div className="space-y-2">
+                                <InlineHint id="grading-key" persona="teacher" step={2}>{t.onboarding.teacher.hints.key}</InlineHint>
                                 <p className="text-xs text-muted-foreground">{t.grading.keyQuickHint}</p>
                                 <Textarea rows={5} value={keyText} aria-label={t.grading.keyQuick} placeholder={"1-10 ABCDABCDAB\n11 x=2 4\n12 主观 10 列方程 4 分，求解 4 分，作答 2 分"}
                                     onChange={(event) => setKeyText(event.target.value)} className="font-mono" />

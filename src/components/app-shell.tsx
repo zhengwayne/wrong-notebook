@@ -9,6 +9,8 @@ import { signOut, useSession } from "next-auth/react";
 import { LogOut, Settings, Shield } from "lucide-react";
 import { MobileNav, navLabel } from "@/components/layout/mobile-nav";
 import { GlobalKidModeBanner, useKidModeState } from "@/components/parent/kid-mode-lock-bar";
+import { HelpMenu } from "@/components/onboarding/help-menu";
+import { NextStepHost } from "@/components/onboarding/next-step-host";
 import { PersonaSwitcher } from "@/components/persona-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -167,6 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             </Button>
                         )}
                         <ThemeToggle />
+                        {!kidLocked && <HelpMenu persona={activePersona} />}
                         {!kidLocked && (
                             settingsMounted ? (
                                 <LazySettingsDialog defaultOpen />
@@ -204,6 +207,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
                 <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
             </div>
+
+            {!kidLocked && <NextStepHost />}
 
             <MobileNav
                 pathname={pathname}

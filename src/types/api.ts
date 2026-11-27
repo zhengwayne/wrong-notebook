@@ -384,7 +384,8 @@ export interface RegisterRequest {
     email: string;
     password: string;
     educationStage: string;
-    enrollmentYear: number;
+    /** 只选老师时不填 */
+    enrollmentYear?: number;
     personas?: string[];
     children?: { name: string }[];
 }

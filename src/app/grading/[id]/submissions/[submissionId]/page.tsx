@@ -21,6 +21,7 @@ import { apiClient } from "@/lib/api-client";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { usePageTitle } from "@/lib/page-title";
 import type { GradingSubmissionDetail, GradingTaskDetail, GradingVerdict } from "@/types/grading";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 
 export default function GradingReviewPage() {
     const { id, submissionId } = useParams<{ id: string; submissionId: string }>();
@@ -83,6 +84,7 @@ export default function GradingReviewPage() {
             );
             const name = task.students.find((student) => student.id === submission.studentId)?.name || "";
             toast.success(t.grading.confirmed.replace("{count}", String(result.importedCount)).replace("{name}", name));
+            void reportOnboardingStep("teacher", "confirm");
             goNext();
         } catch (error) {
             toast.error(error);

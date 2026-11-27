@@ -19,6 +19,8 @@ import { apiClient } from "@/lib/api-client";
 import { confirmDialog } from "@/lib/feedback";
 import { usePageTitle } from "@/lib/page-title";
 import type { GradingTaskDetail } from "@/types/grading";
+import { InlineHint } from "@/components/onboarding/inline-hint";
+import { OnboardingStrip } from "@/components/onboarding/onboarding-strip";
 
 type Tab = "key" | "capture" | "papers" | "horizontal" | "summary";
 const TABS: Tab[] = ["key", "capture", "papers", "horizontal", "summary"];
@@ -31,6 +33,11 @@ function GradingTaskView() {
     const [task, setTask] = useState<GradingTaskDetail | null>(null);
     const initialTab = searchParams.get("tab");
     const [tab, setTab] = useState<Tab>(TABS.includes(initialTab as Tab) ? initialTab as Tab : "capture");
+    useEffect(() => {
+        // 引导/下一步提示用 ?tab= 跳到同一任务的其他页签
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 地址参数变化时同步页签
+        if (initialTab && TABS.includes(initialTab as Tab)) setTab(initialTab as Tab);
+    }, [initialTab]);
     usePageTitle(task?.title || t.grading.title);
 
     const load = useCallback(() => {
@@ -80,6 +87,7 @@ function GradingTaskView() {
                     multiClass={task.classIds.length > 1}
                     onChanged={load}
                 />
+                <OnboardingStrip persona="teacher" />
                 <SegmentedControl<Tab> className="print:hidden" value={tab} onChange={setTab} options={[
                     { value: "key", label: t.grading.tabs.key, icon: KeyRound },
                     { value: "capture", label: t.grading.tabs.capture, icon: Camera },
@@ -92,10 +100,12 @@ function GradingTaskView() {
                     ? <p className="text-sm text-muted-foreground">{t.grading.noKey}</p>
                     : (
                         <div className="space-y-6">
+                            <InlineHint id="grading-capture" persona="teacher" step={3}>{t.onboarding.teacher.hints.capture}</InlineHint>
                             <PaperCapture taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />
                             <FolderImport taskId={task.id} students={task.students} submittedIds={submittedIds} multiClass={task.classIds.length > 1} onUploaded={load} />
                         </div>
                     ))}
+                {tab === "papers" && <InlineHint id="grading-papers" persona="teacher" step={4}>{t.onboarding.teacher.hints.papers}</InlineHint>}
                 {tab === "papers" && <SubmissionList taskId={task.id} students={task.students} submissions={task.submissions} multiClass={task.classIds.length > 1} onChanged={load} />}
                 {tab === "horizontal" && <HorizontalQuestionGrader taskId={task.id} questions={task.questions} onChanged={load} />}
                 {tab === "summary" && <ClassSummary taskId={task.id} version={version} />}

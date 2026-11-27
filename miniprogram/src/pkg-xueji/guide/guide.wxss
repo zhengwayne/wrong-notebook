@@ -1,0 +1,4 @@
+.persona-tabs { margin-bottom: 20rpx; }
+.persona-tabs .chip { margin-right: 16rpx; }
+.footer { text-align: center; margin-top: 24rpx; font-size: 24rpx; }
+.cells { padding-top: 4rpx; padding-bottom: 4rpx; }

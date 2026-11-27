@@ -33,6 +33,7 @@ export default function RegisterPage() {
     const [educationStage, setEducationStage] = useState("junior_high");
     const [enrollmentYear, setEnrollmentYear] = useState("2025");
     const [personas, setPersonas] = useState<Persona[]>([SIGNUP_PRESELECT]);
+    const teacherOnly = personas.length === 1 && personas[0] === "teacher";
     const [childNames, setChildNames] = useState<string[]>([""]);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
@@ -79,7 +80,8 @@ export default function RegisterPage() {
                 email,
                 password,
                 educationStage,
-                enrollmentYear: parseInt(enrollmentYear),
+                // 只选老师时不问入学年份
+                enrollmentYear: teacherOnly ? undefined : parseInt(enrollmentYear),
                 personas,
                 children: personas.includes("parent")
                     ? childNames.map((name) => ({ name: name.trim() })).filter((child) => child.name)
@@ -257,7 +259,7 @@ export default function RegisterPage() {
                                 <option value="university">{t.auth?.university || 'University'}</option>
                             </select>
                         </div>
-                        <div className="space-y-2">
+                        {!teacherOnly && <div className="space-y-2">
                             <label htmlFor="enrollmentYear" className="text-sm font-medium">
                                 {t.auth?.enrollmentYear || 'Enrollment Year'}
                             </label>
@@ -272,10 +274,9 @@ export default function RegisterPage() {
                                 min={1990}
                                 max={Number(formatDateTime(new Date(), 'yyyy', timeZone))}
                             />
-                        </div>
+                        </div>}
                         <div className="space-y-2">
                             <p className="text-sm font-medium">{t.persona.title}</p>
-                            <p className="text-sm text-muted-foreground">{t.persona.signupHint}</p>
                             <PersonaPicker value={personas} onChange={setPersonas} />
                         </div>
                         {personas.includes("parent") && (

@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api-client";
 import { processImageFile } from "@/lib/image-utils";
 import type { ParsedQuestion } from "@/lib/ai";
 import type { AnalyzeResponse, UserProfile } from "@/types/api";
+import { reportLearningProgress } from "@/lib/onboarding-client";
 
 /** 导入成功后的题目摘要 */
 export interface ImportedQuestion {
@@ -74,6 +75,7 @@ export async function saveParsedQuestion(
         learnerId: options.learnerId || undefined,
         ...(provenanceId ? { provenanceId } : {}),
     });
+    reportLearningProgress("item", options.learnerId);
     return {
         id: created.id,
         shortId: created.shortId ?? null,

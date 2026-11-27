@@ -121,7 +121,7 @@ describe("移动端主导航与「更多」分流", () => {
         expect(dialog).not.toBeNull();
         expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
         expect(document.body.textContent).toContain("复习");
-        expect(document.body.textContent).toContain("变式审核");
+        expect(document.body.textContent).toContain("练习题审核");
         expect(document.body.textContent).toContain("统计");
         expect(document.body.textContent).toContain("试卷");
         expect(document.body.textContent).toContain("设置");

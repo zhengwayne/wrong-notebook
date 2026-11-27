@@ -71,7 +71,8 @@ test('教师端闭环：建班导花名册 → 新建批改任务 → 收卷 Moc
 
         // 6. 切到「答卷」标签页，等待判分完成并进入复核页确认导入错题
         await page.getByRole('tab', { name: /^(答卷|Papers)$/ }).click();
-        await expect(page.getByText(/待复核|Graded/)).toBeVisible({ timeout: 30000 });
+        // 只看答卷状态徽章（复核提示里也有「待复核」字样）
+        await expect(page.locator('[data-slot="badge"]', { hasText: /待复核|Graded/ }).first()).toBeVisible({ timeout: 30000 });
 
         await page.locator('a[href*="/submissions/"]').first().click();
         await page.waitForURL(/\/grading\/[^/]+\/submissions\/[^/]+/, { timeout: 15000 });
@@ -80,6 +81,9 @@ test('教师端闭环：建班导花名册 → 新建批改任务 → 收卷 Moc
 
         // 等待确认完成提示（精确匹配 toast，避免命中页面上的「已确认」状态徽章）
         await expect(page.getByText(/已确认，\d+\s*道错题|Added \d+ mistakes/i)).toBeVisible({ timeout: 15000 });
+
+        // 新手引导四步全部按真实数据完成
+        await expect.poll(async () => (await (await page.request.get('/api/onboarding?persona=teacher')).json()).completed, { timeout: 10000 }).toBe(true);
 
         // 7. 验证教师首页学生档案页面与班级学习路径可见
         await page.goto('/teacher');
