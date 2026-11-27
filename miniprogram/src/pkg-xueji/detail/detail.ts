@@ -82,7 +82,7 @@ Page({
     id: '',
     item: null as DetailView | null,
     plan: null as PlanView | null,
-    history: [] as HistoryRow[],
+    historyRows: [] as HistoryRow[],
     historyLoaded: false,
     mastery: -1,
     kidMode: false,
@@ -106,7 +106,7 @@ Page({
       this.setData({
         item: toView(item),
         plan: toPlan(item.learning),
-        history: records ? toHistory(records.records) : [],
+        historyRows: records ? toHistory(records.records) : [],
         historyLoaded: Boolean(records),
         mastery: records && typeof records.masteryProbability === 'number' ? percent(records.masteryProbability) : -1,
       });
