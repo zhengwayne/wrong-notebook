@@ -98,6 +98,7 @@
     "parent/papers/[id]": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/confirm": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/questions/[questionId]": { "auth": "user", "mechanism": "getCurrentUser" },
+    "parent/papers/[id]/questions/[questionId]/image": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/recognize": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/papers/[id]/rotate": { "auth": "user", "mechanism": "getCurrentUser" },
     "parent/pin": { "auth": "user", "mechanism": "defineApiRoute" },

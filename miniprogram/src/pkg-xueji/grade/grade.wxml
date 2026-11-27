@@ -75,7 +75,7 @@
       <view class="ans row"><image class="ic ic-sm" src="/assets/icons/pencil-m.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.studentAnswer}}</text></view>
       <view wx:if="{{item.correctAnswer && item.verdict !== 'correct'}}" class="ans row"><image class="ic ic-sm" src="/assets/icons/check-s.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.correctAnswer}}</text></view>
       <view wx:if="{{item.open && item.errorCause && item.verdict !== 'correct'}}" class="cause">{{item.errorCause}}</view>
-      <view wx:if="{{item.verdict !== 'correct'}}" class="detail-link" hover-class="press" catchtap="onCopyWebLink" id="btn-web-detail-{{qi}}"><image class="ic ic-xs" src="/assets/icons/external-link-p.svg" /><text>查看详情</text></view>
+      <view class="detail-link" hover-class="press" data-index="{{qi}}" catchtap="onOpenDetail" id="btn-detail-{{qi}}"><text>查看详情</text><image class="ic ic-xs" src="/assets/icons/chevron-right-p.svg" /></view>
     </view>
 
     <view wx:if="{{step === 'review'}}" class="save-bar">

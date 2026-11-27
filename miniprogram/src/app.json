@@ -35,7 +35,9 @@
         "parent/parent",
         "grade/grade",
         "guide/guide",
-        "webview/webview"
+        "detail/detail",
+        "question/question",
+        "help/help"
       ]
     },
     {

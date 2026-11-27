@@ -3,7 +3,7 @@ import { request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
-import { errorItemPath, openWebPage } from '../../utils/web-link';
+import { previewImage } from '../../utils/detail';
 import { GENERATED_LABEL } from '../../config';
 
 interface ItemView {
@@ -70,9 +70,9 @@ Page({
     }
   },
 
-  /** 查看详情：在小程序里打开网页端错题页（复杂公式显示更完整） */
-  onCopyWebLink() {
-    if (this.data.id) openWebPage(errorItemPath(this.data.id));
+  /** 查看详情：小程序里的错题详情页（做题记录、复习、笔记） */
+  onOpenDetail() {
+    if (this.data.id) wx.navigateTo({ url: `${PAGES.xjDetail}?id=${encodeURIComponent(this.data.id)}` });
   },
 
   onReveal() {
@@ -81,7 +81,7 @@ Page({
 
   onPreviewImage() {
     const image = this.data.item?.image;
-    if (image && image.startsWith('https://')) wx.previewImage({ urls: [image] });
+    if (image) previewImage(image);
   },
 
   async onRecord(e: WechatMiniprogram.BaseEvent) {

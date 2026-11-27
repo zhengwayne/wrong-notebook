@@ -4,7 +4,6 @@ import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../u
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
 import { goHub, goLogin, PAGES } from '../../utils/nav';
 import { fetchGuide, guidePersonaFor, setGuideVisible, type GuidePersona } from '../../utils/onboarding';
-import { openWebPage } from '../../utils/web-link';
 
 const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生' };
 
@@ -65,7 +64,7 @@ Page({
   },
 
   onHelp() {
-    openWebPage('/help');
+    wx.navigateTo({ url: PAGES.xjHelp });
   },
 
   async load() {

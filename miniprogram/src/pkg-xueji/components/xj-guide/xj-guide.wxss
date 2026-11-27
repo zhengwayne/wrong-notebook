@@ -26,4 +26,3 @@
 .sheet-desc { font-size: 26rpx; }
 .sheet-url { margin: 20rpx 0 12rpx; padding: 20rpx 24rpx; border-radius: 20rpx; background-color: var(--xj-bg); font-size: 24rpx; color: var(--xj-text-2); word-break: break-all; min-height: 48rpx; }
 .sheet-tip { font-size: 24rpx; margin-bottom: 24rpx; }
-.sheet-here { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 24rpx; color: var(--xj-primary); font-size: 26rpx; }

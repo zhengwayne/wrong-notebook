@@ -1,0 +1,2 @@
+.sec .card-title { margin-bottom: 12rpx; }
+.line { font-size: 28rpx; line-height: 1.7; }

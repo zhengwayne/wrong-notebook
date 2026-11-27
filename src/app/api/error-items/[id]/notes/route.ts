@@ -38,3 +38,6 @@ export const PATCH = defineApiRoute<Request, { id: string }>(
         }
     },
 );
+
+/** POST 与 PATCH 相同：小程序 wx.request 不支持 PATCH 方法 */
+export const POST = PATCH;

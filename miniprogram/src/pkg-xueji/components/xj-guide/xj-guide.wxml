@@ -50,6 +50,5 @@
       <button wx:if="{{sheetRoster}}" class="btn btn-small btn-secondary" bindtap="onRoster">名册格式</button>
       <button wx:else class="btn btn-small btn-secondary" bindtap="onCloseSheet">关闭</button>
     </view>
-    <view class="sheet-here" hover-class="press" bindtap="onOpenHere" id="btn-guide-open-here"><image class="ic ic-sm" src="/assets/icons/external-link-p.svg" />先在手机上看看</view>
   </view>
 </view>

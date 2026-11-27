@@ -42,7 +42,7 @@
           <view class="pre">{{item.mistake}}</view>
         </block>
       </view>
-      <view class="detail-link" hover-class="press" bindtap="onCopyWebLink" id="btn-web-detail"><image class="ic ic-sm" src="/assets/icons/external-link-p.svg" /><text>查看详情</text><text class="muted detail-sub">复杂公式在网页端看</text></view>
+      <view class="detail-link" hover-class="press" bindtap="onOpenDetail" id="btn-detail"><image class="ic ic-sm" src="/assets/icons/file-text-p.svg" /><text>查看详情</text><image class="ic ic-sm detail-arrow" src="/assets/icons/chevron-right-m.svg" /></view>
 
       <view wx:if="{{!kidMode}}" class="card">
         <view class="card-title center-title">这次做得怎么样？</view>

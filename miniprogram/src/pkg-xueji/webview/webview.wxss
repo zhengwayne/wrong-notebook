@@ -1,4 +1,0 @@
-.fail { display: flex; flex-direction: column; align-items: center; padding: 56rpx 32rpx; text-align: center; }
-.fail-hint { margin: 24rpx 0 32rpx; font-size: 28rpx; line-height: 1.6; }
-.fail .btn-row { width: 100%; }
-.page-loading { justify-content: center; padding-top: 240rpx; }

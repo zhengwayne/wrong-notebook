@@ -332,3 +332,21 @@ export async function createParentPaper(
         importedNotebooks: [],
     };
 }
+
+/**
+ * 小程序「查看详情」：找出一道题所在的整页图片和题框，供服务端裁出这道题。
+ * 题框缺失或页码越界时退回第一页（不裁剪）；找不到题目返回 null。
+ */
+export function questionImageSource(
+    paper: Pick<ParentPaperDetail, "pages" | "questions">,
+    questionId: string,
+): { pageIndex: number; imageUrl: string; bbox: QuestionBBox | null } | null {
+    const question = paper.questions.find((item) => item.id === questionId);
+    if (!question) return null;
+    const pages = [...paper.pages].sort((a, b) => a.position - b.position);
+    const wanted = question.bbox?.pageIndex ?? 0;
+    const pageIndex = wanted >= 0 && wanted < pages.length ? wanted : 0;
+    const page = pages[pageIndex];
+    if (!page || !page.imageUrl) return null;
+    return { pageIndex, imageUrl: page.imageUrl, bbox: pageIndex === wanted ? question.bbox : null };
+}

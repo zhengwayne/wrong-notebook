@@ -1,7 +1,7 @@
 /**
  * 整页批改：照片 → 网页端同一套「家长批改试卷」接口拆题判对错 → 逐题改判（正确 / 部分正确 / 错误）→ 确认。
  * 错误与部分正确的题进孩子的错题本；判对的题留在试卷记录里（网页端「家长 · 试卷」可看、可继续改）。
- * 接口都带 ?images=0：只回文字，不回整页图片。
+ * 接口都带 ?images=0：只回文字，不回整页图片；每题「查看详情」在小程序里的题目详情页（pkg-xueji/question）。
  */
 import { loadContext } from '../../utils/context';
 import { PAGES, switchTo } from '../../utils/nav';
@@ -25,7 +25,7 @@ import {
 } from '../../utils/paper';
 import { clearPendingPaper, markGradeFinished, savePendingPaper } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
-import { openWebPage, paperPath } from '../../utils/web-link';
+import { takePaperChanged } from '../../utils/detail';
 import { GENERATED_LABEL } from '../../config';
 import { NOTEBOOK_SUBJECTS, SUBJECT_LABELS } from '../../utils/subjects';
 
@@ -175,6 +175,16 @@ Page({
     void this.create();
   },
 
+  /** 从题目详情页改判回来：刷新这份试卷 */
+  async onShow() {
+    if (!takePaperChanged(this.data.paperId) || this.data.step !== 'review') return;
+    try {
+      this.applyPaper(await request<PaperDetail>(`/api/parent/papers/${this.data.paperId}${IMG}`));
+    } catch {
+      // 保留当前界面
+    }
+  },
+
   onUnload() {
     alive = false;
     stopTimer();
@@ -306,9 +316,11 @@ Page({
     }
   },
 
-  /** 查看详情：在小程序里打开网页端这份试卷（可看原图和完整内容） */
-  onCopyWebLink() {
-    if (this.data.paperId) openWebPage(paperPath(this.data.paperId));
+  /** 查看详情：小程序里的题目详情页（裁好的题图、完整文字、可改判） */
+  onOpenDetail(e: WechatMiniprogram.BaseEvent) {
+    const row = this.data.rows[Number(e.currentTarget.dataset.index)];
+    if (!row || !this.data.paperId) return;
+    wx.navigateTo({ url: `${PAGES.xjQuestion}?paper=${encodeURIComponent(this.data.paperId)}&q=${encodeURIComponent(row.id)}` });
   },
 
   onToggleOpen(e: WechatMiniprogram.BaseEvent) {

@@ -1,9 +1,8 @@
 /** 我的 › 新手引导：重新打开后在这里看步骤；有多个身份时可以切换 */
 import { loadContext } from '../../utils/context';
 import { toChineseMessage } from '../../utils/request';
-import { goHub } from '../../utils/nav';
+import { goHub, PAGES } from '../../utils/nav';
 import { guidePersonaFor, isGuidePersona, setGuideVisible, type GuidePersona } from '../../utils/onboarding';
-import { openWebPage } from '../../utils/web-link';
 
 const LABEL: Record<GuidePersona, string> = { teacher: '老师', parent: '家长', self: '学生' };
 
@@ -51,6 +50,6 @@ Page({
   },
 
   onHelp() {
-    openWebPage('/help');
+    wx.navigateTo({ url: PAGES.xjHelp });
   },
 });

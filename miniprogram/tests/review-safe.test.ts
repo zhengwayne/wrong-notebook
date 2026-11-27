@@ -1,11 +1,11 @@
 /**
  * 审核相关：除统一的生成标识（GENERATED_LABEL）外，界面文字不出现 AI 字样；
  * 0.1.2 起显示答案、讲解、错因、参考答案，显示这些字段的页面必须带生成标识；
- * 「查看详情」只复制链接（一次性网页登录链接，失败时退回普通地址）。
+ * 「查看详情」在小程序里原生显示，不打开网页；只有「在电脑上做」复制一次性网页链接。
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../src/utils/request', async (importOriginal) => {
@@ -15,7 +15,7 @@ vi.mock('../src/utils/request', async (importOriginal) => {
 
 import { API_BASE_URL, GENERATED_LABEL, SHOW_SYNTH_MEDIA } from '../src/config';
 import { ApiError, neutralMessage } from '../src/utils/request';
-import { COPIED_HINT, copyWebLink, errorItemPath, isWebPath, openWebPage, paperPath, plainWebUrl, resolveWebLink, webviewUrl } from '../src/utils/web-link';
+import { plainWebUrl, resolveWebLink } from '../src/utils/web-link';
 import { artUrl } from '../src/pkg-english/lib/words';
 import { ATTRIBUTION, heroUrl } from '../src/pkg-math/lib/course';
 
@@ -61,7 +61,7 @@ describe('界面文字不出现 AI / 生成字样（统一的生成标识除外�
       const ts = fs.readFileSync(file.replace(/\.wxml$/, '.ts'), 'utf8');
       expect(ts, file).toMatch(/generatedLabel: GENERATED_LABEL/);
     }
-    expect(shown.sort()).toEqual(['pkg-xueji/capture/capture.wxml', 'pkg-xueji/grade/grade.wxml', 'pkg-xueji/item/item.wxml']);
+    expect(shown.sort()).toEqual(['pkg-xueji/capture/capture.wxml', 'pkg-xueji/detail/detail.wxml', 'pkg-xueji/grade/grade.wxml', 'pkg-xueji/item/item.wxml', 'pkg-xueji/question/question.wxml']);
     expect(GENERATED_LABEL).toBe('AI 生成，仅供参考');
   });
 
@@ -81,67 +81,39 @@ describe('界面文字不出现 AI / 生成字样（统一的生成标识除外�
   });
 });
 
-describe('查看详情：复制网页链接', () => {
-  const wxMock = {
-    showLoading: vi.fn(), hideLoading: vi.fn(), hideToast: vi.fn(), showToast: vi.fn(), showModal: vi.fn(),
-    setClipboardData: vi.fn((opts: { data: string; success?: () => void }) => opts.success && opts.success()),
-    navigateTo: vi.fn(),
-  };
-  beforeEach(() => {
-    requestMock.mockReset();
-    Object.values(wxMock).forEach((fn) => fn.mockClear());
-    vi.stubGlobal('wx', wxMock);
-  });
-  afterEach(() => vi.unstubAllGlobals());
+describe('查看详情在小程序里原生显示，不打开网页', () => {
+  beforeEach(() => requestMock.mockReset());
 
-  it('页面路径与网页端路由一致', () => {
-    expect(errorItemPath('cm1')).toBe('/error-items/cm1');
-    expect(paperPath('p1')).toBe('/parent/papers/p1');
-    expect(plainWebUrl('/error-items/cm1')).toBe(`${API_BASE_URL}/error-items/cm1`);
+  it('没有 web-view 页面，也没有 <web-view> 组件', () => {
+    const app = JSON.parse(fs.readFileSync(path.join(SRC, 'app.json'), 'utf8')) as { subPackages: Array<{ pages: string[] }> };
+    const pages = app.subPackages.flatMap((pkg) => pkg.pages);
+    expect(pages.some((page) => /webview/.test(page))).toBe(false);
+    expect(pages).toEqual(expect.arrayContaining(['detail/detail', 'question/question', 'help/help']));
+    for (const file of walk(SRC).filter((f) => f.endsWith('.wxml'))) expect(fs.readFileSync(file, 'utf8'), file).not.toMatch(/<web-view/);
   });
 
-  it('优先复制一次性登录链接，并提示在浏览器打开', async () => {
-    const url = `${API_BASE_URL}/api/auth/mp-handoff?t=xjwh_x&next=%2Ferror-items%2Fcm1`;
-    requestMock.mockResolvedValue({ url, expiresAt: '' });
-    await copyWebLink('/error-items/cm1');
-    expect(requestMock).toHaveBeenCalledWith('/api/mp/web-link', { method: 'POST', data: { path: '/error-items/cm1' } });
-    expect(wxMock.setClipboardData).toHaveBeenCalledWith(expect.objectContaining({ data: url }));
-    const modal = wxMock.showModal.mock.calls[0][0] as { content: string };
-    expect(modal.content).toContain(COPIED_HINT);
-    expect(modal.content).not.toMatch(/AI/);
+  it('查看详情、使用说明都跳原生页面', () => {
+    const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), 'utf8');
+    expect(read('pkg-xueji/item/item.ts')).toMatch(/PAGES\.xjDetail/);
+    expect(read('pkg-xueji/grade/grade.ts')).toMatch(/PAGES\.xjQuestion/);
+    expect(read('pages/me/me.ts')).toMatch(/PAGES\.xjHelp/);
+    expect(read('pkg-xueji/guide/guide.ts')).toMatch(/PAGES\.xjHelp/);
+    for (const rel of ['pkg-xueji/item/item.ts', 'pkg-xueji/grade/grade.ts', 'pages/me/me.ts', 'pkg-xueji/guide/guide.ts']) expect(read(rel)).not.toMatch(/web-link/);
   });
 
-  it('签发失败时退回普通网页地址；不是本站的地址不复制', async () => {
+  it('在电脑上做：优先一次性登录链接，失败退回普通地址，不是本站的地址不用', async () => {
+    const url = `${API_BASE_URL}/api/auth/mp-handoff?t=xjwh_x&next=%2Fteacher`;
+    requestMock.mockResolvedValueOnce({ url, expiresAt: '' });
+    expect(await resolveWebLink('/teacher')).toEqual({ url, oneTime: true });
+    expect(requestMock).toHaveBeenCalledWith('/api/mp/web-link', { method: 'POST', data: { path: '/teacher' } });
     requestMock.mockRejectedValueOnce(new ApiError(500, 'x'));
-    expect(await resolveWebLink('/error-items/cm1')).toEqual({ url: `${API_BASE_URL}/error-items/cm1`, oneTime: false });
+    expect(await resolveWebLink('/teacher')).toEqual({ url: plainWebUrl('/teacher'), oneTime: false });
     requestMock.mockResolvedValueOnce({ url: 'https://evil.example/x', expiresAt: '' });
-    expect(await resolveWebLink('/error-items/cm1')).toEqual({ url: `${API_BASE_URL}/error-items/cm1`, oneTime: false });
+    expect(await resolveWebLink('/teacher')).toEqual({ url: `${API_BASE_URL}/teacher`, oneTime: false });
   });
 
-  it('在小程序里打开：跳到 web-view 页并带上站内路径', () => {
-    openWebPage('/error-items/cm1');
-    expect(wxMock.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: '/pkg-xueji/webview/webview?path=%2Ferror-items%2Fcm1' }));
-    expect(webviewUrl('/help')).toBe('/pkg-xueji/webview/webview?path=%2Fhelp');
-  });
-
-  it('只接受站内路径，不接受外站、查询串和锚点', () => {
-    for (const ok of ['/error-items/cm1', '/parent/papers/p1', '/help', '/grading/t_1/papers']) expect(isWebPath(ok)).toBe(true);
-    for (const bad of ['https://evil.example', '//evil.example', '/a?x=1', '/a#b', 'help', '', '/a/../b', null]) expect(isWebPath(bad)).toBe(false);
-    openWebPage('https://evil.example');
-    expect(wxMock.navigateTo).not.toHaveBeenCalled();
-  });
-
-  it('打不开 web-view 页时退回复制链接', async () => {
-    requestMock.mockResolvedValue({ url: `${API_BASE_URL}/api/auth/mp-handoff?t=xjwh_x&next=%2Fhelp`, expiresAt: '' });
-    wxMock.navigateTo.mockImplementationOnce((opts: { fail?: () => void }) => opts.fail && opts.fail());
-    openWebPage('/help');
-    await vi.waitFor(() => expect(wxMock.setClipboardData).toHaveBeenCalled());
-  });
-
-  it('专注模式不允许的页面不复制', async () => {
-    requestMock.mockRejectedValue(new ApiError(403, '专注做题模式下禁止此操作', 'KID_MODE_RESTRICTED'));
-    await copyWebLink('/parent/papers/p1');
-    expect(wxMock.setClipboardData).not.toHaveBeenCalled();
-    expect(wxMock.showToast).toHaveBeenCalled();
+  it('专注模式不允许的页面不给链接', async () => {
+    requestMock.mockRejectedValueOnce(new ApiError(403, '专注做题模式下禁止此操作', 'KID_MODE_RESTRICTED'));
+    expect(await resolveWebLink('/teacher')).toBeNull();
   });
 });
