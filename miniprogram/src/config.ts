@@ -15,3 +15,6 @@ export const APP_NAME = '学迹';
  * 打开前需要先在小程序后台补充对应类目，并按要求标注。
  */
 export const SHOW_SYNTH_MEDIA = false;
+
+/** 答案、讲解、错因、参考答案由模型生成，显示时统一带上这个标识 */
+export const GENERATED_LABEL = 'AI 生成，仅供参考';

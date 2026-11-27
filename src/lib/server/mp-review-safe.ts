@@ -1,7 +1,8 @@
 /**
- * 小程序“只识别、不生成”模式：微信审核把展示 AI 生成文字（答案、解析、错因等）视为“深度合成-AI问答”。
- * 小程序只保留题目文字识别（OCR）与对错标记；经小程序令牌（Bearer xjmp_）访问时，
- * 这些接口的响应里把生成类文字字段置空。网页端（Cookie 会话）不经过这里，响应完全不变。
+ * 小程序里模型生成的文字（答案、解析、错因、参考答案）。
+ * 0.1.2 起小程序正常显示这些字段（带“AI 生成”标识），默认原样返回。
+ * MP_SHOW_GENERATED_TEXT=false 时回到 0.1.1 的做法：经小程序令牌（Bearer xjmp_）访问时把这些字段置空，
+ * 作为运维开关（例如类目未就绪或需要临时下线时整体关闭）。网页端（Cookie 会话）不经过这里，响应完全不变。
  */
 import { NextResponse } from 'next/server';
 import { readMiniProgramBearer } from '@/lib/server/mp-auth';
@@ -32,8 +33,15 @@ export function hideGeneratedText<T>(value: T): T {
     return out as T;
 }
 
-/** 小程序请求返回置空后的响应体，网页端原样返回 */
-export function mpSafeBody<T>(req: Request | null | undefined, body: T): T {
+/** 小程序是否返回生成类文字：默认返回，只有显式设为 false / 0 / off 才置空 */
+export function isMiniProgramGeneratedTextEnabled(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+    const raw = (env.MP_SHOW_GENERATED_TEXT ?? '').trim().toLowerCase();
+    return !['false', '0', 'off', 'no'].includes(raw);
+}
+
+/** 开关关闭时，小程序请求返回置空后的响应体；其余情况（含网页端）原样返回 */
+export function mpSafeBody<T>(req: Request | null | undefined, body: T, env: Readonly<Record<string, string | undefined>> = process.env): T {
+    if (isMiniProgramGeneratedTextEnabled(env)) return body;
     return isMiniProgramRequest(req) ? hideGeneratedText(body) : body;
 }
 

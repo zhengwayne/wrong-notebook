@@ -456,9 +456,16 @@ describe('Bearer 令牌访问现有接口', () => {
 
         const own = await GET_ERROR_ITEM(new Request('http://localhost/api/error-items/err-own', { headers: bearer(token) }), { params: Promise.resolve({ id: 'err-own' }) });
         expect(own.status).toBe(200);
-        // 小程序只识别、不生成：答案 / 解析 / 错因不经小程序返回，题目文字照常
+        // 0.1.2 起默认返回答案 / 解析 / 错因；MP_SHOW_GENERATED_TEXT=false 时仍置空
         const ownBody = await own.json();
-        expect(ownBody).toMatchObject({ questionText: '1+1', answerText: '', analysis: '', mistakeAnalysis: '' });
+        expect(ownBody).toMatchObject({ questionText: '1+1', answerText: '2', analysis: '一加一等于二', mistakeAnalysis: '算错了' });
+        vi.stubEnv('MP_SHOW_GENERATED_TEXT', 'false');
+        try {
+            const hidden = await GET_ERROR_ITEM(new Request('http://localhost/api/error-items/err-own', { headers: bearer(token) }), { params: Promise.resolve({ id: 'err-own' }) });
+            expect(await hidden.json()).toMatchObject({ questionText: '1+1', answerText: '', analysis: '', mistakeAnalysis: '' });
+        } finally {
+            vi.unstubAllEnvs();
+        }
         const mpGenerate = await PRACTICE_GENERATE(jsonRequest('/api/practice/generate', { errorItemId: 'err-own', language: 'zh' }, bearer(token)));
         expect(mpGenerate.status).toBe(403);
         expect((await mpGenerate.json()).message).toBe('MP_FEATURE_UNAVAILABLE');

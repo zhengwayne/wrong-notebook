@@ -1,5 +1,7 @@
 /**
- * 0.1.1 审核安全模式：小程序里不出现生成内容和 AI 字样；「查看详情」只复制链接（一次性网页登录链接，失败时退回普通地址）。
+ * 审核相关：除统一的生成标识（GENERATED_LABEL）外，界面文字不出现 AI 字样；
+ * 0.1.2 起显示答案、讲解、错因、参考答案，显示这些字段的页面必须带生成标识；
+ * 「查看详情」只复制链接（一次性网页登录链接，失败时退回普通地址）。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +13,7 @@ vi.mock('../src/utils/request', async (importOriginal) => {
   return { ...actual, request: requestMock };
 });
 
-import { API_BASE_URL, SHOW_SYNTH_MEDIA } from '../src/config';
+import { API_BASE_URL, GENERATED_LABEL, SHOW_SYNTH_MEDIA } from '../src/config';
 import { ApiError, neutralMessage } from '../src/utils/request';
 import { COPIED_HINT, copyWebLink, errorItemPath, paperPath, plainWebUrl, resolveWebLink } from '../src/utils/web-link';
 import { artUrl } from '../src/pkg-english/lib/words';
@@ -35,10 +37,10 @@ function visibleSource(file: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-describe('界面文字不出现 AI / 生成字样', () => {
+describe('界面文字不出现 AI / 生成字样（统一的生成标识除外）', () => {
   const files = walk(SRC).filter((f) => /\.(wxml|ts|json)$/.test(f));
   it.each(files.map((f) => [path.relative(SRC, f), f]))('%s', (_rel, file) => {
-    const source = visibleSource(file);
+    const source = visibleSource(file).split(`'${GENERATED_LABEL}'`).join("''");
     // 字符串字面量与 wxml 文本里不能有独立的 AI 字样
     const texts = file.endsWith('.wxml')
       ? source.replace(/<[^>]*>/g, '\n').split('\n')
@@ -49,11 +51,18 @@ describe('界面文字不出现 AI / 生成字样', () => {
     expect(source).not.toMatch(/AI ?(生成|讲解|识别|判|建议|解析|问答)|人工智能|大模型|深度合成|举一反三/);
   });
 
-  it('不展示生成的答案、解析、错因字段', () => {
+  it('显示答案、解析、错因的页面都带生成标识', () => {
+    const shown: string[] = [];
     for (const file of files.filter((f) => f.endsWith('.wxml'))) {
       const source = visibleSource(file);
-      expect(source, file).not.toMatch(/\{\{[^}]*\b(answerText|analysis|mistakeAnalysis|correctAnswer|errorCause|answerPlain|mistakePlain)\b[^}]*\}\}/);
+      if (!/\{\{[^}]*\b(item\.answer|item\.analysis|item\.mistake|correctAnswer|errorCause|answerPlain|mistakePlain)\b[^}]*\}\}/.test(source)) continue;
+      shown.push(path.relative(SRC, file));
+      expect(source, file).toContain('{{generatedLabel}}');
+      const ts = fs.readFileSync(file.replace(/\.wxml$/, '.ts'), 'utf8');
+      expect(ts, file).toMatch(/generatedLabel: GENERATED_LABEL/);
     }
+    expect(shown.sort()).toEqual(['pkg-xueji/capture/capture.wxml', 'pkg-xueji/grade/grade.wxml', 'pkg-xueji/item/item.wxml']);
+    expect(GENERATED_LABEL).toBe('AI 生成，仅供参考');
   });
 
   it('后端报错里的模型字样会被换成中性提示', () => {

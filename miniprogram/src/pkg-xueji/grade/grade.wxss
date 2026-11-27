@@ -44,6 +44,7 @@
 .clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ans { margin-top: 10rpx; font-size: 26rpx; color: var(--xj-text-2); align-items: flex-start; }
 .ans .ic { margin: 4rpx 10rpx 0 0; }
+.cause { margin-top: 12rpx; padding: 16rpx 20rpx; border-radius: 16rpx; background-color: var(--xj-danger-bg); color: var(--xj-danger); font-size: 26rpx; line-height: 1.5; }
 .one-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .save-bar { position: sticky; bottom: 0; display: flex; padding: 20rpx 0 calc(20rpx + env(safe-area-inset-bottom)); background-color: var(--xj-bg); }

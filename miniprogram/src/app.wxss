@@ -137,6 +137,8 @@ page {
 }
 @keyframes xj-spin { to { transform: rotate(360deg); } }
 
+/* 模型生成内容的标识 */
+.gen-label { flex-shrink: 0; font-size: 22rpx; color: var(--xj-muted-fg); padding: 4rpx 14rpx; border-radius: 999rpx; background-color: var(--xj-accent); }
 .section-label { font-size: 26rpx; color: var(--xj-muted-fg); margin: 24rpx 0 12rpx; }
 .pre { white-space: pre-wrap; word-break: break-all; }
 .divider { height: 1rpx; background-color: var(--xj-border); margin: 24rpx 0; }

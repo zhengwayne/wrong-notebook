@@ -4,11 +4,15 @@ import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainT
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
 import { copyWebLink, errorItemPath } from '../../utils/web-link';
+import { GENERATED_LABEL } from '../../config';
 
 interface ItemView {
   id: string;
   question: string;
+  answer: string;
+  analysis: string;
   wrongAnswer: string;
+  mistake: string;
   image: string;
   kps: string[];
   subjectName: string;
@@ -24,8 +28,10 @@ function toView(item: ErrorItemDetail): ItemView {
   return {
     id: item.id,
     question: toPlainText(item.questionText) || '（题目见下方图片）',
-    // 小程序只展示识别出的题目和当时的作答；答案、解析、错因在网页端查看
+    answer: toPlainText(item.answerText),
+    analysis: toPlainText(item.analysis),
     wrongAnswer: toPlainText(item.wrongAnswerText),
+    mistake: toPlainText(item.mistakeAnalysis),
     image,
     kps: parseKnowledgePoints(item.knowledgePoints),
     subjectName: item.subject ? item.subject.name : '未分类',
@@ -43,6 +49,7 @@ Page({
     reviewMode: false,
     kidMode: false,
     showAnswer: false,
+    generatedLabel: GENERATED_LABEL,
     saving: false,
     recorded: false,
     nextId: '',
@@ -63,7 +70,7 @@ Page({
     }
   },
 
-  /** 查看详情：复制网页端错题页链接（答案和解析只在网页端） */
+  /** 查看详情：复制网页端错题页链接（复杂公式在网页端显示更完整） */
   onCopyWebLink() {
     if (this.data.id) copyWebLink(errorItemPath(this.data.id));
   },
