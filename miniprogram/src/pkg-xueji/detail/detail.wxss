@@ -8,8 +8,8 @@
 .figure { background-color: #FFFFFF; border: 2rpx solid var(--xj-border); }
 .kps { margin-top: 20rpx; }
 .gen-label-title { margin-bottom: 20rpx; }
-.line { padding: 14rpx 0; font-size: 28rpx; border-top: 2rpx solid var(--xj-border); }
-.line:first-of-type { border-top: none; }
+.line { padding: 14rpx 0; font-size: 28rpx; }
+.line + .line { border-top: 2rpx solid var(--xj-border); }
 .h-src { margin-left: 16rpx; font-size: 24rpx; }
 .r-ok { color: var(--xj-success); margin-left: 8rpx; }
 .r-bad { color: var(--xj-danger); margin-left: 8rpx; }
