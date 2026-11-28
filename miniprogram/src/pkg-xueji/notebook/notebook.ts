@@ -13,7 +13,9 @@ import {
   subjectForStage,
 } from '../../utils/subjects';
 import type { ErrorItemSummary, Notebook, PageResult } from '../../utils/types';
+import { requireLogin } from '../../utils/auth';
 import { PAGES, switchTo, goHub } from '../../utils/nav';
+import { sampleSummary } from '../../utils/sample';
 
 const STAGE_OPTIONS = NOTEBOOK_STAGES.map((value) => ({ value, label: STAGE_LABELS[value] }));
 
@@ -50,6 +52,7 @@ Page({
   data: {
     learnerId: null as string | null,
     learnerName: '',
+    guest: false,
     kidMode: false,
     showFilters: false,
     notebooks: [] as Notebook[],
@@ -93,9 +96,16 @@ Page({
   async init() {
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
-      const changed = ctx.learnerId !== this.data.learnerId || this.data.page === 0;
-      this.setData({ learnerId: ctx.learnerId, learnerName: ctx.learnerName, kidMode: ctx.kidMode });
+      if (ctx.guest) {
+        // 游客：显示一道示例题；登录后显示自己的错题
+        this.setData({
+          guest: true, learnerId: null, learnerName: '', kidMode: false, notebooks: [], error: '',
+          items: [toRow(sampleSummary())], page: 1, totalPages: 1, total: 1,
+        });
+        return;
+      }
+      const changed = ctx.learnerId !== this.data.learnerId || this.data.page === 0 || this.data.guest;
+      this.setData({ guest: false, learnerId: ctx.learnerId, learnerName: ctx.learnerName, kidMode: ctx.kidMode });
       // 专注模式下错题列表 / 错题本接口都被专注锁网关拒绝（与网页端一致），只显示锁条和去复习入口
       if (ctx.kidMode) {
         this.setData({ items: [], notebooks: [], page: 0, error: '' });
@@ -119,7 +129,7 @@ Page({
   },
 
   async onPullDownRefresh() {
-    if (this.data.kidMode) {
+    if (this.data.kidMode || this.data.guest) {
       wx.stopPullDownRefresh();
       return;
     }
@@ -128,11 +138,12 @@ Page({
   },
 
   onReachBottom() {
-    if (this.data.kidMode) return;
+    if (this.data.kidMode || this.data.guest) return;
     if (this.data.page < this.data.totalPages) void this.loadPage(this.data.page + 1);
   },
 
   async reload() {
+    if (this.data.guest) return;
     this.setData({ items: [], page: 0, totalPages: 1 });
     await this.loadPage(1);
   },
@@ -234,6 +245,8 @@ Page({
       wx.showToast({ title: '起个名字', icon: 'none' });
       return;
     }
+    // 新建会写入数据：游客在这里才登录，登录后继续
+    if (!(await requireLogin('登录后才能新建错题本'))) return;
     this.setData({ createBusy: true });
     try {
       const created = await request<Notebook>('/api/notebooks', {
@@ -250,6 +263,15 @@ Page({
     } finally {
       this.setData({ createBusy: false });
     }
+  },
+
+  onLogin() {
+    void requireLogin();
+  },
+
+  /** 登录成功后换成自己的错题 */
+  async onLoggedIn() {
+    await this.init();
   },
 
   onCapture() {

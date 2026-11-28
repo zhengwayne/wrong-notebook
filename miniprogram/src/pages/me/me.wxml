@@ -2,7 +2,30 @@
   <kid-lock id="kid-lock" wx:if="{{kidMode}}" learner-name="{{kid.learnerName || learnerName}}" bind:unlocked="onKidUnlocked" />
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
-  <block wx:if="{{user}}">
+  <!-- 游客：登录入口；使用说明、隐私保护指引不登录也能看 -->
+  <block wx:if="{{guest}}">
+    <view class="card profile" id="guest-profile">
+      <view class="avatar">学</view>
+      <view class="flex-1">
+        <view class="name-row"><text class="name">未登录</text></view>
+      </view>
+      <button class="btn btn-small guest-login" id="me-login" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-w.svg" />登录</button>
+    </view>
+    <view class="card cells">
+      <view class="cell" hover-class="press" bindtap="onHelp">
+        <image class="ic" src="/assets/icons/circle-help-p.svg" />
+        <text class="flex-1">使用说明</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+      <view class="cell" hover-class="press" bindtap="onPrivacy" id="me-privacy">
+        <image class="ic" src="/assets/icons/shield-check-p.svg" />
+        <text class="flex-1">隐私保护指引</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+    </view>
+  </block>
+
+  <block wx:elif="{{user}}">
     <!-- 个人信息 -->
     <view class="card profile">
       <view class="avatar">{{avatarText}}</view>
@@ -63,7 +86,6 @@
       <view class="cell" hover-class="press" bindtap="onHelp">
         <image class="ic" src="/assets/icons/circle-help-p.svg" />
         <text class="flex-1">使用说明</text>
-        <text class="muted">复制网页链接</text>
         <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
       </view>
     </view>
@@ -104,3 +126,4 @@
 
   <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
+<login-sheet id="login-sheet" />

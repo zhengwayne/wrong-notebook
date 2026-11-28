@@ -25,6 +25,7 @@ import { setGradeDraft, subjectKeyFromNotebookName } from '../../utils/paper';
 import { readPendingPaper, takeGradeFinished } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
 import type { AnalyzeResponse, AnalyzedQuestion, Notebook } from '../../utils/types';
+import { requireLogin } from '../../utils/auth';
 import { PAGES, switchTo } from '../../utils/nav';
 
 /** 一次最多选几张：与微信相册多选上限一致 */
@@ -209,6 +210,11 @@ Page({
     progressText: '',
   },
 
+  /** 登录成功后重新读取账号信息（学习者、错题本） */
+  async onLoggedIn() {
+    await this.init();
+  },
+
   onLoad() {
     alive = true;
     resetResults();
@@ -234,9 +240,9 @@ Page({
   async init() {
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
       this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
-      if (ctx.kidMode) return;
+      // 游客：先看到拍照页，点拍照 / 相册时才登录（不发需要登录的请求）
+      if (ctx.guest || ctx.kidMode) return;
       const canGrade = ctx.session.user.personas.includes('parent') && ctx.children.some((child) => child.id === ctx.learnerId);
       this.setData({
         canGrade,
@@ -254,14 +260,16 @@ Page({
 
   // ---------- 选照片 ----------
 
-  onChoose(e: WechatMiniprogram.BaseEvent) {
+  async onChoose(e: WechatMiniprogram.BaseEvent) {
     if (this.data.analyzing || this.data.saving) return;
+    const source = e.currentTarget.dataset.source as string | undefined;
+    // 拍照、选图要识别并存进错题本：游客在这里才登录，登录后继续
+    if (!(await requireLogin('拍照识别需要登录'))) return;
     const left = MAX_PHOTOS - this.data.photos.length;
     if (left <= 0) {
       wx.showToast({ title: `最多 ${MAX_PHOTOS} 张`, icon: 'none' });
       return;
     }
-    const source = e.currentTarget.dataset.source as string | undefined;
     const sourceType: Array<'camera' | 'album'> = source === 'camera' ? ['camera'] : source === 'album' ? ['album'] : ['camera', 'album'];
     wx.chooseMedia({
       count: left,
@@ -473,6 +481,7 @@ Page({
   /** 识别所有还没识别成功的组（第一次识别，或者只重试失败的） */
   async onAnalyze() {
     if (this.data.analyzing || this.data.saving) return;
+    if (!(await requireLogin('识别需要登录'))) return;
     const todo: string[] = [];
     for (const photo of this.data.photos) {
       if ((photo.status === 'ready' || photo.status === 'failed') && todo.indexOf(photo.group) < 0) todo.push(photo.group);
@@ -665,6 +674,7 @@ Page({
 
   async onSave() {
     if (this.data.analyzing || this.data.saving) return;
+    if (!(await requireLogin('保存错题需要登录'))) return;
     const chosen = this.data.items.filter((item) => item.selected);
     if (chosen.length === 0) {
       wx.showToast({ title: '先勾选要保存的题', icon: 'none' });

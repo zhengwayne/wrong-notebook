@@ -2,7 +2,7 @@
  * 统一请求封装：
  * - 带上小程序登录令牌（Authorization: Bearer xjmp_...）；
  * - 孩子专注锁沿用网页端的签名 Cookie：从响应 Set-Cookie 里取出并在后续请求里回传；
- * - 401 时清除登录状态并回到登录页。
+ * - 未登录（游客）时不发需要登录的请求，直接按 401 处理；服务端返回 401 时清除登录状态并回到首页（游客状态），不再强制跳登录页。
  */
 import { API_BASE_URL } from '../config';
 
@@ -68,15 +68,30 @@ function captureKidLock(cookies: string[] | undefined, header: Record<string, un
   }
 }
 
+/** 不需要登录令牌的接口（其余接口游客不发请求） */
+const PUBLIC_PATHS = ['/api/mp/login'];
 const AUTH_PATHS = ['/api/mp/login', '/api/mp/bind'];
-let redirectingToLogin = false;
+let backToGuest = false;
 
+/** 游客没有令牌：需要登录的接口不发出去，直接当 401（页面按游客状态显示，不会刷一堆 401 请求） */
+function guestBlocked(path: string): boolean {
+  return !getToken() && !PUBLIC_PATHS.includes(path);
+}
+
+/** 令牌失效：清掉登录状态，回到首页按游客显示（不强制跳登录页，登录在用到功能时再弹） */
 function handleUnauthorized(path: string): void {
   if (AUTH_PATHS.includes(path)) return;
+  const hadToken = Boolean(getToken());
   clearSession();
-  if (redirectingToLogin) return;
-  redirectingToLogin = true;
-  wx.reLaunch({ url: '/pages/login/login', complete: () => { redirectingToLogin = false; } });
+  try {
+    getApp<{ globalData: { session: unknown; learnerId: string | null } }>().globalData.session = null;
+  } catch {
+    // 启动早期没有 App 实例：忽略
+  }
+  if (!hadToken || backToGuest) return;
+  backToGuest = true;
+  wx.showToast({ title: '登录已失效，请重新登录', icon: 'none' });
+  wx.reLaunch({ url: '/pages/hub/hub', complete: () => { backToGuest = false; } });
 }
 
 const MESSAGE_ZH: Record<string, string> = {
@@ -173,6 +188,10 @@ export function buildQuery(query?: RequestOptions['query']): string {
 
 export function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return new Promise((resolve, reject) => {
+    if (guestBlocked(path)) {
+      reject(new ApiError(401, 'Unauthorized'));
+      return;
+    }
     wx.request({
       url: `${API_BASE_URL}${path}${buildQuery(options.query)}`,
       method: options.method ?? 'GET',
@@ -210,6 +229,10 @@ export function uploadImage<T>(
   options: UploadOptions = {},
 ): Promise<T> {
   return new Promise((resolve, reject) => {
+    if (guestBlocked(path)) {
+      reject(new ApiError(401, 'Unauthorized'));
+      return;
+    }
     wx.uploadFile({
       url: `${API_BASE_URL}${path}`,
       filePath,

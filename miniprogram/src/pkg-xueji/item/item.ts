@@ -4,6 +4,8 @@ import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainT
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
 import { previewImage } from '../../utils/detail';
+import { requireLogin } from '../../utils/auth';
+import { isSampleId, sampleDetail } from '../../utils/sample';
 
 interface ItemView {
   id: string;
@@ -52,8 +54,12 @@ Page({
     const id = query.id ? decodeURIComponent(query.id) : '';
     this.setData({ id, reviewMode: query.mode === 'review' });
     try {
+      if (isSampleId(id)) {
+        // 示例题（游客浏览用）：本地数据，不发请求
+        this.setData({ item: toView(sampleDetail()) });
+        return;
+      }
       const ctx = await loadContext();
-      if (!ctx) return;
       this.setData({ kidMode: ctx.kidMode });
       const item = await request<ErrorItemDetail>(`/api/error-items/${encodeURIComponent(id)}`);
       this.setData({ item: toView(item) });
@@ -79,6 +85,12 @@ Page({
   async onRecord(e: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recorded) return;
     const result = String(e.currentTarget.dataset.result);
+    // 记录结果会写入数据：游客在这里才登录，登录后继续
+    if (!(await requireLogin('登录后才能记录结果'))) return;
+    if (isSampleId(this.data.id)) {
+      wx.showToast({ title: '示例题不记录，去错题本看你自己的', icon: 'none' });
+      return;
+    }
     this.setData({ saving: true, error: '' });
     try {
       // 与网页端错题详情「录入结果」一致：source=manual

@@ -9,6 +9,10 @@
   </view>
 
   <block wx:else>
+    <view wx:if="{{guest}}" class="guest-bar" id="guest-bar">
+      <text class="flex-1">示例题 · 登录后显示你的错题</text>
+      <view class="guest-btn" hover-class="press" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-p.svg" /><text>登录</text></view>
+    </view>
     <view class="search">
       <image class="ic ic-sm" src="/assets/icons/search-m.svg" />
       <input class="search-input" confirm-type="search" placeholder="搜题目、知识点" placeholder-class="placeholder" value="{{query}}" bindconfirm="onSearch" />
@@ -51,7 +55,7 @@
       </view>
     </view>
 
-    <view class="count muted">{{learnerName}} · {{total}} 题</view>
+    <view class="count muted">{{guest ? '示例' : learnerName + ' · ' + total + ' 题'}}</view>
 
     <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
@@ -77,3 +81,4 @@
   </block>
 </view>
 <xj-tabbar id="xj-tabbar" active="notebook" />
+<login-sheet id="login-sheet" />

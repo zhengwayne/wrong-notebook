@@ -3,6 +3,7 @@ import { ENGLISH_DEFAULTS, readModule } from '../../utils/module-store';
 import { toChineseMessage } from '../../utils/request';
 import { speak } from '../../utils/speech';
 import { SHOW_SYNTH_MEDIA } from '../../config';
+import { requireLogin } from '../../utils/auth';
 import { addToNotebook, isKidMode } from '../../utils/to-notebook';
 import { wordToNotebook } from '../lib/words';
 
@@ -46,6 +47,7 @@ Page({
   },
 
   async onSaveAll() {
+    if (!(await requireLogin('登录后才能收进错题本'))) return;
     const store = readModule('english', ENGLISH_DEFAULTS);
     const drafts = Object.entries(store.words)
       .filter(([, s]) => s.w > 0)

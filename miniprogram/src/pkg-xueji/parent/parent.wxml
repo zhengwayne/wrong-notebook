@@ -1,7 +1,13 @@
 <view class="container">
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
-  <view wx:if="{{children.length === 0 && !loading && !error}}" class="empty">
+  <view wx:if="{{guest}}" class="empty" id="parent-guest">
+    <image class="ic-xl" src="/assets/icons/chart-column-l.svg" />
+    <view>登录后查看孩子的学情</view>
+    <button class="btn btn-small" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-w.svg" />登录</button>
+  </view>
+
+  <view wx:if="{{!guest && children.length === 0 && !loading && !error}}" class="empty">
     <image class="ic-xl" src="/assets/icons/baby-l.svg" />
     <view>还没有孩子档案</view>
     <button class="btn btn-small" bindtap="onOpenMe"><image class="ic ic-sm" src="/assets/icons/user-plus-w.svg" />去添加</button>
@@ -65,3 +71,4 @@
 
   <view wx:if="{{loading && !child}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
+<login-sheet id="login-sheet" />

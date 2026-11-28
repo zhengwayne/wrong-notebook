@@ -7,6 +7,8 @@ import { request, toChineseMessage } from '../../utils/request';
 import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainText } from '../../utils/text';
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES } from '../../utils/nav';
+import { requireLogin } from '../../utils/auth';
+import { isSampleId, sampleDetail, sampleRecords } from '../../utils/sample';
 import {
   figureDataUrl,
   type HistoryRow,
@@ -87,8 +89,20 @@ Page({
     const id = query.id ? decodeURIComponent(query.id) : '';
     this.setData({ id });
     try {
+      if (isSampleId(id)) {
+        // 示例题（游客浏览用）：本地数据，不发请求
+        const item = sampleDetail();
+        const records = sampleRecords();
+        this.setData({
+          item: toView(item),
+          plan: toPlan(item.learning),
+          historyRows: toHistory(records.records),
+          historyLoaded: true,
+          mastery: percent(records.masteryProbability),
+        });
+        return;
+      }
       const ctx = await loadContext();
-      if (!ctx) return;
       this.setData({ kidMode: ctx.kidMode });
       const path = `/api/error-items/${encodeURIComponent(id)}`;
       const [item, records] = await Promise.all([
@@ -112,9 +126,15 @@ Page({
   },
 
 
-  onEditNotes() {
+  async onEditNotes() {
     const item = this.data.item;
     if (!item || this.data.kidMode || this.data.savingNotes) return;
+    // 写笔记会写入数据：游客在这里才登录，登录后继续
+    if (!(await requireLogin('登录后才能写笔记'))) return;
+    if (isSampleId(this.data.id)) {
+      wx.showToast({ title: '示例题不能写笔记', icon: 'none' });
+      return;
+    }
     wx.showModal({
       title: '笔记',
       editable: true,

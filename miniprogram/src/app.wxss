@@ -147,3 +147,16 @@ page {
 .cell + .cell { border-top: 1rpx solid var(--xj-border); }
 .cell .ic { margin-right: 20rpx; }
 .cell-arrow { width: 32rpx; height: 32rpx; margin-left: 8rpx; }
+
+/* 游客提示条：示例内容 + 登录入口（与专注锁条同一款式） */
+.guest-bar {
+  display: flex; align-items: center;
+  background-color: var(--xj-accent); color: var(--xj-accent-fg);
+  border-radius: 20rpx; padding: 12rpx 12rpx 12rpx 24rpx; margin-bottom: 24rpx; font-size: 26rpx;
+}
+.guest-btn {
+  display: flex; align-items: center; height: 64rpx; padding: 0 20rpx; border-radius: 32rpx;
+  background-color: var(--xj-card); color: var(--xj-primary); font-size: 26rpx; font-weight: 600;
+}
+.guest-btn .ic { margin-right: 6rpx; }
+

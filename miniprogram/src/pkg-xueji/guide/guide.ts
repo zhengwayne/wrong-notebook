@@ -17,7 +17,11 @@ Page({
   async onLoad(query: Record<string, string | undefined>) {
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
+      if (ctx.guest) {
+        // 游客没有账号进度：回首页（我的页里游客不显示新手引导入口）
+        goHub();
+        return;
+      }
       if (ctx.kidMode) {
         goHub();
         return;

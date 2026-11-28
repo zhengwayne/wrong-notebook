@@ -4,6 +4,7 @@
  */
 import { MATH_DEFAULTS, MATH_PASS, readModule, writeModule } from '../../utils/module-store';
 import { toChineseMessage } from '../../utils/request';
+import { requireLogin } from '../../utils/auth';
 import { addToNotebook, isKidMode } from '../../utils/to-notebook';
 import { checkAnswer, lessonMap, nodeMap, pickQuestions, questionToNotebook, scorePercent } from '../lib/course';
 import type { Question } from '../lib/course';
@@ -101,6 +102,7 @@ Page({
   },
 
   async onSaveWrong() {
+    if (!(await requireLogin('登录后才能收进错题本'))) return;
     const drafts = this.data.answered.filter((a) => !a.ok).map((a) => {
       const chosen = (a.q.choices || []).find((c) => c.key === a.given);
       return {

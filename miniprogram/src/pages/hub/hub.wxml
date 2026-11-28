@@ -6,6 +6,7 @@
     <picker wx:if="{{!kidMode && learnerOptions.length > 1}}" range="{{learnerOptions}}" range-key="name" value="{{learnerIndex}}" bindchange="onLearnerChange">
       <view class="learner-chip" id="learner-chip"><image class="ic ic-sm" src="/assets/icons/users-p.svg" /><text>{{learnerName}}</text><image class="ic ic-sm" src="/assets/icons/chevron-down-p.svg" /></view>
     </picker>
+    <view wx:elif="{{guest}}" class="learner-chip" hover-class="press" bindtap="onLogin" id="hub-login"><image class="ic ic-sm" src="/assets/icons/log-in-p.svg" /><text>登录</text></view>
     <view wx:else class="learner-chip"><image class="ic ic-sm" src="/assets/icons/user-p.svg" /><text>{{learnerName || '我自己'}}</text></view>
     <view class="me-btn" hover-class="press" bindtap="onOpenMe" id="hub-me"><image class="ic" src="/assets/icons/user-p.svg" /><text>我的</text></view>
   </view>
@@ -37,3 +38,4 @@
     <image class="ic" src="/assets/icons/chevron-right-m.svg" />
   </view>
 </view>
+<login-sheet id="login-sheet" />

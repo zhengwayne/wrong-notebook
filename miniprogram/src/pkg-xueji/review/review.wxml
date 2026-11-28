@@ -1,10 +1,14 @@
 <view class="container">
   <kid-lock id="kid-lock" wx:if="{{kidMode}}" learner-name="{{learnerName}}" bind:unlocked="onKidUnlocked" />
+  <view wx:if="{{guest}}" class="guest-bar" id="guest-bar">
+    <text class="flex-1">示例题 · 登录后显示你自己的</text>
+    <view class="guest-btn" hover-class="press" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-p.svg" /><text>登录</text></view>
+  </view>
   <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
 
   <block wx:if="{{total > 0}}">
     <view class="hero">
-      <view class="muted">{{learnerName}} · 今天</view>
+      <view class="muted">{{guest ? '今天' : learnerName + ' · 今天'}}</view>
       <view class="hero-count">{{total}}<text class="hero-unit">题</text></view>
       <button class="btn start" bindtap="onStart"><image class="ic" src="/assets/icons/arrow-right-w.svg" />开始复习</button>
     </view>
@@ -28,3 +32,4 @@
   <view wx:if="{{loading && total === 0}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
 <xj-tabbar id="xj-tabbar" active="review" />
+<login-sheet id="login-sheet" />

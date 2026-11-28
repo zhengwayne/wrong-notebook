@@ -18,3 +18,4 @@
 .arrow-down { transform: rotate(90deg); }
 .link-form { padding: 8rpx 0 24rpx; }
 .footer { text-align: center; font-size: 24rpx; padding: 16rpx 0; }
+.guest-login { margin: 0 0 0 16rpx; flex-shrink: 0; }

@@ -63,6 +63,10 @@ Page({
     this.setData({ paperId, questionId });
     const ctx = await loadContext().catch(() => null);
     if (!ctx) return;
+    if (ctx.guest) {
+      this.setData({ error: '请先登录' });
+      return;
+    }
     if (ctx.kidMode) {
       this.setData({ error: '专注模式下不能看批改' });
       return;

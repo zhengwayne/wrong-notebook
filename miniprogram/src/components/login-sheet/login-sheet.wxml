@@ -1,0 +1,20 @@
+<page-container show="{{show}}" position="bottom" round overlay close-on-slide-down z-index="1000" custom-style="background-color: #FFFFFF" overlay-style="background-color: rgba(35, 32, 46, 0.45)" bind:clickoverlay="onCancel" bind:afterleave="onLeave">
+  <view class="ls-sheet" id="login-sheet-body">
+    <view class="ls-head">
+      <view class="ls-logo"><image class="ls-logo-ic" src="/assets/icons/book-open-check-w.svg" /></view>
+      <view class="ls-title">登录学迹</view>
+      <view wx:if="{{reason}}" class="muted ls-reason">{{reason}}</view>
+    </view>
+    <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+    <button class="btn" id="login-sheet-login" disabled="{{loading}}" bindtap="onLogin">
+      <view wx:if="{{loading}}" class="spinner ls-spinner"></view>
+      {{loading ? '登录中' : '微信一键登录'}}
+    </button>
+    <button class="btn btn-secondary ls-cancel" id="login-sheet-cancel" disabled="{{loading}}" bindtap="onCancel">暂不登录</button>
+    <view class="ls-agree" id="login-sheet-agree" bindtap="onToggleAgree">
+      <view class="ls-check {{agreed ? 'ls-check-on' : ''}}"><image wx:if="{{agreed}}" class="ls-check-ic" src="/assets/icons/check-w.svg" /></view>
+      <text class="muted">已阅读并同意</text>
+      <text class="ls-link" catchtap="onOpenPrivacy">《用户隐私保护指引》</text>
+    </view>
+  </view>
+</page-container>

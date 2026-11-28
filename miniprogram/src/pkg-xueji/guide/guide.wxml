@@ -8,7 +8,6 @@
     <view class="cell" hover-class="press" bindtap="onHelp">
       <image class="ic" src="/assets/icons/circle-help-p.svg" />
       <text class="flex-1">使用说明</text>
-      <text class="muted">复制网页链接</text>
       <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
     </view>
   </view>

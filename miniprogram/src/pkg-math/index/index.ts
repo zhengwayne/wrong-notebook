@@ -27,8 +27,7 @@ Page({
 
   async onShow() {
     try {
-      const ctx = await loadContext();
-      if (!ctx) return;
+      await loadContext();
       course = await loadCourse();
       const camps = listCamps(course);
       const saved = String(wx.getStorageSync(CAMP_KEY) || '');

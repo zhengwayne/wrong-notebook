@@ -23,9 +23,10 @@
     <!-- 问候 + 当前学习者 -->
     <view class="head row-between">
       <view class="flex-1">
-        <view class="hello">{{greeting}}，{{displayName}}</view>
+        <view class="hello">{{greeting}}{{displayName ? '，' + displayName : ''}}</view>
       </view>
-      <picker wx:if="{{!kidMode && learnerOptions.length > 1}}" range="{{learnerOptions}}" range-key="name" value="{{learnerIndex}}" bindchange="onLearnerChange">
+      <view wx:if="{{guest}}" class="learner-chip" hover-class="press" bindtap="onLogin" id="home-login"><image class="ic ic-sm" src="/assets/icons/log-in-p.svg" /><text>登录</text></view>
+      <picker wx:elif="{{!kidMode && learnerOptions.length > 1}}" range="{{learnerOptions}}" range-key="name" value="{{learnerIndex}}" bindchange="onLearnerChange">
         <view class="learner-chip"><image class="ic ic-sm" src="/assets/icons/users-p.svg" /><text>{{learnerName}}</text><image class="ic ic-sm" src="/assets/icons/chevron-down-p.svg" /></view>
       </picker>
       <view wx:elif="{{learnerOptions.length > 1}}" class="learner-chip"><image class="ic ic-sm" src="/assets/icons/users-p.svg" /><text>{{learnerName}}</text></view>
@@ -87,3 +88,4 @@
   <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
 </view>
 <xj-tabbar id="xj-tabbar" active="home" />
+<login-sheet id="login-sheet" />

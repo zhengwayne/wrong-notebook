@@ -25,8 +25,13 @@ Page({
   },
 
   async onShow() {
-    const ctx = await loadContext().catch((error) => { this.setData({ error: toChineseMessage(error) }); return null; });
-    if (!ctx) return;
+    // 游客也能用：学习进度存在本机，登录后并入账号
+    try {
+      await loadContext();
+    } catch (error) {
+      this.setData({ error: toChineseMessage(error) });
+      return;
+    }
     const store = readModule('english', ENGLISH_DEFAULTS);
     this.setData({
       bookId: findBook(store.book).id,

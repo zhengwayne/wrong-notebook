@@ -131,7 +131,7 @@ Page({
   async onLoad(options: Record<string, string | undefined>) {
     alive = true;
     const ctx = await loadContext().catch(() => null);
-    if (!ctx || ctx.kidMode) {
+    if (!ctx || ctx.guest || ctx.kidMode) {
       wx.navigateBack();
       return;
     }

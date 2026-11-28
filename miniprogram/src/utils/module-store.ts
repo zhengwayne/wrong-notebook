@@ -3,6 +3,7 @@
  * 单个 key 不超过 1 MB：只存每个单词 / 每一课的精简状态。
  */
 import type { XuejiGlobalData } from '../app';
+import { getToken } from './request';
 
 export type ModuleName = 'english' | 'math';
 
@@ -14,9 +15,12 @@ export function moduleKey(module: ModuleName, userId: string, learnerId: string 
   return `xueji.mp.${module}:${userId}:${learnerId || 'self'}`;
 }
 
+/** 游客的学习进度先存在本机；登录后并入账号（见 migrateGuestProgress） */
+export const GUEST_USER_ID = 'guest';
+
 function currentKey(module: ModuleName): string | null {
   const data = globalData();
-  if (!data.session) return null;
+  if (!data.session) return getToken() ? null : moduleKey(module, GUEST_USER_ID, null);
   return moduleKey(module, data.session.user.id, data.learnerId);
 }
 
@@ -69,4 +73,17 @@ export function englishDueCount(store: EnglishStore, now = Date.now()): number {
 
 export function mathStarCount(store: MathStore): number {
   return Object.values(store.best).filter((score) => score >= MATH_PASS).length;
+}
+
+/** 登录后把游客时的学习进度并入账号（账号里已有进度就保留账号的，游客的留着不覆盖） */
+export function migrateGuestProgress(userId: string): void {
+  for (const name of ['english', 'math'] as const) {
+    const guestKey = moduleKey(name, GUEST_USER_ID, null);
+    const guest = wx.getStorageSync(guestKey) as unknown;
+    if (!guest || typeof guest !== 'object') continue;
+    const userKey = moduleKey(name, userId, null);
+    const mine = wx.getStorageSync(userKey) as unknown;
+    if (!mine || typeof mine !== 'object') wx.setStorageSync(userKey, guest);
+    wx.removeStorageSync(guestKey);
+  }
 }

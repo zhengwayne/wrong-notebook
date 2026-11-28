@@ -1,6 +1,7 @@
 import { loadContext, switchLearner } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import type { PageResult, ErrorItemSummary } from '../../utils/types';
+import { requireLogin } from '../../utils/auth';
 import { PAGES, switchTo, goHub } from '../../utils/nav';
 import { guidePersonaFor, latestCollect, type CollectProgress, type TeacherHomeClass } from '../../utils/onboarding';
 
@@ -24,6 +25,7 @@ function greetingNow(): string {
 Page({
   data: {
     ready: false,
+    guest: false,
     error: '',
     needPersona: false,
     saving: false,
@@ -56,7 +58,27 @@ Page({
   async refresh() {
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
+      if (ctx.guest) {
+        // 游客：不发需要登录的请求；默认显示全部入口，用到时再登录
+        this.setData({
+          ready: true,
+          guest: true,
+          error: '',
+          needPersona: false,
+          displayName: '',
+          greeting: greetingNow(),
+          userId: '',
+          isParent: true,
+          kidMode: false,
+          learnerName: '',
+          learnerOptions: [],
+          learnerIndex: 0,
+          dueTotal: 0,
+          guidePersona: '',
+          isTeacher: false,
+        });
+        return;
+      }
       const { user } = ctx.session;
       const options: LearnerOption[] = [
         ...ctx.children.map((child) => ({ id: child.id as string | null, name: child.name })),
@@ -70,6 +92,7 @@ Page({
       });
       this.setData({
         ready: true,
+        guest: false,
         error: '',
         needPersona: !user.personasConfirmed,
         displayName: user.name || '同学',
@@ -89,6 +112,15 @@ Page({
     } catch (error) {
       this.setData({ error: toChineseMessage(error), kidMode: this.data.kidMode || hasKidLockCookie() });
     }
+  },
+
+  onLogin() {
+    void requireLogin();
+  },
+
+  /** 登录成功后刷新成登录状态 */
+  async onLoggedIn() {
+    await this.refresh();
   },
 
   /** 老师：最近一次改卷的收卷进度（读不到就只显示空提示） */
@@ -121,6 +153,7 @@ Page({
   },
 
   async onSavePersona() {
+    if (!(await requireLogin('登录后才能保存'))) return;
     const personas = this.data.personaOptions.filter((item) => item.checked).map((item) => item.value);
     if (personas.length === 0) {
       wx.showToast({ title: '至少选一个身份', icon: 'none' });

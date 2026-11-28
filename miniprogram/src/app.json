@@ -1,7 +1,6 @@
 {
   "pages": [
     "pages/hub/hub",
-    "pages/login/login",
     "pages/me/me"
   ],
   "window": {
@@ -20,7 +19,8 @@
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents",
   "usingComponents": {
-    "kid-lock": "/components/kid-lock/kid-lock"
+    "kid-lock": "/components/kid-lock/kid-lock",
+    "login-sheet": "/components/login-sheet/login-sheet"
   },
   "subPackages": [
     {

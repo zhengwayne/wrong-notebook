@@ -7,6 +7,7 @@ import { loadRemoteJson } from '../../utils/remote-data';
 import { toChineseMessage } from '../../utils/request';
 import { speak, stopSpeaking } from '../../utils/speech';
 import { SHOW_SYNTH_MEDIA } from '../../config';
+import { requireLogin } from '../../utils/auth';
 import { addToNotebook, isKidMode } from '../../utils/to-notebook';
 import { dictUrl, dueWords, findBook, isCorrectSpelling, letterMarks, levelCount, levelWords, scheduleWord, starsFor, toWords, wordToNotebook } from '../lib/words';
 import type { LetterMark, RawWord, Word } from '../lib/words';
@@ -187,6 +188,7 @@ Page({
   },
 
   async onSaveWrong() {
+    if (!(await requireLogin('登录后才能收进错题本'))) return;
     const store = readModule('english', ENGLISH_DEFAULTS);
     const drafts = this.data.results.filter((row) => !row.ok && store.words[row.name]).map((row) => ({
       subjectName: '英语' as const,

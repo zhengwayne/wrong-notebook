@@ -1,0 +1,13 @@
+.ls-sheet { padding: 40rpx 40rpx calc(32rpx + env(safe-area-inset-bottom)); background-color: var(--xj-card); }
+.ls-head { display: flex; flex-direction: column; align-items: center; margin-bottom: 32rpx; }
+.ls-logo { width: 96rpx; height: 96rpx; border-radius: 28rpx; background-color: var(--xj-primary); display: flex; align-items: center; justify-content: center; }
+.ls-logo-ic { width: 56rpx; height: 56rpx; }
+.ls-title { font-size: 34rpx; font-weight: 600; color: var(--xj-fg); margin-top: 16rpx; }
+.ls-reason { font-size: 26rpx; margin-top: 8rpx; }
+.ls-cancel { margin-top: 16rpx; }
+.ls-agree { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; min-height: 88rpx; margin-top: 8rpx; }
+.ls-check { width: 34rpx; height: 34rpx; border-radius: 50%; border: 2rpx solid var(--xj-muted-fg); margin-right: 10rpx; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.ls-check-on { background-color: var(--xj-primary); border-color: var(--xj-primary); }
+.ls-check-ic { width: 24rpx; height: 24rpx; }
+.ls-link { color: var(--xj-primary); font-size: 26rpx; }
+.ls-spinner { border-color: rgba(255, 255, 255, 0.35); border-top-color: #FFFFFF; }

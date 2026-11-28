@@ -2,7 +2,8 @@ import { loadContext } from '../../utils/context';
 import { hasKidLockCookie, request, toChineseMessage } from '../../utils/request';
 import { linkWebAccount, logout, unbindWechat, updateDisplayName } from '../../utils/session';
 import type { ChildLearner, KidModeStatus, MpUser } from '../../utils/types';
-import { goHub, goLogin, PAGES } from '../../utils/nav';
+import { requireLogin } from '../../utils/auth';
+import { goHub, PAGES } from '../../utils/nav';
 import { fetchGuide, guidePersonaFor, setGuideVisible, type GuidePersona } from '../../utils/onboarding';
 
 const PERSONA_LABEL: Record<string, string> = { parent: '家长', teacher: '老师', self: '学生' };
@@ -19,6 +20,7 @@ function firstChar(text: string | null | undefined, fallback: string): string {
 Page({
   data: {
     user: null as MpUser | null,
+    guest: false,
     avatarText: '学',
     personaLabels: [] as string[],
     isParent: false,
@@ -63,6 +65,15 @@ Page({
     wx.navigateTo({ url: `${PAGES.xjGuide}?persona=${this.data.guidePersona}` });
   },
 
+  onLogin() {
+    void requireLogin();
+  },
+
+  /** 登录成功后显示账号信息 */
+  async onLoggedIn() {
+    await this.load();
+  },
+
   onHelp() {
     wx.navigateTo({ url: PAGES.xjHelp });
   },
@@ -70,7 +81,12 @@ Page({
   async load() {
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
+      if (ctx.guest) {
+        // 游客：显示登录入口；使用说明、隐私保护指引不登录也能看
+        this.setData({ guest: true, user: null, kidMode: false, error: '', children: [], isParent: false, personaLabels: [] });
+        return;
+      }
+      this.setData({ guest: false });
       // 专注锁条先出来：即使下面读状态失败，家长也能解锁
       this.setData({ kidMode: ctx.kidMode, learnerName: ctx.learnerName });
       const { user } = ctx.session;
@@ -239,7 +255,7 @@ Page({
         try {
           await logout();
         } finally {
-          goLogin();
+          goHub();
         }
       },
     });
@@ -255,7 +271,7 @@ Page({
         if (!res.confirm) return;
         try {
           await unbindWechat();
-          goLogin();
+          goHub();
         } catch (error) {
           wx.showToast({ title: toChineseMessage(error), icon: 'none' });
         }

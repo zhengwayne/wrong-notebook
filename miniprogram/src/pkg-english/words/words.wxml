@@ -15,3 +15,4 @@
   </view>
   <button wx:if="{{tab === 'wrong' && wrongTotal > 0 && !kidMode}}" class="btn save-all" disabled="{{saving}}" bindtap="onSaveAll" id="btn-save-all"><image class="ic" src="/assets/icons/notebook-pen-w.svg" />收进错题本</button>
 </view>
+<login-sheet id="login-sheet" />

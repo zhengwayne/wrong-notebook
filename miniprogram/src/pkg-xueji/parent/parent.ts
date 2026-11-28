@@ -2,6 +2,7 @@ import { loadContext, switchLearner } from '../../utils/context';
 import { request, toChineseMessage } from '../../utils/request';
 import { extractShareToken } from '../../utils/share';
 import type { ChildLearner, ParentHomeResponse } from '../../utils/types';
+import { requireLogin } from '../../utils/auth';
 import { openMe } from '../../utils/nav';
 
 const STEP_STATUS: Record<string, string> = {
@@ -23,6 +24,7 @@ type WeakPoint = NonNullable<ParentHomeResponse['child']>['weakPoints'][number] 
 Page({
   data: {
     userId: '',
+    guest: false,
     loading: false,
     importing: false,
     error: '',
@@ -46,7 +48,12 @@ Page({
     this.setData({ loading: true, error: '' });
     try {
       const ctx = await loadContext();
-      if (!ctx) return;
+      if (ctx.guest) {
+        // 游客：没有孩子档案，显示登录入口
+        this.setData({ guest: true, children: [], child: null });
+        return;
+      }
+      this.setData({ guest: false });
       if (ctx.kidMode) {
         wx.navigateBack();
         return;
@@ -96,6 +103,15 @@ Page({
   onSwitchChild(e: WechatMiniprogram.BaseEvent) {
     switchLearner(this.data.userId, String(e.currentTarget.dataset.id));
     void this.load();
+  },
+
+  onLogin() {
+    void requireLogin('登录后查看孩子的学情');
+  },
+
+  /** 登录成功后读取孩子的学情 */
+  async onLoggedIn() {
+    await this.load();
   },
 
   onOpenMe() {

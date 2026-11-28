@@ -3,9 +3,10 @@ import type { XuejiGlobalData } from '../app';
 import { clearKidLock, getToken, hasKidLockCookie, request } from './request';
 import { fetchChildren, fetchSession, resolveLearnerId, writeCurrentLearnerId } from './session';
 import type { ChildLearner, KidModeStatus, MpSessionResponse } from './types';
-import { goLogin } from './nav';
 
 export interface PageContext {
+  /** true：没登录（游客）。游客没有会话、没有孩子，页面只显示示例与空状态，不发需要登录的请求 */
+  guest: boolean;
   session: MpSessionResponse;
   children: ChildLearner[];
   learnerId: string | null;
@@ -17,11 +18,20 @@ function globalData(): XuejiGlobalData {
   return getApp<{ globalData: XuejiGlobalData }>().globalData;
 }
 
-/** 未登录时跳转登录页并返回 null */
-export async function loadContext(): Promise<PageContext | null> {
+/** 游客的占位会话：只给页面读取显示用，不会发给服务端 */
+export const GUEST_SESSION: MpSessionResponse = {
+  user: { id: 'guest', email: null, wechatOnly: true, name: null, role: 'user', personas: [], activePersona: null, personasConfirmed: true },
+  expiresAt: '',
+  kidModeLearnerId: null,
+};
+
+/** 没登录时返回游客上下文（不发任何请求、不跳登录页）；登录在用到功能时再弹登录框 */
+export async function loadContext(): Promise<PageContext> {
   if (!getToken()) {
-    goLogin();
-    return null;
+    const data = globalData();
+    data.session = null;
+    data.learnerId = null;
+    return { guest: true, session: GUEST_SESSION, children: [], learnerId: null, learnerName: '我自己', kidMode: false };
   }
   const session = await fetchSession();
   // 服务端已不认这把锁（过期 / 家长在网页端解锁 / 重新登录）：清掉本地残留，重启后也不会卡在专注模式
@@ -33,6 +43,7 @@ export async function loadContext(): Promise<PageContext | null> {
   data.learnerId = learnerId;
   const learner = children.find((child) => child.id === learnerId);
   return {
+    guest: false,
     session,
     children,
     learnerId,

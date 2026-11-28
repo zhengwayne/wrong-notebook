@@ -1,11 +1,10 @@
 /**
  * 三合一小程序的页面路径与跳转。
- * 主包：首页（三个入口）、登录、我的；分包：pkg-xueji（错题本）、pkg-english（学英语）、pkg-math（学数学）。
+ * 主包：首页（三个入口）、我的（登录是用到功能时弹出的登录框 <login-sheet>，没有单独的登录页）；分包：pkg-xueji（错题本）、pkg-english（学英语）、pkg-math（学数学）。
  * 不用原生 tabBar（tabBar 页面必须在主包），错题本内部用自定义底栏 <xj-tabbar> 在几个"标签页"之间切换。
  */
 export const PAGES = {
   hub: '/pages/hub/hub',
-  login: '/pages/login/login',
   me: '/pages/me/me',
   xjHome: '/pkg-xueji/home/home',
   xjNotebook: '/pkg-xueji/notebook/notebook',
@@ -73,8 +72,4 @@ export function openMe(): void {
 /** 回到三合一首页（清空页面栈） */
 export function goHub(): void {
   wx.reLaunch({ url: PAGES.hub });
-}
-
-export function goLogin(): void {
-  wx.reLaunch({ url: PAGES.login });
 }
