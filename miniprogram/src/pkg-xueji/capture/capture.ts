@@ -26,7 +26,6 @@ import { readPendingPaper, takeGradeFinished } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
 import type { AnalyzeResponse, AnalyzedQuestion, Notebook } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
-import { GENERATED_LABEL } from '../../config';
 
 /** 一次最多选几张：与微信相册多选上限一致 */
 const MAX_PHOTOS = 9;
@@ -89,8 +88,6 @@ interface ReviewItem extends AnalyzedQuestion {
   statusLabel: string;
   statusClass: string;
   questionPlain: string;
-  answerPlain: string;
-  mistakePlain: string;
 }
 /** 所有识别结果（含当前没在用的组），data.items 只显示当前分组对应的那些 */
 let allItems: ReviewItem[] = [];
@@ -113,7 +110,7 @@ const PROGRESS_STEPS: Array<{ after: number; text: string }> = [
   { after: 0, text: '上传照片' },
   { after: 4, text: '认题目' },
   { after: 15, text: '一道道拆开' },
-  { after: 30, text: '写答案和讲解' },
+  { after: 30, text: '整理题目' },
   { after: 55, text: '快好了' },
   { after: 85, text: '题有点多，再等等' },
 ];
@@ -188,7 +185,6 @@ function resetResults(): void {
 
 Page({
   data: {
-    generatedLabel: GENERATED_LABEL,
     kidMode: false,
     learnerName: '',
     learnerId: '',
@@ -576,8 +572,6 @@ Page({
         statusLabel: STATUS_LABEL[item.mistakeStatus || 'unknown'] || '待定',
         statusClass: STATUS_CLASS[item.mistakeStatus || 'unknown'] || 'badge-unknown',
         questionPlain: toPlainText(item.questionText),
-        answerPlain: toPlainText(item.answerText),
-        mistakePlain: toPlainText(item.mistakeAnalysis),
       })));
       this.updateGroup(id, {
         status: 'done',

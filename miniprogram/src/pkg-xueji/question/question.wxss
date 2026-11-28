@@ -10,8 +10,6 @@
 .question { font-size: 30rpx; line-height: 1.75; }
 .kps { margin-top: 20rpx; }
 .section-label.first { margin-top: 0; }
-.ref-head { margin-top: 8rpx; }
-.cause { margin-top: 16rpx; padding: 16rpx 20rpx; border-radius: 16rpx; background-color: var(--xj-danger-bg); color: var(--xj-danger); font-size: 26rpx; line-height: 1.5; }
 .conf { margin-top: 20rpx; font-size: 24rpx; gap: 8rpx; }
 .seg { display: flex; border-radius: 16rpx; background-color: var(--xj-secondary); padding: 6rpx; gap: 6rpx; }
 .seg-busy { opacity: 0.6; }

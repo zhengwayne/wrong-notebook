@@ -1,5 +1,5 @@
 /**
- * 错题详情（原生）：题目、配图、答案讲解错因（带生成标识）、复习计划、做题记录、笔记。
+ * 错题详情（原生）：题目、配图、当时写的、复习计划、做题记录、笔记。不展示答案、讲解、错因。
  * 数据来自 GET /api/error-items/:id（含 learning）与 /practice-records；笔记用 POST /notes 保存。
  */
 import { loadContext } from '../../utils/context';
@@ -21,17 +21,13 @@ import {
   toHistory,
   toPlan,
 } from '../../utils/detail';
-import { GENERATED_LABEL } from '../../config';
 
 const NOTES_MAX = 2000;
 
 interface DetailView {
   id: string;
   question: string;
-  answer: string;
-  analysis: string;
   wrongAnswer: string;
-  mistake: string;
   image: string;
   figure: string;
   kps: string[];
@@ -59,10 +55,7 @@ function toView(item: DetailItem): DetailView {
   return {
     id: item.id,
     question: toPlainText(item.questionText) || '（题目见下方图片）',
-    answer: toPlainText(item.answerText),
-    analysis: toPlainText(item.analysis),
     wrongAnswer: toPlainText(item.wrongAnswerText),
-    mistake: toPlainText(item.mistakeAnalysis),
     image: safeImage(item.originalImageUrl),
     figure: figureDataUrl(item.figureSvg),
     kps: parseKnowledgePoints(item.knowledgePoints),
@@ -86,7 +79,6 @@ Page({
     historyLoaded: false,
     mastery: -1,
     kidMode: false,
-    generatedLabel: GENERATED_LABEL,
     savingNotes: false,
     error: '',
   },

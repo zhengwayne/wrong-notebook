@@ -1,6 +1,5 @@
 /**
- * 整页批改 › 每题详情（原生）：这道题裁出来的图、题目、孩子写的、参考答案和错因（带生成标识）、
- * 知识点、识别把握；确认前可以改判，已进错题本的题可跳到错题详情。
+ * 整页批改 › 每题详情（原生）：这道题裁出来的图、题目、孩子写的、知识点、识别把握；确认前可以改判。不展示参考答案和错因。
  * 文字来自 GET /api/parent/papers/:id?images=0，图来自 /questions/:qid/image（服务端按题框裁好）。
  */
 import { loadContext } from '../../utils/context';
@@ -9,7 +8,6 @@ import { isVerdict, LOW_CONFIDENCE, PAPER_STATUS, type PaperDetail, type PaperQu
 import { toPlainText } from '../../utils/text';
 import { PAGES } from '../../utils/nav';
 import { markPaperChanged, percent, previewImage, safeImage } from '../../utils/detail';
-import { GENERATED_LABEL } from '../../config';
 
 const IMG = '?images=0';
 
@@ -18,8 +16,6 @@ interface QuestionView {
   number: string;
   question: string;
   studentAnswer: string;
-  correctAnswer: string;
-  errorCause: string;
   verdict: Verdict;
   verdictLabel: string;
   kps: string[];
@@ -36,8 +32,6 @@ function toView(q: PaperQuestion): QuestionView {
     number: q.number || String(q.position + 1),
     question: toPlainText(q.questionText) || '（题目见上方图片）',
     studentAnswer: toPlainText(q.studentAnswer) || '（没作答）',
-    correctAnswer: toPlainText(q.correctAnswer),
-    errorCause: toPlainText(q.errorCause),
     verdict,
     verdictLabel: VERDICT_META[verdict].label,
     kps: Array.isArray(q.knowledgePoints) ? q.knowledgePoints.filter(Boolean) : [],
@@ -60,7 +54,6 @@ Page({
     imageState: 'loading' as 'loading' | 'ok' | 'none',
     verdicts: VERDICTS.map((value) => ({ value, ...VERDICT_META[value] })),
     busy: false,
-    generatedLabel: GENERATED_LABEL,
     error: '',
   },
 

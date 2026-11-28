@@ -19,14 +19,6 @@
     <view class="card">
       <view class="section-label first">孩子写的</view>
       <view class="pre">{{q.studentAnswer}}</view>
-      <block wx:if="{{q.correctAnswer || q.errorCause}}">
-        <view class="row-between ref-head">
-          <view class="section-label">参考答案</view>
-          <text class="gen-label">{{generatedLabel}}</text>
-        </view>
-        <view class="pre">{{q.correctAnswer || '—'}}</view>
-        <view wx:if="{{q.errorCause && q.verdict !== 'correct'}}" class="cause">{{q.errorCause}}</view>
-      </block>
       <view class="row muted conf"><image class="ic ic-sm" src="{{q.low ? '/assets/icons/circle-help-o.svg' : '/assets/icons/shield-check-m.svg'}}" /><text>判定把握 {{q.confidence}}%{{q.low ? ' · 待核对' : ''}}</text></view>
     </view>
 

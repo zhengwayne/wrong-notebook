@@ -26,7 +26,6 @@ import {
 import { clearPendingPaper, markGradeFinished, savePendingPaper } from '../../utils/paper-store';
 import { toPlainText } from '../../utils/text';
 import { takePaperChanged } from '../../utils/detail';
-import { GENERATED_LABEL } from '../../config';
 import { NOTEBOOK_SUBJECTS, SUBJECT_LABELS } from '../../utils/subjects';
 
 /** 每页压到这个以内再上传（服务端单页上限 3MB 字符） */
@@ -46,8 +45,6 @@ interface Row {
   number: string;
   question: string;
   studentAnswer: string;
-  correctAnswer: string;
-  errorCause: string;
   verdict: Verdict;
   low: boolean;
   pageNo: number;
@@ -93,8 +90,6 @@ function toRow(question: PaperQuestion, open = false): Row {
     number: question.number || String(question.position + 1),
     question: toPlainText(question.questionText) || `第 ${question.number} 题`,
     studentAnswer: toPlainText(question.studentAnswer) || '（没作答）',
-    correctAnswer: toPlainText(question.correctAnswer),
-    errorCause: toPlainText(question.errorCause),
     verdict: isVerdict(question.effectiveVerdict) ? question.effectiveVerdict : 'wrong',
     low: question.overrideVerdict === null && question.confidence < LOW_CONFIDENCE,
     pageNo: (question.bbox?.pageIndex ?? 0) + 1,
@@ -110,7 +105,6 @@ function stopTimer(): void {
 
 Page({
   data: {
-    generatedLabel: GENERATED_LABEL,
     step: 'upload' as Step,
     learnerId: '',
     learnerName: '',

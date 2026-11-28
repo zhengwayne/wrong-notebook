@@ -46,7 +46,7 @@
         <button class="btn btn-small" bindtap="onOpenNotebook"><image class="ic ic-sm" src="/assets/icons/book-open-w.svg" />去错题本</button>
       </view>
     </view>
-    <view wx:else class="muted hint">已初步标好对错，点下面的图标改判 · 标「待核对」的请重点看 · 参考答案和错因：{{generatedLabel}}</view>
+    <view wx:else class="muted hint">已初步标好对错，点下面的图标改判 · 标「待核对」的请重点看</view>
 
     <view wx:if="{{rows.length === 0}}" class="empty">
       <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
@@ -73,8 +73,6 @@
       </view>
       <view class="q-text {{item.open ? '' : 'clamp'}}" data-index="{{qi}}" bindtap="onToggleOpen">{{item.question}}</view>
       <view class="ans row"><image class="ic ic-sm" src="/assets/icons/pencil-m.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.studentAnswer}}</text></view>
-      <view wx:if="{{item.correctAnswer && item.verdict !== 'correct'}}" class="ans row"><image class="ic ic-sm" src="/assets/icons/check-s.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.correctAnswer}}</text></view>
-      <view wx:if="{{item.open && item.errorCause && item.verdict !== 'correct'}}" class="cause">{{item.errorCause}}</view>
       <view class="detail-link" hover-class="press" data-index="{{qi}}" catchtap="onOpenDetail" id="btn-detail-{{qi}}"><text>查看详情</text><image class="ic ic-xs" src="/assets/icons/chevron-right-p.svg" /></view>
     </view>
 

@@ -7,7 +7,6 @@
 .image { width: 100%; border-radius: 20rpx; margin-top: 24rpx; background-color: var(--xj-secondary); display: block; }
 .figure { background-color: #FFFFFF; border: 2rpx solid var(--xj-border); }
 .kps { margin-top: 20rpx; }
-.gen-label-title { margin-bottom: 20rpx; }
 .line { padding: 14rpx 0; font-size: 28rpx; }
 .line + .line { border-top: 2rpx solid var(--xj-border); }
 .h-src { margin-left: 16rpx; font-size: 24rpx; }

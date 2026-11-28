@@ -4,15 +4,11 @@ import { formatDate, MASTERY_ICON, MASTERY_LABEL, parseKnowledgePoints, toPlainT
 import type { ErrorItemDetail } from '../../utils/types';
 import { PAGES, switchTo } from '../../utils/nav';
 import { previewImage } from '../../utils/detail';
-import { GENERATED_LABEL } from '../../config';
 
 interface ItemView {
   id: string;
   question: string;
-  answer: string;
-  analysis: string;
   wrongAnswer: string;
-  mistake: string;
   image: string;
   kps: string[];
   subjectName: string;
@@ -28,10 +24,7 @@ function toView(item: ErrorItemDetail): ItemView {
   return {
     id: item.id,
     question: toPlainText(item.questionText) || '（题目见下方图片）',
-    answer: toPlainText(item.answerText),
-    analysis: toPlainText(item.analysis),
     wrongAnswer: toPlainText(item.wrongAnswerText),
-    mistake: toPlainText(item.mistakeAnalysis),
     image,
     kps: parseKnowledgePoints(item.knowledgePoints),
     subjectName: item.subject ? item.subject.name : '未分类',
@@ -49,7 +42,6 @@ Page({
     reviewMode: false,
     kidMode: false,
     showAnswer: false,
-    generatedLabel: GENERATED_LABEL,
     saving: false,
     recorded: false,
     nextId: '',

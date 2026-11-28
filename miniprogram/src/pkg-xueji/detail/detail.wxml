@@ -17,22 +17,6 @@
       <view wx:if="{{item.kps.length}}" class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
     </view>
 
-    <view class="card" id="card-answer">
-      <view class="row-between">
-        <view class="card-title"><image class="ic" src="/assets/icons/circle-check-s.svg" />答案</view>
-        <text wx:if="{{item.answer || item.analysis || item.mistake}}" class="gen-label gen-label-title">{{generatedLabel}}</text>
-      </view>
-      <view class="pre">{{item.answer || '—'}}</view>
-      <block wx:if="{{item.analysis}}">
-        <view class="section-label">讲解</view>
-        <view class="pre">{{item.analysis}}</view>
-      </block>
-      <block wx:if="{{item.mistake}}">
-        <view class="section-label">错在哪</view>
-        <view class="pre">{{item.mistake}}</view>
-      </block>
-    </view>
-
     <view wx:if="{{item.wrongAnswer}}" class="card">
       <view class="card-title"><image class="ic" src="/assets/icons/pencil-d.svg" />当时写的</view>
       <view class="pre">{{item.wrongAnswer}}</view>

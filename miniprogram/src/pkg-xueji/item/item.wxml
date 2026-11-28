@@ -5,9 +5,7 @@
     <view wx:if="{{reviewMode}}" class="steps">
       <view class="step {{!showAnswer ? 'step-on' : 'step-done'}}"><text class="step-no">1</text>自己做</view>
       <view class="step-line"></view>
-      <view class="step {{showAnswer && !recorded ? 'step-on' : ''}} {{recorded ? 'step-done' : ''}}"><text class="step-no">2</text>对答案</view>
-      <view class="step-line"></view>
-      <view class="step {{recorded ? 'step-on' : ''}}"><text class="step-no">3</text>标记</view>
+      <view class="step {{showAnswer && !recorded ? 'step-on' : ''}} {{recorded ? 'step-done' : ''}}"><text class="step-no">2</text>标记</view>
     </view>
 
     <view class="card">
@@ -20,27 +18,12 @@
       <view wx:if="{{item.kps.length}}" class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
     </view>
 
-    <button wx:if="{{!showAnswer}}" class="btn btn-outline" bindtap="onReveal"><image class="ic" src="/assets/icons/eye-p.svg" />看答案</button>
+    <button wx:if="{{!showAnswer}}" class="btn btn-outline" bindtap="onReveal"><image class="ic" src="/assets/icons/check-p.svg" />做完了</button>
 
     <block wx:else>
-      <view class="card" id="card-answer">
-        <view class="row-between">
-          <view class="card-title"><image class="ic" src="/assets/icons/circle-check-s.svg" />答案</view>
-          <text wx:if="{{item.answer || item.analysis || item.mistake}}" class="gen-label gen-label-title">{{generatedLabel}}</text>
-        </view>
-        <view class="pre">{{item.answer || '—'}}</view>
-        <block wx:if="{{item.analysis}}">
-          <view class="section-label">讲解</view>
-          <view class="pre">{{item.analysis}}</view>
-        </block>
-        <block wx:if="{{item.wrongAnswer}}">
-          <view class="section-label">当时写的</view>
-          <view class="pre">{{item.wrongAnswer}}</view>
-        </block>
-        <block wx:if="{{item.mistake}}">
-          <view class="section-label">错在哪</view>
-          <view class="pre">{{item.mistake}}</view>
-        </block>
+      <view wx:if="{{item.wrongAnswer}}" class="card">
+        <view class="card-title"><image class="ic" src="/assets/icons/pencil-d.svg" />当时写的</view>
+        <view class="pre">{{item.wrongAnswer}}</view>
       </view>
       <view class="detail-link" hover-class="press" bindtap="onOpenDetail" id="btn-detail"><image class="ic ic-sm" src="/assets/icons/file-text-p.svg" /><text>查看详情</text><image class="ic ic-sm detail-arrow" src="/assets/icons/chevron-right-m.svg" /></view>
 

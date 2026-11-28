@@ -125,14 +125,6 @@
           <textarea class="textarea" auto-height maxlength="20000" value="{{item.questionText}}" data-index="{{index}}" bindinput="onEditQuestion" />
           <view class="link-muted done-edit" data-index="{{index}}" bindtap="onEditToggle"><image class="ic ic-sm" src="/assets/icons/check-p.svg" />改好了</view>
         </block>
-        <block wx:if="{{item.answerPlain || item.mistakePlain}}">
-          <view class="row-between"><view class="section-label">答案</view><text class="gen-label">{{generatedLabel}}</text></view>
-          <view class="pre">{{item.answerPlain || '—'}}</view>
-          <block wx:if="{{item.mistakePlain}}">
-            <view class="section-label">错因</view>
-            <view class="pre">{{item.mistakePlain}}</view>
-          </block>
-        </block>
         <view wx:if="{{item.knowledgePoints.length}}" class="wrap kps"><view wx:for="{{item.knowledgePoints}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
       </view>
       <view class="save-bar">
