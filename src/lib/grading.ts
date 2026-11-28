@@ -5,7 +5,8 @@
  * 设计参考 OMRChecker（MIT）的 evaluation.json：题号区间写法（q1..22）、
  * 每题可接受多种答案、按题设置分值；此处为独立实现，未复制其代码。
  */
-import { normalizeAnswer } from "@/lib/answer-match";
+import { isMultiWordEnglishPhrase, normalizeAnswer, normalizeEnglishPhrase } from "@/lib/answer-match";
+import { answersEquivalent, isConstantScalarExpression } from "@/lib/variant/verify";
 
 export const GRADING_QUESTION_TYPES = ['objective', 'subjective'] as const;
 export type GradingQuestionType = typeof GRADING_QUESTION_TYPES[number];
@@ -13,11 +14,14 @@ export const GRADING_VERDICTS = ['correct', 'partial', 'wrong', 'blank'] as cons
 export type GradingVerdict = typeof GRADING_VERDICTS[number];
 export const MAX_GRADING_QUESTIONS = 100;
 
+export type AnswerSourceKind = 'manual' | 'exam_paper' | 'key_image' | 'ai_inferred';
+
 export interface KeyQuestionInput {
     number: string;
     type: GradingQuestionType;
     maxScore: number;
     answer: string;
+    answerSource?: AnswerSourceKind;
     acceptedAnswers?: string[];
     questionText?: string | null;
     knowledgePoints?: string[];
@@ -35,6 +39,8 @@ export interface ReadAnswer {
     answer: string;
     /** 主观题的 AI 建议分 */
     score?: number | null;
+    confidence?: number | null;
+    bbox?: { pageIndex: number; x: number; y: number; width: number; height: number } | null;
     reason?: string | null;
 }
 
@@ -44,11 +50,25 @@ export interface GradedQuestion {
     verdict: GradingVerdict;
     score: number;
     aiScore: number | null;
+    confidence?: number | null;
+    bbox?: string | null;
     reason: string | null;
     source: 'auto' | 'ai' | 'teacher';
 }
 
-const CHOICE_ONLY = /^[A-Ha-h]{1,8}$/;
+const UPPER_CHOICE_ONLY = /^[A-H]{1,8}$/;
+const ANY_CASE_CHOICE_ONLY = /^[A-Ha-h]{1,8}$/;
+
+function hasUniqueLetters(value: string): boolean {
+    const upper = value.toUpperCase();
+    return new Set(upper).size === upper.length;
+}
+
+/** 仅当参考答案本身为无重复大写 A-H 字母时，才视作可无序比对的选择题 */
+function isChoiceKey(raw: string): boolean {
+    const compact = raw.replace(/\s+/g, '');
+    return UPPER_CHOICE_ONLY.test(compact) && hasUniqueLetters(compact);
+}
 
 /** 把 "1-5"、"1..5"、"1~5" 展开为题号数组；单个题号原样返回 */
 export function expandNumberRange(token: string): string[] {
@@ -95,10 +115,15 @@ export function parseQuickAnswerKey(text: string, defaultScore = 1): { questions
                 rest = rest.slice(scoreMatch[0].length);
             }
         } else {
-            const scoreMatch = rest.match(/\s+(\d+(?:\.\d+)?)\s*(?:分|pts?|points?)?$/i);
-            if (scoreMatch && rest.slice(0, scoreMatch.index).trim()) {
-                score = Number(scoreMatch[1]);
-                rest = rest.slice(0, scoreMatch.index).trim();
+            const scoreMatch = rest.match(/\s+(\d+(?:\.\d+)?)\s*(分|pts?|points?)?$/i);
+            if (scoreMatch && scoreMatch.index !== undefined) {
+                const prefix = rest.slice(0, scoreMatch.index).trim();
+                const hasExplicitUnit = Boolean(scoreMatch[2]);
+                // 无单位尾随数字可能是方程或算式结尾（如 "1 x = 2"），前缀以运算符或等号结尾时绝不拆作分值
+                if (prefix && (hasExplicitUnit || !/[=+\-*/^<>(\[,，]$/.test(prefix))) {
+                    score = Number(scoreMatch[1]);
+                    rest = prefix;
+                }
             }
         }
 
@@ -117,11 +142,14 @@ export function parseQuickAnswerKey(text: string, defaultScore = 1): { questions
             errors.push(index + 1);
             return;
         }
+        const normalizedSingle = answer
+            ? ((/^[A-Ha-h]$/.test(answer) || isChoiceKey(answer)) ? answer.toUpperCase() : answer)
+            : '';
         questions.push({
             number: numbers[0],
             type,
             maxScore: score,
-            answer: answer ? (CHOICE_ONLY.test(answer) ? answer.toUpperCase() : answer) : '',
+            answer: normalizedSingle,
             ...(alternatives.length ? { acceptedAnswers: alternatives } : {}),
         });
     });
@@ -132,17 +160,62 @@ function sortedLetters(value: string): string {
     return [...value.toUpperCase()].sort().join('');
 }
 
-/** 客观题比对：选择题忽略字母顺序与大小写，其他题按规范化后的文本完全一致判定 */
+const SINGLE_VAR_ASSIGNMENT = /^([a-zA-Z])\s*=\s*([^=,;]+)$/;
+
+function parseSingleVarPrefix(raw: string): { varName: string; rhs: string } | null {
+    const trimmed = raw
+        .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/\$|\\\(|\\\)|\\\[|\\\]/g, '')
+        .trim();
+    const match = trimmed.match(SINGLE_VAR_ASSIGNMENT);
+    return match ? { varName: match[1].toLowerCase(), rhs: match[2].trim() } : null;
+}
+
+function isMathObjectiveEquivalent(studentRaw: string, expectedRaw: string): boolean {
+    const stuPrefix = parseSingleVarPrefix(studentRaw);
+    const expPrefix = parseSingleVarPrefix(expectedRaw);
+    if (stuPrefix && expPrefix) {
+        // 两侧均带单变量前缀时必须变量名一致，严禁把 y=2 与 x=2 判对
+        return stuPrefix.varName === expPrefix.varName && answersEquivalent(expPrefix.rhs, stuPrefix.rhs);
+    }
+    if (stuPrefix && !expPrefix) {
+        return isConstantScalarExpression(stuPrefix.rhs)
+            && isConstantScalarExpression(expectedRaw)
+            && answersEquivalent(expectedRaw, stuPrefix.rhs);
+    }
+    if (!stuPrefix && expPrefix) {
+        return isConstantScalarExpression(expPrefix.rhs)
+            && isConstantScalarExpression(studentRaw)
+            && answersEquivalent(expPrefix.rhs, studentRaw);
+    }
+    return answersEquivalent(expectedRaw, studentRaw);
+}
+
+/** 客观题比对：选择题忽略字母顺序与大小写（仅限全大写无重字母键），英文多词短语保留词间单空格，数学题支持等价比对 */
 export function compareObjective(studentAnswer: string, key: Pick<KeyQuestionInput, 'answer' | 'acceptedAnswers'>): 'correct' | 'wrong' | 'blank' {
     const student = normalizeAnswer(studentAnswer || '');
     if (!student) return 'blank';
     const candidates = [key.answer, ...(key.acceptedAnswers || [])].filter((value) => value && value.trim());
     for (const candidate of candidates) {
+        if (isMultiWordEnglishPhrase(candidate)) {
+            if (normalizeEnglishPhrase(studentAnswer) === normalizeEnglishPhrase(candidate)) {
+                return 'correct';
+            }
+            continue;
+        }
         const expected = normalizeAnswer(candidate);
         if (!expected) continue;
         if (student === expected) return 'correct';
         const studentLetters = student.replace(/^\((.*)\)$/, '$1');
-        if (CHOICE_ONLY.test(expected) && CHOICE_ONLY.test(studentLetters) && sortedLetters(studentLetters) === sortedLetters(expected)) {
+        if (
+            isChoiceKey(candidate.trim())
+            && ANY_CASE_CHOICE_ONLY.test(studentLetters)
+            && hasUniqueLetters(studentLetters)
+            && sortedLetters(studentLetters) === sortedLetters(candidate.trim())
+        ) {
+            return 'correct';
+        }
+        if (!isChoiceKey(candidate.trim()) && isMathObjectiveEquivalent(studentAnswer, candidate)) {
             return 'correct';
         }
     }
@@ -177,6 +250,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
     return questions.map((question) => {
         const read = byNumber.get(normalizeNumber(question.number));
         const studentAnswer = (read?.answer || '').trim();
+        const confidence = typeof read?.confidence === 'number' ? read.confidence : null;
+        const bbox = read?.bbox ? JSON.stringify(read.bbox) : null;
         if (question.type === 'objective') {
             const verdict = compareObjective(studentAnswer, question);
             return {
@@ -185,6 +260,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
                 verdict,
                 score: verdict === 'correct' ? question.maxScore : 0,
                 aiScore: null,
+                confidence,
+                bbox,
                 reason: null,
                 source: 'auto',
             };
@@ -197,6 +274,8 @@ export function gradeAnswers(questions: KeyQuestion[], answers: ReadAnswer[]): G
             verdict: verdictFromScore(score, question.maxScore, !studentAnswer),
             score,
             aiScore,
+            confidence,
+            bbox,
             reason: read?.reason?.trim() || null,
             source: 'ai',
         };
@@ -332,7 +411,7 @@ export function summarizeTask({ questions, submissions }: SummaryInput): TaskSum
 function csvCell(value: string | number | null): string {
     const text = value === null ? '' : String(value);
     // 以公式字符开头时加单引号，防止表格软件执行公式
-    const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
     return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 

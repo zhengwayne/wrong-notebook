@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
-import { acceptConfirmDialog, ADMIN_PASSWORD } from './helpers';
+import { acceptConfirmDialog, ADMIN_PASSWORD, gotoLoginHydrated } from './helpers';
 
 test('Upload image, correct, save, and verify in notebook', async ({ page }) => {
     // 增加测试超时时间
@@ -24,7 +24,7 @@ test('Upload image, correct, save, and verify in notebook', async ({ page }) => 
     });
 
     // 1. Login
-    await page.goto('/login');
+    await gotoLoginHydrated(page);
     await page.getByLabel(/邮箱|Email/).fill('admin@localhost');
     await page.getByLabel(/^密码$|^Password$/).fill(ADMIN_PASSWORD);
     await page.getByRole('button', { name: /登录|Login/ }).click();

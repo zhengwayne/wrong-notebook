@@ -15,28 +15,34 @@ import { ExamStatusBadge } from "@/components/exam/exam-status-badge";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
+import { useCurrentChild } from "@/lib/use-current-child";
 import type { ExamPaperSummary } from "@/types/api";
 
 export default function ExamsPage() {
     const { timeZone } = useTimeZone();
     const { t } = useLanguage();
     usePageTitle(t.exam.title);
+    const { isParent, isTeacher, learnerId, hrefWithChild } = useCurrentChild();
+    const isScopedPersona = isParent || (isTeacher && Boolean(learnerId));
     const [papers, setPapers] = useState<ExamPaperSummary[] | null>(null);
     const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
-        apiClient.get<ExamPaperSummary[]>("/api/exams")
+        const url = isScopedPersona
+            ? `/api/exams?learnerId=${encodeURIComponent(learnerId ?? "self")}`
+            : "/api/exams";
+        apiClient.get<ExamPaperSummary[]>(url)
             .then((data) => {
                 setPapers(data);
                 if (data.length === 0) setShowForm(true);
             })
             .catch(() => setPapers([]));
-    }, []);
+    }, [isScopedPersona, learnerId]);
 
     const difficultyLabels = t.practice.difficulty as Record<string, string>;
 
     return (
-        <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-6">
                 <PageHeader
                     title={t.exam.title}
@@ -65,7 +71,7 @@ export default function ExamsPage() {
                     ) : (
                         <div className="grid gap-3 md:grid-cols-2">
                             {papers.map((paper) => (
-                                <Link key={paper.id} href={`/exams/${paper.id}`}>
+                                <Link key={paper.id} href={hrefWithChild(`/exams/${paper.id}`)}>
                                     <Card className="h-full rounded-2xl transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
                                         <CardContent className="space-y-2 pt-4">
                                             <div className="flex items-start justify-between gap-2">

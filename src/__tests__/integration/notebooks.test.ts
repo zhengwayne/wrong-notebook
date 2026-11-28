@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => ({
         update: vi.fn(),
         delete: vi.fn(),
     },
+    mockPrismaLearner: {
+        findFirst: vi.fn(),
+    },
+    mockPrismaGradingClass: {
+        findFirst: vi.fn(),
+    },
     mockSession: {
         user: {
             email: 'user@example.com',
@@ -32,6 +38,8 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         user: mocks.mockPrismaUser,
         subject: mocks.mockPrismaSubject,
+        learner: mocks.mockPrismaLearner,
+        gradingClass: mocks.mockPrismaGradingClass,
     },
 }));
 
@@ -71,7 +79,7 @@ describe('/api/notebooks', () => {
             ];
             mocks.mockPrismaSubject.findMany.mockResolvedValue(notebooks);
 
-            const response = await GET();
+            const response = await GET(new Request("http://localhost/api/notebooks"));
             const data = await response.json();
 
             expect(response.status).toBe(200);
@@ -90,7 +98,7 @@ describe('/api/notebooks', () => {
                 ]);
             mocks.mockPrismaSubject.create.mockResolvedValue({});
 
-            const response = await GET();
+            const response = await GET(new Request("http://localhost/api/notebooks"));
             const data = await response.json();
 
             expect(response.status).toBe(200);
@@ -99,6 +107,44 @@ describe('/api/notebooks', () => {
             expect(mocks.mockPrismaSubject.create).toHaveBeenCalledTimes(2);
             expect(mocks.mockPrismaSubject.create.mock.calls.map((call) => call[0].data.subjectKey).sort()).toEqual(['english', 'math']);
             expect(mocks.mockPrismaSubject.create.mock.calls[0][0].data.stage).toMatch(/^(primary|junior_high|senior_high)$/);
+        });
+
+        it('支持教师按 learnerId 与 nonEmptyOnly=1 过滤掉其他学生的空错题本', async () => {
+            mocks.mockPrismaLearner.findFirst.mockResolvedValue({ id: 'stu-learner-1', kind: 'student' });
+            mocks.mockPrismaSubject.findMany.mockResolvedValue([
+                { id: 'nb-stu1', name: '张三·数学', userId: 'user-123', _count: { errorItems: 4 } },
+                { id: 'nb-stu2', name: '李四·数学', userId: 'user-123', _count: { errorItems: 0 } },
+            ]);
+
+            const response = await GET(new Request('http://localhost/api/notebooks?learnerId=stu-learner-1&nonEmptyOnly=1'));
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(data).toHaveLength(1);
+            expect(data[0].name).toBe('张三·数学');
+        });
+
+        it('支持教师按 classId 筛选该班级学生的错题本，非本人班级返回 404', async () => {
+            mocks.mockPrismaGradingClass.findFirst.mockResolvedValueOnce(null);
+            const forbiddenRes = await GET(new Request('http://localhost/api/notebooks?classId=foreign-class'));
+            expect(forbiddenRes.status).toBe(404);
+
+            mocks.mockPrismaGradingClass.findFirst.mockResolvedValueOnce({
+                id: 'cls-1',
+                students: [{ learner: { id: 'l-1' } }, { learner: { id: 'l-2' } }],
+            });
+            mocks.mockPrismaSubject.findMany.mockResolvedValueOnce([
+                { id: 'nb-c1', name: '张三·数学', userId: 'user-123', _count: { errorItems: 3 } },
+            ]);
+
+            const okRes = await GET(new Request('http://localhost/api/notebooks?classId=cls-1'));
+            expect(okRes.status).toBe(200);
+            expect(mocks.mockPrismaSubject.findMany).toHaveBeenCalledWith(expect.objectContaining({
+                where: {
+                    userId: 'user-123',
+                    errorItems: { some: { learnerId: { in: ['l-1', 'l-2'] } } },
+                },
+            }));
         });
     });
 

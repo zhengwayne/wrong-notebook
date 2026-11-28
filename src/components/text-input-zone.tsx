@@ -70,7 +70,7 @@ export function TextInputZone({ onSubmit, isAnalyzing, defaultNotebookName }: Te
                 <Button
                     onClick={handleSubmit}
                     disabled={!questionText.trim() || isAnalyzing}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-violet-500 font-medium text-white hover:from-indigo-700 hover:to-violet-600"
+                    className="w-full bg-primary font-medium text-primary-foreground hover:bg-primary/90"
                     size="lg"
                 >
                     {isAnalyzing ? (

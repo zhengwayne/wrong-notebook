@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
+import type { FileRejection } from "react-dropzone";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, Loader2, Monitor, ClipboardPaste } from "lucide-react";
@@ -23,41 +24,74 @@ declare global {
     }
 }
 
+/** 一次最多选择的图片数（Ported from margrop/wrong-notebook 4435a761, MIT） */
+export const MAX_IMAGE_SELECTION = 4;
+/** 单张图片大小上限（20MB，拍照原图后续会由前端压缩） */
+export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_FILE_MB = Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024));
+
+function isSupportedImageMime(type: string) {
+    return type.startsWith("image/") && type !== "image/svg+xml";
+}
+
 interface UploadZoneProps {
     onImageSelect: (file: File) => void;  // 改为传递 File 对象
+    /** 提供时允许一次选择多张图片（最多 4 张），由父组件逐张排队裁剪 */
+    onImagesSelect?: (files: File[]) => void;
     isAnalyzing: boolean;
 }
 
-export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
+export function UploadZone({ onImageSelect, onImagesSelect, isAnalyzing }: UploadZoneProps) {
     const { t } = useLanguage();
     const [isScreenshotting, setIsScreenshotting] = useState(false);
     // 确保只在客户端渲染屏幕截图功能
     const isClient = useIsClient();
 
-    useEffect(() => {
-        // 请求通知权限
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-        }
-    }, []);
-
     const onDrop = useCallback(
         (acceptedFiles: File[]) => {
+            if (onImagesSelect && acceptedFiles.length > 1) {
+                if (acceptedFiles.length > MAX_IMAGE_SELECTION) {
+                    toast.warning(t.upload.multiTooMany.replace("{max}", String(MAX_IMAGE_SELECTION)));
+                }
+                onImagesSelect(acceptedFiles.slice(0, MAX_IMAGE_SELECTION));
+                return;
+            }
             const file = acceptedFiles[0];
             if (file) {
                 // 直接传递 File 对象，让父组件处理压缩
                 onImageSelect(file);
             }
         },
-        [onImageSelect]
+        [onImageSelect, onImagesSelect, t]
+    );
+
+    const onDropRejected = useCallback(
+        (rejections: FileRejection[]) => {
+            const codes = new Set(rejections.flatMap((item) => item.errors.map((err) => err.code)));
+            if (codes.has("file-too-large")) {
+                toast.warning(t.upload.fileTooLarge.replace("{max}", String(MAX_IMAGE_FILE_MB)));
+            } else {
+                toast.warning(t.upload.invalidFileType);
+            }
+        },
+        [t]
     );
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
+        onDropRejected,
         accept: {
-            "image/*": [".jpeg", ".jpg", ".png"],
+            "image/jpeg": [".jpeg", ".jpg"],
+            "image/png": [".png"],
+            "image/webp": [".webp"],
+            "image/gif": [".gif"],
+            "image/heic": [".heic"],
+            "image/heif": [".heif"],
         },
-        maxFiles: 1,
+        maxSize: MAX_IMAGE_FILE_BYTES,
+        // 多选时不交给 dropzone 限制数量（超出会整批拒绝），由 onDrop 只取前 4 张并提示
+        multiple: Boolean(onImagesSelect),
+        maxFiles: onImagesSelect ? 0 : 1,
         disabled: isAnalyzing,
     });
     // 将剪贴板中的图片 Blob 转为 File 并交给父组件
@@ -85,7 +119,7 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
             }
 
             const items = Array.from(event.clipboardData?.items ?? []);
-            const imageItem = items.find((item) => item.kind === "file" && item.type.startsWith("image/"));
+            const imageItem = items.find((item) => item.kind === "file" && isSupportedImageMime(item.type));
             const file = imageItem?.getAsFile();
             if (!file) return;
 
@@ -115,7 +149,7 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
         try {
             const clipboardItems = await navigator.clipboard.read();
             for (const item of clipboardItems) {
-                const imageType = item.types.find((type) => type.startsWith("image/"));
+                const imageType = item.types.find((type) => isSupportedImageMime(type));
                 if (imageType) {
                     const blob = await item.getType(imageType);
                     selectClipboardImage(blob);
@@ -280,8 +314,13 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
                             {isAnalyzing ? t.app.analyzing : t.app.dragDrop}
                         </p>
                         <p className="mt-2 text-xs text-muted-foreground">
-                            {t.upload.support}
+                            {t.upload.support.replace("{max}", String(MAX_IMAGE_FILE_MB))}
                         </p>
+                        {onImagesSelect && (
+                            <p className="text-xs text-muted-foreground">
+                                {t.upload.multiHint.replace("{max}", String(MAX_IMAGE_SELECTION))}
+                            </p>
+                        )}
                     </div>
                 </CardContent>
             </Card>

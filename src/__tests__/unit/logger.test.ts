@@ -264,4 +264,111 @@ describe('logger module', () => {
             consoleSpy.mockRestore();
         });
     });
+
+    describe('生产环境防泄露护栏 (OPT-03 / OPT-21)', () => {
+        it('默认生产模式下 logger.box 不输出提示词、学生姓名、作答或图片 Base64', async () => {
+            (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+            delete process.env.LOG_AI_PAYLOADS;
+
+            const captured: string[] = [];
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation((msg) => {
+                captured.push(String(msg));
+            });
+
+            const { createLogger } = await import('@/lib/logger');
+            const prodLogger = createLogger('ai:openai');
+
+            const promptText = 'You are an expert K-12 teacher. <question_text> 学生姓名：张小明 解：设 x = 3';
+            prodLogger.box('📝 Full System Prompt', promptText);
+            prodLogger.box('📤 API Request', {
+                imageUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA',
+                apiKey: 'sk-1234567890abcdef',
+                studentName: '张小明',
+                wrongAnswer: '设 x = 3',
+            });
+
+            expect(captured).toHaveLength(2);
+
+            const firstEntry = JSON.parse(captured[0]);
+            expect(firstEntry.module).toBe('ai:openai');
+            expect(firstEntry.title).toBe('📝 Full System Prompt');
+            expect(firstEntry.contentLength).toBe(promptText.length);
+            expect(captured[0]).not.toContain('<question_text>');
+            expect(captured[0]).not.toContain('张小明');
+            expect(captured[0]).not.toContain('设 x = 3');
+
+            const secondEntry = JSON.parse(captured[1]);
+            expect(secondEntry.module).toBe('ai:openai');
+            expect(secondEntry.contentLength).toBeGreaterThan(0);
+            expect(secondEntry.contentKeys).toEqual(['imageUrl', 'apiKey', 'studentName', 'wrongAnswer']);
+            expect(captured[1]).not.toContain('data:image');
+            expect(captured[1]).not.toContain('iVBORw0KGgo');
+            expect(captured[1]).not.toContain('sk-1234567890abcdef');
+            expect(captured[1]).not.toContain('张小明');
+            expect(captured[1]).not.toContain('设 x = 3');
+
+            consoleSpy.mockRestore();
+        });
+
+        it('开启 LOG_AI_PAYLOADS=true 时仍对图片 Base64、密钥脱敏并截断超长载荷', async () => {
+            (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+            process.env.LOG_AI_PAYLOADS = 'true';
+
+            const captured: string[] = [];
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation((msg) => {
+                captured.push(String(msg));
+            });
+
+            const { createLogger } = await import('@/lib/logger');
+            const prodLogger = createLogger('ai:gemini');
+
+            const longPrompt = '题目提示词前缀_' + 'A'.repeat(5000);
+            prodLogger.box('📝 Full Prompt', {
+                prompt: longPrompt,
+                imageUrl: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD',
+                apiKey: 'sk-secretkey12345678',
+            });
+
+            expect(captured).toHaveLength(1);
+            const entry = JSON.parse(captured[0]);
+            expect(entry.apiKey).toBe('[REDACTED]');
+            expect(entry.imageUrl).toContain('[data:image/jpeg');
+            expect(entry.prompt).toContain('…[truncated');
+            expect(entry.prompt.length).toBeLessThan(2100);
+            expect(captured[0]).not.toContain('/9j/4AAQSkZJRgABAQ');
+            expect(captured[0]).not.toContain('sk-secretkey12345678');
+
+            consoleSpy.mockRestore();
+        });
+
+        it('生产环境下普通 JSON 日志同样脱敏敏感字段和图片载荷', async () => {
+            (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+            process.env.LOG_LEVEL = 'info';
+
+            const captured: string[] = [];
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation((msg) => {
+                captured.push(String(msg));
+            });
+
+            const { createLogger } = await import('@/lib/logger');
+            const prodLogger = createLogger('api:upload');
+
+            prodLogger.info({
+                imageUrl: 'data:image/png;base64,AAAA1234BBBB',
+                apiKey: 'sk-abcdef123456',
+                authorization: 'Bearer secret-jwt-token',
+            }, 'upload');
+
+            expect(captured).toHaveLength(1);
+            const entry = JSON.parse(captured[0]);
+            expect(entry.apiKey).toBe('[REDACTED]');
+            expect(entry.authorization).toBe('[REDACTED]');
+            expect(entry.imageUrl).toContain('[data:image/png');
+            expect(captured[0]).not.toContain('AAAA1234BBBB');
+            expect(captured[0]).not.toContain('sk-abcdef123456');
+            expect(captured[0]).not.toContain('secret-jwt-token');
+
+            consoleSpy.mockRestore();
+        });
+    });
 });

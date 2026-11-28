@@ -1,0 +1,6 @@
+<view class="container safe-bottom">
+  <view wx:for="{{sections}}" wx:key="key" class="card sec" id="help-{{item.key}}">
+    <view class="card-title"><image class="ic" src="{{item.icon}}" />{{item.title}}</view>
+    <view wx:for="{{item.lines}}" wx:for-item="line" wx:key="*this" class="line text-2">{{line}}</view>
+  </view>
+</view>

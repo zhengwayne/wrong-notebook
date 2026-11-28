@@ -26,23 +26,35 @@ describe('登录页帮助', () => {
         expect(html).not.toContain('请联系管理员开启注册');
     });
 
-    it('首次使用指引给出默认管理员邮箱和文档链接，不显示密码', () => {
+    it('首次使用指引给出默认管理员邮箱，不包含密码或外链', () => {
         const html = render(false);
         expect(html).toContain('首次使用？');
         expect(html).toContain('admin@localhost');
-        expect(html).toContain('https://github.com/margrop/wrong-notebook/wiki/FAQ');
+        expect(html).toContain('setup-token');
+        expect(html).toContain('/initialize?token=');
+        expect(html).not.toContain('github.com');
         expect(html).not.toContain('123456');
     });
 });
 
 describe('初始化链接指引', () => {
-    it('说明各安装方式到哪里找初始化链接，不包含任何密码', async () => {
+    it('说明各安装方式到哪里找初始化链接，不包含密码或外链', async () => {
         const { SetupGuide } = await import('@/components/initialize/setup-guide');
         const html = renderToStaticMarkup(<LanguageProvider><SetupGuide /></LanguageProvider>);
         expect(html).toContain('尚未创建管理员');
         expect(html).toContain('/initialize?token=');
-        expect(html).toContain('docker logs wrong-notebook');
+        expect(html).toContain('docker exec wrong-notebook cat /app/config/setup-token');
         expect(html).toContain('config/setup-token');
+        expect(html).not.toContain('github.com');
         expect(html).not.toContain('123456');
+    });
+});
+
+describe('关于面板', () => {
+    it('展示更新后的版权署名，且不渲染外部仓库按钮链接', async () => {
+        const { AboutSettings } = await import('@/components/settings/about-settings');
+        const html = renderToStaticMarkup(<LanguageProvider><AboutSettings /></LanguageProvider>);
+        expect(html).toContain('zhengwayne/wrong-notebook');
+        expect(html).not.toContain('https://github.com/');
     });
 });

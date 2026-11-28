@@ -1,0 +1,73 @@
+{
+  "pages": [
+    "pages/hub/hub",
+    "pages/me/me"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#F6F5FB",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "学迹",
+    "backgroundColor": "#F6F5FB",
+    "backgroundTextStyle": "dark"
+  },
+  "networkTimeout": {
+    "request": 60000,
+    "uploadFile": 180000,
+    "downloadFile": 60000
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents",
+  "usingComponents": {
+    "kid-lock": "/components/kid-lock/kid-lock",
+    "login-sheet": "/components/login-sheet/login-sheet"
+  },
+  "subPackages": [
+    {
+      "root": "pkg-xueji",
+      "name": "xueji",
+      "pages": [
+        "home/home",
+        "notebook/notebook",
+        "review/review",
+        "capture/capture",
+        "item/item",
+        "parent/parent",
+        "grade/grade",
+        "guide/guide",
+        "detail/detail",
+        "question/question",
+        "help/help"
+      ]
+    },
+    {
+      "root": "pkg-english",
+      "name": "english",
+      "pages": [
+        "index/index",
+        "practice/practice",
+        "words/words"
+      ]
+    },
+    {
+      "root": "pkg-math",
+      "name": "math",
+      "pages": [
+        "index/index",
+        "lesson/lesson",
+        "quiz/quiz",
+        "badges/badges"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/hub/hub": {
+      "network": "all",
+      "packages": [
+        "xueji",
+        "english",
+        "math"
+      ]
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
+import { findLatexIssues } from '@/lib/latex-check';
 
 describe('旧题缺少答案或解析时的详情渲染', () => {
     it.each([null, undefined, ''])('内容为 %s 时能正常显示空区域', (content) => {
@@ -70,5 +71,184 @@ describe('代码渲染', () => {
     it('代码块由 pre 提供块级样式', () => {
         const html = renderToStaticMarkup(<MarkdownRenderer content={'```\nblock\n```'} />);
         expect(html).toMatch(/<pre class="bg-muted p-4[^"]*"><code[^>]*>block\n<\/code><\/pre>/);
+    });
+});
+
+
+
+function visibleMarkup(html: string): string {
+    return html
+        .replace(/<annotation[\s\S]*?<\/annotation>/g, '')
+        .replace(/<span class="katex-mathml">[\s\S]*?<\/math><\/span>/g, '');
+}
+
+describe('独立成行的 $$ 围栏（aligned / align）', () => {
+    const aligned = '$$\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}$$';
+
+    it('$$\\\\begin{aligned} 与 \\\\end{aligned}$$ 紧贴时也能渲染，不残留源码', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={aligned} />);
+        const visible = visibleMarkup(html);
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\end{aligned}');
+        expect(visible).not.toContain('\\begin{aligned}');
+        expect(annotations(aligned)[0]).toContain('\\begin{aligned}');
+        expect(annotations(aligned)[0]).toContain('\\end{aligned}');
+    });
+
+    it('只有开头或只有结尾紧贴 $$ 时同样能渲染', () => {
+        const openingGlued = '$$\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}\n$$';
+        const closingGlued = '$$\n\\begin{aligned}\n&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67\n\\end{aligned}$$';
+        for (const content of [openingGlued, closingGlued]) {
+            const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+            expect(html).toContain('class="katex"');
+            expect(html).not.toContain('katex-error');
+            expect(visibleMarkup(html)).not.toContain('\\end{aligned}$$');
+        }
+    });
+
+    it('\\\\begin{align*} 紧贴 $$ 时也能渲染', () => {
+        const content = '$$\\begin{align*}\na&=1\\\\\\\\\nb&=2\n\\end{align*}$$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(countFormulas(content)).toBe(1);
+        expect(html).not.toContain('katex-error');
+    });
+});
+
+describe('安全渲染 <u> 下划线', () => {
+    it('把 <u>y</u>、l<u>ea</u>ves 渲染成下划线，不显示原始标签', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'The birds fl<u>y</u> high. Look at the l<u>ea</u>ves. <u>the nice fruit</u>'} />,
+        );
+        expect(html).toMatch(/<u[^>]*>y<\/u>/);
+        expect(html).toMatch(/l<u[^>]*>ea<\/u>ves/);
+        expect(html).toMatch(/<u[^>]*>the nice fruit<\/u>/);
+        expect(html).not.toContain('&lt;u&gt;');
+        expect(html).not.toContain('<u>y</u>'.replace('y', '') + 'y'); // sanity
+    });
+
+    it('丢掉 <u> 上的属性，且不把其它 HTML 当标签渲染', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'<u onclick="alert(1)">hi</u> and <script>alert(1)</script>'} />,
+        );
+        expect(html).toMatch(/<u[^>]*>hi<\/u>/);
+        expect(html).not.toContain('onclick');
+        expect(html).not.toContain('<script>');
+        expect(html).toContain('script');
+    });
+});
+
+describe('compact 预览用 CSS 限制行数', () => {
+    it('clamp 以样式限制行数，完整公式仍交给渲染器', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'计算 $1200 \\div 50 = 24$ 个'} variant="compact" clamp={2} />,
+        );
+        expect(html).toContain('-webkit-line-clamp:2');
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('24\\te');
+        expect(html).not.toContain('$1200');
+    });
+});
+
+
+const ANALYSIS_LIST = `1.
+理解题意并列式：
+
+- “75 的 4 倍”表示为 75 × 4；
+- “136 与 97 的和”需要先相加，因此要用小括号括起来，表示为 (136 + 97)；
+- 求两者的差，列式为：75 × 4 − (136 + 97)。
+
+2.
+**按运算顺序计算：** 先算小括号里面的加法，同时算出乘法，最后再算减法：
+
+$$\\begin{aligned}
+&75 \\times 4 - (136 + 97) \\\\ &= 300 - 233 \\\\ &= 67
+\\end{aligned}$$
+
+答：差是 67。`;
+
+describe('有序列表编号与正文同行', () => {
+    it('单独成行的 1. / 2. 与下一行标题合并，嵌套条目在同一列表项内', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={ANALYSIS_LIST} />);
+        const visible = visibleMarkup(html);
+        // 不能出现空的 <li></li>，正文也不能掉到列表外成为独立段落
+        expect(visible).not.toMatch(/<li[^>]*>\s*<\/li>/);
+        expect(visible).not.toMatch(/<\/ol>\s*<p[^>]*>理解题意并列式：/);
+        expect(visible).not.toMatch(/<\/ol>\s*<p[^>]*>\s*<strong>按运算顺序计算：/);
+        expect(visible).toMatch(/<ol[^>]*>[\s\S]*<li[^>]*>[\s\S]*理解题意并列式：[\s\S]*<ul[\s\S]*75 × 4[\s\S]*<\/ul>[\s\S]*<\/li>[\s\S]*<li[^>]*>[\s\S]*按运算顺序计算：[\s\S]*katex[\s\S]*<\/li>[\s\S]*<\/ol>/);
+        expect(visible).toContain('list-outside');
+        expect(visible).not.toContain('list-inside');
+    });
+
+    it('答：差是 67。 只出现一次', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={ANALYSIS_LIST} />);
+        expect(visibleMarkup(html).split('答：差是 67。')).toHaveLength(2);
+    });
+
+    it('中文句号后的换行仍拆成两个段落', () => {
+        expect(renderToStaticMarkup(<MarkdownRenderer content={'第一步。\\n第二步'} />)).toMatch(/第一步。<\/p>\s*<p[^>]*>第二步/);
+    });
+});
+
+
+describe('mhchem、单位与几何记号', () => {
+    it('渲染 \\ce 化学式、反应和离子，不残留源码', () => {
+        const content = '硫酸 $\\ce{H2SO4}$，反应 $\\ce{2H2 + O2 -> 2H2O}$，离子 $\\ce{SO4^{2-}}$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        const visible = visibleMarkup(html);
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\ce');
+        expect(visible).toMatch(/H[\s\S]*SO/);
+    });
+
+    it('渲染 \\pu 与 \\mathrm 单位', () => {
+        const content = '重力加速度 $\\pu{9.8 m/s^2}$ 或 $9.8\\,\\mathrm{m/s^2}$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        const visible = visibleMarkup(html);
+        expect(html).not.toContain('katex-error');
+        expect(visible).not.toContain('\\pu');
+        expect(visible).toContain('9.8');
+        expect(visible.replace(/<[^>]+>/g, '')).toMatch(/m\s*\/\s*s/);
+    });
+
+    it('把 \\wideparen 和 \\overparen 映射为 \\overset{\\frown}', () => {
+        for (const content of ['$\\wideparen{AB}$', '$\\overparen{AB}$', '$\\overset{\\frown}{AB}$']) {
+            const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+            const visible = visibleMarkup(html);
+            expect(html).not.toContain('katex-error');
+            expect(visible).not.toContain('\\wideparen');
+            expect(visible).not.toContain('\\overparen');
+            expect(visible.replace(/<[^>]+>/g, '')).toMatch(/A\s*B/);
+        }
+    });
+
+    it('渲染常用几何记号', () => {
+        const content = '线段 $\\overline{AB}$，$\\angle ABC$，$\\triangle ABC$，$AB \\parallel CD$，$EF \\perp GH$，$\\triangle ABC \\cong \\triangle DEF$，$\\because a=b,\\therefore a^2=b^2$';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(html).not.toContain('katex-error');
+        expect(findLatexIssues(content)).toEqual([]);
+    });
+});
+
+
+describe('smiles 围栏结构式', () => {
+    it('把 ```smiles 渲染成结构式容器并保留 SMILES 原文作为回退', () => {
+        const content = '乙醇：\n\n```smiles\nCCO\n```\n';
+        const html = renderToStaticMarkup(<MarkdownRenderer content={content} />);
+        expect(html).toContain('data-testid="smiles-structure"');
+        expect(html).toContain('data-smiles="CCO"');
+        expect(html).toContain('CCO');
+        expect(html).toContain('data-fallback');
+        expect(html).not.toContain('<code');
+    });
+
+    it('无法识别的 SMILES 也显示原文，其它代码块仍按代码渲染', () => {
+        const html = renderToStaticMarkup(
+            <MarkdownRenderer content={'```smiles\n%%%bad\n```\n\n```\nplain\n```'} />,
+        );
+        expect(html).toContain('data-smiles="%%%bad"');
+        expect(html).toContain('%%%bad');
+        expect(html).toMatch(/<pre[^>]*>[\s\S]*plain/);
     });
 });

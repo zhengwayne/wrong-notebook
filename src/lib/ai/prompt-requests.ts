@@ -28,12 +28,12 @@ function safeSubject(value?: string | null): string | null {
 
 /** 保留候选清单是否存在、是否为空的信息，清单正文始终放在用户消息里。 */
 function inputOptions(options: PromptOptions): Record<string, unknown> {
-    return Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'customTemplate' && key !== 'providerHints'));
+    return Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'customTemplate' && key !== 'providerHints' && key !== 'pageCount'));
 }
 
 function referenceOptions(options: PromptOptions): PromptOptions {
     const result = { ...options };
-    const fields = ['prefetchedMathTags', 'prefetchedPhysicsTags', 'prefetchedChemistryTags', 'prefetchedBiologyTags', 'prefetchedEnglishTags'] as const;
+    const fields = ['prefetchedMathTags', 'prefetchedPhysicsTags', 'prefetchedChemistryTags', 'prefetchedBiologyTags', 'prefetchedEnglishTags', 'prefetchedChineseTags', 'prefetchedHistoryTags', 'prefetchedGeographyTags', 'prefetchedPoliticsTags'] as const;
     for (const field of fields) {
         if (options[field]) result[field] = options[field].length ? [ref('tagOptions.' + field)] : [];
     }
@@ -130,10 +130,12 @@ export function generateSvgNarrationRequest(questionText: string, answerText: st
 
 export function generateExamPaperReadRequest(input: ExamPaperReadInput): PromptRequest {
     return createPromptRequest(
-        generateExamPaperReadPrompt(input.mode, input.language),
-        { mode: input.mode, questions: input.questions || [] },
+        generateExamPaperReadPrompt(input.mode, input.language, input.subject),
+        { mode: input.mode, questions: input.questions || [], subject: input.subject || undefined },
         input.mode === 'answer_key' ? '请识别图片中的标准答案。'
-            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。' : '请识别图片中学生的作答并按规则评分。',
+            : input.mode === 'identify' ? '请读出卷头的班级、学号和姓名。'
+            : input.mode === 'parent_review' ? (input.language === 'en' ? 'Please split the exam paper and judge each question. Output JSON only.' : '请拆分试卷并逐题判断对错，只输出 JSON。')
+            : '请识别图片中学生的作答并按规则评分。',
     );
 }
 

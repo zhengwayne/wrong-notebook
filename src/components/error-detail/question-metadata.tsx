@@ -14,6 +14,7 @@ interface QuestionMetadataProps {
     item: ErrorItemDetail;
     /** 保存后重新加载错题（错题本名称等需要从服务端取） */
     onChanged: () => Promise<void> | void;
+    readOnly?: boolean;
 }
 
 interface MetadataForm {
@@ -23,7 +24,7 @@ interface MetadataForm {
 }
 
 /** 题目信息：所属错题本、年级学期、卷别 */
-export function QuestionMetadata({ item, onChanged }: QuestionMetadataProps) {
+export function QuestionMetadata({ item, onChanged, readOnly = false }: QuestionMetadataProps) {
     const { t } = useLanguage();
     const notSet = t.common?.notSet || "Not set";
     const field = useEditableField<MetadataForm>({
@@ -51,9 +52,9 @@ export function QuestionMetadata({ item, onChanged }: QuestionMetadataProps) {
         <div className="space-y-2 pt-4 border-t">
             <SectionHeader
                 title={<h4 className="text-sm font-semibold">{t.detail?.questionInfo || "Question Info"}</h4>}
-                actions={!field.editing && <EditButton onClick={field.start} />}
+                actions={!readOnly && !field.editing && <EditButton onClick={field.start} />}
             />
-            {field.editing ? (
+            {field.editing && !readOnly ? (
                 <div className="space-y-3">
                     <div className="space-y-2"><label className="text-sm text-muted-foreground">{t.notebooks?.title || "Notebook"}</label><NotebookSelector value={field.value.subjectId || undefined} onChange={(subjectId) => update({ subjectId })} /></div>
                     <div className="space-y-2"><label htmlFor="detail-grade-semester" className="text-sm text-muted-foreground">{t.editor.gradeSemester}</label><GradeSemesterSelect id="detail-grade-semester" value={field.value.gradeSemester} onChange={(gradeSemester) => update({ gradeSemester })} /></div>
@@ -63,7 +64,7 @@ export function QuestionMetadata({ item, onChanged }: QuestionMetadataProps) {
             ) : (
                 <div className="space-y-2 text-sm">
                     <div className="flex justify-between"><span className="text-muted-foreground">{t.notebooks?.title || "Notebook"}:</span><span className="font-medium">{item.subject?.name || notSet}</span></div>
-                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-muted-foreground">{t.editor.gradeSemester}:</span><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.gradeSemester || notSet}</span><EditButton onClick={field.start} label={t.gradeSelection.edit} /></div></div>
+                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-muted-foreground">{t.editor.gradeSemester}:</span><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.gradeSemester || notSet}</span>{!readOnly && <EditButton onClick={field.start} label={t.gradeSelection.edit} />}</div></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">{t.filter.paperLevel}:</span><span className="font-medium">{item.paperLevel ? (t.editor.paperLevels?.[item.paperLevel as "a" | "b" | "other"] || item.paperLevel) : notSet}</span></div>
                 </div>
             )}

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AdminUserDetail } from "@/types/api";
+import { displayAccountEmail } from "@/lib/wechat-account";
 
 export default function AdminUserDetailPage() {
     const { timeZone } = useTimeZone()
@@ -74,7 +75,7 @@ export default function AdminUserDetailPage() {
     const totalMastery = data.masteryDistribution.new + data.masteryDistribution.reviewing + data.masteryDistribution.mastered
 
     return (
-        <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
+        <main id="main-content" tabIndex={-1} className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
             {/* Header */}
             <div className="flex items-center gap-4">
                 <Button variant="ghost" size="sm" onClick={() => router.push("/admin")}>
@@ -87,7 +88,7 @@ export default function AdminUserDetailPage() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold">{data.user.name || "N/A"}</h1>
-                        <p className="text-sm text-muted-foreground">{data.user.email}</p>
+                        <p className="text-sm text-muted-foreground">{displayAccountEmail(data.user.email, t.admin.wechatOnly)}</p>
                     </div>
                     {data.user.role === "admin" && (
                         <Badge variant="default">{t.admin?.admin || "Admin"}</Badge>
@@ -266,6 +267,6 @@ export default function AdminUserDetailPage() {
                     )}
                 </CardContent>
             </Card>
-        </div>
+        </main>
     )
 }

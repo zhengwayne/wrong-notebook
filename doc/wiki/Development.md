@@ -20,7 +20,7 @@
 | `src/__tests__/`、`e2e/`、`tests/publication/` | 单元、集成、E2E 与公开发布检查测试 |
 | `scripts/`、`doc/` | 开发维护脚本与专项文档 |
 
-AI 请求由服务端选择提供商并调用外部服务，业务数据经 Prisma 存入 SQLite。后台任务列表存于进程内存并同步写入配置目录的 `background-tasks.json`，重启后只保留记录、不会恢复执行，不能用它替代持久化任务队列。
+AI 请求由服务端选择提供商并调用外部服务，业务数据与异步任务状态经 Prisma 存入 SQLite（后台任务与断线恢复结果统一保存在 `AsyncOperation` 表，不再写入 `background-tasks.json`；进程重启时 `running` 任务由启动自愈标记为 `interrupted`，不会自动恢复执行）。
 
 ## 常用检查
 
@@ -39,7 +39,7 @@ npm run test:integration
 npm run test:e2e
 ```
 
-E2E 用例以非默认密码登录管理员：运行前先执行 `node scripts/prepare-e2e.js`，它创建（或重置）`admin@localhost` 并把密码设为 `E2E_ADMIN_PASSWORD`（默认 `e2e-admin-pass`），并创建仍用默认密码的 `setup-admin@localhost`。本机 3000 端口被占用时，可另起开发服务器并用 `E2E_BASE_URL` 指定地址。
+Playwright 会在系统临时目录创建本轮专用的数据库、配置和测试账号，再启动本机服务。默认地址为 `http://127.0.0.1:3100`，可通过 `E2E_BASE_URL` 指定其他空闲本机端口。端口占用时测试会停止。全站重置用例只操作本轮测试数据。
 
 CI 会运行 `npm run lint`，出现任何 ESLint 错误或警告都会失败。
 
@@ -47,7 +47,7 @@ CI 会运行 `npm run lint`，出现任何 ESLint 错误或警告都会失败。
 
 `npm test` 运行全部 Vitest 测试。E2E 的环境要求与启动方式以仓库中的 [`playwright.config.ts`](https://github.com/margrop/wrong-notebook/blob/main/playwright.config.ts) 为准。
 
-完整 CI 要求 Node.js 22 及以上、Python 3，并包含依赖安装、Prisma Client 生成、ESLint、Vitest、公开发布检查、脚本语法检查和生产构建：
+完整 CI 需要[快速开始](Quick-Start)列出的 Node.js 开发环境和 Python 3，检查内容包括依赖安装、Prisma Client 生成、ESLint、Vitest、公开发布检查、脚本语法检查和生产构建：
 
 ```bash
 bash scripts/ci.sh
@@ -61,7 +61,8 @@ bash scripts/ci.sh
 - TypeScript 避免 `any`，类型导入使用 `import type`，路径别名 `@/` 指向 `src/`。
 - React 组件定义 Props 类型，较大的组件拆分；页面兼顾移动端与桌面端。
 - 界面文本进入 `translations.ts`，API 错误使用 `api-errors`，前后端分别使用项目日志工具。
-- 用户输入优先用 zod 校验，数据库查询使用 Prisma 参数化接口。
+- 用户输入优先用 zod 校验，数据库查询使用 Prisma 参数化接口；需登录或限流校验的 API 路由使用 `defineApiRoute` 包装（ESLint 禁止在路由中直接调用 `getServerSession`，并由 `api-auth-inventory.test.ts` 检查公开接口清单）。
+- 教师端历史数据（含跨班同名学生）归属治理与回填可使用 `scripts/backfill-learners.ts`（支持 `--inventory` 只读盘点、`--export-ambiguous` 导出歧义列表、`--apply-decisions` 导入人工确认、`--revert` 撤销自动回填）。
 
 ## 修改 AI 功能
 

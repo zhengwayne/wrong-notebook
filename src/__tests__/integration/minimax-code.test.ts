@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getServerSession: vi.fn(),
+    userFindUnique: vi.fn(),
     startDeviceLogin: vi.fn(),
     pollDeviceLogin: vi.fn(),
     fetchProfile: vi.fn(),
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 vi.mock('@/lib/minimax-code/api', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/minimax-code/api')>()),
     startDeviceLogin: mocks.startDeviceLogin,
@@ -60,6 +62,11 @@ beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'minimax-code-api-'));
     process.env.CONFIG_DIR = dir;
     mocks.getServerSession.mockResolvedValue(adminSession);
+    mocks.userFindUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+        if (where?.id === 'admin-1') return { id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 };
+        if (where?.id === 'user-1') return { id: 'user-1', email: 'user@localhost', role: 'user', isActive: true, authVersion: 0 };
+        return null;
+    });
 });
 
 afterEach(() => {

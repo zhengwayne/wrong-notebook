@@ -58,6 +58,150 @@ export const MasteryEvaluationSchema = z.object({
     reason: z.string().trim().min(1).max(500),
 });
 
+const CONTROL_LATEX_PREFIXES: Record<string, RegExp> = {
+    b: /^(?:begin|binom|beta|bar|breve|bm|bf|boldsymbol|boxed|bigcap|bigcup|bigoplus|bigotimes|bigodot|bigsqcup|bigvee|bigwedge|biguplus|bigl|bigr|bigm|big|Bigl|Bigr|Bigm|Big|biggl|biggr|biggm|bigg|Biggl|Biggr|Biggm|Bigg|because|bot|bowtie|bullet|backslash|backsim|backsimeq|bumpeq|Bumpeq|beth|blacksquare|blacktriangle|blacktriangledown|blacktriangleleft|blacktriangleright|Box)(?![a-zA-Z])/,
+    f: /^(?:frac|forall|frown|flat|fallingdotseq|Finv)(?![a-zA-Z])/,
+    n: /^(?:(?:neq|ne|nu|nabla|notin|ni|nmid|nparallel|nperp|nsim|ncong|napprox|nequiv|nleq|nleqq|nleqslant|nless|ngeq|ngeqq|ngeqslant|ngtr|nsubseteq|nsupseteq|nsubseteqq|nsupseteqq|subsetneq|supsetneq|nvdash|nvDash|nVdash|nVDash|ntriangleleft|ntriangleright|ntrianglelefteq|ntrianglerighteq|nleftarrow|nrightarrow|nLeftarrow|nRightarrow|nleftrightarrow|nLeftrightarrow|natural|neg|newline|noindent|nolimits|normalsize|notag|nonumber)(?![a-zA-Z])|not(?=\s*[=<>\\|]))/,
+    r: /^(?:right|rightarrow|Rightarrow|rightarrowtail|rightharpoondown|rightharpoonup|rightleftarrows|rightleftharpoons|rightrightarrows|rightsquigarrow|rightthreetimes|risingdotseq|rho|rm|mathrm|rangle|rceil|rfloor|rbrace|rbrack|rvert|rVert|rule|raisebox)(?![a-zA-Z])/,
+    t: /^(?:times|text|textbf|textit|textrm|textsf|texttt|textup|textnormal|theta|tau|tan|tanh|triangle|triangleq|triangleleft|triangleright|trianglelefteq|trianglerighteq|tilde|widetilde|top|therefore|tfrac|tbinom|tiny|tag)(?![a-zA-Z])/,
+};
+
+/**
+ * 字符串感知的 LaTeX 反斜杠修复：在第一次 JSON.parse 前运行，防止 \frac/\times/\begin/\neq/\right 等
+ * 被静默解析成控制字符或报错；同时成对跳过已双写的 \\，并保留 \"、\/、\uXXXX 与正常 JSON 换行 \n。
+ */
+export function repairJsonLatexEscapes(input: string): string {
+    const out: string[] = [];
+    let inString = false;
+    let i = 0;
+
+    while (i < input.length) {
+        const ch = input[i];
+        if (!inString) {
+            if (ch === '"') inString = true;
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = false;
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        if (ch !== '\\') {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        if (i + 1 >= input.length) {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        const next = input[i + 1];
+        if (next === '\\') {
+            out.push('\\\\');
+            i += 2;
+            continue;
+        }
+        if (next === '"' || next === '/') {
+            out.push('\\', next);
+            i += 2;
+            continue;
+        }
+        if (next === 'u') {
+            const hex = input.slice(i + 2, i + 6);
+            if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+                out.push('\\u', hex);
+                i += 6;
+            } else {
+                out.push('\\\\u');
+                i += 2;
+            }
+            continue;
+        }
+
+        const latexPattern = CONTROL_LATEX_PREFIXES[next];
+        if (latexPattern) {
+            if (latexPattern.test(input.slice(i + 1))) {
+                out.push('\\\\', next);
+            } else {
+                out.push('\\', next);
+            }
+            i += 2;
+            continue;
+        }
+
+        // 其他所有非法 JSON 转义（如 \sqrt、\alpha、\cdot、\{）一律补为双反斜杠
+        out.push('\\\\', next);
+        i += 2;
+    }
+
+    return out.join('');
+}
+
+/** 第二遍语法兜底：转义字符串字面量内的裸控制字符并移除字符串外的尾逗号 */
+function repairJsonSyntaxFallback(input: string): string {
+    const out: string[] = [];
+    let inString = false;
+    let i = 0;
+
+    while (i < input.length) {
+        const ch = input[i];
+        if (!inString) {
+            if (ch === '"') {
+                inString = true;
+                out.push(ch);
+                i += 1;
+                continue;
+            }
+            if (ch === ',') {
+                let lookahead = i + 1;
+                while (lookahead < input.length && /\s/.test(input[lookahead])) {
+                    lookahead += 1;
+                }
+                if (input[lookahead] === '}' || input[lookahead] === ']') {
+                    i += 1;
+                    continue;
+                }
+            }
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        if (ch === '\\' && i + 1 < input.length) {
+            out.push(ch, input[i + 1]);
+            i += 2;
+            continue;
+        }
+        if (ch === '"') {
+            inString = false;
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+        const code = ch.charCodeAt(0);
+        if (code < 0x20) {
+            if (ch === '\n') out.push('\\n');
+            else if (ch === '\r') out.push('\\r');
+            else if (ch === '\t') out.push('\\t');
+            else out.push(`\\u${code.toString(16).padStart(4, '0')}`);
+            i += 1;
+            continue;
+        }
+        out.push(ch);
+        i += 1;
+    }
+
+    return out.join('');
+}
+
 /**
  * 从 AI 文本回复中提取 JSON 对象（兼容 markdown 代码块和前后多余文本）
  */
@@ -72,7 +216,12 @@ export function extractJsonObject(text: string): unknown {
     if (start !== -1 && end > start) {
         jsonStr = jsonStr.substring(start, end + 1);
     }
-    return JSON.parse(jsonStr);
+    const repaired = repairJsonLatexEscapes(jsonStr);
+    try {
+        return JSON.parse(repaired);
+    } catch {
+        return JSON.parse(repairJsonSyntaxFallback(repaired));
+    }
 }
 
 /** 识别失败保留空年级，格式错误仍按 AI 返回异常处理。 */

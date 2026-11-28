@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icons/icon.png" width="128" height="128" alt="Smart Wrong Notebook app icon">
+  <img src="public/icons/icon.png" width="128" height="128" alt="XueJi app icon">
 </p>
 
-# Smart Wrong Notebook (智能错题本)
+# XueJi (学迹)
 
 [简体中文](README.md) | **English**
 
@@ -158,29 +158,32 @@ Practice statistics show total practice, accuracy and active months, with distri
 - **🧪 Staged variant review**: by default the app plans first, then generates each variant, checks computable math with mathjs, independently re-solves with a second AI call, de-duplicates against the original and previously practiced questions, and re-checks difficulty. Items that cannot be verified or that disagree go to **To review** and are never auto-approved. Only after a teacher approves, edits, or rejects them in **Variant review** do they enter practice records or become a printable exam (reusing the existing exam builder and print flow). You can turn the pipeline off in **Settings → General** to use the original one-shot generation and compare quality, time and usage; the compare tab can also export a CSV. The staging is inspired by [DeepTutor](https://github.com/HKUDS/DeepTutor) v1.7.2 (Apache-2.0) plan-then-generate design and reimplemented in TypeScript; its Python pipeline is not copied, and model-generated code is never executed.
 - **🎯 Personalized sets and remedial topics**: teachers can read each student's weakness profile from the notebooks created after grading (named "student·subject"), covering knowledge points, error types, mastery/review state and recency, then generate for one student or a whole class either a personalized practice set (ramping difficulty on the weakest points) or a remedial topic (title, target knowledge points, rationale, a short outline and representative items). A class view groups shared weaknesses and suggests a class topic. Class batches are capped, and each run counts as one exam AI call.
 - **📈 Mastery probability**: AI estimates how likely you have mastered each question from the answer history of practice and exams. Questions fall into three states: **To Review** (no practice records yet), **Reviewing** (has records, probability below the mastered threshold) and **Mastered** (has records, probability at or above the threshold). The threshold is 50% by default and each user can adjust it in settings.
-- **📅 Daily review**: each question is scheduled at Ebbinghaus intervals of 1, 2, 4, 7, 15 and 30 days. A correct answer moves it to the next interval; a wrong answer starts over. The **Review** page lists questions due today (earliest first), and the home page shows how many are due.
+- **📅 Daily review**: by default (`ebbinghaus-v1`), each question follows **7 Ebbinghaus intervals of 0 (same day), 1, 2, 4, 7, 15, and 30 days** (graduating after 7 consecutive correct answers), advancing on correct answers and resetting to day 0 on wrong answers; switchable to the `fsrs-v1` per-item memory rollout under **Settings → General**. The **Review** page shares this computation with learning paths, and the home page shows how many are due.
 - **🧾 Mistake exams**: draw questions at random by notebook, knowledge point and mastery, and turn them into a printable exam of similar questions. After finishing, enter results per question; they are added to the original question's answer history.
-- **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF.
+- **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF. For more than 200 questions, move through the pages and print the selected questions on each page.
 
-### Teacher paper grading
+### Teacher grading and parent study supervision
 
-- **📸 Photo grading**: open **Grading** in the navigation. Create a grading task (tick several classes when they take the same test) with an answer key from an existing exam, a photo of the key read by AI, or quick text entry (such as `1-5 ABCDA`, `6 x=2|x=2.0 4`, `13 subjective 10 key points`).
-- **🗂️ Roster import**: in the **Classes** card, paste from Excel or choose a `.csv` / `.xlsx` file with class, student number and name (a header row is optional; tabs, commas or spaces all work). Several classes can be imported at once. A preview lists new, updated, duplicate and invalid rows before anything is saved; existing students are updated by class + student number and never deleted. Only the first sheet of an Excel file is read.
-- **🔎 Match papers by header**: each photo is read right away for the handwritten class, student number and name, then matched to the roster by class + number, then number, then name (tolerating look-alike characters), cross-checking the fields. When the number and name disagree, several students fit, confidence is low, or a student already has a paper, the paper goes to **To confirm** with what was read, the reason and suggested students to assign with one tap. Low-confidence matches are never assigned silently.
-- **📑 Automatic page grouping**: pages without a name (back side, second half of A3) join the previous student; a new name starts a new paper, and a student who writes the name on two pages in a row stays one paper. A first page without a name is marked to confirm. A paper uploads for grading when the next student starts or when you tap **Done**. On both the capture screen and the papers list you can split from a page, join the previous paper or change the student. Picked photos are sorted by capture time and file name and grouped the same way. Each header read counts as one AI call.
-- **🤖 AI grading with teacher review**: objective questions are compared with the key exactly (choice letters ignore case and order, and several accepted answers are allowed); subjective questions get an AI-suggested score with a reason. Mark each question right or wrong with one tap or type a score, then confirm: wrong questions go into that student's notebook (named "student·subject") with their knowledge tags.
-- **📊 Class summary**: average, highest and lowest scores, error rate per question, common weak knowledge points and a score table, with CSV export and printing.
-- The answer key format borrows ideas (question ranges, multiple accepted answers, per-question scores) from [OMRChecker](https://github.com/Udayraj123/OMRChecker) (MIT); no code was copied. Grading data is not yet included in data backups.
+- **📸 Photo grading & Answer-Key-Free Quick Mode**: open **Grading** in the navigation. Supports both standard answer-key grading (from an existing exam, a photo of the key, or quick text entry) and **Answer-Key-Free Quick Mode** (vision extracts question stems first, then a text model with `mathjs` verification independently derives the reference key; supports numeric points or `Excellent / Good / Pass / Needs Review` grades, even before importing a formal roster).
+- **🔗 Self-submit links & missing-work reminders**: enable a sign-up-free submission link (`/submit/[token]`) verified by matching student ID + name without exposing the class roster, and copy a ready-to-send missing-homework reminder in one click.
+- **🗂️ Roster import**: in the **Classes** card, paste from Excel or choose a `.csv` / `.xlsx` file with class, student number and name (a header row is optional; tabs, commas or spaces all work). Existing students are updated by class + student number and never deleted.
+- **🔎 Header matching & automatic page grouping**: handwritten headers are matched to the roster automatically while back pages join the previous student; ambiguous matches pause in **To confirm**.
+- **🚦 Traffic-light triage, horizontal strip grading & per-question crops**: high-confidence objective papers enter the **Green** bucket for 1-click batch confirmation; **Horizontal Strip Grading** lets teachers grade the same question across the whole class side by side; objective matching handles math equivalence (`\frac{1}{2}` vs `0.5`, `x=3` vs `3`) and preserves spaces in multi-word English phrases; confirmed mistakes store cropped per-question `bbox` images.
+- **✍️ Handwriting · Neatness · Attitude evaluation**: AI surfaces macro visual alerts (heavy erasures, layout issues, large blanks), and teachers can tap 3-dimension ratings plus 8 bilingual quick comment pills to compose encouraging feedback in one second, or leave notes on learning-path steps.
+- **📄 Class mastery heatmap, Word (`.docx`) handouts & parent feedback cards**: `/teacher` displays a **Students × Knowledge Points × Habits** heatmap, `/notebooks` and `/stats` filter by **Class → Student**, class summaries export editable **Word (`.docx`) review handouts**, and individual papers can generate time-limited feedback links (`/share/submission/[token]`) that parents can import into their child's notebook in one click without re-photographing.
+- **👨‍👩‍👧‍👦 Parent daily checklist & 4-digit PIN Kid Focus Mode**: `/parent` includes an all-subject daily homework checklist (written, recitation, dictation, review) with streak badges, plus a **4-digit PIN Kid Focus Mode** backed by a server-signed `HttpOnly` cookie (hides settings, deletion, and account switching, with a 15-minute lockout after 5 failed attempts). Exam generation strictly isolates questions per child/learner, and Primary Chinese plus Humanities curriculum tag trees are built in.
+- The answer key format borrows ideas (question ranges, multiple accepted answers, per-question scores) from [OMRChecker](https://github.com/Udayraj123/OMRChecker) (MIT); no code was copied.
 
 ### Management and statistics
 
 - **🔍 Filters**: filter by mastery, date range, knowledge point, grade and term, paper level and more; supports bulk actions and comparing the similarity of two questions.
-- **📊 Statistics**: mastery rate, monthly trend and subject distribution for both mistakes and practice.
-- **⏳ Background tasks**: the button at the bottom right shows the progress of long-running jobs such as recognition, AI generation, animation voice, bulk tagging and exam generation. Jobs keep running on the server after you leave the page.
-- **💾 Import and export**: export or import data backups in **Settings**, including notebooks, questions, practice and answer records, exams, personal preferences, variant review runs and synthesized cloud voice; account credentials and AI settings are not included. Grading rosters and papers are still not in backups, so student/class foreign keys on imported variant runs may be empty.
+- **📊 Statistics**: mastery rate, monthly trend and subject distribution for both mistakes and practice; admins can also query `GET /api/admin/metrics` for read-only job success rates, AI queue saturation, and provenance edit rates.
+- **⏳ Background tasks**: the button at the bottom right shows the progress of long-running jobs such as recognition, AI generation, animation voice, bulk tagging and exam generation, persisted across navigation.
+- **💾 Import, export and daily snapshots**: export or import **v3 streaming ZIP backups** under **Settings → Danger** (with optional AES-256-GCM passphrase encryption), covering notebooks, child and class learner profiles, parent papers, teacher rosters and grading records, exam papers, personal preferences, variant stage logs, mastery, learning paths, and synthesized cloud voice (while keeping legacy JSON import compatible; account credentials and AI keys are excluded). Paired with automatic pre-migration backups and daily `VACUUM INTO` snapshots. Administrators must choose **Import All** to restore an all-users backup.
+- **🛡️ Privacy disclosure and self-service deletion**: **Settings → About** discloses active AI providers and endpoint locality (cloud vs. local) for vision, text, and cloud voice, and uploaded images have EXIF metadata stripped on the server; users can delete their own account and data in one transaction via **Settings → Danger** after confirming their password (`DELETE /api/user`).
 - **🌗 Dark mode**: the theme button in the top navigation bar switches between Auto (follow system), Light and Dark; Auto is the default. The choice is saved per account, so it carries over when you sign in on another device.
 - **🕒 Application time zone**: Beijing time by default and changeable by administrators; dates and statistics follow the application time zone. See [TIME_ZONE.md](doc/TIME_ZONE.md) (Chinese).
-- **🔑 One-time setup link**: fresh installs no longer ship an admin with a fixed password. On first start the server generates a setup link that works only once; open it to choose the admin email and password. The desktop and standalone Android apps open it automatically; on fnOS you enter the admin email and password in the install wizard instead; Docker, npm and source runs print it in the startup log (the token is also in `config/setup-token` in the data directory). Instances upgraded from earlier versions keep their accounts.
+- **🔑 First admin account**: desktop and standalone Android apps open the setup page automatically. On fnOS, create the account in the installation wizard. For Docker, npm and source installations, read the one-time token from the `setup-token` file in the configuration directory. Upgrades preserve existing accounts.
 - **🧭 Setup wizard**: on first sign-in the admin goes through a wizard: change the default password (only for the default admin of earlier versions) → set up an AI provider (free MiniMax Code recommended) → create the first notebook. The last two steps can be skipped, and the wizard can be run again from **Settings → User Management**. Instances already in use are not interrupted after upgrading.
 - **🔐 Multiple users and admin console**: sign-up and sign-in, with data isolated per user. New sign-ups are off by default (the sign-in page then hides the sign-up link and asks visitors to contact the administrator) and can be turned on under **Settings → User Management**, where admins can also cap daily AI use per user and see today's usage. Administrators open the admin console from **Settings → User Management** to view usage statistics and enable, disable or delete users. Sign-in and sign-up limit repeated failures to block password guessing.
 - **🐞 Debug logs**: when something goes wrong, an admin turns on debug mode under "Settings → User Management", reproduces the problem, then exports the debug log (JSON) and sends it to the author. Debug mode records every server log, including `debug` level, plus frontend errors; API keys, passwords and tokens are removed on export. The log lives in memory only, debug mode turns off after 24 hours, and a restart clears it.
@@ -188,7 +191,7 @@ Practice statistics show total practice, accuracy and active months, with distri
 
 ## 🚀 Quick Start
 
-Ordered from easiest to most hands-on. Fresh installs have no default account: the first start generates a one-time setup link where you choose the admin email and password, then the setup wizard helps you set up an AI provider and create your first notebook. The desktop and standalone Android apps open the link automatically; for Docker run `docker logs wrong-notebook 2>&1 | grep initialize`; npm and source runs print it in the terminal. If the link host is `localhost`, replace it with the server address when opening it from another device (or set `NEXTAUTH_URL`). Until an admin exists, the sign-in page shows these instructions too.
+On first launch, desktop and standalone Android apps open the admin setup page automatically. For Docker, read the one-time token with `docker exec wrong-notebook cat /app/config/setup-token`. For npm or source installations, read the file at the path in the startup log (default `~/.wrong-notebook/config/setup-token` for npm, `config/setup-token` for source runs). Enter the server address followed by `/initialize?token=` in your browser, paste the token after the equals sign, and open the page to choose the admin email and password. The setup wizard then helps you configure an AI provider and create your first notebook.
 
 ### Option 1: Installers (Windows / macOS / Linux / fnOS / Android / npm)
 
@@ -238,7 +241,8 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
    ```bash
    mkdir -p wrong-notebook/data wrong-notebook/config
    cd wrong-notebook
-   openssl rand -base64 32   # use the output as NEXTAUTH_SECRET
+   # Run once on a new deployment. Keep the existing secret on upgrades.
+   (umask 077; set -C; session_secret=$(openssl rand -hex 32) && printf 'NEXTAUTH_SECRET=%s\n' "$session_secret" > .env)
    ```
 
 2. **Start the container** (either way):
@@ -246,7 +250,7 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
    ```bash
    docker run -d --name wrong-notebook \
      --restart always \
-     -e NEXTAUTH_SECRET="secret-from-previous-step" \
+     --env-file .env \
      -e NEXTAUTH_URL="http://your-ip-or-domain:3000" \
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
@@ -254,9 +258,9 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
      ghcr.io/margrop/wrong-notebook:latest
    ```
 
-   Or download [`docker-compose.yml`](docker-compose.yml) into the current directory, set `NEXTAUTH_SECRET` (and `NEXTAUTH_URL`), then run `docker compose up -d`.
+   Or download [`docker-compose.yml`](docker-compose.yml) into the current directory, where Compose reads the deployment’s `.env`. Set `NEXTAUTH_URL` there if needed, then run `docker compose up -d`.
 
-3. **Sign in**: open `http://your-ip-or-domain:3000`.
+3. **Initialize and sign in**: on a fresh deployment, read the one-time setup token with `docker exec wrong-notebook cat /app/config/setup-token` (or `docker compose exec -T wrong-notebook cat /app/config/setup-token` with Compose) and open `http://your-ip-or-domain:3000/initialize?token=<token>` to set up the admin account; then visit `http://your-ip-or-domain:3000` to sign in.
 
 4. **Upgrade**: pull the new image and recreate the container. Data stays in the mounted directories; on startup only database migrations run. Back up the `data/` directory before upgrading.
 
@@ -271,7 +275,7 @@ Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings s
 
 ### Option 3: Run from source
 
-1. **Requirements**: Node.js 22 or later (24 recommended) and npm.
+1. **Requirements**: Node.js 24.15+ on the 24.x line (recommended), 22.22.2+ on the 22.x line, or 26 and later, with npm.
 2. **Clone and install dependencies**:
 
    ```bash
@@ -281,7 +285,7 @@ Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings s
    cp .env.example .env   # fill it in as described in Environment variables
    ```
 
-3. **Initialize the database**: create the schema and the admin account, then import the system knowledge points (same as the Docker build):
+3. **Initialize the database**: create the schema, check administrator status, then import the system knowledge points (same as the Docker build):
 
    ```bash
    npx prisma migrate dev
@@ -297,9 +301,13 @@ Build it yourself if you change the code or need unreleased changes. The build r
 
 ```bash
 docker build -t wrong-notebook:local .
+```
 
+After the build, switch to the deployment directory prepared in Option 2 and use its `.env` and persistent volumes to start the container.
+
+```bash
 docker run -d --name wrong-notebook \
-  -e NEXTAUTH_SECRET="your_secret_key" \
+  --env-file .env \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/config:/app/config" \
@@ -342,6 +350,8 @@ The official Chinese model channels call each vendor's OpenAI-compatible API, so
 | Volcengine Agent Plan | Dedicated [Agent Plan](https://ark.volcengine.com/region:cn-beijing/docs/82379/2160841?lang=zh) key; the plan includes Doubao speech synthesis | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seed-evolving` |
 | Volcengine Coding Plan | [Coding Plan](https://www.volcengine.com/docs/82379/1928261), Ark API key | `https://ark.cn-beijing.volces.com/api/coding/v3` (do not change it to `/api/v3`, which is not counted toward the plan) | `doubao-seed-evolving` |
 | Volcengine (free trial) | **Free inference quota** for new users; see [below](#volcengine-free-trial) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-evolving` |
+| SiliconFlow | [SiliconFlow console](https://cloud.siliconflow.cn); some chat models are **free** (text only, identity verification required) | `https://api.siliconflow.cn/v1` | `THUDM/GLM-Z1-9B-0414` |
+| SiliconFlow (international) | [SiliconFlow international](https://cloud.siliconflow.com); separate account, trial credit for new users | `https://api.siliconflow.com/v1` | `Qwen/Qwen2.5-VL-7B-Instruct` |
 | Anthropic and compatible APIs | [Claude Console](https://platform.claude.com/) | `https://api.anthropic.com` (without `/v1`) | `claude-sonnet-5-5` |
 | Azure OpenAI | Azure portal → OpenAI resource → Keys and Endpoint | Your resource endpoint and deployment name | Deployment name |
 | OpenAI and compatible APIs | [OpenAI Platform](https://platform.openai.com/api-keys); several configurations can be added and switched | `https://api.openai.com/v1` | `gpt-6.1-sol` |
@@ -422,12 +432,20 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | Variable | Description | Default | Notes |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | Database URL | Source: `file:./dev.db`; Docker: `file:/app/data/dev.db` | SQLite database path |
+| `SQLITE_JOURNAL_MODE` | SQLite journal mode | `WAL` | One of `WAL`, `DELETE`, `TRUNCATE`, `PERSIST`, `MEMORY`, `OFF`; use `DELETE` or `TRUNCATE` on NAS NFS/CIFS network mounts |
+| `DAILY_SNAPSHOT_ENABLED` | Daily database snapshots | `true` | Runs `VACUUM INTO` daily into `backups/`; set to `false` in Docker if you already snapshot volumes |
+| `DAILY_SNAPSHOT_RETENTION` | Snapshot retention count | `7` | Number of recent daily snapshots kept in `backups/` |
 | `NEXTAUTH_SECRET` | Auth secret | None | Encrypts sessions; required in production. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Public URL | None | The URL users visit, e.g. `http://your-domain:3000` |
 | `AUTH_TRUST_HOST` | Trust host header | `true` in the Docker image | When `true`, the URL is inferred from the request; suits Docker and reverse proxies |
+| `TRUST_PROXY` | Proxy IP header trust mode | `false` | `false` by default (ignores proxy IP headers against spoofing); set `true` behind Nginx/Caddy or `cloudflare` behind Cloudflare |
+| `TRUSTED_PROXY_HOPS` | Trusted reverse-proxy hops | `1` | Used when `TRUST_PROXY=true`; reads the Nth client IP from the tail of `X-Forwarded-For` |
+| `NEXTAUTH_DEBUG` | NextAuth debug logs | `false` | Set to `true` to enable verbose NextAuth debug logging |
 | `LOG_LEVEL` | Log level | `debug` in development / `info` in production | `trace`, `debug`, `info`, `warn`, `error` or `fatal`; see [LOGGING_GUIDE.md](doc/LOGGING_GUIDE.md) (Chinese) |
+| `LOG_AI_PAYLOADS` | Print AI payloads in production | `false` | By default production stdout omits prompts and student answers; set to `true` for redacted and truncated payload logs |
 | `DEBUG_DB` | SQL logs | `false` | When `true`, logs database queries |
 | `HTTP_PROXY` / `HTTPS_PROXY` | Proxy | None | Proxy for requests to AI services |
+| `BACKUP_MAX_UPLOAD_BYTES` | Backup import upload limit (bytes) | `2147483648` (2 GiB) | Caps the upload size when importing a backup (total uncompressed size has a separate 2 GiB cap); form uploads are rejected early by `Content-Length`, over-limit requests get 413 |
 | `ALLOW_REGISTRATION` | Allow sign-ups | `false` | When `true`, registration is open by default; the switch saved by an admin under **Settings → User Management** takes precedence |
 | `AI_DAILY_LIMIT` | Daily AI limit per user | `0` (unlimited) | AI actions each regular user can start per day; admins are not limited. The value saved under **Settings → User Management** takes precedence |
 | `AI_CONCURRENCY_LIMIT` | AI concurrency per model | `5` | How many AI calls the same provider, address and model may run at once (1–100). Further calls wait in a queue, avoiding 429 errors from the provider. The value saved under **Settings → User Management** takes precedence |
@@ -437,7 +455,7 @@ The most common variables are below; see the collapsed table and [`.env.example`
 
 | Variable | Description | Default | Notes |
 | :--- | :--- | :--- | :--- |
-| `AI_PROVIDER` | AI provider | `minimax` | `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `anthropic`, `azure`, `openai` or `gemini` |
+| `AI_PROVIDER` | AI provider | `minimax` | `minimax`, `minimax-code`, `glm`, `deepseek`, `kimi`, `qwen`, `stepfun`, `volcengine`, `volcengine-agent`, `volcengine-coding`, `volcengine-free`, `siliconflow`, `siliconflow-global`, `anthropic`, `azure`, `openai` or `gemini` |
 | `MINIMAX_API_KEY` / `MINIMAX_BASE_URL` / `MINIMAX_MODEL` | MiniMax | URL `https://api.minimax.cn/v1`, model `MiniMax-M3.1-Flash` | URL and model are optional |
 | `MINIMAX_CODE_MODEL` | MiniMax Code model | `MiniMax-M3.1-Flash` | The account signs in from the web settings; no API key needed |
 | `MINIMAX_CODE_AUTO_CHECKIN` | MiniMax Code daily auto check-in | `true` | Set to `false` to turn it off |
@@ -450,6 +468,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `VOLCENGINE_AGENT_API_KEY` / `VOLCENGINE_AGENT_BASE_URL` / `VOLCENGINE_AGENT_MODEL` | Volcengine Agent Plan | URL `https://ark.cn-beijing.volces.com/api/plan/v3`, model `doubao-seed-evolving` | The plan's dedicated API key from the Agent Plan page; the plan includes Doubao speech synthesis |
 | `VOLCENGINE_CODING_API_KEY` / `VOLCENGINE_CODING_BASE_URL` / `VOLCENGINE_CODING_MODEL` | Volcengine Coding Plan | URL `https://ark.cn-beijing.volces.com/api/coding/v3`, model `doubao-seed-evolving` | Ark API key; do not change it to `/api/v3` (not counted toward the plan); the plan does not include speech synthesis |
 | `VOLCENGINE_FREE_API_KEY` / `VOLCENGINE_FREE_BASE_URL` / `VOLCENGINE_FREE_MODEL` | Volcengine (free trial) | URL `https://ark.cn-beijing.volces.com/api/v3`, model `doubao-seed-evolving` | Free inference quota for new users; with worry-free trial mode on, calls pause when it runs out |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` / `SILICONFLOW_MODEL` | SiliconFlow (China site) | URL `https://api.siliconflow.cn/v1`, model `THUDM/GLM-Z1-9B-0414` | Some chat models are free (text only, identity verification required); image recognition needs a paid vision model or another channel |
+| `SILICONFLOW_GLOBAL_API_KEY` / `SILICONFLOW_GLOBAL_BASE_URL` / `SILICONFLOW_GLOBAL_MODEL` | SiliconFlow (international) | URL `https://api.siliconflow.com/v1`, model `Qwen/Qwen2.5-VL-7B-Instruct` | Separate account and key; trial credit for new users; the default model accepts images |
 | `VOLCENGINE_TTS_API_KEY` | Doubao Speech API key | None | Used when cloud voice is Volcengine Doubao Speech; different from the Volcengine Ark key |
 | `ANTHROPIC_API_KEY` | Anthropic API key | None | From the [Claude Console](https://platform.claude.com/) |
 | `ANTHROPIC_BASE_URL` | API URL | `https://api.anthropic.com` | For compatible services, use the URL without `/v1` |
@@ -476,6 +496,8 @@ The most common variables are below; see the collapsed table and [`.env.example`
 | `OPENCLAW_AUTH_MODE` | Auth mode | `credentials` | `credentials` (username and password) or `apikey` |
 | `OPENCLAW_INTEGRATION_API_KEY` | This app's API key | None | Only for `apikey` mode, used by Openclaw to call this app. Generate with `openssl rand -hex 32` |
 
+Run `node scripts/test-openclaw.js` in the source directory for the offline integration tests. To check a deployed instance, set `WRONG_NOTEBOOK_URL` (the target HTTP or HTTPS URL) and `OPENCLAW_TEST_USER` (the test account, or its email in API key mode) in the current shell. Match the server’s `OPENCLAW_AUTH_MODE` and supply either `OPENCLAW_TEST_PASSWORD` or `OPENCLAW_INTEGRATION_API_KEY`. The command checks authentication by default. Passing a test image path imports one question into that account.
+
 When adding environment variables, update `.env.example` as well.
 
 </details>
@@ -501,7 +523,7 @@ Screen capture requires a secure browser context (HTTPS). When running in Docker
 - **Database**: [SQLite](https://www.sqlite.org/) (via [Prisma 5](https://www.prisma.io/))
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/) (shadcn/ui-style components)
 - **Formulas**: [KaTeX](https://katex.org/) (react-markdown + remark-math)
-- **AI**: MiniMax / MiniMax Code (browser sign-in) / Zhipu GLM / DeepSeek / Kimi / Qwen / StepFun / Volcengine Doubao (including Agent Plan, Coding Plan and a free trial) / Anthropic (and compatible APIs) / Azure OpenAI / OpenAI (and compatible APIs) / Google Gemini
+- **AI**: MiniMax / MiniMax Code (browser sign-in) / Zhipu GLM / DeepSeek / Kimi / Qwen / StepFun / Volcengine Doubao (including Agent Plan, Coding Plan and a free trial) / SiliconFlow (China & international) / Anthropic (and compatible APIs) / Azure OpenAI / OpenAI (and compatible APIs) / Google Gemini
 - **Auth**: [NextAuth.js v4](https://next-auth.js.org/)
 - **Testing**: Vitest (unit, integration), Playwright (E2E)
 
@@ -513,8 +535,8 @@ npm run test:unit           # Unit tests
 npm run test:integration    # Integration tests
 npm test                    # All Vitest tests
 npm run test:coverage       # Test coverage (fails below the minimum thresholds)
-npm run test:e2e            # Playwright E2E (run node scripts/prepare-e2e.js first to set up test accounts)
-bash scripts/ci.sh          # Full CI (Node.js 22+, Python 3, includes production build)
+npm run test:e2e            # Playwright E2E with its own temporary database, configuration and accounts
+bash scripts/ci.sh          # Full CI (source development environment above and Python 3, includes production build)
 ```
 
 After changing `prisma/schema.prisma`, create a migration with `npx prisma migrate dev --name <name>` and commit it; migrations must be compatible with existing data. See [AGENTS.md](AGENTS.md) for more development conventions.
@@ -523,8 +545,8 @@ After changing `prisma/schema.prisma`, create a migration with `npx prisma migra
 
 The `scripts/` directory contains maintenance and debugging scripts, for example:
 
-- **Reset a password**: `node scripts/reset-password.js <email> <new-password>`
-- **Restore the default admin role**: `node scripts/seed-admin.js` (only restores the admin role and re-enables an existing `admin@localhost`; when no admin exists, restarting the server prints a new setup link in the log)
+- **Reset a password**: `node scripts/reset-password.js <email> <new-password>` (case-insensitive email lookup; requires at least 8 characters, rejects the legacy default password, and revokes existing sessions)
+- **Restore the default admin role**: `node scripts/seed-admin.js` (only restores the admin role and re-enables an existing `admin@localhost`; when no admin exists, restart the server and read the one-time token from the file listed in its startup log)
 - **Rebuild system knowledge points**: `npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/rebuild-system-tags.ts` (keeps custom tags and question links; back up before running in production)
 - **Inspect the database**: `node scripts/check-db-users.js`, `node scripts/check-db-data.js`
 

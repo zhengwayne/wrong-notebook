@@ -27,6 +27,7 @@ wrong-notebook 是一个错题本 Web 应用：上传题目图片或文字，由
 | `scripts/` | CI、部署、数据迁移和种子脚本；`scripts/package/` 为安装包构建 |
 | `packaging/` | npm、桌面版（Electron）、飞牛OS 安装包的启动器与配置，安卓 App（`android/`，单机版与客户端版），见 `doc/INSTALL_PACKAGES.md` |
 | `doc/` | 项目文档（部署、日志、Markdown、HTTPS 等） |
+| `miniprogram/` | 微信小程序（原生 + TypeScript，独立 package.json，不进服务端镜像），见 `miniprogram/README.md` |
 
 ## 常用命令
 
@@ -40,7 +41,7 @@ npm run test:integration
 npm test                    # 全部 Vitest 测试
 npm run test:coverage       # 覆盖率，低于 vitest.config.mts 中的阈值时失败
 npm run test:e2e            # Playwright
-bash scripts/ci.sh          # 完整 CI（要求 Node.js 22 及以上，含生产构建）
+bash scripts/ci.sh          # 完整 CI（推荐使用 .nvmrc 对应的最新 24.x，含生产构建）
 ```
 
 默认 registry 设为国内镜像（如 npmmirror）时，新发布的包下载很慢，镜像地址还会被写进 `package-lock.json`。安装或升级依赖时指定官方源（`--registry=https://registry.npmjs.org`，运行 `scripts/ci.sh` 时设置 `npm_config_registry`），提交前确认锁文件中没有 `npmmirror`。

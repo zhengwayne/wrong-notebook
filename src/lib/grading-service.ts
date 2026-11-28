@@ -5,26 +5,101 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAIService } from "@/lib/ai";
 import { splitDataUrl } from "@/lib/ai/exam-paper-read";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { createLogger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/error-message";
 import { generateUniqueShortId } from "@/lib/short-id";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { isNotebookSubject, stageFromEducationStage } from "@/lib/notebook-scope";
+import { ensureLearnerForGradingStudent } from "@/lib/learners";
+import { DEFAULT_GRADING_CONCURRENCY, resolveCroppedGradingItemImage, runBoundedConcurrency } from "@/lib/grading-bbox-and-pool";
+import { parseMatchReason } from "@/lib/grading-match-json";
+import { ensureQuickStudentInClass, inferAnswerKeyFromSampleImages } from "@/lib/grading-quick-key";
+import { computeSubmissionBucket } from "@/lib/grading-triage";
 import {
     gradeAnswers, isWrong, parseJsonStringArray, totalScore,
     MAX_GRADING_QUESTIONS,
 } from "@/lib/grading";
-import type { KeyQuestion, KeyQuestionInput } from "@/lib/grading";
+import type { AnswerSourceKind, KeyQuestion, KeyQuestionInput } from "@/lib/grading";
 import { flagDuplicate, hasIdentity, matchStudent, type MatchResult, type PaperIdentity, type RosterStudent } from "@/lib/student-match";
+import { aiQuotaRefs, settleAiReservationsByRef } from "@/lib/ai-quota";
 
 const logger = createLogger('grading');
 
+const globalForGrading = globalThis as unknown as {
+    __wnQuickKeyInflight?: Map<string, Promise<void>>;
+    __wnActiveGrading?: Set<string>;
+};
+
+function getQuickKeyInflight(): Map<string, Promise<void>> {
+    if (!globalForGrading.__wnQuickKeyInflight) {
+        globalForGrading.__wnQuickKeyInflight = new Map();
+    }
+    return globalForGrading.__wnQuickKeyInflight;
+}
+
+function getActiveGradingSet(): Set<string> {
+    if (!globalForGrading.__wnActiveGrading) {
+        globalForGrading.__wnActiveGrading = new Set();
+    }
+    return globalForGrading.__wnActiveGrading;
+}
+
+export function isSubmissionQueued(submissionId: string): boolean {
+    return getActiveGradingSet().has(submissionId);
+}
+
+async function ensureQuickInferredKey(
+    taskId: string,
+    images: string[],
+    subjectName: string,
+    language: 'zh' | 'en',
+): Promise<KeyQuestion[]> {
+    const inflight = getQuickKeyInflight();
+    let job = inflight.get(taskId);
+    if (!job) {
+        job = (async () => {
+            const inferred = await inferAnswerKeyFromSampleImages(images, subjectName, language);
+            if (inferred.length === 0) {
+                throw new Error('QUICK_KEY_INFER_EMPTY');
+            }
+            await prisma.$transaction(async (tx) => {
+                const existingCount = await tx.gradingKeyQuestion.count({ where: { taskId } });
+                if (existingCount === 0) {
+                    await tx.gradingKeyQuestion.createMany({
+                        data: inferred.map((qItem, idx) => ({
+                            taskId,
+                            ...keyQuestionData(qItem, idx),
+                        })),
+                    });
+                }
+            });
+        })().finally(() => {
+            inflight.delete(taskId);
+        });
+        inflight.set(taskId, job);
+    }
+    await job;
+    const refreshed = await prisma.gradingKeyQuestion.findMany({
+        where: { taskId },
+        orderBy: { order: 'asc' },
+    });
+    if (refreshed.length === 0) {
+        throw new Error('QUICK_KEY_INFER_EMPTY');
+    }
+    return refreshed.map(toKeyQuestion);
+}
+
 type KeyQuestionRow = {
     id: string; order: number; number: string; type: string; maxScore: number; answer: string;
+    answerSource?: string;
     acceptedAnswers: string | null; questionText: string | null; knowledgePoints: string | null;
 };
 
 export function toKeyQuestion(row: KeyQuestionRow): KeyQuestion {
+    const validSource = (['manual', 'exam_paper', 'key_image', 'ai_inferred'] as const).includes(row.answerSource as AnswerSourceKind)
+        ? (row.answerSource as AnswerSourceKind)
+        : 'manual';
     return {
         id: row.id,
         order: row.order,
@@ -32,6 +107,7 @@ export function toKeyQuestion(row: KeyQuestionRow): KeyQuestion {
         type: row.type === 'subjective' ? 'subjective' : 'objective',
         maxScore: row.maxScore,
         answer: row.answer,
+        answerSource: validSource,
         acceptedAnswers: parseJsonStringArray(row.acceptedAnswers),
         questionText: row.questionText,
         knowledgePoints: parseJsonStringArray(row.knowledgePoints),
@@ -46,6 +122,7 @@ export function keyQuestionData(question: KeyQuestionInput, order: number) {
         type: question.type,
         maxScore: question.maxScore,
         answer: question.answer.trim(),
+        answerSource: question.answerSource ?? 'manual',
         acceptedAnswers: question.acceptedAnswers?.length ? JSON.stringify(question.acceptedAnswers) : null,
         questionText: question.questionText?.trim() || null,
         knowledgePoints: question.knowledgePoints?.length ? JSON.stringify(question.knowledgePoints) : null,
@@ -54,7 +131,7 @@ export function keyQuestionData(question: KeyQuestionInput, order: number) {
 
 /** 拍照识别答案卷，返回可编辑的题目清单 */
 export async function readAnswerKeyFromImages(images: string[], language: 'zh' | 'en'): Promise<KeyQuestionInput[]> {
-    const result = await getAIService().readExamPaper({
+    const result = await getAIService('vision').readExamPaper({
         mode: 'answer_key',
         images: images.map((image) => splitDataUrl(image)),
         language,
@@ -142,13 +219,29 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         where: { id: submissionId },
         include: { task: { include: { questions: { orderBy: { order: 'asc' } } } } },
     });
-    if (!submission) return;
-    const questions = submission.task.questions.map(toKeyQuestion);
-    await prisma.gradingSubmission.update({ where: { id: submissionId }, data: { status: 'grading', error: null } });
+    const quotaRef = aiQuotaRefs.gradingSubmission(submissionId);
+    // 没判分就结束的（答卷已删、已确认）退回预留；正在由另一路判分的交给那一路结算
+    if (!submission || submission.status === 'confirmed') {
+        await settleAiReservationsByRef(quotaRef, false);
+        return;
+    }
+    if (submission.status === 'grading') return;
+
+    const claimed = await prisma.gradingSubmission.updateMany({
+        where: { id: submissionId, status: { notIn: ['confirmed', 'grading'] } },
+        data: { status: 'grading', error: null },
+    });
+    if (claimed.count === 0) return;
+
+    let questions = submission.task.questions.map(toKeyQuestion);
 
     try {
         const images = parseJsonStringArray(submission.images);
-        const read = await getAIService().readExamPaper({
+        // 随堂无答案速批模式：若当前任务尚无标准答案，用按 taskId 去重的单飞流水线推导并落库复用
+        if (questions.length === 0 && submission.task.taskMode === 'quick' && images.length > 0) {
+            questions = await ensureQuickInferredKey(submission.taskId, images, submission.task.subjectName, language);
+        }
+        const read = await getAIService('vision').readExamPaper({
             mode: 'student',
             images: images.map((image) => splitDataUrl(image)),
             questions: questions.map(({ number, type, maxScore, answer, questionText }) => ({ number, type, maxScore, answer, questionText })),
@@ -156,7 +249,7 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
         });
         const graded = gradeAnswers(questions, read.questions);
         // 已由老师指定或已自动匹配的不再改动；否则用拍照时识别的身份，缺失的字段用整卷读出的补上
-        let identityData = {};
+        let identityData: Record<string, unknown> = {};
         if (!submission.studentId && submission.matchStatus !== 'manual') {
             const identity: PaperIdentity = {
                 className: submission.detectedClass || read.className,
@@ -166,34 +259,105 @@ export async function gradeSubmission(submissionId: string, language: 'zh' | 'en
             if (hasIdentity(identity) || submission.matchStatus === null) {
                 const roster = await loadTaskRoster(submission.task);
                 identityData = resolveMatch(identity, roster, await takenStudentIds(submission.taskId, submissionId));
+                const matchReasonCode = parseMatchReason(identityData.matchReason as string | null | undefined)?.code;
+                // 仅在完全查无此人 (not_found) 且姓名清晰时自动建档并置为黄灯核验，严禁覆盖重卷或冲突卷
+                if (!identityData.studentId && matchReasonCode === 'not_found' && submission.task.taskMode === 'quick' && identity.name?.trim()) {
+                    const createdStu = await ensureQuickStudentInClass(prisma, {
+                        userId: submission.task.userId,
+                        classId: submission.task.classId,
+                        studentName: identity.name,
+                        studentNo: identity.studentNo,
+                    });
+                    identityData = {
+                        ...identityData,
+                        studentId: createdStu.id,
+                        matchStatus: 'auto',
+                        matchConfidence: 0.85,
+                    };
+                }
             }
         }
 
-        await prisma.$transaction([
-            prisma.gradingResult.deleteMany({ where: { submissionId } }),
-            prisma.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId })) }),
-            prisma.gradingSubmission.update({
-                where: { id: submissionId },
-                data: { status: 'graded', totalScore: totalScore(graded), error: null, ...identityData },
-            }),
-        ]);
+        const provenanceId = await recordAiProvenance(prisma, { task: 'grade', role: 'vision' });
+        const appearance = read.paperAppearance;
+        const uniqueVisualAlerts = Array.from(new Set(appearance?.visualAlerts ?? []));
+        const appearanceData = appearance ? {
+            ...(submission.handwritingLevel ? {} : { handwritingLevel: appearance.handwritingLevel }),
+            ...(submission.neatnessLevel ? {} : { neatnessLevel: appearance.neatnessLevel }),
+            ...(submission.attitudeLevel ? {} : { attitudeLevel: appearance.attitudeLevel }),
+            visualAlerts: uniqueVisualAlerts.length > 0 ? JSON.stringify(uniqueVisualAlerts) : null,
+        } : {};
+
+        const finalStudentId = (identityData.studentId as string | null | undefined) !== undefined
+            ? (identityData.studentId as string | null)
+            : submission.studentId;
+        const finalMatchStatus = (identityData.matchStatus as string | null | undefined) !== undefined
+            ? (identityData.matchStatus as string | null)
+            : submission.matchStatus;
+        const finalMatchConfidence = (identityData.matchConfidence as number | null | undefined) !== undefined
+            ? (identityData.matchConfidence as number | null)
+            : submission.matchConfidence;
+        const questionTypeById = new Map(questions.map((qItem) => [qItem.id, qItem.type]));
+        const reviewBucket = computeSubmissionBucket({
+            studentId: finalStudentId,
+            matchStatus: finalMatchStatus,
+            matchConfidence: finalMatchConfidence,
+            visualAlertsCount: uniqueVisualAlerts.length,
+            hasUnverifiedKey: questions.some((q) => q.answerSource === 'ai_inferred'),
+            results: graded.map((res) => ({
+                type: questionTypeById.get(res.keyQuestionId) || 'objective',
+                verdict: res.verdict,
+                confidence: res.confidence,
+            })),
+        });
+
+        await prisma.$transaction(async (tx) => {
+            const finalized = await tx.gradingSubmission.updateMany({
+                where: { id: submissionId, status: { not: 'confirmed' } },
+                data: {
+                    status: 'graded',
+                    reviewBucket,
+                    totalScore: totalScore(graded),
+                    error: null,
+                    ...identityData,
+                    ...appearanceData,
+                    version: { increment: 1 },
+                },
+            });
+            if (finalized.count === 0) return;
+            await tx.gradingResult.deleteMany({ where: { submissionId } });
+            await tx.gradingResult.createMany({ data: graded.map((result) => ({ ...result, submissionId, provenanceId })) });
+        });
         logger.info({ submissionId, questionCount: graded.length }, '答卷判分完成');
+        // 每份答卷判分成功才算一次
+        await settleAiReservationsByRef(quotaRef, true);
     } catch (error) {
         logger.error({ error, submissionId }, '答卷判分失败');
-        await prisma.gradingSubmission.update({
-            where: { id: submissionId },
+        await settleAiReservationsByRef(quotaRef, false);
+        await prisma.gradingSubmission.updateMany({
+            where: { id: submissionId, status: { not: 'confirmed' } },
             data: { status: 'failed', error: getErrorMessage(error).slice(0, 500) },
         });
     }
 }
 
-/** 在后台依次判分，避免一次拍几十张卷时同时占满 AI 并发 */
+/** 在后台按有界并发池（默认 3 路）判分，并对同 submissionId 去重避免重复调度 */
 export function scheduleGrading(submissionIds: string[], language: 'zh' | 'en'): void {
-    void (async () => {
-        for (const id of submissionIds) {
+    const active = getActiveGradingSet();
+    const toRun = [...new Set(submissionIds)].filter((id) => !active.has(id));
+    if (toRun.length === 0) return;
+    for (const id of toRun) active.add(id);
+
+    void runBoundedConcurrency(toRun, DEFAULT_GRADING_CONCURRENCY, async (id) => {
+        try {
             await gradeSubmission(id, language);
+        } finally {
+            active.delete(id);
         }
-    })().catch((error) => logger.error({ error }, '后台判分异常'));
+    }).catch((error) => {
+        for (const id of toRun) active.delete(id);
+        logger.error({ error }, '后台判分异常');
+    });
 }
 
 async function resolveStudentNotebook(tx: Prisma.TransactionClient, userId: string, name: string, subjectName: string) {
@@ -215,7 +379,7 @@ async function resolveStudentNotebook(tx: Prisma.TransactionClient, userId: stri
 async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: string[], subjectKey: string) {
     const ids: { id: string }[] = [];
     for (const name of names) {
-        const existing = await tx.knowledgeTag.findFirst({ where: { name, OR: [{ isSystem: true }, { userId }] }, select: { id: true } });
+        const existing = await tx.knowledgeTag.findFirst({ where: { name, subject: subjectKey, OR: [{ isSystem: true }, { userId }] }, select: { id: true } });
         const tag = existing || await tx.knowledgeTag.create({ data: { name, subject: subjectKey, isSystem: false, userId }, select: { id: true } });
         ids.push({ id: tag.id });
     }
@@ -226,53 +390,139 @@ async function resolveTags(tx: Prisma.TransactionClient, userId: string, names: 
  * 老师确认答卷：把未得满分的题导入该学生的错题本（老师账户下名为「学生名·学科」的错题本），
  * 复用错题的知识点标签；已导入的题不会重复导入。
  */
-export async function confirmSubmission(submissionId: string, userId: string): Promise<{ importedCount: number } | null> {
+export async function confirmSubmission(
+    submissionId: string,
+    userId: string,
+    options?: { expectedVersion?: number },
+): Promise<{ importedCount: number; alreadyConfirmed?: boolean } | null> {
     const submission = await prisma.gradingSubmission.findFirst({
         where: { id: submissionId, task: { userId } },
         include: { task: true, student: true, results: { include: { keyQuestion: true } } },
     });
     if (!submission) return null;
     if (!submission.student) throw new Error('STUDENT_REQUIRED');
+    if (submission.status === 'grading' || submission.status === 'failed') {
+        throw new Error('SUBMISSION_LOCKED');
+    }
+    if (options?.expectedVersion !== undefined && options.expectedVersion !== submission.version) {
+        throw new Error('VERSION_CONFLICT');
+    }
+    if (submission.status === 'confirmed') {
+        return { importedCount: 0, alreadyConfirmed: true };
+    }
 
+    const snapshotVersion = submission.version;
     const studentName = submission.student.name;
     const { task } = submission;
-    const firstImage = parseJsonStringArray(submission.images)[0] || '';
+    const pages = parseJsonStringArray(submission.images);
+    const firstImage = pages[0] || '';
     const subjectKey = inferSubjectFromName(task.subjectName) || 'other';
 
+    // 在数据库写事务之外以有界并发（2 路）按单题 bbox 裁出清晰单题图，避免图像解码打满内存与 SQLite 写锁
+    const croppedImageByResultId = new Map<string, string>();
+    const wrongResults = submission.results.filter((res) => isWrong(res.verdict) && !res.errorItemId);
+    await runBoundedConcurrency(wrongResults, 2, async (res) => {
+        const img = await resolveCroppedGradingItemImage(pages, res.bbox);
+        croppedImageByResultId.set(res.id, img || firstImage);
+    });
+
     const imported = await prisma.$transaction(async (tx) => {
+        // 先用 status + version CAS 条件更新抢占确认所有权
+        const claimed = await tx.gradingSubmission.updateMany({
+            where: {
+                id: submissionId,
+                status: { notIn: ['confirmed', 'grading', 'failed'] },
+                version: snapshotVersion,
+            },
+            data: {
+                status: 'confirmed',
+                confirmedAt: new Date(),
+                version: { increment: 1 },
+            },
+        });
+        if (claimed.count === 0) {
+            const latest = await tx.gradingSubmission.findUnique({
+                where: { id: submissionId },
+                select: { status: true },
+            });
+            if (!latest) return null;
+            if (latest.status === 'confirmed') return -1;
+            if (latest.status === 'grading' || latest.status === 'failed') throw new Error('SUBMISSION_LOCKED');
+            throw new Error('VERSION_CONFLICT');
+        }
+
         const notebook = await resolveStudentNotebook(tx, userId, `${studentName}·${task.subjectName}`, task.subjectName);
+        const learner = await ensureLearnerForGradingStudent(tx, {
+            userId,
+            gradingStudentId: submission.student!.id,
+            name: studentName,
+        });
         let count = 0;
         for (const result of submission.results) {
             if (!isWrong(result.verdict) || result.errorItemId) continue;
+
+            const existingImport = await tx.sourceImport.findUnique({
+                where: {
+                    userId_sourceKind_sourceQuestionId: {
+                        userId,
+                        sourceKind: 'grading_submission',
+                        sourceQuestionId: result.id,
+                    },
+                },
+                select: { errorItemId: true },
+            });
+            if (existingImport) {
+                await tx.gradingResult.update({ where: { id: result.id }, data: { errorItemId: existingImport.errorItemId } });
+                continue;
+            }
+
             const question = toKeyQuestion(result.keyQuestion);
             const tags = await resolveTags(tx, userId, question.knowledgePoints || [], subjectKey);
+            const itemImageUrl = croppedImageByResultId.get(result.id) || firstImage;
+            const noteParts = [`${studentName}：${result.score}/${question.maxScore}`];
+            if (result.comment?.trim()) noteParts.push(result.comment.trim());
+            if (submission.teacherComment?.trim()) noteParts.push(submission.teacherComment.trim());
             const item = await tx.errorItem.create({
                 data: {
                     shortId: await generateUniqueShortId(tx),
                     userId,
+                    learnerId: learner.id,
                     subjectId: notebook.id,
-                    originalImageUrl: firstImage,
+                    originalImageUrl: itemImageUrl,
                     questionText: question.questionText || `${task.title} 第 ${question.number} 题`,
                     answerText: question.answer || null,
                     wrongAnswerText: result.studentAnswer || null,
                     mistakeAnalysis: result.reason || null,
+                    errorType: result.reason ? result.reason.slice(0, 80) : null,
                     mistakeStatus: result.verdict === 'blank' || !result.studentAnswer ? 'not_attempted' : 'wrong_attempt',
                     knowledgePoints: JSON.stringify(question.knowledgePoints || []),
                     source: task.title,
-                    userNotes: `${studentName}：${result.score}/${question.maxScore}`,
+                    userNotes: noteParts.join(' ｜ '),
+                    provenanceId: result.provenanceId ?? null,
                     masteryLevel: 0,
                     tags: { connect: tags },
                 },
                 select: { id: true },
+            });
+            await tx.sourceImport.create({
+                data: {
+                    userId,
+                    sourceKind: 'grading_submission',
+                    sourceId: submissionId,
+                    sourceQuestionId: result.id,
+                    errorItemId: item.id,
+                },
             });
             await tx.gradingResult.update({ where: { id: result.id }, data: { errorItemId: item.id } });
             count += 1;
         }
         await tx.gradingSubmission.update({
             where: { id: submissionId },
-            data: { status: 'confirmed', confirmedAt: new Date(), importedCount: { increment: count } },
+            data: { importedCount: count },
         });
         return count;
     });
+    if (imported === null) return null;
+    if (imported === -1) return { importedCount: 0, alreadyConfirmed: true };
     return { importedCount: imported };
 }

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized } from "@/lib/api-errors";
-import { clearFinishedBackgroundTasks, listBackgroundTasks } from "@/lib/background-tasks";
+import {
+    clearFinishedBackgroundTasks,
+    flushBackgroundTasksToDb,
+    listBackgroundTasks,
+    syncBackgroundTasksFromDb,
+} from "@/lib/background-tasks";
 
 /**
  * GET /api/tasks
@@ -12,6 +17,7 @@ export async function GET() {
     if (!user) {
         return unauthorized("Authentication required");
     }
+    await syncBackgroundTasksFromDb(user.id);
     return NextResponse.json({ tasks: listBackgroundTasks(user.id) });
 }
 
@@ -25,5 +31,7 @@ export async function DELETE() {
         return unauthorized("Authentication required");
     }
     clearFinishedBackgroundTasks(user.id);
+    await flushBackgroundTasksToDb();
+    await syncBackgroundTasksFromDb(user.id);
     return NextResponse.json({ tasks: listBackgroundTasks(user.id) });
 }

@@ -1,6 +1,6 @@
 import type { NextResponse } from 'next/server';
 import { getAIService } from '@/lib/ai';
-import { consumeAiQuota } from '@/lib/ai-quota';
+import { reserveAiQuota, runWithAiQuota } from '@/lib/ai-quota';
 import { describeQuestion, trackBackgroundTask } from '@/lib/background-tasks';
 import { getAppTimeZone } from '@/lib/config';
 import { needsQuestionGradeRecognition, resolveQuestionGrade } from '@/lib/question-grade';
@@ -25,11 +25,12 @@ export async function prepareImportGrade(user: ImportGradeUser, input: ImportGra
     if (duplicate || !needsQuestionGradeRecognition(user, input)) {
         return { gradeSemester: resolveQuestionGrade(user, input, timeZone) };
     }
-    const limited = await consumeAiQuota(user, 'analyze');
-    if (limited) return { response: limited };
-    const recognizedGradeSemester = await trackBackgroundTask(
+    const quota = await reserveAiQuota(user, 'analyze');
+    if (quota.limited) return { response: quota.limited };
+    // 认出年级才算一次
+    const recognizedGradeSemester = await runWithAiQuota(quota, () => trackBackgroundTask(
         { userId: user.id, kind: 'analyze', subject: describeQuestion({ questionText: input.questionText }) },
-        () => getAIService().recognizeGrade(input.questionText ?? ''),
-    );
+        () => getAIService('text').recognizeGrade(input.questionText ?? ''),
+    ), (grade) => Boolean(grade));
     return { gradeSemester: resolveQuestionGrade(user, { ...input, recognizedGradeSemester }, timeZone) };
 }

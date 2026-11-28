@@ -1,48 +1,24 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { hash } from "bcryptjs";
-import type { Prisma } from "@prisma/client";
-import { unauthorized, notFound, badRequest, validationError, internalError } from "@/lib/api-errors";
+import { compare, hash } from "bcryptjs";
+import { prisma } from "@/lib/prisma";
+import { conflict, notFound, badRequest, forbidden, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { isDefaultAdminPassword } from "@/lib/default-admin";
 import { syncMasteryLevels } from "@/lib/mastery";
-import { MAX_MASTERY_THRESHOLD, MIN_MASTERY_THRESHOLD } from "@/lib/mastery-status";
-import { THEME_PREFERENCES } from "@/lib/theme";
-import { GRADE_RECOGNITION_MODES } from "@/lib/question-grade";
-import { GRADE_SEMESTERS } from "@/lib/grade-options";
+import { userUpdateSchema } from "@/lib/user-profile-schema";
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
+import { deleteUserAccount, UserDeletionError } from "@/lib/user-deletion";
+import { defineApiRoute } from "@/lib/server/api-route";
+import type { Prisma } from "@prisma/client";
 
 const logger = createLogger('api:user');
 
-const userUpdateSchema = z.object({
-    name: z.string().optional(),
-    email: z.string().optional(),
-    password: z.string().optional(),
-    educationStage: z.string().optional(),
-    enrollmentYear: z.number().optional().nullable(),
-    gradeRecognitionMode: z.enum(GRADE_RECOGNITION_MODES).optional(),
-    fixedGradeSemester: z.enum(GRADE_SEMESTERS).nullable().optional(),
-    confirmBeforeImport: z.boolean().optional(),
-    enableGeogebra: z.boolean().optional(),
-    enableSvgAnimation: z.boolean().optional(),
-    variantPipelineEnabled: z.boolean().optional(),
-    themePreference: z.enum(THEME_PREFERENCES).optional(),
-    questionDuplicateThreshold: z.number().min(1).max(100).multipleOf(0.01).optional(),
-    masteryThreshold: z.number().int().min(MIN_MASTERY_THRESHOLD).max(MAX_MASTERY_THRESHOLD).optional(),
-});
-
-export async function GET() {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-        return unauthorized();
-    }
-
+export const GET = defineApiRoute({ auth: 'user' }, async (_req, { user: actorUser }) => {
     try {
         const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
+            where: { id: actorUser.id },
             select: {
                 name: true,
                 email: true,
@@ -57,6 +33,7 @@ export async function GET() {
                 themePreference: true,
                 questionDuplicateThreshold: true,
                 masteryThreshold: true,
+                reviewAlgorithmVersion: true,
                 // Do not return password
             }
         });
@@ -72,18 +49,12 @@ export async function GET() {
         logger.error({ error }, 'Failed to fetch user profile');
         return internalError("Failed to fetch user profile");
     }
-}
+});
 
-export async function PATCH(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-        return unauthorized();
-    }
-
+export const PATCH = defineApiRoute({ auth: 'user' }, async (req, { user: actorUser }) => {
     try {
         const body = await req.json();
-        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, themePreference, questionDuplicateThreshold, masteryThreshold } = userUpdateSchema.parse(body);
+        const { name, email, password, educationStage, enrollmentYear, gradeRecognitionMode, fixedGradeSemester, confirmBeforeImport, enableGeogebra, enableSvgAnimation, variantPipelineEnabled, themePreference, questionDuplicateThreshold, masteryThreshold, reviewAlgorithmVersion } = userUpdateSchema.parse(body);
 
         const updateData: Prisma.UserUpdateInput = {};
         if (gradeRecognitionMode !== undefined) updateData.gradeRecognitionMode = gradeRecognitionMode;
@@ -104,6 +75,9 @@ export async function PATCH(req: Request) {
         if (typeof enableSvgAnimation === 'boolean') {
             updateData.enableSvgAnimation = enableSvgAnimation;
         }
+        if (typeof variantPipelineEnabled === 'boolean') {
+            updateData.variantPipelineEnabled = variantPipelineEnabled;
+        }
         if (themePreference) {
             updateData.themePreference = themePreference;
         }
@@ -113,32 +87,52 @@ export async function PATCH(req: Request) {
         if (typeof masteryThreshold === 'number') {
             updateData.masteryThreshold = masteryThreshold;
         }
-
-        // 验证邮箱格式（如果提供了邮箱）
-        // 支持标准邮箱和本地邮箱（如 admin@localhost）
-        if (email && email.trim()) {
-            const emailRegex = /^[^\s@]+@[^\s@]+$/;
-            if (!emailRegex.test(email.trim())) {
-                return badRequest("Invalid email format");
-            }
-            updateData.email = email.trim();
+        if (reviewAlgorithmVersion) {
+            updateData.reviewAlgorithmVersion = reviewAlgorithmVersion;
         }
 
-        // 验证密码长度（如果提供了密码）
+        // 仅微信登录的账号不能在这里改邮箱或设密码：否则等于绕过网页端注册开关自行开通网页登录。
+        // 需要网页登录时，在小程序「我的 → 关联网页账号」关联已有账号。
+        if (isWechatPlaceholderEmail(actorUser.email) && ((email && email.trim()) || (password && password.length > 0))) {
+            return forbidden("WECHAT_ONLY_ACCOUNT");
+        }
+
+        // 验证邮箱格式（如果提供了邮箱），归一化为小写并检查是否已被他人占用
+        // 支持标准邮箱和本地邮箱（如 admin@localhost）
+        if (email && email.trim()) {
+            const normalizedEmail = normalizeEmail(email);
+            const emailRegex = /^[^\s@]+@[^\s@]+$/;
+            if (!emailRegex.test(normalizedEmail)) {
+                return badRequest("Invalid email format");
+            }
+            if (normalizedEmail !== normalizeEmail(actorUser.email)) {
+                // wechat.local 是仅微信账号的保留占位域名，任何账号都不能改成这个域名
+                if (isWechatPlaceholderEmail(normalizedEmail)) {
+                    return badRequest("Reserved email domain");
+                }
+                const occupied = await findUserByEmailInsensitive(prisma, normalizedEmail, { id: true, email: true });
+                if (occupied && occupied.id !== actorUser.id) {
+                    return conflict("Email already in use");
+                }
+            }
+            updateData.email = normalizedEmail;
+        }
+
+        // 验证密码长度（如果提供了密码），改密同步递增 authVersion 使其他设备旧会话即时失效
         if (password && password.length > 0) {
             if (password.length < 6) {
                 return badRequest("Password must be at least 6 characters");
             }
-            if (isDefaultAdminPassword(session.user.role, password)) {
+            if (isDefaultAdminPassword(actorUser.role, password)) {
                 return badRequest("New password must not be the default password");
             }
             updateData.password = await hash(password, 10);
+            updateData.authVersion = { increment: 1 };
         }
 
-        const sessionEmail = session.user.email;
         const updatedUser = await prisma.$transaction(async (tx) => {
             const updated = await tx.user.update({
-                where: { email: sessionEmail },
+                where: { id: actorUser.id },
                 data: updateData,
                 select: {
                     id: true,
@@ -151,10 +145,11 @@ export async function PATCH(req: Request) {
                     confirmBeforeImport: true,
                     enableGeogebra: true,
                     enableSvgAnimation: true,
-                variantPipelineEnabled: true,
+                    variantPipelineEnabled: true,
                     themePreference: true,
                     questionDuplicateThreshold: true,
                     masteryThreshold: true,
+                    reviewAlgorithmVersion: true,
                 }
             });
             // 阈值变化后同步已存的 masteryLevel，与按阈值推导的复习状态保持一致
@@ -173,4 +168,41 @@ export async function PATCH(req: Request) {
         }
         return internalError("Failed to update user profile");
     }
-}
+});
+
+const selfDeleteSchema = z.object({
+    password: z.string().min(1, "Password is required"),
+});
+
+export const DELETE = defineApiRoute(
+    { auth: 'user', bodySchema: selfDeleteSchema },
+    async (_req, { user: actorUser, body }) => {
+        try {
+            const dbUser = await prisma.user.findUnique({
+                where: { id: actorUser.id },
+                select: { password: true },
+            });
+            if (!dbUser) {
+                return notFound("User not found");
+            }
+            const passwordMatched = await compare(body.password, dbUser.password);
+            if (!passwordMatched) {
+                return badRequest("INCORRECT_PASSWORD");
+            }
+
+            await deleteUserAccount(prisma, {
+                targetUserId: actorUser.id,
+                actorKind: "self",
+            });
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (error instanceof UserDeletionError) {
+                if (error.code === "NOT_FOUND") return notFound("User not found");
+                if (error.code === "PROTECTED_DEFAULT_ADMIN") return badRequest("Cannot delete super admin");
+                if (error.code === "LAST_ACTIVE_ADMIN") return badRequest("Cannot delete the last active admin");
+            }
+            logger.error({ error }, 'Failed to delete current user account');
+            return internalError("Failed to delete user account");
+        }
+    },
+);

@@ -134,7 +134,15 @@ LOG_LEVEL=info
 
 # 静默模式 - 只显示错误
 LOG_LEVEL=error
+
+# 生产环境下是否在 stdout 输出脱敏并截断后的 AI 提示词与响应载荷（默认 false，仅输出标题和长度）
+LOG_AI_PAYLOADS=false
+
+# 是否开启 NextAuth 调试日志（默认 false）
+NEXTAUTH_DEBUG=false
 ```
+
+> **隐私保护提示**：在 `NODE_ENV=production` 下，`logger.box` 默认只记录事件标题、字段键名和内容长度，不会向容器标准输出写入完整提示词、学生作答或图片 Base64；如需临时排障，可设置 `LOG_AI_PAYLOADS=true`（输出仍会脱敏并按单字段 2000 字符截断），或使用后台的「调试日志」内存导出功能。
 
 ---
 
@@ -387,8 +395,3 @@ frontendLogger.forceFlush();
 ---
 
 **文档更新时间**: 2026-10-31
-
-## 📚 相关文档
-
-- [日志迁移报告](./LOGGING_MIGRATION_FINAL_REPORT.md)
-- [项目健康报告](./PROJECT_HEALTH_REPORT.md)

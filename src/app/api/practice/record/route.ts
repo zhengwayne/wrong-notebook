@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, internalError, notFound, validationError } from "@/lib/api-errors";
+import { internalError, kidModeRestricted, notFound, validationError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
+import { syncItemMemory } from "@/lib/due-items";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
+import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:practice:record');
 
 const recordSchema = z.object({
     errorItemId: z.string().min(1).optional(),
+    learnerId: z.string().min(1).max(64).nullish(),
     result: z.enum(PRACTICE_RESULTS as [string, ...string[]]).optional(),
     isCorrect: z.boolean().nullable().optional(),
     subject: z.string().max(50).nullable().optional(),
@@ -25,13 +30,7 @@ const recordSchema = z.object({
     takenAt: z.string().datetime({ offset: true }).optional(),
 });
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     try {
         const parsed = recordSchema.safeParse(await req.json());
         if (!parsed.success) {
@@ -45,17 +44,44 @@ export async function POST(req: Request) {
         const result = parsed.data.result
             ?? (parsed.data.isCorrect === true ? 'correct' : parsed.data.isCorrect === false ? 'wrong' : undefined);
 
-        const userId = session.user.id;
+        const userId = user.id;
 
-        // 关联原题时校验归属，防止写入他人的错题
+        const kidLearnerId = getKidModeLearnerId();
+        if (kidLearnerId && source === 'manual') {
+            return kidModeRestricted();
+        }
+        let requestedScope: { userId: string; learnerId: string | null } | undefined;
+        const targetLearnerParam = kidLearnerId ?? parsed.data.learnerId;
+        if (targetLearnerParam !== undefined && targetLearnerParam !== null) {
+            try {
+                requestedScope = await resolveLearningScope(prisma, userId, targetLearnerParam);
+            } catch (error) {
+                if (error instanceof LearnerNotFoundError) {
+                    return notFound("Learner not found");
+                }
+                throw error;
+            }
+        }
+
+        let resolvedLearnerId: string | null = requestedScope ? requestedScope.learnerId : null;
+
+        // 关联原题时校验归属，防止写入他人的错题或混淆学习者作用域
         if (errorItemId) {
             const item = await prisma.errorItem.findUnique({
                 where: { id: errorItemId },
-                select: { userId: true, subject: { select: { name: true } } },
+                select: { userId: true, learnerId: true, subject: { select: { name: true } } },
             });
             if (!item || item.userId !== userId) {
                 return notFound("Item not found");
             }
+            const itemLearnerId = item.learnerId ?? null;
+            if (kidLearnerId && itemLearnerId !== kidLearnerId) {
+                return kidModeRestricted();
+            }
+            if (requestedScope && itemLearnerId !== requestedScope.learnerId) {
+                return notFound("Item not found");
+            }
+            resolvedLearnerId = requestedScope ? requestedScope.learnerId : itemLearnerId;
             subject ??= item.subject?.name ?? null;
         }
 
@@ -64,6 +90,7 @@ export async function POST(req: Request) {
         const record = await prisma.practiceRecord.create({
             data: {
                 userId,
+                ...(resolvedLearnerId ? { learnerId: resolvedLearnerId } : {}),
                 subject,
                 difficulty,
                 isCorrect,
@@ -81,7 +108,9 @@ export async function POST(req: Request) {
         });
 
         if (errorItemId && result) {
+            await syncItemMemory(prisma, errorItemId);
             scheduleMasteryEvaluation([errorItemId]);
+            scheduleLearningPathReplan(userId, 'zh', resolvedLearnerId);
         }
 
         return NextResponse.json(record);
@@ -89,4 +118,4 @@ export async function POST(req: Request) {
         logger.error({ error }, 'Error saving practice record');
         return internalError("Failed to save record");
     }
-}
+});

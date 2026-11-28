@@ -5,7 +5,7 @@
  * - /_next/static、/icons：文件名带哈希或基本不变，缓存优先
  * - API 与其他请求不经过缓存，保证数据始终来自服务器
  */
-const VERSION = 'v1';
+const VERSION = 'v2-logo-a';
 const STATIC_CACHE = `wrong-notebook-static-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const PRECACHE = [OFFLINE_URL, '/icons/icon-192.png', '/icons/icon-512.png'];

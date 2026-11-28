@@ -17,7 +17,7 @@
 
 除安卓客户端版外，所有安装包（含安卓单机版）运行同一个服务端（Next.js standalone 构建）和启动器 `packaging/runtime/launcher.js`，行为与 Docker 镜像一致：
 
-- 首次启动复制预置数据库（含系统标签，不含管理员）。服务启动后在日志中打印一次性初始化链接，令牌同时保存在数据目录的 `config/setup-token`；打开链接设置管理员账号后令牌即删除。桌面版和安卓单机版会自动打开该链接。
+- 首次启动复制预置数据库（含系统标签，不含管理员）。服务启动后将一次性令牌写入数据目录的 `config/setup-token`，启动日志会提示文件路径。在本站地址后添加 `/initialize?token=` 和文件内容，打开页面设置管理员账号。创建成功后令牌文件即删除。桌面版和安卓单机版会自动打开该链接。
 - 每次启动执行 `prisma migrate deploy`，只做增量迁移，升级保留已有数据。
 - 数据库、`config/app-config.json` 和自动生成的 NextAuth 密钥都在数据目录，安装目录可以只读。
 
@@ -48,10 +48,10 @@ wrong-notebook --port 3000 --host 0.0.0.0 --data-dir ~/.wrong-notebook
 ### 飞牛OS
 
 1. 在应用中心安装 Node.js v24。
-2. 应用中心 →「手动安装」，选择与设备架构对应的 `.fpk`。安装向导中设置管理员邮箱和密码（至少 6 位，不能是 `123456`）；安装脚本只保存密码的 bcrypt 哈希（`config/initial-admin.json`），服务首次启动时据此创建管理员后删除该文件。
+2. 应用中心 →「手动安装」，选择与设备架构对应的 `.fpk`。安装向导中设置管理员邮箱和密码（至少 6 位，不能使用旧版默认密码）；安装脚本只保存密码的 bcrypt 哈希（`config/initial-admin.json`），服务首次启动时据此创建管理员后删除该文件。
 3. 安装后从桌面图标打开，用向导中设置的账号登录，服务端口 39300，局域网内其他设备也可通过 `http://<NAS 地址>:39300` 访问。
 
-数据保存在应用数据目录（`@appdata/wrongnotebook`），日志为其中的 `wrong-notebook.log`。保留旧数据重装时沿用原有账号，向导中填写的管理员会被忽略；向导设置失败时（见 `install.log`），改用 `wrong-notebook.log` 中的初始化链接。
+数据保存在应用数据目录（`@appdata/wrongnotebook`），日志为其中的 `wrong-notebook.log`。保留旧数据重装时沿用原有账号，向导中填写的管理员会被忽略；向导设置失败时（见 `install.log`），按 `wrong-notebook.log` 显示的文件路径读取一次性令牌，通过 `/initialize?token=` 和令牌创建管理员。
 
 ### 安卓手机 / 平板
 
@@ -99,7 +99,7 @@ App 切到后台后系统可能结束服务端进程，回到前台时会自动�
 
 ## 本地构建
 
-需要 Node.js 22.15 及以上。Prisma 引擎与构建机平台一致，桌面版和飞牛OS 包须在目标平台（及架构）上构建。
+构建使用与[源码开发](wiki/Quick-Start.md)相同的 Node.js 版本。Prisma 引擎与构建机平台一致，桌面版和飞牛OS 包须在目标平台（及架构）上构建。
 
 ```bash
 npm ci

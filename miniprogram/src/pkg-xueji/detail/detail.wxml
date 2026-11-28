@@ -1,0 +1,66 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <block wx:if="{{item}}">
+    <view class="card">
+      <view class="row-between meta">
+        <view class="row muted"><image class="ic ic-sm" src="/assets/icons/book-open-m.svg" /><text class="meta-text">{{item.subjectName}} · {{item.date}}</text></view>
+        <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+      </view>
+      <view wx:if="{{item.meta || item.stars.length}}" class="row muted sub-meta">
+        <text wx:if="{{item.meta}}" class="meta-text">{{item.meta}}</text>
+        <view wx:if="{{item.stars.length}}" class="stars"><image wx:for="{{item.stars}}" wx:key="*this" class="ic-xs" src="/assets/icons/star-a.svg" /></view>
+      </view>
+      <view class="pre question">{{item.question}}</view>
+      <image wx:if="{{item.figure}}" class="image figure" src="{{item.figure}}" mode="widthFix" />
+      <image wx:if="{{item.image}}" class="image" src="{{item.image}}" mode="widthFix" bindtap="onPreviewImage" id="img-original" />
+      <view wx:if="{{item.kps.length}}" class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
+    </view>
+
+    <view wx:if="{{item.wrongAnswer}}" class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/pencil-d.svg" />当时写的</view>
+      <view class="pre">{{item.wrongAnswer}}</view>
+    </view>
+
+    <view wx:if="{{plan || mastery >= 0}}" class="card" id="card-plan">
+      <view class="card-title"><image class="ic" src="/assets/icons/calendar-check-p.svg" />复习</view>
+      <view wx:if="{{plan && plan.next}}" class="row-between line">
+        <text class="text-2">下次复习</text>
+        <text class="{{plan.due ? 'warning' : 'text-2'}}">{{plan.due ? '今天' : plan.next}}</text>
+      </view>
+      <view wx:if="{{mastery >= 0}}" class="row-between line">
+        <text class="text-2">掌握程度</text>
+        <text class="text-2">{{mastery}}%</text>
+      </view>
+      <view wx:for="{{plan.kps}}" wx:key="name" class="kp-row">
+        <view class="row-between"><text class="kp-name">{{item.name}}</text><text class="muted">{{item.pct}}%</text></view>
+        <view class="bar"><view class="bar-fill" style="width: {{item.pct}}%"></view></view>
+      </view>
+    </view>
+
+    <view class="card" id="card-history">
+      <view class="card-title"><image class="ic" src="/assets/icons/clock-p.svg" />做题记录</view>
+      <view wx:if="{{historyRows.length === 0}}" class="muted">{{historyLoaded ? '还没有记录' : '记录暂时读不到'}}</view>
+      <block wx:else>
+        <view wx:for="{{historyRows}}" wx:key="id" class="row-between line">
+          <view class="row"><image class="ic ic-sm" src="{{item.icon}}" /><text class="{{item.cls}}">{{item.label}}</text><text wx:if="{{item.source}}" class="muted h-src">{{item.source}}</text></view>
+          <text class="muted">{{item.date}}</text>
+        </view>
+      </block>
+    </view>
+
+    <view class="card" id="card-notes">
+      <view class="row-between">
+        <view class="card-title"><image class="ic" src="/assets/icons/notebook-pen-p.svg" />笔记</view>
+        <view wx:if="{{!kidMode}}" class="edit" hover-class="press" bindtap="onEditNotes" id="btn-notes"><image class="ic ic-sm" src="/assets/icons/pencil-p.svg" /></view>
+      </view>
+      <view wx:if="{{item.notes}}" class="pre">{{item.notes}}</view>
+      <view wx:else class="muted">还没有笔记</view>
+    </view>
+
+    <button wx:if="{{!kidMode}}" class="btn btn-outline" bindtap="onPractice"><image class="ic" src="/assets/icons/refresh-cw-p.svg" />再做一遍</button>
+  </block>
+
+  <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
+</view>
+<login-sheet id="login-sheet" />

@@ -20,7 +20,7 @@ The project uses the Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4
 | `src/__tests__/`, `e2e/`, `tests/publication/` | Unit, integration, E2E and publication check tests |
 | `scripts/`, `doc/` | Maintenance scripts and topic documents |
 
-AI requests are dispatched to a provider on the server and call external services; business data is stored in SQLite through Prisma. The background task list lives in process memory and is mirrored to `background-tasks.json` in the config directory; after a restart only the records remain and nothing resumes, so it is not a substitute for a persistent job queue.
+AI requests are dispatched to a provider on the server and call external services; business data and async operation state are stored in SQLite through Prisma (background tasks and recoverable responses are persisted in `AsyncOperation`, retiring `background-tasks.json`; `running` jobs are marked `interrupted` during startup recovery rather than resumed).
 
 ## Common checks
 
@@ -39,7 +39,7 @@ npm run test:integration
 npm run test:e2e
 ```
 
-E2E tests sign in as admin with a non-default password. Run `node scripts/prepare-e2e.js` first: it creates (or resets) `admin@localhost` with the password `E2E_ADMIN_PASSWORD` (default `e2e-admin-pass`) and creates `setup-admin@localhost`, which still uses the default password. If port 3000 is busy, start a dev server elsewhere and point `E2E_BASE_URL` at it.
+Playwright creates a temporary database, configuration and test accounts, then starts a local server. The default address is `http://127.0.0.1:3100`. Use `E2E_BASE_URL` to select another free loopback port. An occupied port stops the run. The full-reset test operates on this run’s temporary data.
 
 CI runs `npm run lint` and fails on any ESLint error or warning.
 
@@ -47,7 +47,7 @@ CI runs `npm run lint` and fails on any ESLint error or warning.
 
 `npm test` runs all Vitest tests. The E2E environment and startup are defined in the repository's [`playwright.config.ts`](https://github.com/margrop/wrong-notebook/blob/main/playwright.config.ts).
 
-The full CI needs Node.js 22 or later and Python 3, and covers dependency installation, Prisma Client generation, lint, Vitest, publication checks, script syntax checks and the production build:
+Full CI needs the Node.js development environment listed in [Quick Start](Quick-Start-en) and Python 3. It covers dependency installation, Prisma Client generation, lint, Vitest, publication checks, script syntax checks and the production build:
 
 ```bash
 bash scripts/ci.sh
@@ -61,7 +61,8 @@ After changing logic, run at least the unit and integration tests. Changes to do
 - TypeScript avoids `any`; type imports use `import type`; the `@/` alias points to `src/`.
 - React components declare Props types, and large components are split; pages work on both mobile and desktop.
 - Interface text goes into `translations.ts` (Chinese and English keys must match, which a unit test checks); API errors use `api-errors`; front end and back end use the project loggers.
-- Validate user input with zod first, and query the database through Prisma's parameterized APIs.
+- Validate user input with zod first, and query the database through Prisma's parameterized APIs; wrap API route handlers with `defineApiRoute` (ESLint forbids importing `getServerSession` directly in API routes, enforced alongside `api-auth-inventory.test.ts`).
+- Historical learner ownership governance (including same-name students across classes) uses `scripts/backfill-learners.ts` (`--inventory`, `--export-ambiguous`, `--apply-decisions`, `--revert`).
 
 ## Changing AI features
 

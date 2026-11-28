@@ -6,6 +6,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { WrongAnswerStats } from "@/components/wrong-answer-stats";
 import { PracticeStats } from "@/components/practice-stats";
+import { RepeatedMistakesCard } from "@/components/stats/repeated-mistakes-card";
+import { TeacherScopeBar } from "@/components/notebooks/teacher-scope-bar";
 import { TagUsageStats } from "@/components/tags/tag-usage-stats";
 import { TagManagement } from "@/components/tags/tag-management";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -61,6 +63,7 @@ function StatsTabs() {
                 <WrongAnswerStats />
             </TabsContent>
             <TabsContent value="practice" className="space-y-4">
+                <RepeatedMistakesCard />
                 <PracticeStats />
             </TabsContent>
             <TabsContent value="tag-stats" className="space-y-4">
@@ -78,11 +81,12 @@ export default function StatsPage() {
     usePageTitle(t.stats.headerTitle);
 
     return (
-        <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-8">
             <PageHeader
                 title={t.stats?.headerTitle || "Statistics Center"}
                 description={t.stats?.headerDesc || "View your learning progress, data analysis and knowledge points"}
             />
+            <TeacherScopeBar requireStudentForStats />
             <Suspense fallback={null}>
                 <StatsTabs />
             </Suspense>

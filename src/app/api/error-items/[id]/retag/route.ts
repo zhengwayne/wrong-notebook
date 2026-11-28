@@ -5,7 +5,7 @@ import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-err
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { previewRetagErrorItem, retagErrorItem } from "@/lib/retag";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:error-items:retag');
@@ -32,13 +32,13 @@ async function handlePost(
         if (!item || item.userId !== user.id) {
             return notFound("Item not found");
         }
-        const limited = await consumeAiQuota(user, 'retag');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'retag', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const result = await trackBackgroundTask(
+        const result = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'retag', subject: describeQuestion(item), link: `/error-items/${id}` },
             () => body.preview === true ? previewRetagErrorItem(id, user.id) : retagErrorItem(id, user.id)
-        );
+        ));
         return NextResponse.json(result);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, HelpCircle } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { PROJECT_REPO_URL } from "@/lib/constants/project";
 import { DEFAULT_ADMIN_EMAIL } from "@/lib/default-admin";
 
 interface LoginHelpProps {
@@ -16,9 +15,8 @@ interface LoginHelpProps {
  * 指引对所有访问者相同、不显示密码，也不透露实例是否已修改默认密码
  */
 export function LoginHelp({ allowRegistration }: LoginHelpProps) {
-    const { t, language } = useLanguage();
+    const { t } = useLanguage();
     const texts = t.auth.login;
-    const docsUrl = `${PROJECT_REPO_URL}/wiki/${language === "en" ? "FAQ-en" : "FAQ"}`;
     const [accountBefore, accountAfter] = texts.firstUseAccount.split("{email}");
 
     return (
@@ -45,10 +43,6 @@ export function LoginHelp({ allowRegistration }: LoginHelpProps) {
                         {accountAfter}
                     </p>
                     <p>{texts.firstUseNext}</p>
-                    <a href={docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                        {texts.firstUseDocs}
-                        <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
                 </div>
             </details>
         </div>

@@ -78,7 +78,7 @@ async function main() {
                 console.log(`   ✨ 创建新标签: ${tagName} for user ${item.userId}`);
                 // 尝试根据错题的年级学期查找 parentId
                 const gradeStr = item.gradeSemester; // item need to include gradeSemester
-                const parentId = await findParentTagIdForGrade(gradeStr, subjectKey);
+                const parentId = await findParentTagIdForGrade(gradeStr, subjectKey, prisma);
 
                 tag = await prisma.knowledgeTag.create({
                     data: {

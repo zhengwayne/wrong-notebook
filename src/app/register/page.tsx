@@ -17,6 +17,9 @@ import { RegisterRequest } from "@/types/api";
 import { toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { getApiErrorMessage } from "@/lib/error-message";
+import { PersonaPicker } from "@/components/persona-picker";
+import { MAX_CHILD_LEARNERS } from "@/lib/learners";
+import { SIGNUP_PRESELECT, type Persona } from "@/lib/personas";
 
 export default function RegisterPage() {
     const { timeZone } = useTimeZone();
@@ -29,6 +32,9 @@ export default function RegisterPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [educationStage, setEducationStage] = useState("junior_high");
     const [enrollmentYear, setEnrollmentYear] = useState("2025");
+    const [personas, setPersonas] = useState<Persona[]>([SIGNUP_PRESELECT]);
+    const teacherOnly = personas.length === 1 && personas[0] === "teacher";
+    const [childNames, setChildNames] = useState<string[]>([""]);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
@@ -62,6 +68,11 @@ export default function RegisterPage() {
             setLoading(false);
             return;
         }
+        if (personas.length === 0) {
+            setError(t.persona.required);
+            setLoading(false);
+            return;
+        }
 
         try {
             await apiClient.post<unknown, RegisterRequest>("/api/register", {
@@ -69,7 +80,12 @@ export default function RegisterPage() {
                 email,
                 password,
                 educationStage,
-                enrollmentYear: parseInt(enrollmentYear)
+                // 只选老师时不问入学年份
+                enrollmentYear: teacherOnly ? undefined : parseInt(enrollmentYear),
+                personas,
+                children: personas.includes("parent")
+                    ? childNames.map((name) => ({ name: name.trim() })).filter((child) => child.name)
+                    : [],
             });
 
             toast.success(t.auth?.register?.success || 'Registration successful! Please login');
@@ -102,7 +118,7 @@ export default function RegisterPage() {
     if (allowRegistration === false) {
         return (
             <AuthShell>
-                <Card className="w-full rounded-2xl border-0 shadow-xl shadow-indigo-500/5 ring-1 ring-border">
+                <Card className="w-full rounded-2xl border-0 shadow-xl shadow-primary/10 ring-1 ring-border">
                     <CardHeader>
                         <CardTitle className="text-2xl text-center">
                             {t.auth?.register?.disabled || 'Registration Disabled'}
@@ -128,7 +144,7 @@ export default function RegisterPage() {
 
     return (
         <AuthShell>
-            <Card className="w-full rounded-2xl border-0 shadow-xl shadow-indigo-500/5 ring-1 ring-border">
+            <Card className="w-full rounded-2xl border-0 shadow-xl shadow-primary/10 ring-1 ring-border">
                 <CardHeader>
                     <CardTitle className="text-2xl text-center">
                         {t.auth?.register?.title || 'Create an Account'}
@@ -243,7 +259,7 @@ export default function RegisterPage() {
                                 <option value="university">{t.auth?.university || 'University'}</option>
                             </select>
                         </div>
-                        <div className="space-y-2">
+                        {!teacherOnly && <div className="space-y-2">
                             <label htmlFor="enrollmentYear" className="text-sm font-medium">
                                 {t.auth?.enrollmentYear || 'Enrollment Year'}
                             </label>
@@ -258,7 +274,35 @@ export default function RegisterPage() {
                                 min={1990}
                                 max={Number(formatDateTime(new Date(), 'yyyy', timeZone))}
                             />
+                        </div>}
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium">{t.persona.title}</p>
+                            <PersonaPicker value={personas} onChange={setPersonas} />
                         </div>
+                        {personas.includes("parent") && (
+                            <div className="space-y-2">
+                                <p className="text-sm font-medium">{t.persona.children.onboardingTitle}</p>
+                                <p className="text-sm text-muted-foreground">{t.persona.children.onboardingDesc}</p>
+                                {childNames.map((nameValue, index) => (
+                                    <Input
+                                        key={index}
+                                        value={nameValue}
+                                        maxLength={40}
+                                        placeholder={t.persona.children.namePlaceholder}
+                                        onChange={(e) => {
+                                            const next = [...childNames];
+                                            next[index] = e.target.value;
+                                            setChildNames(next);
+                                        }}
+                                    />
+                                ))}
+                                {childNames.length < MAX_CHILD_LEARNERS && (
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setChildNames((current) => [...current, ""])}>
+                                        {t.persona.children.add}
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                         {error && (
                             <div className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</div>
                         )}

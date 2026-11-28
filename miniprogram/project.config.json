@@ -1,0 +1,27 @@
+{
+  "description": "学迹 · 错题本 微信小程序",
+  "miniprogramRoot": "src/",
+  "compileType": "miniprogram",
+  "appid": "wx0f5bf175e2aae881",
+  "projectname": "xueji-miniprogram",
+  "setting": {
+    "useCompilerPlugins": [
+      "typescript"
+    ],
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

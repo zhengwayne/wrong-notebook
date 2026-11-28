@@ -1,0 +1,54 @@
+<view wx:if="{{show && view}}" class="card guide">
+  <view class="guide-head">
+    <view class="guide-badge"><image class="ic" src="{{view.completed ? '/assets/icons/circle-check-p.svg' : '/assets/icons/list-checks-p.svg'}}" /></view>
+    <view class="flex-1">
+      <view class="guide-title">{{view.title}}</view>
+      <view class="muted guide-sub">{{view.subtitle}}</view>
+    </view>
+    <text class="muted guide-count">{{view.doneCount}}/{{view.total}}</text>
+    <text wx:if="{{!always}}" class="guide-collapse" bindtap="onCollapse">收起</text>
+  </view>
+  <view class="guide-bar"><view class="guide-bar-fill" style="width: {{view.percent}}%"></view></view>
+
+  <view wx:for="{{view.steps}}" wx:key="key" class="guide-step {{item.current ? 'guide-step-on' : ''}}" data-key="{{item.key}}">
+    <view class="guide-dot {{item.done ? 'dot-done' : item.current ? 'dot-on' : ''}}">
+      <image wx:if="{{item.done}}" class="ic-sm" src="/assets/icons/check-w.svg" />
+      <text wx:else>{{item.index}}</text>
+    </view>
+    <view class="flex-1">
+      <view class="guide-step-title">第{{item.index}}步 · {{item.title}}</view>
+      <view class="muted guide-step-desc">{{item.desc}}</view>
+    </view>
+    <text wx:if="{{item.done && item.note}}" class="muted guide-note">{{item.note}}</text>
+    <view wx:if="{{item.current}}" class="guide-btn" hover-class="press" data-key="{{item.key}}" bindtap="onStep">
+      <image class="ic-sm" src="{{item.web ? '/assets/icons/monitor-w.svg' : '/assets/icons/arrow-right-w.svg'}}" />
+      <text>{{item.button}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view.completed}}" class="guide-finish">
+    <view class="flex-1">
+      <view class="guide-step-title">{{view.finish.title}}</view>
+      <view class="muted guide-step-desc">{{view.finish.desc}}</view>
+    </view>
+    <view class="guide-btn" hover-class="press" data-key="finish" bindtap="onStep"><text>{{view.finish.button}}</text></view>
+  </view>
+</view>
+
+<!-- 在电脑上做：复制一次性网页链接 -->
+<view wx:if="{{sheet}}" class="sheet-mask" bindtap="onCloseSheet">
+  <view class="sheet" catchtap="noop">
+    <view class="sheet-title">{{sheetTitle}}</view>
+    <view class="muted sheet-desc">{{sheetDesc}}</view>
+    <view class="sheet-url">
+      <view wx:if="{{sheetLoading}}" class="loading-row"><view class="spinner"></view>生成链接</view>
+      <text wx:else selectable>{{sheetUrl}}</text>
+    </view>
+    <view class="muted sheet-tip">{{sheetOneTime ? '链接 5 分钟内有效，只能打开一次' : '需要在网页端登录'}}</view>
+    <view class="btn-row">
+      <button class="btn btn-small" disabled="{{!sheetUrl}}" bindtap="onCopyLink"><image class="ic ic-sm" src="/assets/icons/copy-w.svg" />复制链接</button>
+      <button wx:if="{{sheetRoster}}" class="btn btn-small btn-secondary" bindtap="onRoster">名册格式</button>
+      <button wx:else class="btn btn-small btn-secondary" bindtap="onCloseSheet">关闭</button>
+    </view>
+  </view>
+</view>

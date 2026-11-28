@@ -3,6 +3,7 @@
  * 流程设计借鉴 DeepTutor v1.7.2 的「先规划、再逐题生成」，以 TypeScript 重新实现，不执行模型生成的代码。
  * 无法验算或结果不一致的题目进入人工审核，绝不自动通过。
  */
+import { normalizeGeneratedQuestion } from '@/lib/ai/generated-question';
 import { deidentifyQuestionText } from './deidentify';
 import { checkVariantSimilarity, toDedupCandidates, type DedupCandidate } from './dedup';
 import {
@@ -146,7 +147,7 @@ function finalizeStatus(item: Omit<PipelineItemResult, 'status' | 'reason'> & { 
     }
     const mathOk = item.verification?.computable && item.verification.passed;
     const resolveOk = item.resolveAgreed === true;
-    const difficultyOk = item.difficultyConsistent !== false;
+    const difficultyOk = item.difficultyConsistent === true;
     if (mathOk && resolveOk && difficultyOk) {
         return { ...item, status: 'verified', reason: '符号或数值验算与独立重解一致，难度相符' };
     }
@@ -156,6 +157,7 @@ function finalizeStatus(item: Omit<PipelineItemResult, 'status' | 'reason'> & { 
     if (item.resolveAgreed === false) reasons.push('独立重解与给定答案不一致');
     if (item.resolveAgreed === undefined) reasons.push('未能完成独立重解');
     if (item.difficultyConsistent === false) reasons.push('难度与规划不符');
+    else if (item.difficultyConsistent !== true) reasons.push('未能完成难度一致性检查');
     return { ...item, status: 'pending_review', reason: reasons.join('；') || '待人工审核' };
 }
 
@@ -219,7 +221,8 @@ export async function runVariantPipeline(input: PipelineInput, ai: VariantAi, op
                     itemLogs.push({ stage: 'generate', status: 'failed', latencyMs: 0, detail: { attempt, issues: parsed.error.issues.map((issue) => issue.message) } });
                     continue;
                 }
-                generated = parsed.data;
+                const normalized = normalizeGeneratedQuestion(parsed.data);
+                generated = normalized;
                 const dedup = checkVariantSimilarity(generated.questionText, toDedupCandidates(
                     { id: sourceItemId || 'original', text: sourceQuestion },
                     previous,

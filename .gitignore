@@ -12,9 +12,19 @@
 
 # testing
 /coverage
+# 离线评测随源码分发，覆盖用户级忽略 JSON 的设置。
+!/eval/baselines/baseline-sample.json
+!/eval/datasets/analyze/cases.json
+!/eval/datasets/exam-read/cases.json
+!/eval/datasets/grading/cases.json
+!/eval/datasets/verify/golden-cases.json
+
+# pdf.js 静态资源由 scripts/copy-pdfjs-assets.mjs 在 dev/build 前生成
+/public/pdfjs/
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -38,7 +48,6 @@ yarn-error.log*
 .vercel
 
 # typescript
-*.tsbuildinfoconfig
 *.tsbuildinfo
 next-env.d.ts
 
@@ -47,6 +56,9 @@ next-env.d.ts
 
 # App config (contains secrets)
 /config/app-config.json
+/config/setup-token
+/config/setup-token.*.claimed
+/config/initial-admin.json
 /config/minimax-code.json
 /config/background-tasks.json
 /config/tts-cache/
@@ -61,11 +73,21 @@ dist-scripts
 # Local Database
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db.bak*
+*.db.live-migrated*
+*.db.demo
+*.db.screenshot
 
 # Logs & Output
 *.log
+*.log.bak*
+/outputs/
 test_output*.txt
 upload_test_output*.txt
 
@@ -79,3 +101,7 @@ __pycache__/
 
 # 安装包构建产物
 /dist/
+
+# 微信小程序：依赖与开发者工具的个人配置
+/miniprogram/node_modules/
+/miniprogram/project.private.config.json

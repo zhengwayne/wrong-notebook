@@ -114,7 +114,7 @@ describe('config module', () => {
             const config = updateAppConfig({ timeZone: 'America/New_York' });
             vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(config));
             expect(getAppTimeZone()).toBe('America/New_York');
-            expect(fs.writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('"timeZone": "America/New_York"'));
+            expect(fs.writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('"timeZone": "America/New_York"'), { mode: 0o600 });
         });
 
         it('直接写配置也拒绝无效时区', async () => {
@@ -239,6 +239,41 @@ describe('config module', () => {
             expect(config.aiProvider).toBe(id);
             expect(config[id]).toMatchObject({ apiKey: 'env-key', model: 'file-model' });
         });
+
+        it('读取已有配置时去掉模型名、地址和密钥的首尾空白', async () => {
+            const fileConfig = {
+                aiProvider: 'openai',
+                openai: {
+                    instances: [{
+                        id: 'test-instance',
+                        name: 'Test',
+                        apiKey: ' sk-file-key\t',
+                        baseUrl: ' https://api.example.com/v1\t',
+                        model: 'gemini-4-hydrogen-medium\t',
+                    }],
+                    activeInstanceId: 'test-instance',
+                },
+                gemini: { apiKey: ' gm-key ', model: '  gemini-2.5-flash  ' },
+                textAi: {
+                    openai: {
+                        instances: [{ id: 'text', name: 'Text', apiKey: ' text-key\n', model: ' text-model ' }],
+                        activeInstanceId: 'text',
+                    },
+                },
+            };
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(fileConfig));
+
+            const { getAppConfig } = await import('@/lib/config');
+            const config = getAppConfig();
+
+            expect(config.openai?.instances?.[0]?.model).toBe('gemini-4-hydrogen-medium');
+            expect(config.openai?.instances?.[0]?.baseUrl).toBe('https://api.example.com/v1');
+            expect(config.openai?.instances?.[0]?.apiKey).toBe('sk-file-key');
+            expect(config.gemini?.model).toBe('gemini-2.5-flash');
+            expect(config.gemini?.apiKey).toBe('gm-key');
+            expect(config.textAi?.openai?.instances?.[0]?.model).toBe('text-model');
+            expect(config.textAi?.openai?.instances?.[0]?.apiKey).toBe('text-key');
+        });
     });
 
     describe('updateAppConfig', () => {
@@ -253,6 +288,33 @@ describe('config module', () => {
             expect(result.aiProvider).toBe('openai');
         });
 
+        it('保存时去掉模型名、地址和密钥的首尾空白', async () => {
+            mockNoConfigFile();
+            vi.mocked(fs.writeFileSync).mockImplementation(() => { });
+
+            const { updateAppConfig } = await import('@/lib/config');
+            const result = updateAppConfig({
+                openai: {
+                    instances: [{
+                        id: 'test-instance',
+                        name: 'Test',
+                        apiKey: ' sk-save\t',
+                        baseUrl: ' https://api.example.com/v1 ',
+                        model: 'gemini-4-hydrogen-medium\t',
+                    }],
+                    activeInstanceId: 'test-instance',
+                },
+                textAi: { gemini: { apiKey: ' text-save ', model: ' text-gemini ' } },
+            });
+
+            expect(result.openai?.instances?.[0]?.model).toBe('gemini-4-hydrogen-medium');
+            expect(result.openai?.instances?.[0]?.apiKey).toBe('sk-save');
+            expect(result.openai?.instances?.[0]?.baseUrl).toBe('https://api.example.com/v1');
+            expect(result.textAi?.gemini?.model).toBe('text-gemini');
+            const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+            expect(written.openai.instances[0].model).toBe('gemini-4-hydrogen-medium');
+        });
+
         it('先写临时文件再改名替换，避免读到写了一半的配置', async () => {
             mockNoConfigFile();
 
@@ -260,8 +322,29 @@ describe('config module', () => {
             updateAppConfig({ aiProvider: 'openai' });
 
             const tmp = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string;
-            expect(tmp).toMatch(/app-config\.json\.\d+\.tmp$/);
+            expect(tmp).toMatch(/app-config\.json\.\d+\.\d+\.\d+\.tmp$/);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(tmp, expect.any(String), { mode: 0o600 });
             expect(fs.renameSync).toHaveBeenCalledWith(tmp, expect.stringMatching(/app-config\.json$/));
+        });
+
+        it('迁移旧版 OpenAI 配置时使用标准 UUID 且以 0o600 落盘', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'openai',
+                openai: { apiKey: 'sk-legacy', model: 'gpt-4o' },
+            }));
+            vi.mocked(fs.writeFileSync).mockImplementation(() => { });
+            vi.mocked(fs.renameSync).mockImplementation(() => { });
+
+            const { getAppConfig } = await import('@/lib/config');
+            const config = getAppConfig();
+            const instanceId = config.openai?.instances?.[0]?.id;
+
+            expect(instanceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(
+                expect.stringMatching(/app-config\.json\.\d+\.\d+\.\d+\.tmp$/),
+                expect.any(String),
+                { mode: 0o600 }
+            );
         });
 
         it('配置文件无法读取（非不存在）时记录错误并返回默认配置', async () => {
@@ -327,6 +410,42 @@ describe('config module', () => {
             const result = updateAppConfig({ allowRegistration: false });
 
             expect(result.allowRegistration).toBe(false);
+        });
+    });
+
+    describe('文本与多模态模型角色', () => {
+        it('旧版单渠道配置在读取时应把文本角色视为与多模态相同', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'gemini',
+                gemini: { apiKey: 'legacy-key', model: 'gemini-2.5-flash' },
+            }));
+            const { getAppConfig } = await import('@/lib/config');
+            const { isTextSameAsVision, getConfigForRole } = await import('@/lib/ai/roles');
+            const config = getAppConfig();
+            expect(isTextSameAsVision(config)).toBe(true);
+            expect(getConfigForRole(config, 'text').aiProvider).toBe('gemini');
+            expect(getConfigForRole(config, 'text').gemini?.apiKey).toBe('legacy-key');
+            expect(getConfigForRole(config, 'text').gemini?.model).toBe('gemini-2.5-flash');
+        });
+
+        it('关闭共用后文本角色使用独立渠道和模型', async () => {
+            vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+                aiProvider: 'gemini',
+                gemini: { apiKey: 'vision-key', model: 'gemini-flash' },
+                textSameAsVision: false,
+                aiTextProvider: 'minimax',
+                textAi: { minimax: { apiKey: 'text-key', model: 'MiniMax-M3.1-Flash' } },
+            }));
+            const { getAppConfig } = await import('@/lib/config');
+            const { isTextSameAsVision, getConfigForRole } = await import('@/lib/ai/roles');
+            const config = getAppConfig();
+            expect(isTextSameAsVision(config)).toBe(false);
+            expect(getConfigForRole(config, 'vision').aiProvider).toBe('gemini');
+            expect(getConfigForRole(config, 'vision').gemini?.model).toBe('gemini-flash');
+            const text = getConfigForRole(config, 'text');
+            expect(text.aiProvider).toBe('minimax');
+            expect(text.minimax?.apiKey).toBe('text-key');
+            expect(text.minimax?.model).toBe('MiniMax-M3.1-Flash');
         });
     });
 });

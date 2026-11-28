@@ -6,8 +6,10 @@ import { AlertTriangle, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { withChildParam } from "@/lib/current-child";
 import { confirmDialog, toast } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 
 type DangerAction = 'migrateTags' | 'clearPractice' | 'clearErrors' | 'systemReset';
 
@@ -54,6 +56,7 @@ function ActionCard({ title, description, tone, busy, icon, onClick }: ActionCar
 /** 危险操作：清空练习记录与错题；管理员可重置系统标签和初始化系统 */
 export function DangerZoneSettings({ isAdmin }: DangerZoneSettingsProps) {
     const { t } = useLanguage();
+    const { learnerId } = useCurrentChild();
     const [running, setRunning] = useState<DangerAction | null>(null);
 
     /** 执行操作，成功后提示；reload 为 true 时刷新页面 */
@@ -84,7 +87,7 @@ export function DangerZoneSettings({ isAdmin }: DangerZoneSettingsProps) {
     const handleClearPractice = async () => {
         if (!(await confirmDialog(t.settings?.clearDataConfirm || "Are you sure?", { destructive: true }))) return;
         await run('clearPractice', async () => {
-            await apiClient.delete("/api/stats/practice/clear");
+            await apiClient.delete(withChildParam("/api/stats/practice/clear", learnerId));
             return success;
         }, failed, true);
     };
@@ -92,7 +95,7 @@ export function DangerZoneSettings({ isAdmin }: DangerZoneSettingsProps) {
     const handleClearErrors = async () => {
         if (!(await confirmDialog(t.settings?.clearErrorDataConfirm || "Are you sure?", { destructive: true }))) return;
         await run('clearErrors', async () => {
-            await apiClient.delete("/api/error-items/clear");
+            await apiClient.delete(withChildParam("/api/error-items/clear", learnerId));
             return success;
         }, failed, true);
     };

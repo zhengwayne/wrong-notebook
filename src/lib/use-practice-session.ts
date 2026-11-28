@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
 import { matchAnswer } from "@/lib/answer-match";
 import { getApiErrorMessage } from "@/lib/error-message";
 import { frontendLogger } from "@/lib/frontend-logger";
@@ -19,6 +19,14 @@ const AI_ERROR_KEYS = [
     ['AI_CONNECTION_FAILED', 'aiConnectionFailed'],
     ['AI_RESPONSE_ERROR', 'aiResponseError'],
     ['AI_AUTH_ERROR', 'aiAuth'],
+    ['AI_TIMEOUT_ERROR', 'AI_TIMEOUT_ERROR'],
+    ['AI_TIMEOUT', 'AI_TIMEOUT_ERROR'],
+    ['AI_QUOTA_EXCEEDED', 'AI_QUOTA_EXCEEDED'],
+    ['AI_RATE_LIMIT', 'AI_QUOTA_EXCEEDED'],
+    ['AI_PERMISSION_DENIED', 'AI_PERMISSION_DENIED'],
+    ['AI_NOT_FOUND', 'AI_NOT_FOUND'],
+    ['AI_SERVICE_UNAVAILABLE', 'AI_SERVICE_UNAVAILABLE'],
+    ['AI_DAILY_LIMIT_EXCEEDED', 'AI_DAILY_LIMIT_EXCEEDED'],
     ['AI_OUTPUT_TRUNCATED', 'AI_OUTPUT_TRUNCATED'],
     ['AI_UNKNOWN_ERROR', 'AI_UNKNOWN_ERROR'],
 ] as const;
@@ -38,6 +46,7 @@ export function usePracticeSession(errorItemId: string | null) {
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
     // AI 判题中；判定依据与失败状态用于在结果中说明
+    const requestInFlight = useRef(false);
     const [grading, setGrading] = useState(false);
     const [gradeReason, setGradeReason] = useState<string | null>(null);
     const [gradeFailed, setGradeFailed] = useState(false);
@@ -55,7 +64,10 @@ export function usePracticeSession(errorItemId: string | null) {
     useEffect(() => {
         apiClient.get<AppConfig>("/api/settings")
             .then(setConfig)
-            .catch(err => frontendLogger.error('[Practice]', 'Failed to fetch config', { error: err }));
+            .catch((err) => {
+                if (err instanceof ApiError && err.status === 403) return;
+                frontendLogger.error('[Practice]', 'Failed to fetch config', { error: err });
+            });
     }, []);
 
     // 进入页面时先读取该错题最近一次生成的题目，有则直接显示
@@ -93,8 +105,8 @@ export function usePracticeSession(errorItemId: string | null) {
     const timeout = config?.timeouts?.analyze || DEFAULT_TIMEOUT;
 
     const generateQuestion = async () => {
-        if (!errorItemId) return;
-
+        if (!errorItemId || requestInFlight.current) return;
+        requestInFlight.current = true;
         setLoading(true);
         setError(null);
         setUserAnswer("");
@@ -123,18 +135,24 @@ export function usePracticeSession(errorItemId: string | null) {
             }
         } catch (err) {
             frontendLogger.error('[Practice]', 'Failed to generate practice question', { error: err });
-            const msg = getApiErrorMessage(err) || "";
-            const matched = AI_ERROR_KEYS.find(([code]) => msg.includes(code));
+            const code = typeof err === 'object' && err !== null && 'data' in err
+                && typeof err.data === 'object' && err.data !== null && 'code' in err.data
+                && typeof (err.data as { code?: unknown }).code === 'string'
+                ? (err.data as { code: string }).code
+                : '';
+            const msg = `${code} ${getApiErrorMessage(err) || ""}`;
+            const matched = AI_ERROR_KEYS.find(([key]) => msg.includes(key));
             const fallback = t.practice.errors?.default || "Failed to generate";
             setError((matched && t.errors?.[matched[1]]) || fallback);
         } finally {
+            requestInFlight.current = false;
             setLoading(false);
         }
     };
 
     // 不要求过程且本地能确定答案一致时直接判对；需要论证或无法比对时交给 AI，失败时由用户选择结果
     const submitAnswer = async () => {
-        if (!userAnswer.trim() || !question || !errorItemId) return;
+        if (requestInFlight.current || !userAnswer.trim() || !question || !errorItemId) return;
 
         setIsSubmitted(true);
         if (matchAnswer(userAnswer, question.answerText, question.questionText)) {
@@ -143,6 +161,7 @@ export function usePracticeSession(errorItemId: string | null) {
             return;
         }
 
+        requestInFlight.current = true;
         setGrading(true);
         try {
             const graded = await apiClient.post<{ correct: boolean; reason: string }>("/api/practice/grade", {
@@ -157,6 +176,7 @@ export function usePracticeSession(errorItemId: string | null) {
             setIsCorrect(null);
             setGradeFailed(true);
         } finally {
+            requestInFlight.current = false;
             setGrading(false);
             setShowAnswer(true);
         }
@@ -164,6 +184,7 @@ export function usePracticeSession(errorItemId: string | null) {
 
     // 不作答直接看答案，由用户自己判定结果
     const revealAnswer = () => {
+        if (requestInFlight.current) return;
         setIsSubmitted(true);
         setIsCorrect(null);
         setShowAnswer(true);

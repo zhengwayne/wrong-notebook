@@ -1,20 +1,29 @@
+import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { compare } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { startBackgroundTask } from "@/lib/background-tasks";
 import type { BackgroundTaskHandle } from "@/lib/background-tasks";
-import { createErrorResponse, ErrorCode } from "@/lib/api-errors";
+import { createErrorResponse, ErrorCode, forbidden, tooManyRequests } from "@/lib/api-errors";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { generateUniqueShortId } from "@/lib/short-id";
 import { scheduleMasteryEvaluation } from "@/lib/mastery";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { parseDifficultyStars } from "@/lib/ai/schema";
+import { recordAiProvenance } from "@/lib/ai/provenance";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { getErrorMessage } from "@/lib/error-message";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope, type LearningScope } from "@/lib/learning-scope";
+import { ImageValidationError, normalizeImageBuffer } from "@/lib/server/image-normalize";
+import { findUserByEmailInsensitive, findUserByLoginIdentifier, normalizeEmail } from "@/lib/email";
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account";
+import { getClientIp, loginAccountLimiter, loginIpLimiter } from "@/lib/rate-limit";
 
 const logger = createLogger('api:openclaw:batch-upload');
 
@@ -124,13 +133,15 @@ async function callOpenclawAgent(imageBase64: string, mimeType: string, timeout:
 }
 
 async function createErrorItem(
-    userId: string,
+    scope: LearningScope,
     imageBase64: string,
     mimeType: string,
     parsedData: OpenclawResponse['data'],
     finalGradeSemester: string | null,
-    subjectId?: string
+    subjectId?: string,
+    provenanceId?: string | null
 ) {
+    const userId = scope.userId;
     const { questionText, answerText, analysis, knowledgePoints, errorType, source } = parsedData || {};
     const difficultyStars = parseDifficultyStars(parsedData?.difficultyStars);
 
@@ -143,20 +154,21 @@ async function createErrorItem(
         originalImageUrl: `data:${mimeType};base64,${imageBase64}`,
     };
     const result = await runQuestionImportTransaction(async (tx) => {
-        const duplicate = await findDuplicateQuestion(tx, userId, content);
-        if (duplicate) return recordDuplicateQuestion(tx, userId, duplicate, content);
+        const duplicate = await findDuplicateQuestion(tx, scope, content);
+        if (duplicate) return recordDuplicateQuestion(tx, scope, duplicate, content);
 
         const tagNames: string[] = Array.isArray(knowledgePoints) ? knowledgePoints : [];
         const tagConnections: { id: string }[] = [];
 
         const subject = subjectId ? await tx.subject.findUnique({ where: { id: subjectId } }) : null;
-        const subjectKey = subject ? inferSubjectFromName(subject.name) : null;
+        const subjectKey = (subject ? inferSubjectFromName(subject.name) : null) || (parsedData?.subject ? inferSubjectFromName(parsedData.subject) : null) || 'other';
 
         for (const tagName of tagNames) {
             try {
                 let tag = await tx.knowledgeTag.findFirst({
                     where: {
                         name: tagName,
+                        subject: subjectKey,
                         OR: [
                             { isSystem: true },
                             { userId: userId },
@@ -165,14 +177,14 @@ async function createErrorItem(
                 });
 
                 if (!tag) {
-                    const parentId = finalGradeSemester && subjectKey
+                    const parentId = finalGradeSemester && subjectKey !== 'other'
                         ? await findParentTagIdForGrade(finalGradeSemester, subjectKey, tx)
                         : null;
 
                     tag = await tx.knowledgeTag.create({
                         data: {
                             name: tagName,
-                            subject: subjectKey || 'other',
+                            subject: subjectKey,
                             isSystem: false,
                             userId: userId,
                             parentId: parentId || undefined,
@@ -191,6 +203,7 @@ async function createErrorItem(
                 shortId: await generateUniqueShortId(tx),
                 userId: userId,
                 subjectId: subjectId || undefined,
+                learnerId: scope.learnerId || undefined,
                 originalImageUrl: `data:${mimeType};base64,${imageBase64}`,
                 ocrText: questionText || null,
                 questionText: questionText || null,
@@ -202,6 +215,7 @@ async function createErrorItem(
                 difficultyStars,
                 errorType: errorType || null,
                 source: source || 'Openclaw',
+                provenanceId: provenanceId ?? null,
                 masteryLevel: 0,
                 tags: {
                     connect: tagConnections,
@@ -216,7 +230,14 @@ async function createErrorItem(
         return errorItem;
     });
     if ('duplicate' in result && result.duplicate) scheduleMasteryEvaluation([result.id]);
+    if (result?.id) scheduleLearningPathReplan(userId, 'zh', scope.learnerId);
     return result;
+}
+
+function safeCompareSecret(provided: string, expected: string): boolean {
+    const providedDigest = crypto.createHash('sha256').update(provided, 'utf8').digest();
+    const expectedDigest = crypto.createHash('sha256').update(expected, 'utf8').digest();
+    return crypto.timingSafeEqual(providedDigest, expectedDigest);
 }
 
 export async function POST(req: Request) {
@@ -225,22 +246,31 @@ export async function POST(req: Request) {
     // 获取请求头中的 API Key
     const apiKey = req.headers.get('x-api-key');
     // 从环境变量获取配置的 API Key
-    const expectedApiKey = process.env.OPENCLAW_INTEGRATION_API_KEY;
+    const expectedApiKey = process.env.OPENCLAW_INTEGRATION_API_KEY?.trim() || '';
     // 认证模式：credentials（用户名密码，默认）或 apikey（API Key）
     const authMode = process.env.OPENCLAW_AUTH_MODE || 'credentials';
 
     let user = null;
-    let userEmail = null;
-    let subjectId = null;
+    let userEmail: string | null = null;
+    let rawSubjectId: unknown = undefined;
     let task: BackgroundTaskHandle | null = null;
 
     try {
         const body = await req.json();
         const requestData = body;
 
-        // 根据认证模式选择验证方式
-        if (authMode === 'apikey' && expectedApiKey) {
-            // API Key 认证模式
+        // 根据认证模式选择验证方式：apikey 模式下缺少服务端密钥配置时显式拒绝，绝不静默降级为密码认证
+        if (authMode === 'apikey') {
+            if (!expectedApiKey) {
+                logger.error('OPENCLAW_AUTH_MODE=apikey but OPENCLAW_INTEGRATION_API_KEY is missing');
+                return createErrorResponse(
+                    '服务未配置 Openclaw API 密钥',
+                    503,
+                    ErrorCode.INTERNAL_ERROR,
+                    'Openclaw API key not configured'
+                );
+            }
+
             if (!apiKey) {
                 logger.warn('Missing API key in request');
                 return createErrorResponse(
@@ -251,7 +281,7 @@ export async function POST(req: Request) {
                 );
             }
 
-            if (apiKey !== expectedApiKey) {
+            if (!safeCompareSecret(apiKey, expectedApiKey)) {
                 logger.warn('Invalid API key provided');
                 return createErrorResponse(
                     'API密钥无效',
@@ -261,13 +291,21 @@ export async function POST(req: Request) {
                 );
             }
 
-            userEmail = requestData.userEmail;
-            subjectId = requestData.subjectId;
+            if (typeof requestData.userEmail !== 'string' || !requestData.userEmail.trim()) {
+                return createErrorResponse(
+                    '缺少有效的用户邮箱',
+                    400,
+                    ErrorCode.BAD_REQUEST,
+                    'Invalid or missing userEmail'
+                );
+            }
+            userEmail = normalizeEmail(requestData.userEmail);
+            rawSubjectId = requestData.subjectId;
         } else {
             // 用户名密码认证模式（默认）
             const { username, password } = requestData;
 
-            if (!username || !password) {
+            if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password) {
                 return createErrorResponse(
                     '请提供用户名和密码',
                     401,
@@ -276,40 +314,42 @@ export async function POST(req: Request) {
                 );
             }
 
-            // 从数据库查找用户（支持邮箱或用户名登录）
-            user = await prisma.user.findFirst({
-                where: {
-                    OR: [
-                        { email: username },
-                        { name: username }
-                    ]
-                }
-            });
-
-            if (!user) {
-                logger.warn({ username }, 'User not found');
-                return createErrorResponse(
-                    '用户不存在',
-                    404,
-                    ErrorCode.USER_NOT_FOUND,
-                    'User not found'
-                );
+            const ip = getClientIp(req.headers);
+            const accountKey = normalizeEmail(username);
+            const accountRetry = loginAccountLimiter.retryAfter(accountKey);
+            const ipRetry = ip ? loginIpLimiter.retryAfter(ip) : 0;
+            const retryAfter = Math.max(accountRetry, ipRetry);
+            if (retryAfter > 0) {
+                logger.warn({ username: accountKey, ip }, 'Openclaw credentials login rate limited');
+                return tooManyRequests(retryAfter);
             }
 
-            // 验证密码（使用 bcrypt 比对）
-            const isPasswordValid = await compare(password, user.password);
-            if (!isPasswordValid) {
-                logger.warn({ username }, 'Invalid password');
+            // 从数据库查找用户（支持邮箱大小写不敏感或用户名精确匹配），存在与否统一报 401 防止账户枚举
+            user = await findUserByLoginIdentifier(prisma, username);
+            // 仅微信登录的账号（占位邮箱）不能用账号密码登录
+            if (user && isWechatPlaceholderEmail(user.email)) user = null;
+            const isPasswordValid = user ? await compare(password, user.password) : false;
+
+            if (!user || !isPasswordValid) {
+                loginAccountLimiter.hit(accountKey);
+                if (ip) loginIpLimiter.hit(ip);
+                logger.warn({ username: accountKey }, 'Openclaw credentials authentication failed');
                 return createErrorResponse(
-                    '密码错误',
+                    '用户名或密码错误',
                     401,
                     ErrorCode.UNAUTHORIZED,
-                    'Invalid password'
+                    'Invalid username or password'
                 );
             }
 
-            userEmail = user.email;
-            subjectId = requestData.subjectId;
+            if (!user.isActive) {
+                logger.warn({ userId: user.id }, 'Disabled user attempted Openclaw upload');
+                return forbidden('账号已禁用');
+            }
+
+            loginAccountLimiter.reset(accountKey);
+            userEmail = normalizeEmail(user.email);
+            rawSubjectId = requestData.subjectId;
             logger.info({ userId: user.id, email: user.email }, 'User authenticated via credentials');
         }
 
@@ -336,12 +376,10 @@ export async function POST(req: Request) {
             );
         }
 
-        // 获取用户信息（API Key模式需要单独查询）
+        // 获取用户信息（API Key 模式需要单独按大小写不敏感查库并校验激活状态）
         let dbUser = user;
-        if (!dbUser) {
-            dbUser = await prisma.user.findUnique({
-                where: { email: userEmail },
-            });
+        if (!dbUser && userEmail) {
+            dbUser = await findUserByEmailInsensitive(prisma, userEmail);
         }
 
         if (!dbUser) {
@@ -354,8 +392,66 @@ export async function POST(req: Request) {
             );
         }
 
-        const timeout = parseInt(process.env.OPENCLAW_TIMEOUT || '30000', 10);
-        const singleImageTimeout = Math.min(3000, timeout / images.length);
+        if (!dbUser.isActive) {
+            logger.warn({ userId: dbUser.id }, 'Disabled user rejected for Openclaw upload');
+            return forbidden('账号已禁用');
+        }
+
+        // 校验 subjectId 类型及归属，防止跨账户写入他人错题本
+        let subjectId: string | undefined;
+        if (rawSubjectId !== undefined && rawSubjectId !== null) {
+            if (typeof rawSubjectId !== 'string') {
+                return createErrorResponse(
+                    'subjectId 参数无效',
+                    400,
+                    ErrorCode.BAD_REQUEST,
+                    'Invalid subjectId'
+                );
+            }
+            const trimmedSubjectId = rawSubjectId.trim();
+            if (trimmedSubjectId) {
+                const targetSubject = await prisma.subject.findUnique({
+                    where: { id: trimmedSubjectId },
+                    select: { id: true, userId: true },
+                });
+                if (!targetSubject || targetSubject.userId !== dbUser.id) {
+                    return forbidden('无权写入该错题本');
+                }
+                subjectId = targetSubject.id;
+            }
+        }
+
+        const rawLearnerInput = requestData.learnerId;
+        if (
+            rawLearnerInput !== undefined &&
+            rawLearnerInput !== null &&
+            typeof rawLearnerInput !== 'string'
+        ) {
+            return createErrorResponse(
+                'learnerId 参数无效',
+                400,
+                ErrorCode.BAD_REQUEST,
+                'Invalid learnerId'
+            );
+        }
+        let scope: LearningScope;
+        try {
+            scope = await resolveLearningScope(prisma, dbUser.id, rawLearnerInput ?? null);
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) {
+                return createErrorResponse(
+                    '未找到学习者档案',
+                    404,
+                    ErrorCode.NOT_FOUND,
+                    'Learner not found'
+                );
+            }
+            throw error;
+        }
+
+        const parsedTimeout = parseInt(process.env.OPENCLAW_TIMEOUT || '30000', 10);
+        const totalTimeout = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 30000;
+        const singleImageTimeout = Math.max(3000, Math.floor(totalTimeout / images.length));
         const results: Array<{
             success: boolean;
             index: number;
@@ -388,7 +484,21 @@ export async function POST(req: Request) {
                 continue;
             }
 
-            const openclawResponse = await callOpenclawAgent(base64, mimeType, singleImageTimeout);
+            let normalizedImg: { base64: string; mimeType: string };
+            try {
+                normalizedImg = await normalizeImageBuffer(Buffer.from(base64, 'base64'), { allowedFormats: ['jpeg', 'png'] });
+            } catch (imgError) {
+                const errMsg = imgError instanceof ImageValidationError ? imgError.code : 'INVALID_IMAGE';
+                logger.warn({ index: i, filename, error: errMsg }, 'Image normalization failed');
+                results.push({
+                    success: false,
+                    index: i,
+                    error: `无效或损坏的图片数据: ${errMsg}`,
+                });
+                continue;
+            }
+
+            const openclawResponse = await callOpenclawAgent(normalizedImg.base64, normalizedImg.mimeType, singleImageTimeout);
 
             if (!openclawResponse.success || !openclawResponse.data) {
                 logger.error({ index: i, error: openclawResponse.error }, 'Openclaw recognition failed');
@@ -406,19 +516,26 @@ export async function POST(req: Request) {
                     recognizedGradeSemester: openclawResponse.data.gradeSemester,
                 };
                 const duplicateBeforeRecognition = needsQuestionGradeRecognition(dbUser, gradeInput)
-                    ? await findDuplicateQuestion(prisma, dbUser.id, gradeInput) : null;
+                    ? await findDuplicateQuestion(prisma, scope, gradeInput) : null;
                 const gradeResult = await prepareImportGrade(dbUser, gradeInput, duplicateBeforeRecognition !== null);
                 if (gradeResult.response) {
                     results.push({ success: false, index: i, error: 'AI_DAILY_LIMIT_EXCEEDED' });
                     continue;
                 }
+                const provenanceId = await recordAiProvenance(prisma, {
+                    task: 'analyze',
+                    role: 'vision',
+                    providerOverride: 'openclaw',
+                    modelOverride: 'agent',
+                });
                 const errorItem = await createErrorItem(
-                    dbUser.id,
-                    base64,
-                    mimeType,
+                    scope,
+                    normalizedImg.base64,
+                    normalizedImg.mimeType,
                     openclawResponse.data,
                     gradeResult.gradeSemester,
-                    subjectId
+                    subjectId,
+                    provenanceId,
                 );
 
                 results.push({

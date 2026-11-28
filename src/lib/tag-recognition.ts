@@ -1,8 +1,7 @@
 
-import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
-export async function findParentTagIdForGrade(gradeSemester: string | null | undefined, subjectKey: string, client: Prisma.TransactionClient = prisma): Promise<string | null> {
+export async function findParentTagIdForGrade(gradeSemester: string | null | undefined, subjectKey: string, client: PrismaClient | Prisma.TransactionClient): Promise<string | null> {
     if (!gradeSemester || !subjectKey) return null;
 
     // Fetch all system root tags for the subject (which are typically Grades)

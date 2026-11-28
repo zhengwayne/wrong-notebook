@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ClipboardCheck, Download, Loader2, Sparkles } from "lucide-react";
+import { ClipboardCheck, Download, Loader2, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLoading } from "@/components/ui/page-loading";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -17,6 +18,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "@/lib/feedback";
+import { withTopicLabel } from "@/lib/variant/topic-label";
 import type { GradingClassInfo } from "@/types/grading";
 
 type Tab = "queue" | "weakness" | "compare";
@@ -61,13 +63,26 @@ function VariantsContent() {
     const v = t.variants;
     usePageTitle(v.title);
     const search = useSearchParams();
-    const [tab, setTab] = useState<Tab>((search.get("tab") as Tab) || "queue");
+    const searchKey = search.toString();
+    const initialClassId = search.get("classId") || "";
+    const initialTopic = search.get("topic") || "";
+    const rawTab = search.get("tab");
+    const explicitTab: Tab | null = rawTab === "queue" || rawTab === "weakness" || rawTab === "compare" ? rawTab : null;
+    const defaultTab: Tab = explicitTab || (initialClassId || initialTopic ? "weakness" : "queue");
+    const [tabOverride, setTabOverride] = useState<{ key: string; value: Tab } | null>(null);
+    const tab = tabOverride && tabOverride.key === searchKey ? tabOverride.value : defaultTab;
+    const setTab = (value: Tab) => setTabOverride({ key: searchKey, value });
     const [runs, setRuns] = useState<Run[] | null>(null);
-    const [selected, setSelected] = useState<string | null>(search.get("run"));
+    const [selectedOverride, setSelectedOverride] = useState<{ key: string; value: string | null } | null>(null);
+    const selected = selectedOverride && selectedOverride.key === searchKey ? selectedOverride.value : search.get("run");
+    const setSelected = (value: string | null) => setSelectedOverride({ key: searchKey, value });
     const [run, setRun] = useState<Run | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
 
-    const loadRuns = () => apiClient.get<{ runs: Run[] }>("/api/variants/runs").then((data) => setRuns(data.runs)).catch(() => setRuns([]));
+    const [listFailed, setListFailed] = useState(false);
+    const loadRuns = () => apiClient.get<{ runs: Run[] }>("/api/variants/runs")
+        .then(data => { setRuns(data.runs); setListFailed(false); })
+        .catch(() => setListFailed(true));
 
     useEffect(() => { void loadRuns(); }, []);
     useEffect(() => {
@@ -84,7 +99,7 @@ function VariantsContent() {
     const current = (run && run.id === selected ? run : null) || runs?.find((item) => item.id === selected) || null;
 
     return (
-        <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto min-h-screen max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <div className="space-y-5">
                 <PageHeader title={v.title} description={v.subtitle} />
                 <SegmentedControl<Tab> value={tab} onChange={setTab} options={[
@@ -92,13 +107,24 @@ function VariantsContent() {
                     { value: "weakness", label: v.tabs.weakness, icon: Sparkles },
                     { value: "compare", label: v.tabs.compare, icon: Download },
                 ]} />
-                {tab === "queue" && (
+                {tab === "queue" && listFailed && <ErrorState onRetry={() => void loadRuns()} />}
+                {tab === "queue" && !listFailed && (
                     <QueuePanel v={v} runs={runs} selected={selected} current={current} busy={busy}
                         onSelect={setSelected}
                         onReviewed={() => { void loadRuns(); if (selected) apiClient.get<{ run: Run }>(`/api/variants/runs/${selected}`).then((data) => setRun(data.run)); }}
                         setBusy={setBusy} />
                 )}
-                {tab === "weakness" && <WeaknessPanel v={v} language={language} onStarted={() => { setTab("queue"); void loadRuns(); }} />}
+                {tab === "weakness" && (
+                    <WeaknessPanel
+                        key={`${initialClassId}::${initialTopic}`}
+                        v={v}
+                        language={language}
+                        initialClassId={initialClassId}
+                        initialTopic={initialTopic}
+                        clearLabel={t.common.clearFilters}
+                        onStarted={() => { setTab("queue"); void loadRuns(); }}
+                    />
+                )}
                 {tab === "compare" && <ComparePanel v={v} />}
             </div>
         </main>
@@ -208,10 +234,25 @@ function ItemCard({ item, v, busy, setBusy, onReviewed }: { item: RunItem; v: Re
     );
 }
 
-function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLanguage>["t"]["variants"]; language: "zh" | "en"; onStarted: () => void }) {
+function WeaknessPanel({
+    v,
+    language,
+    initialClassId = "",
+    initialTopic = "",
+    clearLabel,
+    onStarted,
+}: {
+    v: ReturnType<typeof useLanguage>["t"]["variants"];
+    language: "zh" | "en";
+    initialClassId?: string;
+    initialTopic?: string;
+    clearLabel: string;
+    onStarted: () => void;
+}) {
     const [classes, setClasses] = useState<GradingClassInfo[]>([]);
-    const [classId, setClassId] = useState("");
+    const [classId, setClassId] = useState(initialClassId);
     const [studentId, setStudentId] = useState("");
+    const [topicFilter, setTopicFilter] = useState(initialTopic || "");
     const [count, setCount] = useState(5);
     const [data, setData] = useState<{ classWeaknesses?: Array<{ knowledgePoint: string; studentCount: number; averageScore: number }>; students?: Array<{ studentId: string; name: string; profile: { weaknesses: Array<{ knowledgePoint: string; score: number; itemCount: number; unmasteredCount: number }>; suggestedDifficulty: string; itemCount: number } }>; profile?: { weaknesses: Array<{ knowledgePoint: string; score: number; itemCount: number; unmasteredCount: number }>; suggestedDifficulty: string; itemCount: number }; topicBrief?: { knowledgePoints: string[]; reason: string } } | null>(null);
     const [busy, setBusy] = useState(false);
@@ -227,7 +268,20 @@ function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLan
     const start = async (kind: "personalized_set" | "topic" | "class_topic") => {
         setBusy(true);
         try {
-            await apiClient.post("/api/variants/runs", { kind: kind === "topic" && classId && !studentId ? "class_topic" : kind, classId: classId || undefined, studentId: studentId || undefined, count, language }, { timeout: 180000, recoverable: true });
+            const effectiveKind = kind === "topic" && classId && !studentId ? "class_topic" : kind;
+            const trimmedTopic = topicFilter.trim();
+            await apiClient.post(
+                "/api/variants/runs",
+                {
+                    kind: effectiveKind,
+                    classId: classId || undefined,
+                    studentId: studentId || undefined,
+                    count,
+                    language,
+                    ...((effectiveKind === "topic" || effectiveKind === "class_topic") && trimmedTopic ? { topic: trimmedTopic } : {}),
+                },
+                { timeout: 180000, recoverable: true },
+            );
             toast.success(v.start);
             onStarted();
         } catch (error) { toast.error(error); } finally { setBusy(false); }
@@ -237,7 +291,7 @@ function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLan
     return (
         <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
-                <NativeSelect aria-label={v.selectClass} value={classId} onChange={(event) => { setClassId(event.target.value); setStudentId(""); }}>
+                <NativeSelect aria-label={v.selectClass} value={classId} onChange={(event) => { setClassId(event.target.value); setStudentId(""); setTopicFilter(""); }}>
                     <option value="">{v.selectClass}</option>
                     {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </NativeSelect>
@@ -247,10 +301,47 @@ function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLan
                 </NativeSelect>
                 <Input type="number" min={3} max={8} value={count} onChange={(event) => setCount(Math.min(8, Math.max(3, Number(event.target.value) || 5)))} aria-label={v.count} />
             </div>
+            {topicFilter && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-primary">
+                    <span>{v.kind.topic}：{topicFilter}</span>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setTopicFilter("")}
+                        aria-label={clearLabel}
+                    >
+                        <X className="mr-1 h-3 w-3" />
+                        {clearLabel}
+                    </Button>
+                </div>
+            )}
             <div className="flex flex-wrap gap-2">
-                {studentId && <Button disabled={busy} onClick={() => start("personalized_set")}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}{v.generateSet}</Button>}
-                {studentId && <Button variant="secondary" disabled={busy} onClick={() => start("topic")}>{v.generateTopic}</Button>}
-                {classId && !studentId && <Button disabled={busy} onClick={() => start("class_topic")}>{v.generateClassTopic}</Button>}
+                {studentId && topicFilter.trim() && (
+                    <>
+                        <Button disabled={busy} onClick={() => start("topic")}>
+                            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {withTopicLabel(v.withTopic, v.generateTopic, topicFilter.trim())}
+                        </Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateSet}</Button>
+                    </>
+                )}
+                {studentId && !topicFilter.trim() && (
+                    <>
+                        <Button disabled={busy} onClick={() => start("personalized_set")}>
+                            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {v.generateSet}
+                        </Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => start("topic")}>{v.generateTopic}</Button>
+                    </>
+                )}
+                {classId && !studentId && (
+                    <Button disabled={busy} onClick={() => start("class_topic")}>
+                        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {topicFilter.trim() ? withTopicLabel(v.withTopic, v.generateClassTopic, topicFilter.trim()) : v.generateClassTopic}
+                    </Button>
+                )}
                 {classId && !studentId && <Button variant="secondary" disabled={busy} onClick={() => start("personalized_set")}>{v.generateClassSets}</Button>}
             </div>
             {data?.classWeaknesses && (
@@ -279,7 +370,16 @@ function WeaknessPanel({ v, language, onStarted }: { v: ReturnType<typeof useLan
 
 function ComparePanel({ v }: { v: ReturnType<typeof useLanguage>["t"]["variants"] }) {
     const [data, setData] = useState<{ totals: Record<string, { count: number; verifyRate: number | null; difficultyMatchRate: number | null; latencyMs: number | null; totalTokens: number | null; cost: number | null }>; runs: Array<Record<string, string | number | null>> } | null>(null);
-    useEffect(() => { apiClient.get<NonNullable<typeof data>>("/api/variants/compare").then(setData).catch(() => setData(null)); }, []);
+    const [failed, setFailed] = useState(false);
+    const [attempt, setAttempt] = useState(0);
+    useEffect(() => {
+        let active = true;
+        apiClient.get<NonNullable<typeof data>>("/api/variants/compare")
+            .then(result => { if (active) setData(result); })
+            .catch(() => { if (active) setFailed(true); });
+        return () => { active = false; };
+    }, [attempt]);
+    if (failed) return <ErrorState onRetry={() => { setFailed(false); setAttempt(value => value + 1); }} />;
     if (!data) return <PageLoading />;
     const card = (mode: "pipeline" | "legacy") => {
         const row = data.totals[mode];

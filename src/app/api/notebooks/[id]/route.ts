@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { resolveNotebookItemFilter } from "@/lib/server/notebook-item-filter";
 import { createLogger } from "@/lib/logger";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:notebooks:id');
 
@@ -11,77 +11,43 @@ const logger = createLogger('api:notebooks:id');
  * GET /api/notebooks/[id]
  * 获取单个错题本详情
  */
-export async function GET(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const GET = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (req, { user, params }) => {
+        const { id } = await params;
 
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const notebook = await prisma.subject.findUnique({
-            where: { id },
-            include: {
-                _count: {
-                    select: {
-                        errorItems: true,
-                    },
+        try {
+            const itemFilter = await resolveNotebookItemFilter(user.id, new URL(req.url).searchParams);
+            if (itemFilter instanceof Response) return itemFilter;
+            const notebook = await prisma.subject.findUnique({
+                where: { id },
+                include: {
+                    _count: { select: { errorItems: itemFilter.learnerId !== undefined ? { where: itemFilter } : true } },
                 },
-            },
-        });
-
-        if (!notebook) {
-            return notFound("Notebook not found");
+            });
+            if (!notebook) return notFound("Notebook not found");
+            if (notebook.userId !== user.id) return forbidden("Not authorized to access this notebook");
+            return NextResponse.json(notebook);
+        } catch (error) {
+            logger.error({ error }, 'Error fetching notebook');
+            return internalError("Failed to fetch notebook");
         }
-
-        if (notebook.userId !== user.id) {
-            return forbidden("Not authorized to access this notebook");
-        }
-
-        return NextResponse.json(notebook);
-    } catch (error) {
-        logger.error({ error }, 'Error fetching notebook');
-        return internalError("Failed to fetch notebook");
-    }
-}
+    },
+);
 
 /**
  * PUT /api/notebooks/[id]
  * 更新错题本信息
  */
-export async function PUT(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const PUT = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (req, { user, params }) => {
+        const { id } = await params;
 
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
+        try {
+            const notebook = await prisma.subject.findUnique({
+                where: { id },
             });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const notebook = await prisma.subject.findUnique({
-            where: { id },
-        });
 
         if (!notebook) {
             return notFound("Notebook not found");
@@ -117,62 +83,50 @@ export async function PUT(
         logger.error({ error }, 'Error updating notebook');
         return internalError("Failed to update notebook");
     }
-}
+});
 
 /**
  * DELETE /api/notebooks/[id]
  * 删除错题本
  */
-export async function DELETE(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const DELETE = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (_req, { user, params }) => {
+        const { id } = await params;
 
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const notebook = await prisma.subject.findUnique({
-            where: { id },
-            include: {
-                _count: {
-                    select: {
-                        errorItems: true,
+        try {
+            const notebook = await prisma.subject.findUnique({
+                where: { id },
+                include: {
+                    _count: {
+                        select: {
+                            errorItems: true,
+                        },
                     },
                 },
-            },
-        });
+            });
 
-        if (!notebook) {
-            return notFound("Notebook not found");
+            if (!notebook) {
+                return notFound("Notebook not found");
+            }
+
+            if (notebook.userId !== user.id) {
+                return forbidden("Not authorized to delete this notebook");
+            }
+
+            // 检查是否有错题
+            if (notebook._count.errorItems > 0) {
+                return badRequest("Cannot delete notebook with error items. Please move or delete all items first.");
+            }
+
+            await prisma.subject.delete({
+                where: { id },
+            });
+
+            return NextResponse.json({ message: "Notebook deleted successfully" });
+        } catch (error) {
+            logger.error({ error }, 'Error deleting notebook');
+            return internalError("Failed to delete notebook");
         }
-
-        if (notebook.userId !== user.id) {
-            return forbidden("Not authorized to delete this notebook");
-        }
-
-        // 检查是否有错题
-        if (notebook._count.errorItems > 0) {
-            return badRequest("Cannot delete notebook with error items. Please move or delete all items first.");
-        }
-
-        await prisma.subject.delete({
-            where: { id },
-        });
-
-        return NextResponse.json({ message: "Notebook deleted successfully" });
-    } catch (error) {
-        logger.error({ error }, 'Error deleting notebook');
-        return internalError("Failed to delete notebook");
-    }
-}
+    },
+);

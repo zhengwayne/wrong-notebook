@@ -1,0 +1,129 @@
+<view class="container safe-bottom">
+  <kid-lock id="kid-lock" wx:if="{{kidMode}}" learner-name="{{kid.learnerName || learnerName}}" bind:unlocked="onKidUnlocked" />
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <!-- 游客：登录入口；使用说明、隐私保护指引不登录也能看 -->
+  <block wx:if="{{guest}}">
+    <view class="card profile" id="guest-profile">
+      <view class="avatar">学</view>
+      <view class="flex-1">
+        <view class="name-row"><text class="name">未登录</text></view>
+      </view>
+      <button class="btn btn-small guest-login" id="me-login" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-w.svg" />登录</button>
+    </view>
+    <view class="card cells">
+      <view class="cell" hover-class="press" bindtap="onHelp">
+        <image class="ic" src="/assets/icons/circle-help-p.svg" />
+        <text class="flex-1">使用说明</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+      <view class="cell" hover-class="press" bindtap="onPrivacy" id="me-privacy">
+        <image class="ic" src="/assets/icons/shield-check-p.svg" />
+        <text class="flex-1">隐私保护指引</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+    </view>
+  </block>
+
+  <block wx:elif="{{user}}">
+    <!-- 个人信息 -->
+    <view class="card profile">
+      <view class="avatar">{{avatarText}}</view>
+      <view class="flex-1">
+        <view class="name-row" hover-class="press" bindtap="onEditName">
+          <text class="name">{{user.name || '学迹用户'}}</text>
+          <image wx:if="{{!kid.active}}" class="ic ic-sm" src="/assets/icons/pencil-m.svg" />
+        </view>
+        <view class="row sub">
+          <text wx:if="{{user.wechatOnly}}" class="tag">微信登录</text>
+          <text wx:else class="muted email">{{user.email}}</text>
+          <text wx:for="{{personaLabels}}" wx:key="*this" class="tag">{{item}}</text>
+        </view>
+      </view>
+    </view>
+
+    <block wx:if="{{isParent && !kid.active}}">
+      <!-- 孩子 -->
+      <view class="card">
+        <view class="card-title"><image class="ic" src="/assets/icons/baby-p.svg" />孩子</view>
+        <view wx:for="{{children}}" wx:key="id" class="cell">
+          <view class="kid-avatar">{{item.initial}}</view>
+          <text class="flex-1">{{item.name}}</text>
+          <text class="muted">{{item.itemCount}} 题</text>
+        </view>
+        <view wx:if="{{children.length < 3}}" class="add-row">
+          <input class="input add-input" maxlength="12" placeholder="孩子的称呼，如 小宝" placeholder-class="placeholder" value="{{newChildName}}" bindinput="onChildName" confirm-type="done" bindconfirm="onAddChild" />
+          <view class="add-btn {{newChildName ? '' : 'add-off'}}" hover-class="press" bindtap="onAddChild"><image class="ic" src="/assets/icons/plus-w.svg" /></view>
+        </view>
+      </view>
+
+      <!-- 专注模式 -->
+      <view class="card">
+        <view class="card-title"><image class="ic" src="/assets/icons/lock-p.svg" />专注模式</view>
+        <view class="muted hint">锁定后孩子只能做题、复习</view>
+        <block wx:if="{{!kid.hasPin}}">
+          <view class="row pin-row">
+            <input class="input pin-input" type="number" maxlength="4" password placeholder="设 4 位家长 PIN" placeholder-class="placeholder" value="{{newPin}}" bindinput="onNewPin" />
+            <input class="input pin-input" type="number" maxlength="4" password placeholder="再输一次" placeholder-class="placeholder" value="{{newPin2}}" bindinput="onNewPin2" />
+          </view>
+          <button class="btn btn-secondary btn-small" disabled="{{newPin.length !== 4 || newPin2.length !== 4 || busy}}" bindtap="onSetPin"><image class="ic ic-sm" src="/assets/icons/key-round-a.svg" />设置 PIN</button>
+        </block>
+        <view wx:elif="{{children.length === 0}}" class="muted">先添加孩子</view>
+        <view wx:else class="wrap">
+          <view wx:for="{{children}}" wx:key="id" class="chip lock-chip" hover-class="press" data-id="{{item.id}}" data-name="{{item.name}}" bindtap="onLock"><image class="ic ic-sm" src="/assets/icons/lock-p.svg" />{{item.name}}</view>
+        </view>
+      </view>
+    </block>
+
+    <!-- 新手引导与帮助 -->
+    <view wx:if="{{!kid.active}}" class="card cells">
+      <view class="cell" hover-class="press" bindtap="onGuide">
+        <image class="ic" src="/assets/icons/list-checks-p.svg" />
+        <text class="flex-1">新手引导</text>
+        <text wx:if="{{guideTotal}}" class="muted">{{guideDone}}/{{guideTotal}}</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+      <view class="cell" hover-class="press" bindtap="onHelp">
+        <image class="ic" src="/assets/icons/circle-help-p.svg" />
+        <text class="flex-1">使用说明</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+    </view>
+
+    <!-- 账号 -->
+    <view wx:if="{{!kid.active}}" class="card cells">
+      <block wx:if="{{user.wechatOnly}}">
+        <view class="cell" hover-class="press" bindtap="onToggleLink">
+          <image class="ic" src="/assets/icons/link-p.svg" />
+          <text class="flex-1">关联网页账号</text>
+          <text class="muted">可选</text>
+          <image class="cell-arrow {{showLink ? 'arrow-down' : ''}}" src="/assets/icons/chevron-right-m.svg" />
+        </view>
+        <view wx:if="{{showLink}}" class="link-form">
+          <view class="muted hint">已在网页端注册过？关联后用同一个账号。当前微信账号里有数据时不能关联。</view>
+          <input class="input" type="text" placeholder="网页端邮箱" placeholder-class="placeholder" value="{{linkEmail}}" bindinput="onLinkEmail" />
+          <input class="input" password placeholder="密码" placeholder-class="placeholder" value="{{linkPassword}}" bindinput="onLinkPassword" />
+          <button class="btn btn-small" disabled="{{busy || !linkEmail || !linkPassword}}" bindtap="onLink">关联</button>
+        </view>
+      </block>
+      <view class="cell" hover-class="press" bindtap="onPrivacy">
+        <image class="ic" src="/assets/icons/shield-check-p.svg" />
+        <text class="flex-1">隐私保护指引</text>
+        <image class="cell-arrow" src="/assets/icons/chevron-right-m.svg" />
+      </view>
+      <view class="cell" hover-class="press" bindtap="onLogout">
+        <image class="ic" src="/assets/icons/log-out-p.svg" />
+        <text class="flex-1">退出登录</text>
+      </view>
+      <view wx:if="{{!user.wechatOnly}}" class="cell" hover-class="press" bindtap="onUnbind">
+        <image class="ic" src="/assets/icons/unlink-d.svg" />
+        <text class="flex-1 danger">解绑微信</text>
+      </view>
+    </view>
+
+    <view class="footer muted">批改、打印、报表等请用网页端 xueji.jjool.com</view>
+  </block>
+
+  <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
+</view>
+<login-sheet id="login-sheet" />

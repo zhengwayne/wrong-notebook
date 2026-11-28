@@ -5,14 +5,14 @@
 Fresh installs have no default account. On first start the server generates a one-time setup link (`/initialize?token=…`); open it to choose the admin email and password:
 
 - Desktop and standalone Android apps: opened automatically on first launch.
-- Docker: `docker logs wrong-notebook 2>&1 | grep initialize`.
+- Docker: read the token with `docker exec wrong-notebook cat /app/config/setup-token`.
 - fnOS: set the admin email and password in the install wizard and sign in with them; no setup link is needed.
-- npm and source runs: printed in the terminal that started the server.
-- You can also read the token from `config/setup-token` in the data directory and open `http://server-address:port/initialize?token=<token>` yourself.
+- npm and source installations: read the file at the path in the startup log. The defaults are `~/.wrong-notebook/config/setup-token` for npm and `config/setup-token` in the project for source runs.
+- In your browser, enter the server address followed by `/initialize?token=`, paste the token after the equals sign, and open the page.
 
 If the link host is `localhost`, replace it with the server IP or domain when opening it from another device. The link works only once and stops working after the admin is created; until then, the sign-in page shows these instructions.
 
-Instances installed with earlier versions have the default admin `admin@localhost` with password `123456`; signing in with the default password requires changing it before any other page can be used. When an existing database is upgraded with `PRESERVE_EXISTING_DATA=true`, the startup script skips admin seeding and keeps account state. If you forget the password, see [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js) in the repository, and back up first.
+Instances installed with earlier versions have the default admin `admin@localhost`. If that account still uses the legacy default password, change it when prompted after signing in. Startup and upgrades preserve the roles and activation status of existing accounts. If you forget the password, see [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js) in the repository, and back up first.
 
 ## Sign-in bounces back to the login page, or fails behind a reverse proxy?
 
@@ -21,7 +21,7 @@ Check that `NEXTAUTH_URL` equals the full address the browser actually uses, tha
 
 ## "Too many failed attempts" when signing in?
 
-To stop brute-force attacks, sign-in is paused for 15 minutes after 5 wrong passwords for one account, or 20 failed sign-ins from one IP, within 15 minutes; during the pause even the correct password is rejected. Sign-up and the setup link allow at most 10 attempts per IP per hour. Try again after the wait, or restart the service to clear the counters. Behind a reverse proxy, forward `X-Real-IP` or `X-Forwarded-For`; otherwise every visitor counts as the same IP.
+To stop brute-force attacks, sign-in is paused for 15 minutes after 5 wrong passwords for one account, or 20 failed sign-ins from one IP, within 15 minutes; during the pause even the correct password is rejected. Sign-up and the setup link allow at most 10 attempts per IP per hour. Try again after the wait, or restart the service to clear the counters. Behind a reverse proxy, forward `X-Real-IP` or `X-Forwarded-For` and set `TRUST_PROXY=true` (with `TRUSTED_PROXY_HOPS`) or `TRUST_PROXY=cloudflare`; by default `TRUST_PROXY=false` ignores proxy IP headers so clients cannot spoof them.
 
 ## I changed environment variables but the AI still uses the old configuration?
 
@@ -61,15 +61,20 @@ The percentage is an estimate for the current stage; AI services usually do not 
 
 ## A background task says "Interrupted by a server restart"?
 
-The background task list is saved to `background-tasks.json` in the config directory, so tasks that finished in the last 30 minutes are still listed after a restart. AI calls run inside the app process; tasks still running at restart cannot continue and are marked as failed with "Interrupted by a server restart". Before retrying, check whether the question or exam paper was already saved; the task list only shows progress, and the notebooks and exam pages are the source of truth for saved data.
+The background task list is persisted in the SQLite `AsyncOperation` table, so tasks that finished in the last 30 minutes are still listed after a restart. AI calls run inside the app process; tasks still running at restart are marked `interrupted` during startup recovery and shown as failed with "Interrupted by a server restart". Before retrying, check whether the question or exam paper was already saved; the task list only shows progress, and the notebooks and exam pages are the source of truth for saved data.
 
 ## Does HTTP 207 mean the Openclaw import succeeded?
 
-`207` means some items in the batch failed; with the current implementation it can be returned even when every recognition failed. Always read `successCount`, `failCount` and each item in `results`. The per-image recognition timeout is currently at most 3 seconds; see [Openclaw Integration](Openclaw-Integration-en) for more limits.
+`207` means some items in the batch failed; with the current implementation it can be returned even when every recognition failed. Always read `successCount`, `failCount` and each item in `results`. The per-image recognition timeout is at least 3 seconds; see [Openclaw Integration](Openclaw-Integration-en) for more limits.
 
-## Can the exported JSON restore the whole site?
+## Can web ZIP / JSON exports restore the whole site?
 
-The JSON does not include full account credentials or the server configuration. A full-site restore needs the complete database, `config/`, the deployment configuration and any certificates; see [Backup and Restore](Backup-and-Restore-en).
+The default **v3 ZIP archive** migrates complete personal and multi-role data (including child profiles, parent papers, teacher grading, variant stages, and learning paths, with optional AES-256-GCM passphrase encryption), but web exports never include password hashes or server-side AI credentials. A full-site disaster recovery still needs the complete SQLite database (or `backups/` snapshots), `config/`, deployment configuration, and TLS certificates; see [Backup and Restore](Backup-and-Restore-en).
+
+## What if the home page warns about a failed database snapshot, or SQLite reports `SQLITE_BUSY` on a NAS?
+
+- **Failed daily snapshot**: check disk space and write permissions on the `backups/` folder inside your data directory, then inspect the timestamp or retry manually via **Snapshot Now** under **Settings → Danger**. If your host already snapshots volumes, set `DAILY_SNAPSHOT_ENABLED=false`.
+- **Locks on NAS NFS/CIFS shares**: network filesystems often lack cross-node shared-memory locks for WAL (`-shm`); set `SQLITE_JOURNAL_MODE=DELETE` or `TRUNCATE` and restart the container.
 
 ## Data is missing after an upgrade, or the container won't start?
 

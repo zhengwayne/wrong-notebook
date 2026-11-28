@@ -2,7 +2,7 @@
   "name": "wrong-notebook-desktop",
   "productName": "WrongNotebook",
   "version": "0.0.0",
-  "description": "错题本桌面版：内置服务端，开箱即用",
+  "description": "学迹桌面版：内置服务端，开箱即用",
   "main": "main.js",
   "author": {
     "name": "margrop",
@@ -26,6 +26,8 @@
     "asar": false,
     "files": [
       "main.js",
+      "user-data-dir.js",
+      "icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -64,7 +66,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "错题本",
+      "shortcutName": "学迹",
       "artifactName": "WrongNotebook-Win-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
@@ -81,7 +83,7 @@
     "linux": {
       "category": "Education",
       "executableName": "wrong-notebook",
-      "synopsis": "错题本",
+      "synopsis": "学迹",
       "target": [
         "AppImage",
         "deb"

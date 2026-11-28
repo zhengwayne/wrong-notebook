@@ -14,10 +14,11 @@ interface GeogebraSectionProps {
     errorItemId: string;
     commands?: string | null;
     onUpdate: UpdateErrorItem;
+    readOnly?: boolean;
 }
 
 /** GeoGebra 动态演示：已有命令时显示演示，否则提供由 AI 生成的入口 */
-export function GeogebraSection({ errorItemId, commands, onUpdate }: GeogebraSectionProps) {
+export function GeogebraSection({ errorItemId, commands, onUpdate, readOnly = false }: GeogebraSectionProps) {
     const { t } = useLanguage();
     const [analyzing, setAnalyzing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -59,8 +60,21 @@ export function GeogebraSection({ errorItemId, commands, onUpdate }: GeogebraSec
     };
 
     if (commands) {
-        return <GeogebraDemo commands={commands} height={700} showToolBar={true} showAlgebraInput={false} showMenuBar={false} onRegenerate={handleAnalyze} onSaveCommands={handleSaveCommands} onDelete={handleDelete} />;
+        return (
+            <GeogebraDemo
+                commands={commands}
+                height={700}
+                showToolBar={true}
+                showAlgebraInput={false}
+                showMenuBar={false}
+                onRegenerate={readOnly ? undefined : handleAnalyze}
+                onSaveCommands={readOnly ? undefined : handleSaveCommands}
+                onDelete={readOnly ? undefined : handleDelete}
+            />
+        );
     }
+
+    if (readOnly) return null;
 
     return (
         <div className="rounded-lg border border-dashed p-4">

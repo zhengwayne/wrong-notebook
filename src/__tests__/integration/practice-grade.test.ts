@@ -4,17 +4,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    user: { findUnique: vi.fn() },
     errorItem: { findUnique: vi.fn() },
     gradeAnswer: vi.fn(),
     consumeAiQuota: vi.fn(),
     session: { user: { id: 'user-1', email: 'user@example.com' }, expires: '2099-01-01' },
 }));
 
-vi.mock('@/lib/prisma', () => ({ prisma: { errorItem: mocks.errorItem } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: mocks.user, errorItem: mocks.errorItem } }));
 vi.mock('@/lib/ai', () => ({ getAIService: () => ({ gradeAnswer: mocks.gradeAnswer }) }));
 vi.mock('next-auth', () => ({ getServerSession: vi.fn(() => Promise.resolve(mocks.session)) }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 
 import { POST } from '@/app/api/practice/grade/route';
 
@@ -31,6 +32,7 @@ const grade = (body: object) => POST(new Request('http://localhost/api/practice/
 describe('POST /api/practice/grade', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'user@example.com', role: 'user', isActive: true, authVersion: 0 });
         mocks.errorItem.findUnique.mockResolvedValue({ userId: 'user-1', lastPractice });
         mocks.gradeAnswer.mockResolvedValue({ correct: false, reason: '只答出一个解' });
         mocks.consumeAiQuota.mockResolvedValue(null);
@@ -65,7 +67,7 @@ describe('POST /api/practice/grade', () => {
         mocks.consumeAiQuota.mockResolvedValue(new Response(JSON.stringify({ message: 'AI_DAILY_LIMIT_EXCEEDED' }), { status: 429 }));
 
         expect((await grade({ errorItemId: 'item-1', userAnswer: '2' })).status).toBe(429);
-        expect(mocks.consumeAiQuota).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'grade');
+        expect(mocks.consumeAiQuota).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'grade', expect.anything());
         expect(mocks.gradeAnswer).not.toHaveBeenCalled();
     });
 

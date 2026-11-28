@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:error-items:figure');
@@ -15,7 +15,7 @@ const logger = createLogger('api:error-items:figure');
  * 用原题图片让 AI 重新判断是否有配图，并重绘 SVG 配图后保存
  */
 async function handlePost(
-    _req: Request,
+    req: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id } = await params;
@@ -40,20 +40,20 @@ async function handlePost(
             return badRequest("NO_ORIGINAL_IMAGE");
         }
 
-        const limited = await consumeAiQuota(user, 'figure');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'figure', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const updated = await trackBackgroundTask(
+        const updated = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'figure', subject: describeQuestion(item), link: `/error-items/${id}` },
             async () => {
-                const figure = await getAIService().generateFigureSvg(match[2], match[1], item.questionText);
+                const figure = await getAIService('vision').generateFigureSvg(match[2], match[1], item.questionText);
                 return prisma.errorItem.update({
                     where: { id },
                     data: { hasFigure: figure.hasFigure, figureSvg: figure.figureSvg },
                     select: { hasFigure: true, figureSvg: true },
                 });
             }
-        );
+        ));
 
         logger.info({ errorItemId: id, hasFigure: updated.hasFigure, svgLength: updated.figureSvg?.length ?? 0 }, 'Figure regenerated');
         return NextResponse.json(updated);

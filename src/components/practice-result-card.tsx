@@ -10,6 +10,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
 import type { PracticeResult } from "@/types/api";
+import { reportLearningProgress } from "@/lib/onboarding-client";
 
 interface PracticeResultCardProps {
     errorItemId: string;
@@ -43,6 +44,7 @@ export function PracticeResultCard({ errorItemId, suggested, question, difficult
                 figureSvg: question.figureSvg ?? null,
             });
             setSaved(true);
+            reportLearningProgress("review");
         } catch (err) {
             frontendLogger.error('[Practice]', 'Failed to save practice result', {
                 error: err instanceof Error ? err.message : String(err),

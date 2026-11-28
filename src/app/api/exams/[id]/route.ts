@@ -49,6 +49,8 @@ export async function GET(
             ...rest,
             questions: questions.map(({ errorItem, practiceRecords, ...question }) => ({
                 ...question,
+                // 旧版变式试卷从 0 编号，展示时兼容已有数据及归档恢复的旧卷。
+                order: questions[0]?.order === 0 ? question.order + 1 : question.order,
                 notebookName: errorItem?.subject?.name ?? null,
                 attempts: practiceRecords,
             })),

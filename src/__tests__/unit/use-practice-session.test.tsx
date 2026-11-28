@@ -5,13 +5,33 @@ import { act, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import PracticePage from '@/app/practice/page';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { TimeZoneProvider } from '@/contexts/TimeZoneContext';
+import { ApiError } from '@/lib/api-client';
+import { frontendLogger } from '@/lib/frontend-logger';
 import { translations } from '@/lib/translations';
 import { usePracticeSession } from '@/lib/use-practice-session';
+import { useSetupRedirect } from '@/lib/use-setup-redirect';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    get: vi.fn(),
+    post: vi.fn(),
+    replace: vi.fn(),
+    searchParams: { id: 'A' } as Record<string, string>,
+}));
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({ replace: mocks.replace }),
+    useSearchParams: () => new URLSearchParams(mocks.searchParams),
+}));
 
-vi.mock('@/lib/api-client', () => ({ apiClient: { get: mocks.get, post: mocks.post } }));
+vi.mock('@/lib/api-client', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/api-client')>();
+    return {
+        ApiError: actual.ApiError,
+        apiClient: { get: mocks.get, post: mocks.post },
+    };
+});
 vi.mock('@/lib/frontend-logger', () => ({ frontendLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 type Session = ReturnType<typeof usePracticeSession>;
@@ -44,6 +64,7 @@ function mockGet(practice: unknown = null) {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.searchParams = { id: 'A' };
     mockGet();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     container = document.createElement('div');
@@ -100,6 +121,14 @@ describe('usePracticeSession', () => {
         const zh = translations.zh.errors.aiAuth;
         const en = translations.en.errors.aiAuth;
         expect([zh, en]).toContain(session.error);
+
+        mocks.post.mockRejectedValueOnce({ data: { code: 'AI_DAILY_LIMIT_EXCEEDED', message: 'limit' } });
+        await act(async () => session.generateQuestion());
+        expect([translations.zh.errors.AI_DAILY_LIMIT_EXCEEDED, translations.en.errors.AI_DAILY_LIMIT_EXCEEDED]).toContain(session.error);
+
+        mocks.post.mockRejectedValueOnce({ data: { message: 'AI_RATE_LIMIT' } });
+        await act(async () => session.generateQuestion());
+        expect([translations.zh.errors.AI_QUOTA_EXCEEDED, translations.en.errors.AI_QUOTA_EXCEEDED]).toContain(session.error);
     });
 
     it('答案与标准答案一致时本地直接判对，不调用 AI 判题', async () => {
@@ -184,4 +213,94 @@ describe('usePracticeSession', () => {
         expect(session.question).toBeNull();
         expect(session.loading).toBe(false);
     });
+});
+
+it('同一练习页面切换 id 后显示新题，并清空前一题作答', async () => {
+    mocks.searchParams = { id: 'A' };
+    mockGet({ ...lastPractice, questionText: 'A 的题干' });
+    const zone = 'America/New_York';
+    const renderPage = () => act(async () => root.render(
+        <LanguageProvider><TimeZoneProvider initialTimeZone={zone}><PracticePage /></TimeZoneProvider></LanguageProvider>,
+    ));
+    await renderPage();
+    expect(container.textContent).toContain('A 的题干');
+    expect(container.textContent).toContain(new Date(lastPractice.generatedAt).toLocaleString('zh-CN', { timeZone: zone }));
+    mocks.searchParams = { id: 'B' };
+    mockGet({ ...lastPractice, questionText: 'B 的题干' });
+    await renderPage();
+    expect(container.textContent).toContain('B 的题干');
+    expect(container.textContent).not.toContain('A 的题干');
+});
+
+it('练习页面支持通过 itemId 参数读取题目且不提示无效请求', async () => {
+    mocks.searchParams = { itemId: 'item-from-checkpoint' };
+    mockGet({ ...lastPractice, questionText: '来自检查点的题目' });
+    await act(async () => root.render(
+        <LanguageProvider><TimeZoneProvider initialTimeZone="Asia/Taipei"><PracticePage /></TimeZoneProvider></LanguageProvider>,
+    ));
+    expect(mocks.get).toHaveBeenCalledWith('/api/practice/generate?errorItemId=item-from-checkpoint');
+    expect(container.textContent).toContain('来自检查点的题目');
+    expect(container.textContent).not.toContain('Invalid Request');
+});
+
+it('读取 /api/settings 遇到 ApiError 403 时静默忽略，非 403 错误仍记 error 日志', async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+        if (url === '/api/settings') throw new ApiError(403, 'Forbidden', { code: 'KID_MODE_RESTRICTED' });
+        return { practice: null };
+    });
+    await render();
+    expect(frontendLogger.error).not.toHaveBeenCalled();
+
+    mocks.get.mockImplementation(async (url: string) => {
+        if (url === '/api/settings') throw new ApiError(500, 'Internal Error', {});
+        return { practice: null };
+    });
+    await act(async () => {
+        root.render(<LanguageProvider><Probe key="server-error" id="item-1" /></LanguageProvider>);
+    });
+    expect(frontendLogger.error).toHaveBeenCalledWith('[Practice]', 'Failed to fetch config', expect.objectContaining({ error: expect.any(ApiError) }));
+});
+
+it('useSetupRedirect 在开关关闭时不发请求，遇到 403 时静默不打 warn 日志', async () => {
+    function SetupProbe({ enabled }: { enabled: boolean }) {
+        useSetupRedirect(enabled);
+        return null;
+    }
+
+    await act(async () => root.render(<SetupProbe enabled={false} />));
+    expect(mocks.get).not.toHaveBeenCalledWith('/api/setup');
+
+    mocks.get.mockRejectedValueOnce(new ApiError(403, 'Forbidden', { code: 'KID_MODE_RESTRICTED' }));
+    await act(async () => root.render(<SetupProbe enabled={true} />));
+    expect(mocks.get).toHaveBeenCalledWith('/api/setup');
+    expect(frontendLogger.warn).not.toHaveBeenCalled();
+
+    mocks.get.mockRejectedValueOnce(new ApiError(500, 'Server Error', {}));
+    function SetupProbeError() {
+        useSetupRedirect(true);
+        return null;
+    }
+    await act(async () => root.render(<SetupProbeError />));
+    expect(frontendLogger.warn).toHaveBeenCalledWith('[Setup]', 'Failed to check setup status', expect.objectContaining({ error: expect.any(ApiError) }));
+});
+
+it('判分期间不得生成新题，生成期间不得提交或揭晓旧题', async () => {
+    mockGet(lastPractice);
+    await render();
+    await act(async () => session.setUserAnswer('其他答案'));
+    let finish!: (value: unknown) => void;
+    mocks.post.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    let request!: Promise<void>;
+    await act(async () => { request = session.submitAnswer(); });
+    await act(async () => session.generateQuestion());
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({ correct: false, reason: '判分' }); await request; });
+
+    await act(async () => { request = session.generateQuestion(); });
+    await act(async () => { session.setUserAnswer('待提交'); });
+    await act(async () => { await session.submitAnswer(); session.revealAnswer(); });
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(session.showAnswer).toBe(false);
+    await act(async () => { finish(generated); await request; });
+    expect(session.question?.questionText).toBe(generated.questionText);
 });

@@ -1,11 +1,10 @@
-/**
- * 安装时创建的默认管理员凭据（prisma/seed.ts、scripts/seed-admin.js）。
- * 管理员仍使用默认密码登录时，必须先修改密码才能使用其他页面。
- */
-export const DEFAULT_ADMIN_EMAIL = 'admin@localhost';
-export const DEFAULT_ADMIN_PASSWORD = '123456';
+import { compareSync } from 'bcryptjs';
+import { legacyAdminPasswordHash } from './legacy-admin-password-hash.mjs';
 
-/** 管理员是否正在使用默认密码（只看明文输入，不查库） */
+/** 旧版安装可能创建的管理员邮箱。新安装由部署者通过一次性令牌自行设置账号。 */
+export const DEFAULT_ADMIN_EMAIL = 'admin@localhost';
+
+/** 仅识别历史通用口令，精确匹配后引导改密；在 HTTP 局域网的浏览器中也可运行。 */
 export function isDefaultAdminPassword(role: string | null | undefined, password: string): boolean {
-    return role === 'admin' && password === DEFAULT_ADMIN_PASSWORD;
+    return role === 'admin' && password.length === 6 && compareSync(password, legacyAdminPasswordHash);
 }

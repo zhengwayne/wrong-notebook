@@ -20,6 +20,7 @@ const postSchema = z.object({
     classId: z.string().min(1).optional(),
     subjectId: z.string().min(1).optional(),
     title: z.string().trim().max(80).optional(),
+    topic: z.string().trim().min(1).max(80).optional(),
 });
 
 /** GET /api/variants/runs：当前老师的变式生成与审核队列 */
@@ -63,7 +64,13 @@ export async function POST(req: Request) {
         }
         if (body.kind === 'class_topic' || (body.kind === 'personalized_set' && body.classId && !body.studentId && !body.subjectId)) {
             if (!body.classId) return badRequest('classId is required');
-            const result = await startClassRuns(user, { classId: body.classId, kind: body.kind === 'class_topic' ? 'class_topic' : 'personalized_set', language: body.language, count: body.count });
+            const result = await startClassRuns(user, {
+                classId: body.classId,
+                kind: body.kind === 'class_topic' ? 'class_topic' : 'personalized_set',
+                language: body.language,
+                count: body.count,
+                topic: body.topic,
+            });
             if (!result) return notFound('Class not found');
             if ('error' in result && result.error) return NextResponse.json(result, { status: 400 });
             return NextResponse.json(result, { status: 201 });
@@ -75,6 +82,7 @@ export async function POST(req: Request) {
             studentId: body.studentId,
             subjectId: body.subjectId,
             title: body.title,
+            topic: body.topic,
         });
         if (!result) return notFound('Student or notebook not found');
         if ('error' in result) return NextResponse.json(result, { status: 400 });

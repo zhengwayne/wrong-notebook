@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProgressFeedback } from '@/components/ui/progress-feedback';
 import type { ProgressStatus } from '@/components/ui/progress-feedback';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { loadEnglishDictionary } from '@/lib/translations/loader';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -29,6 +30,9 @@ async function renderStatus(status: ProgressStatus) {
     await act(async () => root.render(
         <StrictMode><LanguageProvider><ProgressFeedback status={status} /></LanguageProvider></StrictMode>,
     ));
+    if (localStorage.getItem('app-language') === 'en') {
+        await act(async () => { await loadEnglishDictionary(); });
+    }
 }
 
 const estimatedProgress = () => container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow');

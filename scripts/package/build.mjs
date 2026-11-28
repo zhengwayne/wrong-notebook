@@ -97,7 +97,6 @@ function buildSeedDatabase() {
         '--esModuleInterop', '--resolveJsonModule', '--skipLibCheck', '--module', 'commonjs', '--target', 'ES2020',
     ]);
     runNodeBin('prisma/build/index.js', ['migrate', 'deploy'], { env });
-    run(process.execPath, ['scripts/seed-admin.js'], { env });
     run(process.execPath, [path.join(scriptsOut, 'scripts', 'rebuild-system-tags.js')], { env });
     return seedDb;
 }
@@ -194,7 +193,9 @@ function buildBundle() {
     copy(standalone, BUNDLE);
     // standalone 可能带入本机的 .env、配置文件和数据库，全部移除，避免把密钥打进安装包
     for (const entry of fs.readdirSync(BUNDLE)) {
-        if (entry.startsWith('.env') || /\.(db|db-journal|sqlite)$/.test(entry)) rm(path.join(BUNDLE, entry));
+        if (entry.startsWith('.env') || /\.(db|db-journal|db-wal|db-shm|sqlite|sqlite-journal|sqlite-wal|sqlite-shm)$/.test(entry)) {
+            rm(path.join(BUNDLE, entry));
+        }
     }
     for (const dir of ['config', 'data', 'prisma', 'certs', 'dist-scripts']) rm(path.join(BUNDLE, dir));
     // 外部包别名链接由 launcher.js 在运行时解析（见 installExternalAliasResolver）
@@ -215,6 +216,8 @@ function buildBundle() {
         copy(path.join(ROOT, 'node_modules', dir), path.join(BUNDLE, 'node_modules', dir));
     }
     pruneBundle();
+    ensureExternalRuntimePackages();
+    copy(path.join(WORK, 'dist-scripts'), path.join(BUNDLE, 'dist-scripts'));
     fs.copyFileSync(path.join(PACKAGING, 'runtime', 'launcher.js'), path.join(BUNDLE, 'launcher.js'));
     // MIT 许可证要求随软件分发许可证文本，npm、桌面版和飞牛OS 安装包都基于此目录
     fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(BUNDLE, 'LICENSE'));
@@ -227,6 +230,40 @@ function buildBundle() {
         description: '错题本服务端（安装包运行时）',
     });
     log(`dist/bundle 已就绪（v${version}）：${fs.readdirSync(BUNDLE).join(', ')}`);
+}
+
+
+/**
+ * serverExternalPackages（Prisma、bcryptjs、node-edge-tts、ws、sharp）不会打进 Next 的服务端 bundle，
+ * standalone 追踪也可能漏掉新增的外部包。Prisma 已在上方单独复制；这里补齐其余包及其生产依赖。
+ */
+const EXTRA_RUNTIME_PACKAGES = ['node-edge-tts', 'ws', 'bcryptjs', 'sharp'];
+
+function copyPackageAndDeps(name, seen = new Set()) {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const src = path.join(ROOT, 'node_modules', name);
+    if (!fs.existsSync(path.join(src, 'package.json'))) {
+        throw new Error(`缺少运行时依赖 ${name}，请先在仓库根目录执行 npm install`);
+    }
+    copy(src, path.join(BUNDLE, 'node_modules', name));
+    const manifest = readJson(path.join(src, 'package.json'));
+    for (const dep of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
+        if (fs.existsSync(path.join(ROOT, 'node_modules', dep, 'package.json'))) {
+            copyPackageAndDeps(dep, seen);
+        }
+    }
+}
+
+function ensureExternalRuntimePackages() {
+    const seen = new Set();
+    for (const name of EXTRA_RUNTIME_PACKAGES) copyPackageAndDeps(name, seen);
+    log(`已补齐外部运行时依赖：${[...seen].sort().join(', ')}`);
+}
+
+function prismaEngineNames(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((name) => /((lib)?query_engine|schema-engine)/.test(name));
 }
 
 function requireBundle() {
@@ -286,7 +323,11 @@ function buildDesktop() {
 
 /** electron-builder 的文件过滤规则较多，打包后确认服务端关键文件确实进入安装包 */
 function verifyDesktopOutput(releaseDir) {
-    const required = ['launcher.js', 'server.js', '.next/BUILD_ID', 'node_modules/.prisma/client/index.js', 'prisma/seed.db'];
+    const required = [
+        'launcher.js', 'server.js', '.next/BUILD_ID',
+        'node_modules/.prisma/client/index.js', 'prisma/seed.db',
+        'node_modules/node-edge-tts/package.json', 'node_modules/ws/package.json',
+    ];
     const roots = [];
     const walk = (dir, depth) => {
         if (depth > 6 || !fs.existsSync(dir)) return;
@@ -306,7 +347,22 @@ function verifyDesktopOutput(releaseDir) {
         return;
     }
     for (const root of roots) {
+        const appDir = path.join(path.dirname(root), 'app');
+        for (const file of ['main.js', 'user-data-dir.js', 'icon.png']) {
+            if (!fs.existsSync(path.join(appDir, file))) throw new Error(`${appDir} 缺少文件：${file}`);
+        }
         const missing = required.filter((file) => !fs.existsSync(path.join(root, file)));
+        const queryEngines = prismaEngineNames(path.join(root, 'node_modules', '.prisma', 'client'));
+        if (!queryEngines.some((name) => /query_engine/.test(name))) {
+            missing.push('node_modules/.prisma/client 下的本平台查询引擎');
+        }
+        const schemaEngines = [
+            ...prismaEngineNames(path.join(root, 'node_modules', '@prisma', 'engines')),
+            ...prismaEngineNames(path.join(root, 'node_modules', 'prisma')),
+        ];
+        if (!schemaEngines.some((name) => /schema-engine/.test(name))) {
+            missing.push('Prisma schema 引擎（迁移用）');
+        }
         if (missing.length > 0) throw new Error(`${root} 缺少文件：${missing.join(', ')}`);
     }
     log(`安装包内容检查通过：${roots.map((r) => path.relative(ROOT, r)).join(', ')}`);
@@ -320,6 +376,7 @@ function buildFnos() {
     rm(stage);
     log(`准备飞牛OS 打包目录（${arch}）`);
     copy(path.join(PACKAGING, 'fnos'), stage);
+    copy(path.join(ROOT, 'src/lib/legacy-admin-password-hash.mjs'), path.join(stage, 'app/legacy-admin-password-hash.mjs'));
     copy(BUNDLE, path.join(stage, 'app', 'server'));
     const manifestFile = path.join(stage, 'manifest');
     fs.writeFileSync(manifestFile, fs.readFileSync(manifestFile, 'utf8')

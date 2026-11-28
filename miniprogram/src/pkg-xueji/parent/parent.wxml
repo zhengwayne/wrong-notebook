@@ -1,0 +1,74 @@
+<view class="container">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <view wx:if="{{guest}}" class="empty" id="parent-guest">
+    <image class="ic-xl" src="/assets/icons/chart-column-l.svg" />
+    <view>登录后查看孩子的学情</view>
+    <button class="btn btn-small" bindtap="onLogin"><image class="ic ic-sm" src="/assets/icons/log-in-w.svg" />登录</button>
+  </view>
+
+  <view wx:if="{{!guest && children.length === 0 && !loading && !error}}" class="empty">
+    <image class="ic-xl" src="/assets/icons/baby-l.svg" />
+    <view>还没有孩子档案</view>
+    <button class="btn btn-small" bindtap="onOpenMe"><image class="ic ic-sm" src="/assets/icons/user-plus-w.svg" />去添加</button>
+  </view>
+
+  <block wx:if="{{child}}">
+    <scroll-view wx:if="{{children.length > 1}}" scroll-x enhanced show-scrollbar="{{false}}" class="children">
+      <view wx:for="{{children}}" wx:key="id" class="chip {{item.id === child.id ? 'chip-active' : ''}}" data-id="{{item.id}}" bindtap="onSwitchChild">{{item.name}}</view>
+    </scroll-view>
+
+    <view class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/chart-column-p.svg" />近 7 天</view>
+      <view class="stats">
+        <view class="stat-box"><view class="stat">{{child.practiceSummary.attempted}}</view><view class="muted">做题</view></view>
+        <view class="stat-box"><view class="stat stat-ok">{{child.practiceSummary.correct}}</view><view class="muted">做对</view></view>
+        <view class="stat-box"><view class="stat">{{accuracy}}</view><view class="muted">正确率</view></view>
+      </view>
+      <view class="bars">
+        <view wx:for="{{trend}}" wx:key="date" class="bar-col">
+          <view class="bar-track"><view class="bar" style="height: {{item.height}}%"></view></view>
+          <view class="bar-label">{{item.label}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/target-p.svg" />要加强</view>
+      <view wx:if="{{weakPoints.length === 0}}" class="mini-empty"><image class="ic" src="/assets/icons/smile-s.svg" />暂时没有薄弱点</view>
+      <view wx:for="{{weakPoints}}" wx:key="knowledgePoint" class="weak">
+        <view class="row-between"><text class="weak-name">{{item.knowledgePoint}}</text><text class="muted">{{item.unmasteredCount}}/{{item.itemCount}}</text></view>
+        <view class="weak-track"><view class="weak-bar" style="width: {{item.percent}}%"></view></view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/list-checks-p.svg" />今天</view>
+      <view wx:if="{{child.today.length === 0}}" class="mini-empty"><image class="ic" src="/assets/icons/smile-s.svg" />今天没有任务</view>
+      <view wx:for="{{child.today}}" wx:key="title" class="task">
+        <image class="ic" src="{{item.icon}}" />
+        <view class="flex-1">
+          <view class="task-title">{{item.title}}</view>
+          <view wx:if="{{item.reason}}" class="muted">{{item.reason}}</view>
+        </view>
+        <text class="muted">{{item.statusLabel}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{child.latestPaper}}" class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/file-text-p.svg" />最近试卷</view>
+      <view class="row-between">
+        <text class="flex-1 paper-title">{{child.latestPaper.title || '未命名试卷'}}</text>
+        <text class="muted">{{child.latestPaper.correctCount !== null ? child.latestPaper.correctCount + '/' : ''}}{{child.latestPaper.questionCount}} 题</text>
+      </view>
+    </view>
+
+    <button class="btn btn-outline" disabled="{{importing}}" bindtap="onScanFeedback">
+      <view wx:if="{{importing}}" class="spinner"></view>
+      <image wx:else class="ic" src="/assets/icons/scan-line-p.svg" />{{importing ? '导入中' : '扫老师的反馈码'}}
+    </button>
+  </block>
+
+  <view wx:if="{{loading && !child}}" class="loading-row"><view class="spinner"></view>加载中</view>
+</view>
+<login-sheet id="login-sheet" />

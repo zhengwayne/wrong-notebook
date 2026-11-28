@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#4f46e5">
-    <title>智能错题本</title>
+    <title>学迹</title>
     <style>
         :root { color-scheme: light dark; }
         body {
@@ -39,15 +39,15 @@
     <main>
         <img src="/icons/icon-192.png" alt="">
         <h1 id="title">无法连接到服务器</h1>
-        <p id="message">请检查网络连接，或确认错题本服务已启动，然后重试。</p>
+        <p id="message">请检查网络连接，或确认学迹服务已启动，然后重试。</p>
         <button id="retry" type="button">重试</button>
     </main>
     <script>
         if (!/^zh/i.test(navigator.language || '')) {
             document.documentElement.lang = 'en';
-            document.title = 'Wrong Notebook';
+            document.title = 'XueJi';
             document.getElementById('title').textContent = 'Cannot reach the server';
-            document.getElementById('message').textContent = 'Check your network connection or make sure the Wrong Notebook server is running, then try again.';
+            document.getElementById('message').textContent = 'Check your network connection or make sure the XueJi server is running, then try again.';
             document.getElementById('retry').textContent = 'Retry';
         }
         document.getElementById('retry').addEventListener('click', function () {

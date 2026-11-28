@@ -2,33 +2,36 @@
  * 后台耗时事务登记：识别题目、生成动画讲解、重新解题、批量标注、生成试卷等调用 AI 的操作
  * 开始时登记，结束时标记成功或失败，供页面「后台任务」弹框查询进度。
  *
- * 登记表保存在进程内存中（生产环境为单个容器），并在变化后写入配置目录的 background-tasks.json：
- * 服务重启后仍能看到最近结束的事务；重启时还在进行的事务（AI 调用已随进程中断）标记为失败，提示用户重新操作。
- * 已结束的事务保留一段时间后自动清理。
+ * 登记状态保存在内存热缓存并持久化至 SQLite `AsyncOperation` 表（淘汰历史 background-tasks.json）：
+ * 服务重启后由 instrumentation 调用 `recoverInterruptedAsyncOperations` 将运行中任务置为 `interrupted`，
+ * 本模块在读取时映射为前端可理解的 `status = 'failed', error = 'SERVER_RESTARTED'`。
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { PrismaClient } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 
-const logger = createLogger('background-tasks');
+const logger = createLogger("background-tasks");
 
 export type BackgroundTaskKind =
-    | 'analyze'          // 识别题目图片
-    | 'batch_upload'     // Openclaw 批量上传识别
-    | 'data_import'      // 导入备份数据
-    | 'svg_animation'    // 生成 SVG 动画讲解
-    | 'svg_narration'    // 补写动画的语音讲解稿
-    | 'tts_voice'        // 合成动画讲解的云端语音
-    | 'reanswer'         // 重新生成解答
-    | 'fix_latex'        // 修复 LaTeX
-    | 'figure'           // 重绘配图
-    | 'geogebra'         // 生成 GeoGebra 演示
-    | 'retag'            // 重新生成知识点（单题）
-    | 'retag_notebook'   // 错题本批量重新生成知识点
-    | 'practice'         // 生成举一反三题目
-    | 'exam';            // 生成试卷
+    | "analyze"          // 识别题目图片
+    | "batch_upload"     // Openclaw 批量上传识别
+    | "data_import"      // 导入备份数据
+    | "svg_animation"    // 生成 SVG 动画讲解
+    | "svg_narration"    // 补写动画的语音讲解稿
+    | "tts_voice"        // 合成动画讲解的云端语音
+    | "reanswer"         // 重新生成解答
+    | "fix_latex"        // 修复 LaTeX
+    | "figure"           // 重绘配图
+    | "geogebra"         // 生成 GeoGebra 演示
+    | "retag"            // 重新生成知识点（单题）
+    | "retag_notebook"   // 错题本批量重新生成知识点
+    | "practice"         // 生成举一反三题目
+    | "exam"             // 生成试卷
+    | "parent_paper";    // 家长试卷识别批改
 
-export type BackgroundTaskStatus = 'running' | 'succeeded' | 'failed';
+export type BackgroundTaskStatus = "running" | "succeeded" | "failed";
 
 export interface BackgroundTask {
     id: string;
@@ -68,107 +71,81 @@ export interface BackgroundTaskHandle {
 export const FINISHED_TASK_TTL_MS = 30 * 60 * 1000;
 /** 每个用户最多保留的已结束事务数 */
 const MAX_FINISHED_PER_USER = 30;
-
 /** 服务重启时仍在进行的事务记录的错误码 */
-export const SERVER_RESTARTED = 'SERVER_RESTARTED';
-/** 进度频繁变化时合并写盘的间隔 */
-const SAVE_DELAY_MS = 1000;
+export const SERVER_RESTARTED = "SERVER_RESTARTED";
 
-// 开发环境热更新会重新加载模块，挂在 globalThis 上保持同一份登记表
+const TASK_CATEGORY = "task";
+
 const store = globalThis as typeof globalThis & {
     __backgroundTasks?: Map<string, StoredTask>;
-    __backgroundTasksLoaded?: boolean;
-    __backgroundTasksFile?: string | null;
+    __backgroundTasksDbChain?: Promise<void>;
+    __backgroundTasksGeneration?: number;
 };
 const tasks: Map<string, StoredTask> = store.__backgroundTasks ??= new Map();
 
 let sequence = 0;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** 持久化文件路径；测试环境默认不写盘 */
-function persistenceFile(): string | null {
-    if (store.__backgroundTasksFile !== undefined) return store.__backgroundTasksFile;
-    if (process.env.NODE_ENV === 'test') return null;
-    return path.join(process.env.CONFIG_DIR || path.join(process.cwd(), 'config'), 'background-tasks.json');
-}
-
-function isStoredTask(value: unknown): value is StoredTask {
-    if (typeof value !== 'object' || value === null) return false;
-    const task = value as Partial<StoredTask>;
-    return typeof task.id === 'string' && typeof task.userId === 'string' && typeof task.kind === 'string'
-        && typeof task.status === 'string' && typeof task.startedAt === 'string';
-}
-
-/** 首次访问时读取上次保存的登记表，把当时进行中的事务标记为因重启中断 */
-function ensureLoaded() {
-    if (store.__backgroundTasksLoaded) return;
-    store.__backgroundTasksLoaded = true;
-    const file = persistenceFile();
-    if (!file) return;
-    let saved: unknown;
+function getAsyncOpRepo(): PrismaClient["asyncOperation"] | null {
     try {
-        saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn({ error }, 'Failed to read saved background tasks');
-        return;
-    }
-    if (!Array.isArray(saved)) return;
-    const now = new Date().toISOString();
-    let interrupted = 0;
-    for (const task of saved.filter(isStoredTask)) {
-        if (tasks.has(task.id)) continue;
-        if (task.status === 'running') {
-            task.status = 'failed';
-            task.error = SERVER_RESTARTED;
-            task.finishedAt = now;
-            interrupted++;
+        const db = prisma as unknown as { asyncOperation?: PrismaClient["asyncOperation"] };
+        if (db?.asyncOperation && typeof db.asyncOperation.findMany === "function" && typeof db.asyncOperation.upsert === "function") {
+            return db.asyncOperation;
         }
-        tasks.set(task.id, task);
+    } catch {
+        // 局部 mock Prisma 的单元测试安全回退纯内存模式
     }
-    if (interrupted > 0) {
-        logger.info({ interrupted }, 'Marked background tasks interrupted by restart as failed');
-        scheduleSave();
-    }
+    return null;
 }
 
-function saveNow() {
-    saveTimer = null;
-    const file = persistenceFile();
-    if (!file) return;
-    try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        // 先写临时文件再改名，避免写到一半时进程退出留下损坏的文件
-        const temp = `${file}.${process.pid}.tmp`;
-        fs.writeFileSync(temp, JSON.stringify([...tasks.values()]));
-        fs.renameSync(temp, file);
-    } catch (error) {
-        logger.warn({ error }, 'Failed to save background tasks');
-    }
+function enqueueDbSync(work: (repo: PrismaClient["asyncOperation"]) => Promise<void>): void {
+    const repo = getAsyncOpRepo();
+    if (!repo) return;
+    const generation = store.__backgroundTasksGeneration ?? 0;
+    const prev = store.__backgroundTasksDbChain ?? Promise.resolve();
+    store.__backgroundTasksDbChain = prev
+        .then(async () => {
+            if ((store.__backgroundTasksGeneration ?? 0) !== generation) return;
+            const currentRepo = getAsyncOpRepo();
+            if (!currentRepo) return;
+            await work(currentRepo);
+        })
+        .catch((error) => {
+            logger.warn({ error }, "Failed to persist background task state");
+        });
 }
 
-function scheduleSave() {
-    if (saveTimer || !persistenceFile()) return;
-    saveTimer = setTimeout(saveNow, SAVE_DELAY_MS);
-    // 不因待写盘的定时器阻止进程退出
-    saveTimer.unref?.();
+/** 等待当前挂起的后台任务数据库同步写入全部完成 */
+export async function flushBackgroundTasksToDb(): Promise<void> {
+    if (store.__backgroundTasksDbChain) {
+        await store.__backgroundTasksDbChain;
+    }
 }
 
 function prune(now: number) {
-    ensureLoaded();
-    let removed = false;
     for (const [id, task] of tasks) {
         if (task.finishedAt && now - Date.parse(task.finishedAt) > FINISHED_TASK_TTL_MS) {
             tasks.delete(id);
-            removed = true;
         }
     }
-    if (removed) scheduleSave();
 }
 
 function errorMessage(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);
     // AI 错误码形如 AI_RESPONSE_ERROR: 详情，只保留错误码交给前端翻译
-    return (message.startsWith('AI_') ? message.split(':')[0] : message).slice(0, 200);
+    return (message.startsWith("AI_") ? message.split(":")[0] : message).slice(0, 200);
+}
+
+function parseProgress(value: string | null): { done: number; total: number; failed: number } | null {
+    if (!value) return null;
+    try {
+        const parsed = JSON.parse(value) as Partial<{ done: number; total: number; failed: number }>;
+        if (typeof parsed.done === "number" && typeof parsed.total === "number" && typeof parsed.failed === "number") {
+            return { done: parsed.done, total: parsed.total, failed: parsed.failed };
+        }
+    } catch {
+        // 忽略无效 JSON
+    }
+    return null;
 }
 
 /** 登记一个后台事务 */
@@ -176,38 +153,103 @@ export function startBackgroundTask(input: BackgroundTaskInput): BackgroundTaskH
     const now = Date.now();
     prune(now);
     const id = `${now.toString(36)}-${(sequence++).toString(36)}`;
+    const progress = input.total !== undefined ? { done: 0, total: input.total, failed: 0 } : null;
+    const startedAtDate = new Date(now);
     const task: StoredTask = {
         id,
         userId: input.userId,
         kind: input.kind,
         subject: input.subject ?? null,
-        status: 'running',
-        progress: input.total !== undefined ? { done: 0, total: input.total, failed: 0 } : null,
+        status: "running",
+        progress,
         error: null,
         link: input.link ?? null,
-        startedAt: new Date(now).toISOString(),
+        startedAt: startedAtDate.toISOString(),
         finishedAt: null,
     };
     tasks.set(id, task);
-    scheduleSave();
+
+    enqueueDbSync(async (repo) => {
+        await repo.upsert({
+            where: {
+                scopeKey_category_kind_idempotencyKey: {
+                    scopeKey: input.userId,
+                    category: TASK_CATEGORY,
+                    kind: input.kind,
+                    idempotencyKey: id,
+                },
+            },
+            create: {
+                userId: input.userId,
+                scopeKey: input.userId,
+                category: TASK_CATEGORY,
+                kind: input.kind,
+                idempotencyKey: id,
+                status: "running",
+                subject: task.subject,
+                link: task.link,
+                progressJson: task.progress ? JSON.stringify(task.progress) : null,
+                startedAt: startedAtDate,
+            },
+            update: {
+                status: "running",
+                subject: task.subject,
+                link: task.link,
+                progressJson: task.progress ? JSON.stringify(task.progress) : null,
+            },
+        });
+    });
 
     const finish = (status: BackgroundTaskStatus, error: string | null) => {
-        if (task.status !== 'running') return;
+        if (task.status !== "running") return;
+        const finishedDate = new Date();
         task.status = status;
         task.error = error;
-        task.finishedAt = new Date().toISOString();
-        scheduleSave();
+        task.finishedAt = finishedDate.toISOString();
+
+        enqueueDbSync(async (repo) => {
+            await repo.updateMany({
+                where: {
+                    scopeKey: input.userId,
+                    category: TASK_CATEGORY,
+                    kind: input.kind,
+                    idempotencyKey: id,
+                    status: "running",
+                },
+                data: {
+                    status,
+                    error,
+                    progressJson: task.progress ? JSON.stringify(task.progress) : null,
+                    finishedAt: finishedDate,
+                    expiresAt: new Date(finishedDate.getTime() + FINISHED_TASK_TTL_MS),
+                },
+            });
+        });
     };
+
     return {
         id,
         setProgress: (done, total, failed) => {
+            if (task.status !== "running") return;
             task.progress = { done, total: total ?? task.progress?.total ?? done, failed: failed ?? task.progress?.failed ?? 0 };
-            scheduleSave();
+            const progressSnapshot = JSON.stringify(task.progress);
+            enqueueDbSync(async (repo) => {
+                await repo.updateMany({
+                    where: {
+                        scopeKey: input.userId,
+                        category: TASK_CATEGORY,
+                        kind: input.kind,
+                        idempotencyKey: id,
+                        status: "running",
+                    },
+                    data: { progressJson: progressSnapshot },
+                });
+            });
         },
-        succeed: () => finish('succeeded', null),
+        succeed: () => finish("succeeded", null),
         fail: (error) => {
-            finish('failed', errorMessage(error));
-            logger.debug({ taskId: id, kind: task.kind, error: task.error }, 'Background task failed');
+            finish("failed", errorMessage(error));
+            logger.debug({ taskId: id, kind: task.kind, error: task.error }, "Background task failed");
         },
     };
 }
@@ -228,15 +270,84 @@ export async function trackBackgroundTask<T>(input: BackgroundTaskInput, operati
 }
 
 /**
+ * 从 AsyncOperation 表把用户任务同步到当前进程缓存（含进程重启后标记的 interrupted -> failed/SERVER_RESTARTED）
+ */
+export async function syncBackgroundTasksFromDb(userId: string): Promise<void> {
+    await flushBackgroundTasksToDb();
+    const repo = getAsyncOpRepo();
+    if (!repo) return;
+
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - FINISHED_TASK_TTL_MS);
+    await repo.deleteMany({
+        where: {
+            userId,
+            category: TASK_CATEGORY,
+            status: { not: "running" },
+            finishedAt: { lt: cutoff },
+        },
+    });
+
+    const rows = await repo.findMany({
+        where: { userId, category: TASK_CATEGORY },
+        orderBy: { startedAt: "asc" },
+    });
+
+    const seenKeys = new Set(rows.map((row) => row.idempotencyKey));
+    for (const [key, existing] of tasks) {
+        if (existing.userId === userId && !seenKeys.has(key)) {
+            tasks.delete(key);
+        }
+    }
+
+    for (const row of rows) {
+        const mappedStatus: BackgroundTaskStatus = row.status === "succeeded"
+            ? "succeeded"
+            : row.status === "running"
+                ? "running"
+                : "failed";
+        const mappedError = row.status === "interrupted" ? (row.error || SERVER_RESTARTED) : (row.error ?? null);
+        const mappedProgress = parseProgress(row.progressJson);
+        const mappedFinishedAt = row.finishedAt ? row.finishedAt.toISOString() : null;
+
+        const existing = tasks.get(row.idempotencyKey);
+        if (existing && existing.userId === userId) {
+            if (existing.status === "running" && row.status === "running") {
+                // 保留同进程活跃任务原对象引用，避免与 startBackgroundTask 闭包句柄脱节
+                continue;
+            }
+            existing.status = mappedStatus;
+            existing.progress = mappedProgress;
+            existing.error = mappedError;
+            existing.finishedAt = mappedFinishedAt;
+            continue;
+        }
+
+        tasks.set(row.idempotencyKey, {
+            id: row.idempotencyKey,
+            userId,
+            kind: row.kind as BackgroundTaskKind,
+            subject: row.subject ?? null,
+            status: mappedStatus,
+            progress: mappedProgress,
+            error: mappedError,
+            link: row.link ?? null,
+            startedAt: row.startedAt.toISOString(),
+            finishedAt: mappedFinishedAt,
+        });
+    }
+}
+
+/**
  * 当前用户的事务：进行中的在前（按开始时间），其后是最近结束的
  */
 export function listBackgroundTasks(userId: string): BackgroundTask[] {
     prune(Date.now());
     const own = [...tasks.values()].filter((task) => task.userId === userId);
-    const running = own.filter((task) => task.status === 'running')
+    const running = own.filter((task) => task.status === "running")
         .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-    const finished = own.filter((task) => task.status !== 'running')
-        .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))
+    const finished = own.filter((task) => task.status !== "running")
+        .sort((a, b) => (b.finishedAt ?? "").localeCompare(a.finishedAt ?? ""))
         .slice(0, MAX_FINISHED_PER_USER);
     return [...running, ...finished].map((task) => ({
         id: task.id,
@@ -253,37 +364,60 @@ export function listBackgroundTasks(userId: string): BackgroundTask[] {
 
 /** 清除当前用户已结束的事务记录 */
 export function clearFinishedBackgroundTasks(userId: string): void {
-    ensureLoaded();
     for (const [id, task] of tasks) {
-        if (task.userId === userId && task.status !== 'running') tasks.delete(id);
+        if (task.userId === userId && task.status !== "running") tasks.delete(id);
     }
-    scheduleSave();
+    enqueueDbSync(async (repo) => {
+        await repo.deleteMany({
+            where: {
+                userId,
+                category: TASK_CATEGORY,
+                status: { not: "running" },
+            },
+        });
+    });
 }
 
 /** 题目的简短说明：编号 + 题干开头（去掉公式符号和换行） */
 export function describeQuestion(item: { shortId?: string | null; questionText?: string | null }): string {
-    const text = (item.questionText ?? '')
-        .replace(/\$+/g, '')
-        .replace(/\\[a-zA-Z]+|[{}\\]/g, ' ')
-        .replace(/[#*>`|_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/\s*([，。；：？！、])\s*/g, '$1')
+    const text = (item.questionText ?? "")
+        .replace(/\$+/g, "")
+        .replace(/\\[a-zA-Z]+|[{}\\]/g, " ")
+        .replace(/[#*>`|_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/\s*([，。；：？！、])\s*/g, "$1")
         .trim();
     const excerpt = text.length > 24 ? `${text.slice(0, 24)}…` : text;
-    return [item.shortId, excerpt].filter(Boolean).join(' ') || '—';
+    return [item.shortId, excerpt].filter(Boolean).join(" ") || "—";
 }
 
-/** 仅供测试：清空登记表；可指定持久化文件，模拟服务重启后重新读取 */
-export function resetBackgroundTasksForTest(options: { file?: string | null } = {}): void {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = null;
+/** 仅供测试：清空进程内登记表 */
+export function resetBackgroundTasksForTest(): void {
+    store.__backgroundTasksGeneration = (store.__backgroundTasksGeneration ?? 0) + 1;
     tasks.clear();
-    store.__backgroundTasksFile = options.file === undefined ? null : options.file;
-    store.__backgroundTasksLoaded = false;
 }
 
-/** 仅供测试：立即写盘 */
-export function flushBackgroundTasksForTest(): void {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveNow();
+/** 注销/删除用户时从进程内热缓存清理该用户的后台任务记录 */
+export function purgeUserBackgroundTasks(userId: string): void {
+    if (!userId) return;
+    for (const [id, task] of tasks) {
+        if (task.userId === userId) {
+            tasks.delete(id);
+        }
+    }
+}
+
+/** 清理所有后台任务缓存及旧版本遗留持久化文件（供 system-reset 调用） */
+export function clearAllBackgroundTasks(): void {
+    store.__backgroundTasksGeneration = (store.__backgroundTasksGeneration ?? 0) + 1;
+    tasks.clear();
+    const legacyFile = path.join(
+        process.env.CONFIG_DIR || path.join(process.cwd(), "config"),
+        "background-tasks.json",
+    );
+    try {
+        fs.rmSync(/* turbopackIgnore: true */ legacyFile, { force: true });
+    } catch (error) {
+        logger.warn({ error }, "Failed to remove legacy background tasks persistence file");
+    }
 }

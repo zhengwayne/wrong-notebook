@@ -1,0 +1,39 @@
+.kl-bar {
+  display: flex; align-items: center;
+  background-color: var(--xj-accent); color: var(--xj-accent-fg);
+  border-radius: 20rpx; padding: 12rpx 12rpx 12rpx 24rpx; margin-bottom: 24rpx; font-size: 26rpx;
+}
+.kl-bar .ic { margin-right: 12rpx; }
+.kl-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kl-open {
+  display: flex; align-items: center; height: 64rpx; padding: 0 20rpx; border-radius: 32rpx;
+  background-color: var(--xj-card); color: var(--xj-primary); font-size: 26rpx; font-weight: 600;
+}
+.kl-open .ic { margin-right: 6rpx; }
+
+.kl-mask {
+  position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 100;
+  background-color: rgba(35, 32, 46, 0.45);
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.kl-sheet { background-color: var(--xj-card); border-radius: 32rpx 32rpx 0 0; padding: 32rpx 32rpx 0; }
+.kl-head { font-size: 32rpx; font-weight: 600; }
+.kl-head .ic { margin-right: 12rpx; }
+.kl-x { padding: 12rpx; }
+
+.kl-dots { display: flex; justify-content: center; gap: 36rpx; margin: 40rpx 0 16rpx; }
+.kl-dot { width: 28rpx; height: 28rpx; border-radius: 50%; border: 3rpx solid var(--xj-primary); box-sizing: border-box; }
+.kl-dot-on { background-color: var(--xj-primary); }
+
+.kl-status { display: flex; align-items: center; justify-content: center; min-height: 72rpx; font-size: 26rpx; color: var(--xj-muted-fg); text-align: center; }
+.kl-status .ic { margin-right: 8rpx; }
+.kl-retry { display: flex; align-items: center; margin-left: 20rpx; padding: 8rpx 20rpx; border-radius: 28rpx; background-color: var(--xj-accent); color: var(--xj-primary); font-weight: 600; }
+
+.kl-keys { display: flex; flex-wrap: wrap; justify-content: space-between; margin-top: 8rpx; }
+.kl-key {
+  width: 31%; height: 104rpx; margin-bottom: 16rpx; border-radius: 20rpx;
+  display: flex; align-items: center; justify-content: center;
+  background-color: var(--xj-secondary); font-size: 40rpx; font-weight: 600; color: var(--xj-fg);
+}
+.kl-key-blank { background-color: transparent; }
+.kl-key-press { background-color: var(--xj-accent); }

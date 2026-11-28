@@ -72,12 +72,12 @@ describe('/api/tags', () => {
 
             await GET_STATS();
 
-            expect(mocks.mockPrismaErrorItem.count).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+            expect(mocks.mockPrismaErrorItem.count).toHaveBeenCalledWith({ where: { userId: 'user-1', learnerId: null } });
             expect(mocks.mockPrismaKnowledgeTag.findMany).toHaveBeenCalledWith({
-                where: { errorItems: { some: { userId: 'user-1' } } },
+                where: { errorItems: { some: { userId: 'user-1', learnerId: null } } },
                 select: {
                     name: true,
-                    _count: { select: { errorItems: { where: { userId: 'user-1' } } } },
+                    _count: { select: { errorItems: { where: { userId: 'user-1', learnerId: null } } } },
                 },
             });
             expect(mocks.mockPrismaErrorItem.findMany).not.toHaveBeenCalled();

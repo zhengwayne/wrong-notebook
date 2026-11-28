@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { RosterImport } from "@/components/grading/roster-import";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
+import { reportOnboardingStep } from "@/lib/onboarding-client";
 import { confirmDialog, toast } from "@/lib/feedback";
 import type { GradingClassInfo } from "@/types/grading";
 
@@ -24,6 +25,10 @@ export function ClassManager({ classes, onChange }: ClassManagerProps) {
     const [open, setOpen] = useState<string | null>(null);
 
     const reload = () => apiClient.get<GradingClassInfo[]>("/api/grading/classes").then(onChange).catch(() => undefined);
+    const afterImport = async () => {
+        await reload();
+        void reportOnboardingStep("teacher", "class");
+    };
 
     const addClass = async () => {
         if (!name.trim()) return;
@@ -49,7 +54,7 @@ export function ClassManager({ classes, onChange }: ClassManagerProps) {
     };
 
     return (
-        <Card className="rounded-2xl">
+        <Card id="roster" className="scroll-mt-24 rounded-2xl">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-primary" />{t.grading.classes}</CardTitle>
             </CardHeader>
@@ -76,7 +81,7 @@ export function ClassManager({ classes, onChange }: ClassManagerProps) {
                         )}
                     </div>
                 ))}
-                <RosterImport onImported={reload} />
+                <RosterImport onImported={() => void afterImport()} />
                 <div className="flex gap-2">
                     <Input aria-label={t.grading.className} placeholder={t.grading.className} value={name} onChange={(event) => setName(event.target.value)} />
                     <Button variant="outline" onClick={addClass} disabled={!name.trim()}><Plus className="h-4 w-4" />{t.grading.addClass}</Button>

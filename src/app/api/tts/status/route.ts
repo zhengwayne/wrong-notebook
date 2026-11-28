@@ -26,6 +26,6 @@ export async function POST(req: Request) {
     if (!parsed.success) {
         return badRequest("INVALID_TTS_TEXT");
     }
-    const cached = await Promise.all(parsed.data.texts.map((text) => getCachedSpeech(text, parsed.data.language)));
+    const cached = await Promise.all(parsed.data.texts.map((text) => getCachedSpeech(text, parsed.data.language, user.id)));
     return NextResponse.json({ ready: cached.every((item) => item) });
 }

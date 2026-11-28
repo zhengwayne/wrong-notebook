@@ -7,11 +7,11 @@ const created = new Date('2026-10-01T12:00:00Z');
 const at = (iso: string) => new Date(iso);
 
 describe('getReviewPlan', () => {
-    it('没有作答记录时，录入次日到期', () => {
+    it('没有作答记录时，录入当天即可复习', () => {
         const plan = getReviewPlan(created, [], TZ);
         expect(plan.stage).toBe(0);
-        // 北京时间 2026-10-02 零点
-        expect(plan.nextReviewAt?.toISOString()).toBe('2026-10-01T16:00:00.000Z');
+        // 北京时间 2026-10-01 零点
+        expect(plan.nextReviewAt?.toISOString()).toBe('2026-09-30T16:00:00.000Z');
     });
 
     it('连续做对按间隔递增，以最近一次作答为起点', () => {
@@ -20,8 +20,8 @@ describe('getReviewPlan', () => {
             { result: 'correct', createdAt: at('2026-10-04T02:00:00Z') },
         ], TZ);
         expect(plan.stage).toBe(2);
-        // 2026-10-04 加 4 天，北京时间 10-08 零点
-        expect(plan.nextReviewAt?.toISOString()).toBe('2026-10-07T16:00:00.000Z');
+        // 第 2 档间隔为 2 天：2026-10-04 加 2 天，北京时间 10-06 零点
+        expect(plan.nextReviewAt?.toISOString()).toBe('2026-10-05T16:00:00.000Z');
     });
 
     it('做错后回到第一轮，未作答记录不影响计划', () => {
@@ -31,7 +31,8 @@ describe('getReviewPlan', () => {
             { result: 'not_attempted', createdAt: at('2026-10-09T02:00:00Z') },
         ], TZ);
         expect(plan.stage).toBe(0);
-        expect(plan.nextReviewAt?.toISOString()).toBe('2026-10-05T16:00:00.000Z');
+        // 做错当天即可再练：北京时间 2026-10-05 零点
+        expect(plan.nextReviewAt?.toISOString()).toBe('2026-10-04T16:00:00.000Z');
     });
 
     it('记录顺序不影响结果', () => {
@@ -52,7 +53,9 @@ describe('isReviewDue', () => {
     const plan = getReviewPlan(created, [], TZ);
 
     it('到期日当天和之后都算到期', () => {
-        expect(isReviewDue(plan, TZ, at('2026-10-01T15:59:59Z'))).toBe(false);
+        // 录入当天（北京时间 10-01）已到期
+        expect(isReviewDue(plan, TZ, at('2026-10-01T15:59:59Z'))).toBe(true);
+        expect(isReviewDue(plan, TZ, at('2026-09-30T15:59:59Z'))).toBe(false);
         expect(isReviewDue(plan, TZ, at('2026-10-01T16:00:00Z'))).toBe(true);
         expect(isReviewDue(plan, TZ, at('2026-10-20T00:00:00Z'))).toBe(true);
     });
@@ -60,7 +63,9 @@ describe('isReviewDue', () => {
     it('按应用时区判断今天', () => {
         // UTC 时间仍是 10-01，但纽约时区的到期日按纽约日历计算
         const nyPlan = getReviewPlan(created, [], 'America/New_York');
-        expect(isReviewDue(nyPlan, 'America/New_York', at('2026-10-02T03:59:00Z'))).toBe(false);
+        // 创建于纽约时间 10-01 08:00，当天即到期
+        expect(isReviewDue(nyPlan, 'America/New_York', at('2026-10-01T12:00:00Z'))).toBe(true);
+        expect(isReviewDue(nyPlan, 'America/New_York', at('2026-10-02T03:59:00Z'))).toBe(true);
         expect(isReviewDue(nyPlan, 'America/New_York', at('2026-10-02T04:00:00Z'))).toBe(true);
     });
 

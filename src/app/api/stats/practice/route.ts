@@ -1,31 +1,37 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
 import { getAppTimeZone } from "@/lib/config";
 import { formatDateTime, getMonthStart } from "@/lib/date-time";
-import { unauthorized, internalError } from "@/lib/api-errors";
+import { notFound, internalError } from "@/lib/api-errors";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { learningScopeWhere, readRequestLearnerId, resolveLearningScope } from "@/lib/learning-scope";
 import { createLogger } from "@/lib/logger";
+import { defineApiRoute } from "@/lib/server/api-route";
 
 const logger = createLogger('api:stats:practice');
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
-        return unauthorized();
-    }
-
-    const userId = session.user.id;
+export const GET = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
+    const userId = user.id;
 
     try {
+        let scope;
+        try {
+            scope = await resolveLearningScope(prisma, userId, readRequestLearnerId(req));
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) {
+                return notFound("Learner not found");
+            }
+            throw error;
+        }
+        const scopeWhere = learningScopeWhere(scope);
+
         // 1. Subject Distribution
         const subjectStats = await prisma.practiceRecord.groupBy({
             by: ['subject'],
-            where: { userId },
+            where: scopeWhere,
             _count: {
-                id: true
-            }
+                id: true,
+            },
         });
 
         // 2. Monthly Activity (Last 6 months)
@@ -33,16 +39,16 @@ export async function GET() {
         const timeZone = getAppTimeZone();
         const activityStats = await prisma.practiceRecord.findMany({
             where: {
-                userId,
+                ...scopeWhere,
                 createdAt: {
                     gte: getMonthStart(now, timeZone, -5),
-                }
+                },
             },
             select: {
                 createdAt: true,
                 isCorrect: true,
-                difficulty: true
-            }
+                difficulty: true,
+            },
         });
 
         // Process activity stats into monthly counts
@@ -69,22 +75,22 @@ export async function GET() {
 
         const chartData = Object.entries(monthlyActivity).map(([date, stats]) => ({
             date,
-            ...stats
+            ...stats,
         })).sort((a, b) => a.date.localeCompare(b.date));
 
         // 3. Difficulty Distribution
         const difficultyStats = await prisma.practiceRecord.groupBy({
             by: ['difficulty'],
-            where: { userId },
+            where: scopeWhere,
             _count: {
-                id: true
-            }
+                id: true,
+            },
         });
 
         // 4. Overall Correctness
-        const totalRecords = await prisma.practiceRecord.count({ where: { userId } });
+        const totalRecords = await prisma.practiceRecord.count({ where: scopeWhere });
         const correctRecords = await prisma.practiceRecord.count({
-            where: { userId, isCorrect: true }
+            where: { ...scopeWhere, isCorrect: true },
         });
 
         return NextResponse.json({
@@ -94,12 +100,12 @@ export async function GET() {
             overallStats: {
                 total: totalRecords,
                 correct: correctRecords,
-                rate: totalRecords > 0 ? (correctRecords / totalRecords * 100).toFixed(1) : 0
-            }
+                rate: totalRecords > 0 ? (correctRecords / totalRecords * 100).toFixed(1) : 0,
+            },
         });
 
     } catch (error) {
         logger.error({ error }, 'Error fetching practice stats');
         return internalError("Failed to fetch stats");
     }
-}
+});

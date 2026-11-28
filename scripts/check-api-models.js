@@ -14,38 +14,25 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 async function checkModelsAndVision() {
     console.log("Checking available models and vision support from NewAPI...");
 
-    // Priority: NEWAPI_BASE_URL -> Hardcoded known NewAPI -> OPENAI_BASE_URL (if compatible)
-    let baseURL = process.env.OPENAI_BASE_URL;
-    let apiKey = process.env.OPENAI_API_KEY;
-
-    // Fallback to known working NewAPI credentials if not explicitly set in env
-    if (!baseURL) {
-        baseURL = "https://sdwfger.edu.kg";
+    const baseURL = process.env.OPENAI_BASE_URL?.trim();
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!baseURL || !apiKey) {
+        console.error('请设置 OPENAI_BASE_URL 与 OPENAI_API_KEY 以指定本次测速的服务。');
+        process.exitCode = 1;
+        return;
     }
-
-    // If still no key, try OPENAI_API_KEY but be careful about URL
-    if (!apiKey) {
-        apiKey = process.env.OPENAI_API_KEY;
-    }
-
-    // Ensure baseURL does not end with /v1 if we are appending /api/models
-    let rootURL = baseURL;
-    if (rootURL.endsWith("/v1")) {
-        rootURL = rootURL.slice(0, -3);
-    }
-    if (rootURL.endsWith("/")) {
-        rootURL = rootURL.slice(0, -1);
-    }
+    const rootURL = baseURL.replace(/\/+$/, '').replace(/\/v1$/, '');
 
     // 1. Fetch Models
     const modelsUrl = `${rootURL}/v1/models`;
-    console.log(`Fetching models from: ${modelsUrl}`);
+    console.log("正在获取已配置服务的模型列表。");
 
     let availableModels = [];
 
     try {
         const response = await fetch(modelsUrl, {
             method: 'GET',
+            redirect: 'error',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
@@ -53,7 +40,9 @@ async function checkModelsAndVision() {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+            console.error(`模型列表请求失败，HTTP ${response.status}。`);
+            process.exitCode = 1;
+            return;
         }
 
         const data = await response.json();
@@ -64,40 +53,28 @@ async function checkModelsAndVision() {
         } else if (data.success && data.data) {
             // Handle NewAPI specific format if /v1/models returns it (unlikely but possible)
             const allModels = new Set();
-            for (const [channelId, models] of Object.entries(data.data)) {
+            for (const models of Object.values(data.data)) {
                 models.forEach(m => allModels.add(m));
             }
             availableModels = Array.from(allModels).sort();
             console.log(`✅ Found ${availableModels.length} models (NewAPI format).`);
         } else {
-            console.error("❌ Unexpected response format for model list.");
+            console.error("模型列表格式无法识别。");
+            process.exitCode = 1;
             return;
         }
 
-    } catch (error) {
-        console.error("❌ Failed to fetch models:", error.message);
+    } catch {
+        console.error("模型列表请求失败。");
+        process.exitCode = 1;
         return;
     }
 
-    // 2. Prepare Image for Vision Test
-    const imagePath = path.join(__dirname, "1.png");
-    let base64Image = "";
-
-    if (fs.existsSync(imagePath)) {
-        base64Image = fs.readFileSync(imagePath).toString("base64");
-    } else {
-        // Fallback to the artifact image if 1.png doesn't exist
-        const artifactImage = "/home/wttwins/.gemini/antigravity/brain/7857ca65-80c3-41fe-a5d2-21f3802af3f8/eng.jpg";
-        if (fs.existsSync(artifactImage)) {
-            base64Image = fs.readFileSync(artifactImage).toString("base64");
-            console.log("Using fallback image: eng.jpg");
-        } else {
-            console.error("❌ No test image found (checked scripts/1.png and artifact eng.jpg). Skipping vision test.");
-            return;
-        }
-    }
-
-    const mimeType = "image/jpeg"; // Assuming jpeg/png is fine
+    // 允许本地指定测试样图；缺省使用项目自带的公开 PNG 图标。
+    const localImage = path.join(__dirname, "1.png");
+    const imagePath = fs.existsSync(localImage) ? localImage : path.join(__dirname, "../public/icons/icon.png");
+    const base64Image = fs.readFileSync(imagePath).toString("base64");
+    const mimeType = "image/png";
 
     // 3. Test Vision Support
     console.log("\n--- Testing Vision Support (Sampling 5 models + known vision models) ---");
@@ -113,7 +90,6 @@ async function checkModelsAndVision() {
     console.log(`Testing ${modelsToTest.length} potential vision models...`);
 
     const supportedModels = [];
-    const unsupportedModels = [];
 
     for (const model of modelsToTest) {
         process.stdout.write(`Testing ${model}... `);
@@ -142,6 +118,7 @@ async function checkModelsAndVision() {
             const startTime = Date.now();
             const res = await fetch(chatUrl, {
                 method: 'POST',
+                redirect: 'error',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
@@ -169,13 +146,12 @@ async function checkModelsAndVision() {
                 if (msg.includes("vision") || msg.includes("image") || msg.includes("multimodal") || res.status === 400) {
                     console.log(`❌ Not Supported (${res.status})`);
                 } else {
-                    console.log(`❌ Error: ${res.status} - ${msg.substring(0, 50)}...`);
+                    console.log(`❌ 模型请求失败，HTTP ${res.status}。`);
                 }
-                unsupportedModels.push(model);
             }
 
-        } catch (e) {
-            console.log(`❌ Network/Script Error: ${e.message}`);
+        } catch {
+            console.log("❌ 模型请求或解析响应失败。");
         }
     }
 

@@ -7,6 +7,7 @@ import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SvgAnimationExplainer } from '@/components/svg-animation-explainer';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { loadEnglishDictionary } from '@/lib/translations/loader';
 
 const mocks = vi.hoisted(() => ({
     post: vi.fn(),
@@ -44,6 +45,9 @@ async function render(props: { svgAnimation?: string | null; hasOtherLanguage?: 
             <SvgAnimationExplainer errorItemId="e1" svgAnimation={props.svgAnimation} hasOtherLanguage={props.hasOtherLanguage} onChange={props.onChange ?? vi.fn()} />
         </LanguageProvider>,
     ));
+    if (localStorage.getItem('app-language') === 'en') {
+        await act(async () => { await loadEnglishDictionary(); });
+    }
 }
 
 const clickButton = (text: string) => act(async () => {

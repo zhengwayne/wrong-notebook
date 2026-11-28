@@ -2,6 +2,7 @@
  * 名册导入、卷头识别、答卷拆分与合并 API
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SAMPLE_JPEG_DATA_URL } from '../helpers/sample-images';
 
 const mocks = vi.hoisted(() => ({
     getCurrentUser: vi.fn(),
@@ -11,8 +12,14 @@ const mocks = vi.hoisted(() => ({
     classFindMany: vi.fn(),
     classCreate: vi.fn(),
     studentFindMany: vi.fn(),
-    studentCreate: vi.fn(),
+    studentCreate: vi.fn(async (args?: { data?: { name?: string } }) => ({
+        id: 'stu-created',
+        name: args?.data?.name ?? '新学生',
+    })),
     studentUpdate: vi.fn(),
+    learnerFindUnique: vi.fn(),
+    learnerCreate: vi.fn(),
+    learnerUpdate: vi.fn(),
     taskFindFirst: vi.fn(),
     submissionFindFirst: vi.fn(),
     submissionFindMany: vi.fn(),
@@ -26,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 const tx = {
     gradingClass: { create: mocks.classCreate },
     gradingStudent: { create: mocks.studentCreate, update: mocks.studentUpdate },
+    learner: { findUnique: mocks.learnerFindUnique, create: mocks.learnerCreate, update: mocks.learnerUpdate },
     gradingSubmission: { create: mocks.submissionCreate, update: mocks.submissionUpdate },
     gradingResult: { deleteMany: mocks.resultDeleteMany },
 };
@@ -41,7 +49,7 @@ vi.mock('@/lib/prisma', () => ({
     },
 }));
 vi.mock('@/lib/current-user', () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock('@/lib/ai-quota', () => ({ consumeAiQuota: mocks.consumeAiQuota }));
+vi.mock('@/lib/ai-quota', async () => (await import('../helpers/ai-quota-mock')).createAiQuotaMock((...args) => mocks.consumeAiQuota(...(args as []))));
 vi.mock('@/lib/ai', () => ({ getAIService: () => ({ readExamPaper: mocks.readExamPaper }) }));
 vi.mock('@/lib/grading-service', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@/lib/grading-service')>()),
@@ -56,7 +64,7 @@ import { POST as merge } from '@/app/api/grading/submissions/[id]/merge/route';
 
 const json = (body: unknown) => new Request('http://localhost/api', { method: 'POST', body: JSON.stringify(body) });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
-const IMAGE = 'data:image/jpeg;base64,/9j/AAAA';
+const IMAGE = SAMPLE_JPEG_DATA_URL;
 
 const existingClasses = [
     { id: 'c1', name: '七年级1班', students: [
@@ -71,6 +79,22 @@ beforeEach(() => {
     mocks.consumeAiQuota.mockResolvedValue(null);
     mocks.classFindMany.mockResolvedValue(existingClasses);
     mocks.classCreate.mockResolvedValue({ id: 'c-new' });
+    mocks.studentCreate.mockImplementation(async (args?: { data?: { name?: string } }) => ({
+        id: 'stu-created',
+        name: args?.data?.name ?? '新学生',
+    }));
+    mocks.learnerFindUnique.mockImplementation(async ({ where }: { where?: { gradingStudentId?: string } }) => {
+        if (where?.gradingStudentId === 's1') return { id: 'ln-s1', userId: 'u1', kind: 'student', name: '张三', gradingStudentId: 's1' };
+        return null;
+    });
+    mocks.learnerCreate.mockImplementation(async ({ data }: { data: { name: string; gradingStudentId: string } }) => ({
+        id: `ln-${data.gradingStudentId}`,
+        ...data,
+    }));
+    mocks.learnerUpdate.mockImplementation(async ({ where, data }: { where: { id: string }; data: { name: string } }) => ({
+        id: where.id,
+        ...data,
+    }));
     mocks.submissionFindMany.mockResolvedValue([]);
     mocks.transaction.mockImplementation(async (arg: unknown) => (typeof arg === 'function' ? arg(tx) : arg));
     mocks.studentFindMany.mockResolvedValue([
@@ -110,13 +134,26 @@ describe('POST /api/grading/roster/import', () => {
         expect(mocks.classCreate).toHaveBeenCalledWith({ data: { userId: 'u1', name: '七年级2班' }, select: { id: true } });
         expect(mocks.studentUpdate).toHaveBeenCalledWith({ where: { id: 's1' }, data: { name: '张三丰', studentNo: '01' } });
         expect(mocks.studentUpdate).toHaveBeenCalledWith({ where: { id: 's2' }, data: { name: '李四', studentNo: '02' } });
-        expect(mocks.studentCreate).toHaveBeenCalledWith({ data: { classId: 'c-new', name: '王五', studentNo: '01', order: 0 } });
+        expect(mocks.studentCreate).toHaveBeenCalledWith({
+            data: { classId: 'c-new', name: '王五', studentNo: '01', order: 0 },
+            select: { id: true, name: true },
+        });
+        expect(mocks.learnerUpdate).toHaveBeenCalledWith({ where: { id: 'ln-s1' }, data: { name: '张三丰' } });
+        expect(mocks.learnerCreate).toHaveBeenCalledWith({
+            data: { userId: 'u1', kind: 'student', name: '李四', gradingStudentId: 's2' },
+        });
+        expect(mocks.learnerCreate).toHaveBeenCalledWith({
+            data: { userId: 'u1', kind: 'student', name: '王五', gradingStudentId: 'stu-created' },
+        });
     });
 
     it('Excel 解析出的行同样可以导入，没有班级列时用默认班级', async () => {
         const response = await importRoster(json({ rows: [['学号', '姓名'], ['3', '赵六']], defaultClassName: '七年级1班', commit: true }));
         expect(response.status).toBe(200);
-        expect(mocks.studentCreate).toHaveBeenCalledWith({ data: { classId: 'c1', name: '赵六', studentNo: '3', order: 2 } });
+        expect(mocks.studentCreate).toHaveBeenCalledWith({
+            data: { classId: 'c1', name: '赵六', studentNo: '3', order: 2 },
+            select: { id: true, name: true },
+        });
     });
 
     it('没有有效行时不能确认', async () => {

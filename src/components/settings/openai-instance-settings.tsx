@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { getProviderDocs } from "@/lib/ai/provider-docs";
 import { confirmDialog } from "@/lib/feedback";
+import type { AiModelRole } from "@/lib/ai/roles";
 import type { AppConfig, OpenAIInstance } from "@/types/api";
 
 type OpenAIConfig = NonNullable<AppConfig["openai"]>;
@@ -28,11 +29,12 @@ function generateId(): string {
 
 interface OpenAIInstanceSettingsProps {
     value?: OpenAIConfig;
+    role?: AiModelRole;
     onChange: (value: OpenAIConfig) => void;
 }
 
 /** OpenAI 及兼容接口：最多 10 个实例，当前激活的实例用于识别 */
-export function OpenAIInstanceSettings({ value, onChange }: OpenAIInstanceSettingsProps) {
+export function OpenAIInstanceSettings({ value, role, onChange }: OpenAIInstanceSettingsProps) {
     const { t } = useLanguage();
     const docs = getProviderDocs("openai");
     const instances = value?.instances || [];
@@ -152,6 +154,8 @@ export function OpenAIInstanceSettings({ value, onChange }: OpenAIInstanceSettin
                         apiKey={selected.apiKey}
                         baseUrl={selected.baseUrl}
                         currentModel={selected.model}
+                        role={role}
+                        instanceId={selected.id}
                         onModelChange={(model) => updateSelected('model', model)}
                         docsHref={docs?.models}
                     />

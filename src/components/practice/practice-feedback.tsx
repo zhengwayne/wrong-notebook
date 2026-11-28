@@ -13,22 +13,23 @@ interface PracticeFeedbackProps {
     gradeReason: string | null;
     notes: string;
     canSubmit: boolean;
+    loading: boolean;
     onSubmit: () => void;
     onReveal: () => void;
 }
 
 /** 作答后的区域：未提交时显示提交/看答案按钮，判题中显示进度，判题后显示对错与 AI 判定依据 */
-export function PracticeFeedback({ isSubmitted, grading, isCorrect, gradeFailed, gradeReason, notes, canSubmit, onSubmit, onReveal }: PracticeFeedbackProps) {
+export function PracticeFeedback({ isSubmitted, grading, isCorrect, gradeFailed, gradeReason, notes, canSubmit, loading, onSubmit, onReveal }: PracticeFeedbackProps) {
     const { t } = useLanguage();
 
     if (!isSubmitted) {
         return (
             <div className="flex flex-col sm:flex-row justify-center gap-2">
-                <Button size="lg" onClick={onSubmit} disabled={!canSubmit} className="w-full md:w-auto">
+                <Button size="lg" onClick={onSubmit} disabled={loading || !canSubmit} className="w-full md:w-auto">
                     <Send className="mr-2 h-4 w-4" />
                     {t.app.submitAnswer || "Submit Answer"}
                 </Button>
-                <Button size="lg" variant="outline" onClick={onReveal} className="w-full md:w-auto">
+                <Button size="lg" variant="outline" onClick={onReveal} disabled={loading} className="w-full md:w-auto">
                     <Eye className="mr-2 h-4 w-4" />
                     {t.practice.checkAnswer || "Check Answer"}
                 </Button>

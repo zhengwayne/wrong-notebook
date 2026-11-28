@@ -53,14 +53,17 @@ vi.mock('@/lib/variant/ai-adapter', () => ({
         resolve: async () => ({ data: { answer: '3' }, usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 } }),
         checkDifficulty: async ({ target }: { target: string }) => ({ data: { difficulty: target, reason: '一步移项', consistent: true } }),
     }),
-    suggestTopic: async () => ({
-        data: {
-            title: '一元一次方程专项',
-            reason: '方程相关错题集中且尚未掌握',
-            knowledgePoints: ['方程'],
-            outline: ['复习移项', '合并同类项', '列方程解应用题'],
-        },
-    }),
+    suggestTopic: async ({ knowledgePoints }: { knowledgePoints?: string[] } = {}) => {
+        const primary = knowledgePoints?.[0] || '方程';
+        return {
+            data: {
+                title: primary === '方程' ? '一元一次方程专项' : `${primary}专项`,
+                reason: `${primary}相关错题集中且尚未掌握`,
+                knowledgePoints: knowledgePoints?.length ? knowledgePoints : ['方程'],
+                outline: ['复习移项', '合并同类项', '列方程解应用题'],
+            },
+        };
+    },
 }));
 
 import { GET as LIST_RUNS, POST as CREATE_RUN } from '@/app/api/variants/runs/route';
@@ -103,10 +106,6 @@ beforeEach(async () => {
         { id: 'nb-li', name: '李四·数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' },
         { id: 'nb-wang', name: '王五·数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' },
     ] });
-    await database.errorItem.createMany({ data: [
-        { id: 'item-eq', shortId: 'Eq0001', userId: 'user-1', subjectId: 'nb-li', questionText: '解方程 2x+1=7', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
-        { id: 'item-eq-2', shortId: 'Eq0002', userId: 'user-1', subjectId: 'nb-wang', questionText: '解方程 4x-2=10', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
-    ] });
     await database.gradingClass.create({
         data: {
             id: 'class-1', userId: 'user-1', name: '初二1班',
@@ -116,6 +115,14 @@ beforeEach(async () => {
             ] },
         },
     });
+    await database.learner.createMany({ data: [
+        { id: 'ln-li', userId: 'user-1', kind: 'student', name: '李四', gradingStudentId: 'stu-li' },
+        { id: 'ln-wang', userId: 'user-1', kind: 'student', name: '王五', gradingStudentId: 'stu-wang' },
+    ] });
+    await database.errorItem.createMany({ data: [
+        { id: 'item-eq', shortId: 'Eq0001', userId: 'user-1', learnerId: 'ln-li', subjectId: 'nb-li', questionText: '解方程 2x+1=7', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
+        { id: 'item-eq-2', shortId: 'Eq0002', userId: 'user-1', learnerId: 'ln-wang', subjectId: 'nb-wang', questionText: '解方程 4x-2=10', answerText: '3', analysis: '移项', errorType: '计算', knowledgePoints: '["方程"]', originalImageUrl: '' },
+    ] });
 });
 
 afterAll(async () => {
@@ -180,6 +187,7 @@ describe('变式审核与学情接口（真实 SQLite）', () => {
         expect(exam.status).toBe(201);
         const paper = await exam.json();
         expect(paper.questionCount).toBe(1);
+        expect((await database.examQuestion.findFirstOrThrow({ where: { paperId: paper.id } })).order).toBe(1);
         expect(await database.examPaper.count({ where: { id: paper.id, status: 'ready' } })).toBe(1);
     });
 
@@ -224,5 +232,148 @@ describe('变式审核与学情接口（真实 SQLite）', () => {
         const run = await waitForRun(data.run.id);
         expect(run.kind).toBe('practice');
         expect(await database.aiUsage.count({ where: { userId: 'user-1', kind: 'practice' } })).toBe(1);
+    });
+
+    it('班级专题指定非共性前排或无精确匹配标签的 topic 时正常出题且不误报 NO_COMMON', async () => {
+        await database.errorItem.create({
+            data: {
+                id: 'item-linear',
+                shortId: 'Ln0001',
+                userId: 'user-1',
+                learnerId: 'ln-li',
+                subjectId: 'nb-li',
+                questionText: '已知一次函数 y=2x+1，求 x=2 时 y 的值',
+                answerText: '5',
+                analysis: '代入计算',
+                errorType: '概念',
+                knowledgePoints: '["一次函数"]',
+                originalImageUrl: '',
+            },
+        });
+
+        // 1. 仅李四一人错在“一次函数”，不在班级共性薄弱点中，仍应精准抽题且聚焦该专题
+        const createdFocused = await CREATE_RUN(new Request('http://localhost/api/variants/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'class_topic', classId: 'class-1', topic: '一次函数', language: 'zh', count: 3 }),
+        }));
+        expect(createdFocused.status).toBe(201);
+        const focusedBody = await createdFocused.json();
+        const focusedRun = await waitForRun(focusedBody.runIds[0]);
+        expect(focusedRun.kind).toBe('class_topic');
+        expect(focusedRun.title).toBe('一次函数专项');
+        expect(JSON.parse(focusedRun.topicSuggestion || '{}').knowledgePoints).toEqual(['一次函数']);
+        const focusedSnapshot = JSON.parse(focusedRun.inputSnapshot || '{}') as {
+            knowledgePoints?: string[];
+            slots?: Array<{ knowledgePoint: string; sourceItemId?: string }>;
+        };
+        expect(focusedSnapshot.knowledgePoints).toEqual(['一次函数']);
+        expect(focusedSnapshot.slots?.length).toBeGreaterThan(0);
+        expect(focusedSnapshot.slots?.every((slot) => slot.knowledgePoint === '一次函数' && slot.sourceItemId === 'item-linear')).toBe(true);
+
+        // 2. 新建仅 1 名学生有错题的班级（无任何共性薄弱点）且传入错题本中无精确标签的 topic，不报 NO_COMMON
+        await database.gradingClass.create({
+            data: {
+                id: 'class-2',
+                userId: 'user-1',
+                name: '初二2班',
+                students: { create: [{ id: 'stu-zhao', name: '赵六', studentNo: '10', order: 1 }] },
+            },
+        });
+        await database.learner.create({
+            data: { id: 'ln-zhao', userId: 'user-1', kind: 'student', name: '赵六', gradingStudentId: 'stu-zhao' },
+        });
+        await database.errorItem.create({
+            data: {
+                id: 'item-geo',
+                shortId: 'Ge0001',
+                userId: 'user-1',
+                learnerId: 'ln-zhao',
+                questionText: '证明三角形全等',
+                answerText: 'SAS',
+                analysis: '两边及夹角相等',
+                errorType: '推理',
+                knowledgePoints: '["全等三角形"]',
+                originalImageUrl: '',
+            },
+        });
+
+        const fallbackCreated = await CREATE_RUN(new Request('http://localhost/api/variants/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'class_topic', classId: 'class-2', topic: '二次函数', language: 'zh', count: 3 }),
+        }));
+        expect(fallbackCreated.status).toBe(201);
+        const fallbackBody = await fallbackCreated.json();
+        const fallbackRun = await waitForRun(fallbackBody.runIds[0]);
+        expect(fallbackRun.title).toBe('二次函数专项');
+        const fallbackSnapshot = JSON.parse(fallbackRun.inputSnapshot || '{}') as {
+            knowledgePoints?: string[];
+            slots?: Array<{ knowledgePoint?: string; sourceItemId?: string }>;
+        };
+        expect(fallbackSnapshot.knowledgePoints?.[0]).toBe('二次函数');
+        expect(fallbackSnapshot.slots?.length).toBeGreaterThan(0);
+        expect(fallbackSnapshot.slots?.some((slot) => slot.sourceItemId === 'item-geo')).toBe(true);
+        expect(fallbackSnapshot.slots?.every((slot) => slot.knowledgePoint === '二次函数')).toBe(true);
+    });
+
+    it('学生补救专题传入 topic 时优先围绕指定知识点置顶抽槽与生成，空白 topic 返回 400', async () => {
+        await database.errorItem.create({
+            data: {
+                id: 'item-eq-extra',
+                shortId: 'Eq0003',
+                userId: 'user-1',
+                learnerId: 'ln-li',
+                subjectId: 'nb-li',
+                questionText: '解方程 5x-5=10',
+                answerText: '3',
+                analysis: '移项',
+                errorType: '计算',
+                knowledgePoints: '["方程"]',
+                originalImageUrl: '',
+            },
+        });
+        await database.errorItem.create({
+            data: {
+                id: 'item-li-linear',
+                shortId: 'Ln0002',
+                userId: 'user-1',
+                learnerId: 'ln-li',
+                subjectId: 'nb-li',
+                questionText: '一次函数 y=-x+4 与 x 轴交点坐标',
+                answerText: '(4,0)',
+                analysis: '令 y=0',
+                errorType: '概念',
+                knowledgePoints: '["一次函数"]',
+                originalImageUrl: '',
+                createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+            },
+        });
+
+        const started = await CREATE_RUN(new Request('http://localhost/api/variants/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'topic', studentId: 'stu-li', topic: '一次函数', language: 'zh', count: 3 }),
+        }));
+        expect(started.status).toBe(202);
+        const { runId } = await started.json();
+        const run = await waitForRun(runId);
+        expect(run.kind).toBe('topic');
+        expect(run.title).toBe('一次函数专项');
+        expect(JSON.parse(run.topicSuggestion || '{}').knowledgePoints).toEqual(['一次函数']);
+        const snapshot = JSON.parse(run.inputSnapshot || '{}') as {
+            knowledgePoints?: string[];
+            slots?: Array<{ knowledgePoint: string; sourceItemId?: string }>;
+        };
+        expect(snapshot.knowledgePoints?.[0]).toBe('一次函数');
+        expect(snapshot.slots?.length).toBeGreaterThanOrEqual(3);
+        expect(snapshot.slots?.every((slot) => slot.knowledgePoint === '一次函数' && slot.sourceItemId === 'item-li-linear')).toBe(true);
+
+        const blankTopic = await CREATE_RUN(new Request('http://localhost/api/variants/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'class_topic', classId: 'class-1', topic: '   ', language: 'zh' }),
+        }));
+        expect(blankTopic.status).toBe(400);
     });
 });

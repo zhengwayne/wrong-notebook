@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { internalError, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { badRequest, internalError, notFound, unauthorized, validationError } from "@/lib/api-errors";
+import { reserveAiQuota } from "@/lib/ai-quota";
 import { createLogger } from "@/lib/logger";
 import { readAnswerKeyFromImages } from "@/lib/grading-service";
 import { imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER } from "@/lib/grading-api";
+import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:grading:key-image');
 
@@ -25,13 +26,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const task = await prisma.gradingTask.findFirst({ where: { id, userId: user.id }, select: { id: true } });
     if (!task) return notFound("Grading task not found");
 
-    const limited = await consumeAiQuota(user, 'grade');
-    if (limited) return limited;
+    let normalizedImages: string[];
     try {
-        const questions = await readAnswerKeyFromImages(parsed.data.images, parsed.data.language);
-        await prisma.gradingTask.update({ where: { id }, data: { keyImageUrl: parsed.data.images[0] } });
+        normalizedImages = await Promise.all(parsed.data.images.map(async (img) => (await normalizeImageDataUrl(img)).dataUrl));
+    } catch (error) {
+        if (error instanceof ImageValidationError) return badRequest("INVALID_IMAGE");
+        throw error;
+    }
+
+    const quota = await reserveAiQuota(user, 'grade', { request: req });
+    if (quota.limited) return quota.limited;
+    try {
+        const questions = await readAnswerKeyFromImages(normalizedImages, parsed.data.language);
+        await prisma.gradingTask.update({ where: { id }, data: { keyImageUrl: normalizedImages[0] } });
+        // 认出至少 1 道题才算一次
+        await quota.settle(questions.length > 0);
         return NextResponse.json({ questions });
     } catch (error) {
+        await quota.release();
         logger.error({ error }, '识别答案卷失败');
         return internalError("Failed to read answer key");
     }

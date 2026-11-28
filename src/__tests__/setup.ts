@@ -24,11 +24,13 @@ const localStorageMock = (() => {
     };
 })();
 
-// Define window.localStorage for jsdom environment
-Object.defineProperty(global, 'localStorage', {
-    value: localStorageMock,
-    writable: true,
-});
+// Define window.localStorage only in browser/jsdom environments
+if (typeof window !== 'undefined') {
+    Object.defineProperty(global, 'localStorage', {
+        value: localStorageMock,
+        writable: true,
+    });
+}
 
 // Reset mocks between tests
 beforeEach(() => {

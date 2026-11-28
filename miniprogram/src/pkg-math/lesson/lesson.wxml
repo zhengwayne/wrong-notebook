@@ -1,0 +1,25 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+  <view wx:elif="{{loading}}" class="loading-row"><view class="spinner"></view>加载中</view>
+  <block wx:else>
+    <image wx:if="{{hero}}" class="hero" src="{{hero}}" mode="aspectFill" />
+    <view class="l-head">
+      <view class="l-title">{{title}}</view>
+      <view class="row l-meta"><text class="tag">{{book}}</text><text wx:if="{{lit}}" class="tag lit-tag">★ 已点亮 {{best}} 分</text><text wx:elif="{{best}}" class="tag">最好 {{best}} 分</text></view>
+    </view>
+    <view class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/target-p.svg" />要学会</view>
+      <view wx:for="{{points}}" wx:key="id" class="point">
+        <view class="p-name">{{item.name}}</view>
+        <view wx:if="{{item.description}}" class="text-2 p-desc">{{item.description}}</view>
+        <view wx:for="{{item.mastery}}" wx:for-item="m" wx:key="*this" class="p-m"><image class="ic ic-sm" src="/assets/icons/check-s.svg" />{{m}}</view>
+      </view>
+    </view>
+    <view wx:if="{{prereqs.length}}" class="card">
+      <view class="card-title"><image class="ic" src="/assets/icons/flag-p.svg" />先会这些</view>
+      <view class="wrap"><view wx:for="{{prereqs}}" wx:key="name" class="chip" data-id="{{item.lessonId}}" bindtap="onOpenPrereq">{{item.name}}</view></view>
+    </view>
+    <button class="btn" bindtap="onStart" id="btn-start-quiz"><image class="ic" src="/assets/icons/target-w.svg" />{{lit ? '再闯一次' : '开始闯关'}}</button>
+    <view class="foot muted">{{attribution}}</view>
+  </block>
+</view>

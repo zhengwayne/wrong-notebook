@@ -2,17 +2,23 @@ import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
-import { tooManyRequests } from "@/lib/api-errors"
+import { tooManyRequests, validationError } from "@/lib/api-errors"
 import { getAppConfig } from "@/lib/config"
 import { getClientIp, registerIpLimiter } from "@/lib/rate-limit"
+import { defaultActivePersona, serializePersonas, uniquePersonas } from "@/lib/personas"
+import { ChildLearnerLimitError, createChildLearner, MAX_CHILD_LEARNERS } from "@/lib/learners"
+import { findUserByEmailInsensitive, normalizeEmail } from "@/lib/email"
+import { isWechatPlaceholderEmail } from "@/lib/wechat-account"
 
 const userSchema = z.object({
-    // 支持标准邮箱和本地邮箱（如 user@localhost）
-    email: z.string().regex(/^[^\s@]+@[^\s@]+$/, "Invalid email format"),
+    // 支持标准邮箱和本地邮箱（如 user@localhost），统一归一化为小写
+    email: z.string().trim().toLowerCase().regex(/^[^\s@]+@[^\s@]+$/, "Invalid email format"),
     password: z.string().min(6),
     name: z.string().min(1),
     educationStage: z.string().optional(),
     enrollmentYear: z.number().optional(),
+    personas: z.array(z.string()).optional(),
+    children: z.array(z.object({ name: z.string() })).optional(),
 })
 
 export async function POST(req: Request) {
@@ -36,12 +42,14 @@ export async function POST(req: Request) {
             registerIpLimiter.hit(ip)
         }
 
-        const body = await req.json()
-        const { email, password, name, educationStage, enrollmentYear } = userSchema.parse(body)
+        const parsed = userSchema.safeParse(await req.json().catch(() => null))
+        if (!parsed.success) return validationError("Invalid registration data", parsed.error.flatten().fieldErrors)
+        const { email: rawEmail, password, name, educationStage, enrollmentYear, personas: rawPersonas, children: rawChildren } = parsed.data
+        const email = normalizeEmail(rawEmail)
+        // wechat.local 是小程序仅微信账号的保留占位域名，不允许注册
+        if (isWechatPlaceholderEmail(email)) return validationError("Invalid registration data", { email: ["Reserved email domain"] })
 
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        })
+        const existingUser = await findUserByEmailInsensitive(prisma, email, { id: true })
 
         if (existingUser) {
             return NextResponse.json(
@@ -50,16 +58,54 @@ export async function POST(req: Request) {
             )
         }
 
+        const personas = uniquePersonas(rawPersonas)
+        if (rawPersonas && rawPersonas.length > 0 && personas.length === 0) {
+            return NextResponse.json(
+                { user: null, message: "Invalid persona selection" },
+                { status: 400 }
+            )
+        }
+        const children = (rawChildren ?? [])
+            .map((child) => ({ name: child.name.trim() }))
+            .filter((child) => child.name.length > 0)
+        if (children.length > 0 && !personas.includes("parent")) {
+            return NextResponse.json(
+                { user: null, message: "Children require the parent persona" },
+                { status: 400 }
+            )
+        }
+        if (children.length > MAX_CHILD_LEARNERS) {
+            return NextResponse.json(
+                { user: null, message: "At most 3 children" },
+                { status: 400 }
+            )
+        }
+
         const hashedPassword = await hash(password, 10)
-        const newUser = await prisma.user.create({
-            data: {
-                email,
-                name,
-                password: hashedPassword,
-                educationStage,
-                enrollmentYear
+        const personaData = personas.length > 0
+            ? {
+                personas: serializePersonas(personas),
+                activePersona: defaultActivePersona(personas, "self"),
+                personasConfirmedAt: new Date(),
             }
-        })
+            : {}
+        const createData = {
+            email,
+            name,
+            password: hashedPassword,
+            educationStage,
+            enrollmentYear,
+            ...personaData,
+        }
+        const newUser = children.length > 0
+            ? await prisma.$transaction(async (tx) => {
+                const created = await tx.user.create({ data: createData })
+                for (const child of children) {
+                    await createChildLearner(tx, created.id, child.name)
+                }
+                return created
+            })
+            : await prisma.user.create({ data: createData })
 
         const { password: newUserPassword, ...rest } = newUser
 
@@ -67,7 +113,13 @@ export async function POST(req: Request) {
             { user: rest, message: "User created successfully" },
             { status: 201 }
         )
-    } catch {
+    } catch (error) {
+        if (error instanceof ChildLearnerLimitError) {
+            return NextResponse.json(
+                { user: null, message: "At most 3 children" },
+                { status: 400 }
+            )
+        }
         return NextResponse.json(
             { user: null, message: "Something went wrong" },
             { status: 500 }

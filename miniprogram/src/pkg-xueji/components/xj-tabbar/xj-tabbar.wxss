@@ -1,0 +1,12 @@
+.xj-tabbar-space { height: calc(112rpx + env(safe-area-inset-bottom)); }
+.xj-tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; background-color: #FFFFFF; border-top: 1rpx solid var(--xj-border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.xj-tab {
+  flex: 1; height: 112rpx; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 22rpx; color: #8A8499;
+}
+.xj-tab-on { color: #6B5CA5; }
+.xj-tab-ic { width: 52rpx; height: 52rpx; margin-bottom: 4rpx; }

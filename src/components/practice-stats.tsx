@@ -6,7 +6,9 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Loader2, TrendingUp, BookOpen, Target } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import { withChildParam } from "@/lib/current-child";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { useCurrentChild } from "@/lib/use-current-child";
 import type { Translations } from "@/lib/translations";
 import { PracticeStatsData } from "@/types/api";
 
@@ -59,20 +61,27 @@ const CustomTooltip = ({ active, payload, label, t }: ChartTooltipProps & { t: T
 
 export function PracticeStats() {
     const { t } = useLanguage();
+    const { learnerId } = useCurrentChild();
     const [stats, setStats] = useState<PracticeStatsData | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        apiClient.get<PracticeStatsData>("/api/stats/practice")
+        let cancelled = false;
+        apiClient.get<PracticeStatsData>(withChildParam("/api/stats/practice", learnerId))
             .then(data => {
-                setStats(data);
-                setLoading(false);
+                if (!cancelled) {
+                    setStats(data);
+                    setLoading(false);
+                }
             })
             .catch(err => {
                 frontendLogger.error('[PracticeStats]', 'Failed to fetch stats', { error: err });
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             });
-    }, []);
+        return () => {
+            cancelled = true;
+        };
+    }, [learnerId]);
 
     if (loading) {
         return (

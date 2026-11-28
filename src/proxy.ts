@@ -1,19 +1,142 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
+import { kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
+import { KID_MODE_COOKIE_NAME, isApiAllowedInKidMode, isKidModeAllowedPagePath, verifyKidModeToken } from "@/lib/kid-mode-lock";
+import { isPersona, landingPath } from "@/lib/personas";
+import { hashMiniProgramToken, readMiniProgramBearer } from "@/lib/server/mp-auth";
+import { siteVerifyName } from "@/lib/site-verify-path";
 
 const logger = createLogger('proxy');
 
+const SESSION_COOKIE_NAME = "next-auth.session-token";
+
+/** 旧会话没有该字段时也要进确认页；确认后 token 会带上 false */
+function needsPersonaConfirm(token: { needsPersonaConfirmation?: boolean } | null): boolean {
+    return token?.needsPersonaConfirmation !== false;
+}
+
+interface DbSessionState {
+    revoked: boolean;
+    disabled: boolean;
+    personaConfirmed: boolean | null;
+}
+
+async function fetchDbSessionState(
+    userId: string | undefined,
+    tokenAuthVersion: number | undefined,
+): Promise<DbSessionState | null> {
+    if (!userId) return null;
+    try {
+        const { prisma } = await import("@/lib/prisma");
+        const row = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { personasConfirmedAt: true, isActive: true, authVersion: true },
+        });
+        if (row === null) {
+            return { revoked: true, disabled: false, personaConfirmed: null };
+        }
+        if (!row) return null;
+        const disabled = row.isActive === false;
+        const revoked = typeof row.authVersion === "number" && (
+            tokenAuthVersion !== undefined
+                ? row.authVersion !== tokenAuthVersion
+                : row.authVersion > 0
+        );
+        return {
+            revoked,
+            disabled,
+            personaConfirmed: Boolean(row.personasConfirmedAt),
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** 网关层只读查询小程序会话对应的账号；失效会话交给路由自身鉴权返回 401 */
+async function peekMiniProgramActor(token: string): Promise<{ userId: string; authVersion: number } | null> {
+    try {
+        const { prisma } = await import("@/lib/prisma");
+        const row = await prisma.miniProgramSession.findUnique({
+            where: { tokenHash: hashMiniProgramToken(token) },
+            select: { userId: true, authVersion: true, expiresAt: true, revokedAt: true },
+        });
+        if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) return null;
+        return { userId: row.userId, authVersion: row.authVersion };
+    } catch {
+        return null;
+    }
+}
+
+function redirectToLoginClearingSession(req: NextRequest, callbackUrl?: string): NextResponse {
+    const loginUrl = callbackUrl
+        ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
+        : "/login";
+    const response = NextResponse.redirect(new URL(loginUrl, req.url));
+    response.cookies.delete(SESSION_COOKIE_NAME);
+    return response;
+}
+
 export async function proxy(req: NextRequest) {
+    // 站点根目录校验文件（如小程序业务域名 /<随机名>.txt）：公开，改写到读取配置目录的接口
+    const verifyName = siteVerifyName(req.nextUrl.pathname);
+    if (verifyName) {
+        return NextResponse.rewrite(new URL(`/api/site-verify/${verifyName}`, req.url));
+    }
+
+    // 家长开启孩子专注做题锁时，在网关层统一拦截所有非白名单 API（包括未使用 defineApiRoute 的路由）；未带锁 Cookie 时零开销直通
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+        const rawKidCookie = req.cookies.get(KID_MODE_COOKIE_NAME)?.value;
+        if (!rawKidCookie) {
+            return NextResponse.next();
+        }
+        try {
+            // 小程序 Bearer 请求没有 NextAuth Cookie：按令牌查出账号与 authVersion 后用同一套专注锁白名单拦截
+            const mpToken = readMiniProgramBearer(req.headers.get("authorization"));
+            if (mpToken) {
+                const mpActor = await peekMiniProgramActor(mpToken);
+                if (mpActor) {
+                    const kidLock = verifyKidModeToken(rawKidCookie, mpActor);
+                    if (kidLock && !isApiAllowedInKidMode(req.nextUrl.pathname, req.method)) {
+                        return kidModeRestricted();
+                    }
+                }
+                return NextResponse.next();
+            }
+            const token = await getToken({
+                req,
+                secret: process.env.NEXTAUTH_SECRET,
+                cookieName: SESSION_COOKIE_NAME,
+            });
+            if (token) {
+                const kidLock = verifyKidModeToken(rawKidCookie, {
+                    userId: typeof token.id === "string" ? token.id : undefined,
+                    authVersion: typeof token.authVersion === "number" ? token.authVersion : undefined,
+                });
+                if (kidLock && !isApiAllowedInKidMode(req.nextUrl.pathname, req.method)) {
+                    return kidModeRestricted();
+                }
+            }
+        } catch {
+            // 令牌解析失败时不阻断后续路由自身鉴权流程
+        }
+        return NextResponse.next();
+    }
+
     // 页面请求的登录保护（Next.js 16 起由 middleware 更名为 proxy，运行在 Node.js 运行时）
     logger.debug({ method: req.method, path: req.nextUrl.pathname }, 'Processing request');
+
+    // 免注册公开令牌页面（扫码交作业 / 单生批改反馈卡）直接放行，由页面内公开/半公开 API 做哈希令牌校验
+    if (req.nextUrl.pathname.startsWith("/submit/") || req.nextUrl.pathname.startsWith("/share/")) {
+        return NextResponse.next();
+    }
 
     try {
         const token = await getToken({
             req,
             secret: process.env.NEXTAUTH_SECRET,
-            cookieName: "next-auth.session-token", // Explicitly look for the standardized cookie
+            cookieName: SESSION_COOKIE_NAME, // Explicitly look for the standardized cookie
         });
 
         const isAuth = !!token;
@@ -29,18 +152,46 @@ export async function proxy(req: NextRequest) {
             cookies: req.cookies.getAll().map(c => c.name)
         }, 'Auth status');
 
+        const tokenInvalidByClaim = isAuth && (token?.revoked === true || token?.isActive === false);
+        const dbState = isAuth && !tokenInvalidByClaim
+            ? await fetchDbSessionState(
+                typeof token?.id === "string" ? token.id : undefined,
+                typeof token?.authVersion === "number" ? token.authVersion : undefined,
+            )
+            : null;
+        const sessionInvalidated = tokenInvalidByClaim || Boolean(dbState?.revoked || dbState?.disabled);
+
         if (isAuthPage) {
             if (isAuth) {
-                logger.debug('Redirecting authenticated user to /');
-                return NextResponse.redirect(new URL("/", req.url));
+                if (sessionInvalidated) {
+                    const res = NextResponse.next();
+                    res.cookies.delete(SESSION_COOKIE_NAME);
+                    return res;
+                }
+                if (token?.mustChangePassword) {
+                    logger.debug('Redirecting authenticated user with default password to /setup');
+                    return NextResponse.redirect(new URL("/setup", req.url));
+                }
+                if (needsPersonaConfirm(token) && !dbState?.personaConfirmed) {
+                    logger.debug('Redirecting authenticated user to persona onboarding');
+                    return NextResponse.redirect(new URL("/onboarding/persona", req.url));
+                }
+                const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+                logger.debug({ home }, 'Redirecting authenticated user away from auth page');
+                return NextResponse.redirect(new URL(home, req.url));
             }
             return null;
         }
 
-        if (!isAuth) {
+        if (!isAuth || sessionInvalidated) {
             let from = req.nextUrl.pathname;
             if (req.nextUrl.search) {
                 from += req.nextUrl.search;
+            }
+
+            if (sessionInvalidated) {
+                logger.info({ userId: token?.id, path: req.nextUrl.pathname }, 'Clearing revoked or disabled session');
+                return redirectToLoginClearingSession(req, from);
             }
 
             logger.debug({ callbackUrl: from }, 'Redirecting unauthenticated user to login');
@@ -56,10 +207,58 @@ export async function proxy(req: NextRequest) {
             return NextResponse.redirect(new URL("/setup", req.url));
         }
 
+        const isPersonaOnboarding = req.nextUrl.pathname.startsWith("/onboarding");
+        let personaConfirmed = !needsPersonaConfirm(token);
+        if (!personaConfirmed && !isSetupPage) {
+            if (dbState?.personaConfirmed) personaConfirmed = true;
+        }
+        if (!personaConfirmed && !isPersonaOnboarding && !isSetupPage) {
+            logger.info({ userId: token.id, path: req.nextUrl.pathname }, 'Redirecting user to persona confirmation');
+            return NextResponse.redirect(new URL("/onboarding/persona", req.url));
+        }
+        if (personaConfirmed && isPersonaOnboarding) {
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            return NextResponse.redirect(new URL(home, req.url));
+        }
+
+        // 已确认身份时，按当前身份进入对应首页
+        if (req.nextUrl.pathname === "/" && personaConfirmed && token?.activePersona) {
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            if (home !== "/") {
+                return NextResponse.redirect(new URL(home, req.url));
+            }
+        }
+
         // Admin route protection: only allow users with admin role
         if (isAdminPage && token?.role !== "admin") {
             logger.warn({ userId: token?.id, path: req.nextUrl.pathname }, 'Non-admin user attempting to access admin area');
-            return NextResponse.redirect(new URL("/", req.url));
+            const home = landingPath(isPersona(token?.activePersona) ? token.activePersona : null);
+            return NextResponse.redirect(new URL(home, req.url));
+        }
+
+        // 家长开启孩子专注做题模式时，服务端强制将非学习页面收敛重定向至对应孩子的学习路径页
+        const rawKidCookie = req.cookies.get(KID_MODE_COOKIE_NAME)?.value;
+        if (rawKidCookie) {
+            const kidLock = verifyKidModeToken(rawKidCookie, {
+                userId: typeof token?.id === "string" ? token.id : undefined,
+                authVersion: typeof token?.authVersion === "number" ? token.authVersion : undefined,
+            });
+            if (kidLock) {
+                if (!isKidModeAllowedPagePath(req.nextUrl.pathname)) {
+                    return NextResponse.redirect(
+                        new URL(`/learn?studentKey=${encodeURIComponent(kidLock.learnerId)}`, req.url),
+                    );
+                }
+                if (req.nextUrl.pathname === "/learn") {
+                    const reqKey = req.nextUrl.searchParams.get("studentKey") || req.nextUrl.searchParams.get("learnerId");
+                    if (reqKey && reqKey !== kidLock.learnerId) {
+                        const target = new URL(req.url);
+                        target.searchParams.set("studentKey", kidLock.learnerId);
+                        target.searchParams.delete("learnerId");
+                        return NextResponse.redirect(target);
+                    }
+                }
+            }
         }
     } catch (e) {
         // 无法确认登录状态时按未登录处理（失败即拒绝），否则会绕过强制改密和管理员页面的拦截
@@ -84,7 +283,8 @@ export const config = {
          * - favicon.ico (favicon file)
          * - icons/、manifest.webmanifest（PWA 图标与清单，登录页也要能加载）
          * - sw.js、offline.html（Service Worker 与离线页，未登录时也要能加载）
+         * - pdfjs/（pdf.js 的 worker、wasm、字体等公开静态资源，不含用户数据）
          */
-        "/((?!api|_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html).*)",
+        "/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js|offline.html|pdfjs/).*)",
     ],
 };

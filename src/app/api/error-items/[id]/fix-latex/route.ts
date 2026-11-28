@@ -8,7 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { countLatexIssues, findLatexIssuesByField, isAcceptableLatexFix, LATEX_FIELDS } from "@/lib/latex-check";
 import type { LatexField } from "@/lib/latex-check";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:error-items:fix-latex');
@@ -19,7 +19,7 @@ const logger = createLogger('api:error-items:fix-latex');
  * 修复后问题减少且内容长度变化不大时才保存，否则保留原文。
  */
 async function handlePost(
-    _req: Request,
+    req: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id } = await params;
@@ -52,13 +52,13 @@ async function handlePost(
             };
         }
 
-        const limited = await consumeAiQuota(user, 'latex');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'latex', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const fixed = await trackBackgroundTask(
+        const fixed = await runWithAiQuota(quota, () => trackBackgroundTask(
             { userId: user.id, kind: 'fix_latex', subject: describeQuestion(item), link: `/error-items/${id}` },
-            () => getAIService().fixLatex(input)
-        );
+            () => getAIService('text').fixLatex(input)
+        ));
         const updated: Partial<Record<LatexField, string>> = {};
         for (const field of Object.keys(input) as LatexField[]) {
             const candidate = fixed[field];

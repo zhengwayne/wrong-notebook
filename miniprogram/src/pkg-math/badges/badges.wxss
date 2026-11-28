@@ -1,0 +1,11 @@
+.got { margin-bottom: 20rpx; }
+.grid { display: flex; flex-wrap: wrap; gap: 20rpx; }
+.b { width: calc((100% - 40rpx) / 3); box-sizing: border-box; padding: 20rpx 12rpx; border-radius: 24rpx; background-color: var(--xj-card); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.b-off .b-img { opacity: 0.25; }
+.b-off .b-name { color: var(--xj-muted-fg); }
+.b-img { width: 140rpx; height: 140rpx; }
+.b-name { font-size: 26rpx; font-weight: 600; margin-top: 8rpx; }
+.b-hint { font-size: 20rpx; color: var(--xj-muted-fg); }
+.foot { margin-top: 40rpx; text-align: center; font-size: 22rpx; }
+.b-ic { width: 120rpx; height: 120rpx; border-radius: 60rpx; background-color: var(--xj-primary); display: flex; align-items: center; justify-content: center; }
+.b-off .b-ic { background-color: var(--xj-accent); }

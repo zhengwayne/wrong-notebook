@@ -9,8 +9,11 @@ import { sanitizeFigureSvg } from './figure-svg';
 /** 单个动画讲解的最大长度（字符） */
 export const MAX_SVG_ANIMATION_LENGTH = 200_000;
 
+const MAX_HREF_STRIP_PASSES = 10;
+
 // 改写链接属性的动画（<animate attributeName="href" …>、<set attributeName="xlink:href" …>）
 const HREF_ANIMATIONS = /<(animate|set)\b[^>]*attributeName\s*=\s*["']?(?:xlink:)?href["']?[^>]*?(\/>|>[\s\S]*?<\/\1\s*>)/gi;
+const HREF_ANIMATION_PREFIX = /<(?:animate|set)\b[^>]*attributeName\s*=\s*["']?(?:xlink:)?href\b/i;
 
 /**
  * 从 AI 回复中取出动画 SVG 并净化；没有有效 SVG 或超长时返回 null。
@@ -19,7 +22,18 @@ const HREF_ANIMATIONS = /<(animate|set)\b[^>]*attributeName\s*=\s*["']?(?:xlink:
 export function sanitizeSvgAnimation(raw: unknown): string | null {
     const svg = sanitizeFigureSvg(raw, MAX_SVG_ANIMATION_LENGTH);
     if (!svg) return null;
-    const clean = svg.replace(HREF_ANIMATIONS, '');
+
+    // 循环剥离嵌套拆分构造（如 <ani<animate attributeName="href"/>mate attributeName="href".../>），超过上限则拒收
+    let clean = svg;
+    let previous: string;
+    let pass = 0;
+    do {
+        if (pass++ > MAX_HREF_STRIP_PASSES) return null;
+        previous = clean;
+        clean = clean.replace(HREF_ANIMATIONS, '');
+    } while (clean !== previous);
+
+    if (HREF_ANIMATION_PREFIX.test(clean)) return null;
     return embedNarration(clean, getEmbeddedNarration(clean));
 }
 
@@ -214,11 +228,13 @@ export function getSvgAspectRatio(svg: string): number {
 }
 
 /**
- * 放进 sandbox iframe 的文档：CSP 禁止加载任何外部资源，SVG 铺满画面
+ * 放进 sandbox iframe 的文档：CSP 禁止加载任何外部资源，SVG 铺满画面。
+ * 拼接进 body 前强制走一次 sanitizeSvgAnimation，避免未净化或畸形 SVG 逃逸 HTML 容器。
  */
 export function buildSvgAnimationDocument(svg: string): string {
+    const cleanSvg = sanitizeSvgAnimation(svg) ?? '';
     return '<!doctype html><html><head><meta charset="utf-8">'
         + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:">'
         + '<style>html,body{margin:0;height:100%;background:#fff;overflow:hidden}svg{display:block;width:100%;height:100%}</style>'
-        + `</head><body>${svg}</body></html>`;
+        + `</head><body>${cleanSvg}</body></html>`;
 }

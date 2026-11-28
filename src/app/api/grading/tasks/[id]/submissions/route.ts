@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { badRequest, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { aiQuotaRefs, reserveAiQuota } from "@/lib/ai-quota";
 import { loadTaskRoster, resolveMatch, scheduleGrading, takenStudentIds } from "@/lib/grading-service";
 import { identitySchema, imageDataUrlSchema, languageSchema, MAX_PAGES_PER_PAPER, MAX_PAPERS_PER_UPLOAD } from "@/lib/grading-api";
+import { ImageValidationError, normalizeImageDataUrl } from "@/lib/server/image-normalize";
 import { hasIdentity } from "@/lib/student-match";
 
 const schema = z.object({
@@ -31,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         include: { _count: { select: { questions: true } } },
     });
     if (!task) return notFound("Grading task not found");
-    if (task._count.questions === 0) return badRequest("Answer key is empty");
+    if (task._count.questions === 0 && task.taskMode !== 'quick') return badRequest("Answer key is empty");
 
     const roster = await loadTaskRoster(task);
     const studentIds = new Set(roster.map((student) => student.id));
@@ -39,13 +40,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return badRequest("Student not in class");
     }
 
+    let normalizedPapers: Array<typeof parsed.data.papers[number]>;
+    try {
+        normalizedPapers = await Promise.all(parsed.data.papers.map(async (paper) => ({
+            ...paper,
+            images: await Promise.all(paper.images.map(async (img) => (await normalizeImageDataUrl(img)).dataUrl)),
+        })));
+    } catch (error) {
+        if (error instanceof ImageValidationError) return badRequest("INVALID_IMAGE");
+        throw error;
+    }
+
     const taken = await takenStudentIds(id);
     const created: string[] = [];
-    for (const paper of parsed.data.papers) {
-        // 每份答卷计一次 AI 调用，超出每日额度时停止（已上传的照常判分）
-        const limited = await consumeAiQuota(user, 'grade');
-        if (limited) {
-            if (created.length === 0) return limited;
+    for (const [index, paper] of normalizedPapers.entries()) {
+        // 每份答卷预留一次，判分成功才算；超出每日额度时停止（已上传的照常判分）
+        const quota = await reserveAiQuota(user, 'grade', { request: req, requestKeySuffix: String(index) });
+        if (quota.limited) {
+            if (created.length === 0) return quota.limited;
             break;
         }
         let identityData = {};
@@ -56,10 +68,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
         const assigned = (identityData as { studentId?: string | null }).studentId;
         if (assigned) taken.add(assigned);
-        const submission = await prisma.gradingSubmission.create({
-            data: { taskId: id, images: JSON.stringify(paper.images), ...identityData },
-            select: { id: true },
-        });
+        let submission: { id: string };
+        try {
+            submission = await prisma.gradingSubmission.create({
+                data: { taskId: id, images: JSON.stringify(paper.images), ...identityData },
+                select: { id: true },
+            });
+        } catch (error) {
+            await quota.release();
+            throw error;
+        }
+        await quota.attach(aiQuotaRefs.gradingSubmission(submission.id));
         created.push(submission.id);
     }
     scheduleGrading(created, parsed.data.language);

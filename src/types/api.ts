@@ -1,4 +1,4 @@
-import { ParsedQuestion } from "@/lib/ai/types";
+import { ParsedQuestion, type AnalyzeImageResult } from "@/lib/ai/types";
 import type { VendorConfig, VendorProviderId } from "@/lib/ai/vendor-presets";
 import type { MiniMaxCodeConfig } from "@/lib/minimax-code/constants";
 import type { MasteryStatus } from "@/lib/mastery-status";
@@ -116,7 +116,7 @@ export interface CreateErrorItemRequest extends ParsedQuestion {
     paperLevel?: string;
 }
 
-export type AnalyzeResponse = ParsedQuestion;
+export type AnalyzeResponse = AnalyzeImageResult;
 
 export interface QuestionSimilarityResponse {
     similarity: number;
@@ -143,6 +143,7 @@ export interface UserProfile {
     themePreference?: string;
     questionDuplicateThreshold?: number;
     masteryThreshold?: number;
+    reviewAlgorithmVersion?: 'ebbinghaus-v1' | 'fsrs-v1';
 }
 
 export interface UpdateUserProfileRequest {
@@ -150,6 +151,7 @@ export interface UpdateUserProfileRequest {
     fixedGradeSemester?: string | null;
     questionDuplicateThreshold?: number;
     masteryThreshold?: number;
+    reviewAlgorithmVersion?: 'ebbinghaus-v1' | 'fsrs-v1';
     name?: string;
     email?: string;
     educationStage?: string;
@@ -168,8 +170,68 @@ export interface OpenAIInstance {
 // MiniMax、GLM 等国产大模型官方渠道，每个渠道一组 { apiKey, baseUrl, model }
 type VendorConfigs = { [K in VendorProviderId]?: VendorConfig };
 
+/** 文本对话模型的独立渠道凭据（与多模态顶层字段结构相同） */
+export type TextAiConfig = VendorConfigs & {
+    openai?: {
+        instances?: OpenAIInstance[];
+        activeInstanceId?: string;
+    };
+    gemini?: {
+        apiKey?: string;
+        baseUrl?: string;
+        model?: string;
+    };
+    azure?: {
+        apiKey?: string;
+        endpoint?: string;
+        deploymentName?: string;
+        apiVersion?: string;
+        model?: string;
+    };
+    anthropic?: {
+        apiKey?: string;
+        baseUrl?: string;
+        model?: string;
+    };
+    minimaxCode?: MiniMaxCodeConfig;
+};
+
+export interface SecurityPosture {
+    trustProxyMode: 'false' | 'true' | 'cloudflare' | 'unset';
+    trustedProxyHops: number;
+    defaultNextAuthSecret: boolean;
+    httpsConfigured: boolean;
+    registrationOpen: boolean;
+    openclawAuthMode: 'apikey' | 'credentials';
+    openclawKeyConfigured: boolean;
+}
+
+export type EndpointLocality = 'official' | 'local' | 'custom_remote';
+
+export interface ModelDataFlow {
+    provider: string;
+    endpointType: EndpointLocality;
+}
+
+export interface DataFlowSummary {
+    vision: ModelDataFlow;
+    textSameAsVision: boolean;
+    text: ModelDataFlow;
+    tts: {
+        mode: string;
+        isCloud: boolean;
+        endpointType: EndpointLocality | 'browser';
+    };
+}
+
 export interface AppConfig extends VendorConfigs {
     aiProvider: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本对话模型是否复用多模态配置；旧配置缺省视为 true */
+    textSameAsVision?: boolean;
+    /** 文本角色使用的渠道；仅在 textSameAsVision 为 false 时生效 */
+    aiTextProvider?: 'gemini' | 'openai' | 'azure' | 'anthropic' | 'minimax-code' | VendorProviderId;
+    /** 文本角色独立凭据 */
+    textAi?: TextAiConfig;
     allowRegistration?: boolean;
     /** 普通用户每天可发起的 AI 调用次数，0 表示不限制；管理员不受限制 */
     aiDailyLimit?: number;
@@ -209,6 +271,10 @@ export interface AppConfig extends VendorConfigs {
     };
     /** 动画语音讲解的朗读方式：浏览器本地语音或云端语音合成 */
     tts?: TtsConfig;
+    /** 仅向管理员返回的匿名安全态势摘要（不持久化，不含密钥） */
+    securityPosture?: SecurityPosture;
+    /** 面向所有用户的脱敏 AI/语音数据去向摘要（不持久化，不含地址或密钥） */
+    dataFlow?: DataFlowSummary;
 }
 
 
@@ -318,7 +384,10 @@ export interface RegisterRequest {
     email: string;
     password: string;
     educationStage: string;
-    enrollmentYear: number;
+    /** 只选老师时不填 */
+    enrollmentYear?: number;
+    personas?: string[];
+    children?: { name: string }[];
 }
 
 // ============ 举一反三记录与掌握概率 ============
@@ -361,6 +430,7 @@ export type ExamStatus = 'generating' | 'ready' | 'partial' | 'failed';
 
 export interface ExamPaperSummary {
     id: string;
+    learnerId?: string | null;
     title: string;
     status: ExamStatus;
     scope: ExamScope;

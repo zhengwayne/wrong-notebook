@@ -43,4 +43,22 @@ describe('validateAiConfig', () => {
     it('其他渠道不检查 OpenAI 和 Azure 的字段', () => {
         expect(validateAiConfig(config({ aiProvider: 'gemini', azure: {} as AppConfig['azure'] }), t)).toBeNull();
     });
+
+    it('文本角色与多模态共用时不额外校验文本凭据', () => {
+        expect(validateAiConfig(config({
+            aiProvider: 'gemini',
+            textSameAsVision: true,
+            aiTextProvider: 'azure',
+            textAi: { azure: {} },
+        }), t)).toBeNull();
+    });
+
+    it('文本角色独立配置时也要校验该渠道必填项', () => {
+        expect(validateAiConfig(config({
+            aiProvider: 'gemini',
+            textSameAsVision: false,
+            aiTextProvider: 'azure',
+            textAi: { azure: { apiKey: 'k' } },
+        }), t)).toBe(ai.validationAzureEndpointRequired);
+    });
 });

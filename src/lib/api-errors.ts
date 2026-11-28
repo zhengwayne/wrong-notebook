@@ -20,26 +20,31 @@ export const ErrorCode = {
     // 认证相关 (401)
     UNAUTHORIZED: 'UNAUTHORIZED',
     SESSION_EXPIRED: 'SESSION_EXPIRED',
+    SESSION_REVOKED: 'SESSION_REVOKED',
+    ACCOUNT_DISABLED: 'ACCOUNT_DISABLED',
 
     // 权限相关 (403)
     FORBIDDEN: 'FORBIDDEN',
     NOT_OWNER: 'NOT_OWNER',
     ADMIN_REQUIRED: 'ADMIN_REQUIRED',
+    KID_MODE_RESTRICTED: 'KID_MODE_RESTRICTED',
 
     // 资源相关 (404)
     NOT_FOUND: 'NOT_FOUND',
     USER_NOT_FOUND: 'USER_NOT_FOUND',
     ITEM_NOT_FOUND: 'ITEM_NOT_FOUND',
 
-    // 请求相关 (400)
+    // 请求相关 (400 / 413)
     BAD_REQUEST: 'BAD_REQUEST',
     INVALID_INPUT: 'INVALID_INPUT',
     MISSING_REQUIRED_FIELD: 'MISSING_REQUIRED_FIELD',
     VALIDATION_ERROR: 'VALIDATION_ERROR',
     OPERATION_NOT_ALLOWED: 'OPERATION_NOT_ALLOWED',
+    PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
 
-    // 请求过多 (429)
+    // 请求过多 (429 / 503)
     AI_DAILY_LIMIT_EXCEEDED: 'AI_DAILY_LIMIT_EXCEEDED',
+    AI_QUEUE_BUSY: 'AI_QUEUE_BUSY',
     TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
 
     // 冲突 (409)
@@ -90,10 +95,33 @@ export function unauthorized(message: string = "Unauthorized"): NextResponse<Api
 }
 
 /**
+ * 401 Session Revoked - 密码修改或会话主动注销导致当前令牌失效
+ */
+export function sessionRevoked(message: string = "Session revoked"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 401, ErrorCode.SESSION_REVOKED);
+}
+
+/**
+ * 401 Account Disabled - 账户已被管理员禁用
+ */
+export function accountDisabled(message: string = "Account is disabled"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 401, ErrorCode.ACCOUNT_DISABLED);
+}
+
+/**
  * 403 Forbidden - 无权限
  */
 export function forbidden(message: string = "Forbidden"): NextResponse<ApiErrorResponse> {
     return createErrorResponse(message, 403, ErrorCode.FORBIDDEN);
+}
+
+/**
+ * 403 Kid Mode Restricted - 孩子专注做题受限模式下禁止管理或删除操作
+ */
+export function kidModeRestricted(
+    message: string = "专注做题模式下禁止此操作，请先由家长输入 PIN 码解锁",
+): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 403, ErrorCode.KID_MODE_RESTRICTED);
 }
 
 /**
@@ -125,11 +153,31 @@ export function conflict(message: string): NextResponse<ApiErrorResponse> {
 }
 
 /**
+ * 413 Payload Too Large - 请求体超过允许上限
+ */
+export function payloadTooLarge(message: string = "Payload too large"): NextResponse<ApiErrorResponse> {
+    return createErrorResponse(message, 413, ErrorCode.PAYLOAD_TOO_LARGE);
+}
+
+/**
  * 429 Too Many Requests - 请求过多，Retry-After 告诉客户端多少秒后再试
  */
 export function tooManyRequests(retryAfterMs: number, message: string = "Too many requests"): NextResponse<ApiErrorResponse> {
     const response = createErrorResponse(message, 429, ErrorCode.TOO_MANY_REQUESTS);
     response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+    return response;
+}
+
+/**
+ * 503 Service Unavailable - 服务暂忙或排队超时，附带 Retry-After 秒数
+ */
+export function serviceUnavailable(
+    retryAfterSeconds: number,
+    message: string = "Service temporarily unavailable",
+    code: ErrorCodeType = ErrorCode.AI_QUEUE_BUSY
+): NextResponse<ApiErrorResponse> {
+    const response = createErrorResponse(message, 503, code);
+    response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterSeconds))));
     return response;
 }
 

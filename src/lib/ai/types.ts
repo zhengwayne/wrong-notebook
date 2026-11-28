@@ -1,6 +1,8 @@
 // Re-export the Zod-validated type from schema.ts
 export type { ParsedQuestionFromSchema as ParsedQuestion } from './schema';
 import type { ParsedQuestionFromSchema } from './schema';
+export type { AnalyzeImageResult } from './parse-analyze';
+import type { AnalyzeImageResult } from './parse-analyze';
 
 // Import and re-export MistakeStatus from the single source of truth
 import type { MistakeStatus } from '../mistake-status';
@@ -88,6 +90,12 @@ export interface TagSuggestionInput {
 export type { TagSuggestionResult } from './schema';
 import type { TagSuggestionResult } from './schema';
 
+/** 跨页题的后续页面（已规范化的图片） */
+export interface AnalyzeExtraImage {
+    base64: string;
+    mimeType: string;
+}
+
 /** 交给 AI 的候选知识点：来自错题本的学段 + 学科，AI 只能从中选择 */
 export interface CandidateTags {
     subjectName: string;   // 中文学科名，如「数学」
@@ -100,7 +108,8 @@ import type { ExamPaperReadInput, ExamPaperReadResult } from './exam-paper-read'
 export interface AIService {
     /** 只识别年级学期，用于直接录入或外部识别结果缺少年级的情况。 */
     recognizeGrade(questionText: string): Promise<string | null>;
-    analyzeImage(imageBase64: string, mimeType?: string, language?: 'zh' | 'en', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestionFromSchema>;
+    /** extraImages：同一道跨页题按顺序拍的后续几页（最多 2 张），与第一张一起作为一次识别 */
+    analyzeImage(imageBase64: string, mimeType?: string, language?: 'zh' | 'en', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags, extraImages?: AnalyzeExtraImage[]): Promise<AnalyzeImageResult>;
     /** originalFigureSvg：原题的 SVG 配图，新题需要配图时据此重新绘制 */
     generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language?: 'zh' | 'en', difficulty?: DifficultyLevel, gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestionFromSchema>;
     /** 变式流水线等结构化 JSON 调用，同时返回提供商给出的用量 */

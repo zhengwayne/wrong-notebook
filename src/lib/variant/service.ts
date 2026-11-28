@@ -2,16 +2,19 @@
  * 变式审核流程的持久化与编排：启动流水线、写入审核队列、批准后进入练习/试卷、学情画像与对比。
  */
 import { prisma } from '@/lib/prisma';
-import { consumeAiQuota, type QuotaUser } from '@/lib/ai-quota';
+import type { Prisma } from '@prisma/client';
+import { reserveAiQuota, type AiQuotaReservation, type QuotaUser } from '@/lib/ai-quota';
 import { getAIService } from '@/lib/ai';
+import { recordAiProvenance } from '@/lib/ai/provenance';
 import type { DifficultyLevel } from '@/lib/ai/types';
 import { trackBackgroundTask } from '@/lib/background-tasks';
+import { sanitizeFigureSvg } from '@/lib/figure-svg';
 import { serializeLastPractice } from '@/lib/last-practice';
+import { LEARNER_KIND } from '@/lib/learners';
 import { DEFAULT_MASTERY_THRESHOLD, masteryStatusOf } from '@/lib/mastery-status';
 import { createLogger } from '@/lib/logger';
 import { generateUniqueShortId } from '@/lib/short-id';
 import { createVariantAi, suggestTopic } from './ai-adapter';
-import { isStudentNotebook } from './notebooks';
 import { MAX_AI_CALLS_PER_RUN, MAX_GENERATE_RETRIES, MAX_VARIANTS_PER_RUN, runVariantPipeline, type PipelineInput, type PipelineResult, type StageLog, type TokenUsage } from './pipeline';
 import type { VariantDifficulty, VariantItemStatus, VariantRunKind } from './schemas';
 import { buildClassWeaknesses, buildWeaknessProfile, classTopicBrief, selectPracticeSlots, type ProfileItem, type WeaknessProfile } from './weakness-profile';
@@ -27,7 +30,7 @@ function subjectLabel(name?: string | null): string {
 }
 
 
-type DbItem = Awaited<ReturnType<typeof loadNotebookItems>>[number];
+type DbItem = Awaited<ReturnType<typeof loadItemsByWhere>>[number];
 
 function parseTags(item: { tags: { name: string }[]; knowledgePoints: string | null }): string[] {
     if (item.tags.length > 0) return item.tags.map((tag) => tag.name);
@@ -39,16 +42,30 @@ function parseTags(item: { tags: { name: string }[]; knowledgePoints: string | n
     }
 }
 
-async function loadNotebookItems(userId: string, subjectIds: string[]) {
-    if (subjectIds.length === 0) return [];
-    return prisma.errorItem.findMany({
-        where: { userId, subjectId: { in: subjectIds } },
-        include: {
+async function loadItemsByWhere(where: Prisma.ErrorItemWhereInput, learnerFilterId?: string) {
+    const items = await prisma.errorItem.findMany({
+        where,
+        select: {
+            id: true,
+            subjectId: true,
+            learnerId: true,
+            questionText: true,
+            errorType: true,
+            knowledgePoints: true,
+            masteryProbability: true,
+            createdAt: true,
             tags: { select: { name: true } },
-            practiceRecords: { where: { result: { not: null } }, select: { result: true, isCorrect: true, createdAt: true, questionText: true } },
+            practiceRecords: {
+                ...(learnerFilterId ? { where: { learnerId: learnerFilterId } } : {}),
+                select: { result: true, isCorrect: true, createdAt: true, questionText: true },
+            },
         },
         orderBy: { createdAt: 'desc' },
     });
+    return items.map((item) => ({
+        ...item,
+        practiceRecords: item.practiceRecords.filter((record) => record.result !== null),
+    }));
 }
 
 function toProfileItems(items: DbItem[], threshold: number): ProfileItem[] {
@@ -73,14 +90,8 @@ async function userThreshold(userId: string): Promise<number> {
     return user?.masteryThreshold ?? DEFAULT_MASTERY_THRESHOLD;
 }
 
-export async function findStudentSubjectIds(userId: string, studentName: string): Promise<string[]> {
-    const notebooks = await prisma.subject.findMany({ where: { userId }, select: { id: true, name: true } });
-    return notebooks.filter((item) => isStudentNotebook(item.name, studentName)).map((item) => item.id);
-}
-
-export async function buildProfileForSubjects(userId: string, subjectIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+async function buildProfileFromItems(userId: string, items: DbItem[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
     const threshold = await userThreshold(userId);
-    const items = await loadNotebookItems(userId, subjectIds);
     const profile = buildWeaknessProfile(toProfileItems(items, threshold));
     const previous: Array<{ id: string; text: string }> = [];
     for (const item of items) {
@@ -90,6 +101,28 @@ export async function buildProfileForSubjects(userId: string, subjectIds: string
         }
     }
     return { profile, items, previous };
+}
+
+export async function findStudentLearnerId(userId: string, gradingStudentId: string): Promise<string | null> {
+    const learner = await prisma.learner.findFirst({
+        where: { userId, kind: LEARNER_KIND.student, gradingStudentId },
+        select: { id: true },
+    });
+    return learner?.id ?? null;
+}
+
+export async function buildProfileForSubjects(userId: string, subjectIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+    const items = subjectIds.length === 0 ? [] : await loadItemsByWhere({ userId, subjectId: { in: subjectIds } });
+    return buildProfileFromItems(userId, items);
+}
+
+export async function buildProfileForLearners(userId: string, learnerIds: string[]): Promise<{ profile: WeaknessProfile; items: DbItem[]; previous: Array<{ id: string; text: string }> }> {
+    if (learnerIds.length === 0) return buildProfileFromItems(userId, []);
+    const items = await loadItemsByWhere(
+        { userId, learnerId: { in: learnerIds } },
+        learnerIds.length === 1 ? learnerIds[0] : undefined,
+    );
+    return buildProfileFromItems(userId, items);
 }
 
 function usageFields(usage: TokenUsage) {
@@ -118,6 +151,7 @@ async function persistLogs(runId: string, logs: StageLog[], itemId?: string) {
 
 async function persistPipeline(runId: string, result: PipelineResult, title?: string) {
     const started = Date.now();
+    const provenanceId = await recordAiProvenance(prisma, { task: 'variant', role: 'text' });
     for (const item of result.items) {
         const created = await prisma.variantItem.create({
             data: {
@@ -128,7 +162,7 @@ async function persistPipeline(runId: string, result: PipelineResult, title?: st
                 questionText: item.question?.questionText,
                 answerText: item.question?.answerText,
                 analysis: item.question?.analysis,
-                figureSvg: item.question?.figureSvg ?? null,
+                figureSvg: sanitizeFigureSvg(item.question?.figureSvg),
                 knowledgePoints: JSON.stringify(item.question?.knowledgePoints || item.plan.knowledgePoints || []),
                 plannedDifficulty: item.plan.difficulty,
                 checkedDifficulty: item.checkedDifficulty ?? null,
@@ -137,6 +171,7 @@ async function persistPipeline(runId: string, result: PipelineResult, title?: st
                 similarity: item.similarity ?? null,
                 similarTo: item.similarTo ?? null,
                 sourceItemId: item.sourceItemId ?? null,
+                provenanceId,
             },
         });
         await persistLogs(runId, item.logs, created.id);
@@ -179,10 +214,13 @@ export async function startPipelineRun(options: {
     subjectLabel?: string;
     wait?: boolean;
     skipQuota?: boolean;
+    /** 调用方已预留的额度（skipQuota 时由这里结算） */
+    quota?: AiQuotaReservation;
 }): Promise<{ id: string }> {
-    if (!options.skipQuota) {
-        const limited = await consumeAiQuota(options.user, options.quotaKind ?? (options.kind === 'practice' ? 'practice' : 'exam'));
-        if (limited) throw new QuotaError(limited.status);
+    let quota: AiQuotaReservation | undefined = options.quota;
+    if (!options.skipQuota && !quota) {
+        quota = await reserveAiQuota(options.user, options.quotaKind ?? (options.kind === 'practice' ? 'practice' : 'exam'));
+        if (quota.limited) throw new QuotaError(quota.limited.status);
     }
     const run = await prisma.variantRun.create({
         data: {
@@ -208,12 +246,18 @@ export async function startPipelineRun(options: {
             topicSuggestion: options.topicSuggestion ? JSON.stringify(options.topicSuggestion) : null,
         },
         select: { id: true },
+    }).catch(async (error) => {
+        await quota?.release();
+        throw error;
     });
     const work = async () => {
         try {
             const result = await runVariantPipeline(options.input, createVariantAi(), { maxCalls: MAX_AI_CALLS_PER_RUN, maxRetries: MAX_GENERATE_RETRIES });
             await persistPipeline(run.id, result, options.title);
+            // 生成出至少 1 道题才算一次
+            await quota?.settle(countProducedVariants(result) > 0);
         } catch (error) {
+            await quota?.release();
             await failRun(run.id, error);
             if (options.wait) throw error;
         }
@@ -222,6 +266,11 @@ export async function startPipelineRun(options: {
     if (options.wait) await trackBackgroundTask(task, work);
     else void trackBackgroundTask(task, work);
     return { id: run.id };
+}
+
+/** 流水线里真正生成出题目的数量 */
+export function countProducedVariants(result: Pick<PipelineResult, 'items'>): number {
+    return result.items.filter((item) => typeof item.question?.questionText === 'string' && item.question.questionText.trim().length > 0).length;
 }
 
 export class QuotaError extends Error {
@@ -242,15 +291,17 @@ export async function startLegacyRun(options: {
     subjectName?: string;
 }): Promise<{ questionText: string; answerText: string; analysis: string; figureSvg: string | null; subject?: string; difficulty: DifficultyLevel; generatedAt: string; runId: string }> {
     const started = Date.now();
-    const generated = await getAIService().generateSimilarQuestion(
+    const generated = await getAIService('text').generateSimilarQuestion(
         options.question, options.knowledgePoints, options.language, options.difficulty, options.gradeSemester, options.figureSvg,
     );
+    const cleanFigureSvg = sanitizeFigureSvg(generated.figureSvg);
+    const provenanceId = await recordAiProvenance(prisma, { task: 'variant', role: 'text' });
     const lastPractice = {
         questionText: generated.questionText,
         answerText: generated.answerText,
         analysis: generated.analysis,
         subject: subjectLabel(generated.subject || options.subjectName),
-        figureSvg: generated.figureSvg ?? null,
+        figureSvg: cleanFigureSvg,
         difficulty: options.difficulty,
         generatedAt: new Date().toISOString(),
     };
@@ -274,11 +325,12 @@ export async function startLegacyRun(options: {
                     questionText: generated.questionText,
                     answerText: generated.answerText,
                     analysis: generated.analysis,
-                    figureSvg: generated.figureSvg ?? null,
+                    figureSvg: cleanFigureSvg,
                     knowledgePoints: JSON.stringify(options.knowledgePoints),
                     plannedDifficulty: options.difficulty,
                     reviewedAt: new Date(),
                     sourceItemId: options.errorItemId,
+                    provenanceId,
                 },
             },
         },
@@ -292,7 +344,7 @@ export async function startLegacyRun(options: {
     return { ...lastPractice, runId: run.id };
 }
 
-export async function startItemPipeline(user: QuotaUser, errorItemId: string, language: 'zh' | 'en', difficulty: VariantDifficulty, options: { skipQuota?: boolean } = {}) {
+export async function startItemPipeline(user: QuotaUser, errorItemId: string, language: 'zh' | 'en', difficulty: VariantDifficulty, options: { skipQuota?: boolean; quota?: AiQuotaReservation } = {}) {
     const item = await prisma.errorItem.findFirst({
         where: { id: errorItemId, userId: user.id },
         include: { subject: true, tags: { select: { name: true } } },
@@ -323,6 +375,7 @@ export async function startItemPipeline(user: QuotaUser, errorItemId: string, la
         quotaKind: 'practice',
         wait: true,
         skipQuota: options.skipQuota,
+        quota: options.quota,
     });
 }
 
@@ -333,41 +386,89 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
     studentId?: string;
     subjectId?: string;
     title?: string;
+    topic?: string;
 }) {
     const studentId = options.studentId;
     let classId: string | undefined;
     let studentName = '';
-    const subjectIds: string[] = [];
+    let learnerId: string | null = null;
     if (options.subjectId) {
         const subject = await prisma.subject.findFirst({ where: { id: options.subjectId, userId: user.id }, select: { id: true, name: true } });
         if (!subject) return null;
-        subjectIds.push(subject.id);
         studentName = subject.name.split('·')[0] || subject.name;
     }
     if (studentId) {
-        const student = await prisma.gradingStudent.findFirst({ where: { id: studentId, class: { userId: user.id } }, include: { class: true } });
+        const student = await prisma.gradingStudent.findFirst({
+            where: { id: studentId, class: { userId: user.id } },
+            include: { class: true, learner: { select: { id: true } } },
+        });
         if (!student) return null;
         studentName = student.name;
         classId = student.classId;
-        subjectIds.push(...await findStudentSubjectIds(user.id, student.name));
+        learnerId = student.learner?.id ?? await findStudentLearnerId(user.id, student.id);
+        if (!learnerId) return { error: 'NO_ITEMS' as const };
     }
-    const uniqueIds = [...new Set(subjectIds)];
-    if (uniqueIds.length === 0) return { error: 'NO_NOTEBOOK' as const };
-    const { profile, items, previous } = await buildProfileForSubjects(user.id, uniqueIds);
+
+    const { profile, items, previous } = studentId
+        ? await buildProfileFromItems(
+            user.id,
+            await loadItemsByWhere(
+                {
+                    userId: user.id,
+                    learnerId: learnerId!,
+                    ...(options.subjectId ? { subjectId: options.subjectId } : {}),
+                },
+                learnerId!,
+            ),
+        )
+        : options.subjectId
+            ? await buildProfileForSubjects(user.id, [options.subjectId])
+            : { profile: buildWeaknessProfile([]), items: [], previous: [] };
+
+    if (!studentId && !options.subjectId) return { error: 'NO_NOTEBOOK' as const };
     if (items.length === 0) return { error: 'NO_ITEMS' as const };
 
     const count = Math.max(3, Math.min(MAX_VARIANTS_PER_RUN, options.count ?? (options.kind === 'topic' ? 4 : 5)));
+    const focusedTopic = options.kind === 'topic' ? options.topic?.trim() || '' : '';
     let topicSuggestion = undefined;
     if (options.kind === 'topic') {
-        const brief = classTopicBrief(profile.weaknesses.map((weakness) => ({
-            knowledgePoint: weakness.knowledgePoint, studentCount: 1, averageScore: weakness.score, totalItems: weakness.itemCount,
-        })));
+        const matchedWeakness = focusedTopic
+            ? profile.weaknesses.find((weakness) => weakness.knowledgePoint === focusedTopic)
+            : undefined;
+        // 若指定了热力图知识点，则优先围绕该知识点生成专题（存在统计时沿用统计摘要，否则直接聚焦该知识点）
+        const brief = focusedTopic
+            ? matchedWeakness
+                ? classTopicBrief([{
+                    knowledgePoint: matchedWeakness.knowledgePoint,
+                    studentCount: 1,
+                    averageScore: matchedWeakness.score,
+                    totalItems: matchedWeakness.itemCount,
+                }])
+                : { knowledgePoints: [focusedTopic], reason: focusedTopic }
+            : classTopicBrief(profile.weaknesses.map((weakness) => ({
+                knowledgePoint: weakness.knowledgePoint,
+                studentCount: 1,
+                averageScore: weakness.score,
+                totalItems: weakness.itemCount,
+            })));
         const topic = await suggestTopic({ ...brief, language: options.language });
         topicSuggestion = topic.data;
     }
-    const points = topicSuggestion?.knowledgePoints || profile.weaknesses.map((item) => item.knowledgePoint);
+    const basePoints = topicSuggestion?.knowledgePoints || profile.weaknesses.map((item) => item.knowledgePoint);
+    const points = focusedTopic
+        ? [focusedTopic, ...basePoints.filter((point) => point !== focusedTopic)]
+        : basePoints;
+    const matchedWeaknesses = focusedTopic
+        ? profile.weaknesses.filter((item) => item.knowledgePoint === focusedTopic)
+        : [];
+    const slotWeaknesses = matchedWeaknesses.length > 0
+        ? matchedWeaknesses
+        : [
+            ...profile.weaknesses.filter((item) => points.includes(item.knowledgePoint)),
+            ...profile.weaknesses.filter((item) => !points.includes(item.knowledgePoint)),
+        ];
     const slots = selectPracticeSlots(
-        { ...profile, weaknesses: profile.weaknesses.filter((item) => points.includes(item.knowledgePoint)).concat(profile.weaknesses) },
+        { ...profile, weaknesses: slotWeaknesses },
         toProfileItems(items, await userThreshold(user.id)),
         count,
     );
@@ -381,7 +482,7 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
         title: options.title || topicSuggestion?.title || `${studentName} 个性化练习`,
         studentId,
         classId,
-        subjectId: uniqueIds[0],
+        subjectId: options.subjectId ?? items[0]?.subjectId ?? undefined,
         weaknessProfile: profile,
         topicSuggestion,
         subjectLabel: studentName,
@@ -395,7 +496,8 @@ export async function startPersonalizedRun(user: QuotaUser, options: {
             count,
             previousQuestions: previous,
             plannedSlots: slots.map((slot) => ({
-                knowledgePoint: slot.knowledgePoint,
+                // 指定了专题但错题中无精确匹配标签时，仍锚定 focusedTopic，避免被无关薄弱点带偏
+                knowledgePoint: focusedTopic && matchedWeaknesses.length === 0 ? focusedTopic : slot.knowledgePoint,
                 difficulty: slot.difficulty,
                 sourceItemId: slot.sourceItemId,
                 sourceQuestion: itemById.get(slot.sourceItemId)?.questionText || items[0].questionText || '',
@@ -411,6 +513,7 @@ export async function startClassRuns(user: QuotaUser, options: {
     kind: 'personalized_set' | 'class_topic';
     language: 'zh' | 'en';
     count?: number;
+    topic?: string;
 }) {
     const cls = await prisma.gradingClass.findFirst({
         where: { id: options.classId, userId: user.id },
@@ -418,30 +521,52 @@ export async function startClassRuns(user: QuotaUser, options: {
     });
     if (!cls) return null;
     const students = cls.students.slice(0, MAX_CLASS_BATCH);
-    const profiles: Array<{ studentKey: string; profile: WeaknessProfile; studentId: string; subjectIds: string[] }> = [];
+    const learners = await prisma.learner.findMany({
+        where: { userId: user.id, kind: LEARNER_KIND.student, gradingStudentId: { in: students.map((s) => s.id) } },
+        select: { id: true, gradingStudentId: true },
+    });
+    const learnerByStudentId = new Map(learners.map((l) => [l.gradingStudentId!, l.id]));
+    const profiles: Array<{ studentKey: string; profile: WeaknessProfile; studentId: string; learnerId: string }> = [];
     for (const student of students) {
-        const subjectIds = await findStudentSubjectIds(user.id, student.name);
-        if (subjectIds.length === 0) continue;
-        const { profile } = await buildProfileForSubjects(user.id, subjectIds);
+        const studentLearnerId = learnerByStudentId.get(student.id);
+        if (!studentLearnerId) continue;
+        const { profile } = await buildProfileForLearners(user.id, [studentLearnerId]);
         if (profile.itemCount === 0) continue;
-        profiles.push({ studentKey: student.id, profile, studentId: student.id, subjectIds });
+        profiles.push({ studentKey: student.id, profile, studentId: student.id, learnerId: studentLearnerId });
     }
     if (profiles.length === 0) return { error: 'NO_ITEMS' as const, classWeaknesses: [] };
 
     const classWeaknesses = buildClassWeaknesses(profiles);
     if (options.kind === 'class_topic') {
-        const brief = classTopicBrief(classWeaknesses);
+        const focusedTopic = options.topic?.trim() || '';
+        const matchedWeakness = focusedTopic
+            ? classWeaknesses.find((item) => item.knowledgePoint === focusedTopic)
+            : undefined;
+        // 教师从热力图带入指定知识点时直接构造 brief，不再因非前排共性薄弱项返回 NO_COMMON
+        const brief = focusedTopic
+            ? matchedWeakness
+                ? classTopicBrief([matchedWeakness])
+                : { knowledgePoints: [focusedTopic], reason: focusedTopic }
+            : classTopicBrief(classWeaknesses);
         if (brief.knowledgePoints.length === 0) return { error: 'NO_COMMON' as const, classWeaknesses };
         const topic = await suggestTopic({ ...brief, language: options.language, studentCount: profiles.length });
-        // 用班级共性知识点，从各学生错题中抽代表题作为来源
-        const sourceSubjects = [...new Set(profiles.flatMap((item) => item.subjectIds))];
-        const { items, previous, profile } = await buildProfileForSubjects(user.id, sourceSubjects);
+        // 用班级共性或指定知识点，从各学生精确 learnerId 错题中抽代表题作为来源
+        const { items, previous, profile } = await buildProfileForLearners(user.id, profiles.map((item) => item.learnerId));
+        const matchingWeaknesses = profile.weaknesses.filter((item) => brief.knowledgePoints.includes(item.knowledgePoint));
+        const slotWeaknesses = matchingWeaknesses.length > 0
+            ? matchingWeaknesses
+            : focusedTopic
+                ? profile.weaknesses
+                : [];
         const slots = selectPracticeSlots(
-            { ...profile, weaknesses: profile.weaknesses.filter((item) => brief.knowledgePoints.includes(item.knowledgePoint)) },
+            { ...profile, weaknesses: slotWeaknesses },
             toProfileItems(items, await userThreshold(user.id)),
             options.count ?? 5,
         );
         const itemById = new Map(items.map((item) => [item.id, item]));
+        const inputKnowledgePoints = focusedTopic
+            ? [focusedTopic, ...brief.knowledgePoints.filter((point) => point !== focusedTopic)]
+            : brief.knowledgePoints;
         const run = await startPipelineRun({
             user,
             kind: 'class_topic',
@@ -455,13 +580,14 @@ export async function startClassRuns(user: QuotaUser, options: {
             quotaKind: 'exam',
             input: {
                 originalQuestion: itemById.get(slots[0]?.sourceItemId)?.questionText || items[0]?.questionText || brief.reason,
-                knowledgePoints: brief.knowledgePoints,
+                knowledgePoints: inputKnowledgePoints,
                 targetDifficulty: 'medium',
                 language: options.language,
                 count: slots.length || 4,
                 previousQuestions: previous,
                 plannedSlots: slots.map((slot) => ({
-                    knowledgePoint: slot.knowledgePoint,
+                    // 指定了专题但班级错题中无精确标签匹配时，显式锁定 focusedTopic，避免出题偏离目标专题
+                    knowledgePoint: focusedTopic && matchingWeaknesses.length === 0 ? focusedTopic : slot.knowledgePoint,
                     difficulty: slot.difficulty,
                     sourceItemId: slot.sourceItemId,
                     sourceQuestion: itemById.get(slot.sourceItemId)?.questionText || '',
@@ -484,7 +610,7 @@ export async function startClassRuns(user: QuotaUser, options: {
     return { runIds, classWeaknesses };
 }
 
-export async function reviewVariantItem(userId: string, itemId: string, action: 'approve' | 'reject' | 'edit', edits?: { questionText?: string; answerText?: string; analysis?: string }, note?: string) {
+export async function reviewVariantItem(userId: string, itemId: string, action: 'approve' | 'reject' | 'edit', edits?: { questionText?: string; answerText?: string; analysis?: string; figureSvg?: string | null }, note?: string) {
     const item = await prisma.variantItem.findFirst({
         where: { id: itemId, run: { userId } },
         include: { run: true },
@@ -492,10 +618,14 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
     if (!item) return null;
     if (item.status === 'approved' && action !== 'edit') return { error: 'ALREADY_APPROVED' as const };
 
+    const cleanFigureSvg = edits && 'figureSvg' in edits
+        ? sanitizeFigureSvg(edits.figureSvg)
+        : sanitizeFigureSvg(item.figureSvg);
     const data: Record<string, unknown> = { reviewNote: note || item.reviewNote, reviewedAt: new Date() };
     if (edits?.questionText) data.questionText = edits.questionText;
     if (edits?.answerText) data.answerText = edits.answerText;
     if (edits?.analysis) data.analysis = edits.analysis;
+    if (edits && 'figureSvg' in edits) data.figureSvg = cleanFigureSvg;
 
     if (action === 'reject') {
         data.status = 'rejected';
@@ -512,6 +642,7 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
     data.questionText = questionText;
     data.answerText = answerText;
     data.analysis = analysis;
+    data.figureSvg = cleanFigureSvg;
     data.status = 'approved';
     await prisma.variantItem.update({ where: { id: itemId }, data });
     await prisma.variantStageLog.create({ data: { runId: item.runId, itemId, stage: 'review', status: 'ok', detail: JSON.stringify({ action, note }) } });
@@ -525,7 +656,7 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
                     questionText,
                     answerText,
                     analysis,
-                    figureSvg: item.figureSvg,
+                    figureSvg: cleanFigureSvg,
                     difficulty: (item.plannedDifficulty as VariantDifficulty) || 'medium',
                     generatedAt: new Date().toISOString(),
                 }),
@@ -538,20 +669,27 @@ export async function reviewVariantItem(userId: string, itemId: string, action: 
 export async function createExamFromApproved(userId: string, runId: string, title?: string) {
     const run = await prisma.variantRun.findFirst({
         where: { id: runId, userId },
-        include: { items: { where: { status: 'approved' }, orderBy: { index: 'asc' } } },
+        include: {
+            items: { where: { status: 'approved' }, orderBy: { index: 'asc' } },
+            student: { select: { learner: { select: { id: true } } } },
+        },
     });
     if (!run) return null;
     if (run.items.length === 0) return { error: 'NO_APPROVED' as const };
     const sourceIds = [...new Set(run.items.map((item) => item.sourceItemId).filter((id): id is string => !!id))];
     const sources = sourceIds.length
-        ? await prisma.errorItem.findMany({ where: { id: { in: sourceIds }, userId }, select: { id: true, shortId: true } })
+        ? await prisma.errorItem.findMany({ where: { id: { in: sourceIds }, userId }, select: { id: true, shortId: true, learnerId: true } })
         : [];
     const shortIdBySource = new Map(sources.map((item) => [item.id, item.shortId]));
+    const sourceLearnerIds = [...new Set(sources.map((s) => s.learnerId).filter((id): id is string => Boolean(id)))];
+    const resolvedLearnerId = run.student?.learner?.id
+        ?? (sourceLearnerIds.length === 1 ? sourceLearnerIds[0] : null);
 
     const paper = await prisma.$transaction(async (tx) => {
         const created = await tx.examPaper.create({
             data: {
                 userId,
+                learnerId: resolvedLearnerId,
                 title: title || run.title || '个性化练习卷',
                 status: 'ready',
                 scope: 'all',
@@ -565,14 +703,14 @@ export async function createExamFromApproved(userId: string, runId: string, titl
             const question = await tx.examQuestion.create({
                 data: {
                     paperId: created.id,
-                    order: index,
+                    order: index + 1,
                     errorItemId: item.sourceItemId,
                     sourceShortId: shortId,
                     status: 'ready',
                     questionText: item.questionText,
                     answerText: item.answerText,
                     analysis: item.analysis,
-                    figureSvg: item.figureSvg,
+                    figureSvg: sanitizeFigureSvg(item.figureSvg),
                 },
             });
             await tx.variantItem.update({ where: { id: item.id }, data: { examQuestionId: question.id } });

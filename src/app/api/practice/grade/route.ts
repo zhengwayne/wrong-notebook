@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { getAIService } from "@/lib/ai";
-import { internalError, notFound, unauthorized, validationError } from "@/lib/api-errors";
-import { authOptions } from "@/lib/auth";
+import { toConcurrencyErrorResponse } from "@/lib/ai/concurrency";
+import { internalError, kidModeRestricted, notFound, validationError } from "@/lib/api-errors";
 import { parseLastPractice } from "@/lib/last-practice";
 import { createLogger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, runWithAiQuota } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
+import { defineApiRoute, type AuthenticatedRouteContext } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
 
 const logger = createLogger('api:practice:grade');
 
@@ -23,12 +24,7 @@ const gradeSchema = z.object({
  * 由 AI 对照该错题最近一次生成的举一反三题目判定学生答案。
  * 题目和标准答案取自服务端暂存，不信任客户端传入的答案。
  */
-async function handlePost(req: Request) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-        return unauthorized();
-    }
-
+async function handlePost(req: Request, { user }: AuthenticatedRouteContext) {
     try {
         const parsed = gradeSchema.safeParse(await req.json());
         if (!parsed.success) {
@@ -38,29 +34,35 @@ async function handlePost(req: Request) {
 
         const item = await prisma.errorItem.findUnique({
             where: { id: errorItemId },
-            select: { userId: true, lastPractice: true },
+            select: { userId: true, learnerId: true, lastPractice: true },
         });
-        const practice = item && item.userId === session.user.id ? parseLastPractice(item.lastPractice) : null;
+        const kidLearnerId = getKidModeLearnerId();
+        if (item && item.userId === user.id && kidLearnerId && (item.learnerId ?? null) !== kidLearnerId) {
+            return kidModeRestricted();
+        }
+        const practice = item && item.userId === user.id ? parseLastPractice(item.lastPractice) : null;
         if (!practice) {
             return notFound("Practice question not found");
         }
 
-        const limited = await consumeAiQuota(session.user, 'grade');
-        if (limited) return limited;
+        const quota = await reserveAiQuota(user, 'grade', { request: req });
+        if (quota.limited) return quota.limited;
 
-        const result = await getAIService().gradeAnswer({
+        const result = await runWithAiQuota(quota, () => getAIService('text').gradeAnswer({
             questionText: practice.questionText,
             answerText: practice.answerText,
             analysis: practice.analysis,
             userAnswer,
             language,
-        });
+        }));
         return NextResponse.json(result);
     } catch (error) {
+        const busy = toConcurrencyErrorResponse(error);
+        if (busy) return busy;
         logger.error({ error }, 'Error grading answer');
         return internalError(error instanceof Error ? error.message : "Failed to grade answer");
     }
 }
 
 /** 耗时 AI 请求：浏览器中断连接后，前端可通过 /api/requests/:id 取回响应 */
-export const POST = withRecoverableResponse(handlePost);
+export const POST = defineApiRoute({ auth: 'user' }, withRecoverableResponse(handlePost));

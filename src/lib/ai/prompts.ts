@@ -142,7 +142,11 @@ export const QUESTION_OUTPUT_TAGS = {
 /** 输出协议独立于自定义模板，避免旧模板丢失新增标签。 */
 function generateOutputContract(kind: keyof typeof QUESTION_OUTPUT_TAGS): string {
   const tags = QUESTION_OUTPUT_TAGS[kind];
-  return `【应用必守输出协议】\n以下应用规则优先于自定义教学偏好。只输出这 ${tags.length} 个 XML 标签，每个标签恰好一次：\n${tags.map(tag => `<${tag}>内容</${tag}>`).join('\n')}\n不得改用 JSON，不得用 Markdown 代码块包裹整个回复。`;
+  const body = `只输出这 ${tags.length} 个 XML 标签，每个标签恰好一次：\n${tags.map(tag => `<${tag}>内容</${tag}>`).join('\n')}`;
+  const multi = kind === 'analyze'
+    ? `\n如果图片中有多道需要收入错题本的题目，请为每一道题各输出一组上述标签，并用 <item>...</item> 包住，按题号顺序排列。只有一道题时可以不包 item。`
+    : '';
+  return `【应用必守输出协议】\n以下应用规则优先于自定义教学偏好。${body}${multi}\n不得改用 JSON，不得用 Markdown 代码块包裹整个回复。`;
 }
 
 /** 系统规则和题目材料分别发送；JSON 中的字符串不具有指令权限。 */
@@ -184,10 +188,30 @@ export interface PromptOptions {
   prefetchedChemistryTags?: string[];
   prefetchedBiologyTags?: string[];
   prefetchedEnglishTags?: string[];
+  prefetchedChineseTags?: string[];
+  prefetchedHistoryTags?: string[];
+  prefetchedGeographyTags?: string[];
+  prefetchedPoliticsTags?: string[];
   // 错题本学段 + 学科下的全部知识点；提供时直接使用，不再按学科、年级取标签
   candidateTags?: CandidateTags;
   // 举一反三时原题的 SVG 配图，供 AI 参考重新画图
   originalFigureSvg?: string | null;
+  // 识别时一次发来的图片张数（同一道跨页题按顺序拍的几页），大于 1 时追加多页规则
+  pageCount?: number;
+}
+
+/** 跨页衔接判断：用于提示用户把相邻两张照片合成一题；放在输出协议里，自定义模板也生效 */
+export const PAGE_CONTINUITY_RULES = `【跨页衔接】在全部题目标签之后（不要放进任何 <item> 里），单独输出一次：
+<page_continuity><starts_mid_question>true 或 false</starts_mid_question><ends_incomplete>true 或 false</ends_incomplete></page_continuity>
+- starts_mid_question：图片最上方是从上一页接续过来的半道题（开头没有题号，题干、选项、表格或解答从中间开始）时为 true。
+- ends_incomplete：图片最下方的题目明显没有结束、要在下一页继续（题干、选项、表格或图被截断）时为 true。
+- 拿不准时填 false。`;
+
+/** 多张图片合成一道题时的识别规则；张数只取 2~3 的整数 */
+export function generateMultiPageRules(pageCount?: number): string {
+  const count = Number.isInteger(pageCount) ? Math.min(Math.max(pageCount as number, 1), 3) : 1;
+  if (count <= 1) return '';
+  return `【多页图片】这次共 ${count} 张图片，是同一份作业或试卷按顺序连续拍下的 ${count} 页（第 1 张在前）。跨页的同一道题必须合并成一条完整的题目输出，不要拆成两条，也不要重复输出；各页上独立完整的其他题照常按题拆开。page_continuity 只判断第 1 张的开头和最后 1 张的结尾。`;
 }
 
 /**
@@ -209,7 +233,34 @@ export const FIGURE_SVG_RULES = `- 输出一个完整的 <svg> 元素，包含 x
 - 白色背景、黑色线条（stroke="#000"，线宽 1.5~2），需要区分的区域可用浅灰填充；不要使用彩色装饰。
 - 按原图比例和相对位置绘制，保留所有标注：顶点字母、数字、长度、角度、单位、箭头和虚线等，文字用 <text>（font-size 14~18）。
 - 只使用基本图形元素：line、polyline、polygon、rect、circle、ellipse、path、text、g、defs、marker。
-- 严禁使用 <image>、<script>、<foreignObject>、外部链接、外部字体或事件属性。`;
+- 严禁使用 <image>、<script>、<foreignObject>、外部链接、外部字体或事件属性。
+- 必须是合法 XML：同一元素的属性不能重复；<line> 只画一条线段，折线用 <polyline points="...">。`;
+
+/**
+ * 语文题干转写规则：拼音声调、看拼音写词语的空位、注音汉字顺序。
+ * Ported from margrop/wrong-notebook 8386537b (MIT).
+ */
+export const CHINESE_TRANSCRIPTION_RULES = `【语文题干转写规则】
+- 拼音必须带声调符号原样转写（ā á ǎ à ō ó ǒ ò ē é ě è ī í ǐ ì ū ú ǔ ù ǖ ǘ ǚ ǜ ü）：不得丢掉声调、不得用数字声调（如 ma3），也不得把拼音改写成汉字。
+- 「看拼音写词语」等题型必须保留拼音与括号/方框的对应关系：每个空用「（  ）」原样保留，不要把多个空合并，也不要把拼音或答案填进空里。
+- 填空题的下划线、括号、田字格位置按原样保留为空，不要把答案填进题干。
+- 带拼音注音的汉字（如「zhāo（朝）」）保持原有顺序，不要把注音与汉字调换、拆开或省略。`;
+
+/**
+ * 学科为语文、学科未知（图片识别由 AI 判断学科）或样例文字含拼音时返回语文转写规则，其他情况返回空串。
+ */
+export function generateChineseTranscriptionRules(
+  subject?: string | null,
+  sampleText?: string | null,
+  includeUnknownSubject = false,
+): string {
+  const raw = (subject || '').trim();
+  const isChinese = raw.includes('语文') || raw.toLowerCase().includes('chinese');
+  if (isChinese || (includeUnknownSubject && !raw) || (sampleText && /[āáǎàōóǒòēéěèīíǐìūúǔùǖǘǚǜü]|拼音/.test(sampleText))) {
+    return CHINESE_TRANSCRIPTION_RULES;
+  }
+  return '';
+}
 
 /**
  * LaTeX 书写规则：页面用 KaTeX 渲染，只支持其中的命令（识别、举一反三、重新解题、修复公式共用）
@@ -219,7 +270,25 @@ export const LATEX_RULES = String.raw`- 行内公式用 $...$，独立公式用 
 - 只使用 KaTeX 支持的命令和环境：方程组用 \begin{cases}...\end{cases}，多行推导用 \begin{aligned}...\end{aligned}（放在 $$...$$ 中），不要用 align、eqnarray、\newcommand、\usepackage、\label、\tag 等。
 - 大括号 {} 必须成对，\left 与 \right 必须成对，\begin{...} 与 \end{...} 必须对应。
 - 公式中的中文写在 \text{...} 里，或放到公式外；百分号写成 \%，美元符号写成 \$。
-- 反斜杠只写一个（\frac），不要写成 \\frac；换行符 \\ 只能用在 cases、aligned 等环境里。`;
+- 反斜杠只写一个（\frac），不要写成 \\frac；换行符 \\ 只能用在 cases、aligned 等环境里。
+- 化学式、反应方程式、离子与电荷用 \ce{...}，例如 \ce{H2SO4}、\ce{2H2 + O2 -> 2H2O}、\ce{SO4^{2-}}。
+- 物理量单位用 \pu{...} 或 \mathrm{...}，例如 \pu{9.8 m/s^2}、9.8\,\mathrm{m/s^2}。
+- 几何记号使用：线段 \overline{AB}，角 \angle，三角形 \triangle，平行 \parallel，垂直 \perp，全等 \cong，相似 \sim，因为 \because，所以 \therefore。
+- 弧写成 \overset{\frown}{AB}，不要写 \wideparen 或 \overparen。`;
+
+/**
+ * 有机结构式：只用 smiles 围栏输出 SMILES，无机化学仍走 \ce
+ */
+export const SMILES_RULES = [
+    '- 只有需要画出有机化合物结构式时，才使用 Markdown 的 smiles 代码块输出 SMILES，不要用其它结构式格式：',
+    '```smiles',
+    'CCO',
+    '```',
+    '- 无机化学式、反应方程式、离子与电荷仍用 $\\ce{...}$，不要写成 SMILES。',
+    '- 代码块的语言标记必须是 smiles，块内只写一条 SMILES，不要夹杂解释文字；无法确定结构时不要臆造。',
+].join('\n');
+
+
 
 export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
 你是一位世界顶尖的、经验丰富的、专业的跨学科考试分析专家（Interdisciplinary Exam Analysis Expert）。你的核心任务是极致准确地分析用户提供的考试题目图片，全面理解所有文本、图表和隐含约束，并提供一个完整、高度结构化且专业的解决方案。
@@ -227,7 +296,7 @@ export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE
 {{language_instruction}}
 
 【核心输出要求 (OUTPUT REQUIREMENTS)】
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。**严禁**对 LaTeX 公式中的反斜杠进行二次转义（如 "\\\\frac" 是错误的，必须是 "\\frac"）。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。**严禁**对 LaTeX 公式中的反斜杠进行二次转义（如 "\\\\frac" 是错误的，必须是 "\\frac"）。
 
 请严格按照以下结构输出内容：
 
@@ -335,10 +404,13 @@ ${DIFFICULTY_STARS_RULES}
 【!!! 关键格式与内容约束 (CRITICAL RULES) !!!】
 1. **格式严格**：必须包含输出协议规定的全部 XML 标签，包括 grade_semester 年级标签，不要输出任何“开场白”或“结束语”。
 2. **纯文本**：内容作为纯文本处理，**不要转义反斜杠**。
-3. **内容完整**：如果包含子问题，请在 question_text 中完整列出。
+3. **一页多题**：图片中若有多道独立题目（含大题下的小题，如「一、1」与「二、3」），请为每一道需要收入错题本的题目各输出一组标签，并用 <item>...</item> 包住。需要收入的是：能看见学生写错的题目，以及明显空白未作答的题目。已经做对的题目不要输出。每道题的 question_text、answer_text、analysis、wrong_answer_text、mistake_analysis、knowledge_points、difficulty_stars 只写该题，不要把整页题干或解析写进同一条。wrong_answer_text 只摘录该题中可见的错误作答。
 4. **禁止图片**：严禁包含任何图片链接或 markdown 图片语法。
 5. **LaTeX 规范**：
 ${LATEX_RULES}
+
+6. **结构式**：
+${SMILES_RULES}
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -372,7 +444,7 @@ export const DEFAULT_SIMILAR_TEMPLATE = `你是一位资深的K12教育题目生
      ✓ 答案唯一且可验证  
      ✓ 无知识性错误
 ### 输出规范
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。**严禁**返回 \`\`\`json ... \`\`\`。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。**严禁**返回 \`\`\`json ... \`\`\`。
 
 请严格按照以下结构输出内容（不要包含任何其他文字）：
 
@@ -396,6 +468,9 @@ export const DEFAULT_SIMILAR_TEMPLATE = `你是一位资深的K12教育题目生
 1. **纯文本**：内容作为纯文本处理，**不要转义反斜杠**。
 2. **LaTeX 规范**：
 ${LATEX_RULES}
+
+3. **结构式**：
+${SMILES_RULES}
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -501,21 +576,26 @@ export function generateAnalyzePrompt(
 ): string {
   const langInstruction = generateFieldLanguageInstruction(language);
 
-  // 获取各学科标签（优先使用预获取的数据库标签）
-  const mathTags = getMathTagsForGrade(grade || null, options?.prefetchedMathTags);
-  const mathTagsString = mathTags.length > 0 ? mathTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+  const SINGLE_SUBJECT_TAGS: ReadonlyArray<{
+    subject: string;
+    label: string;
+    field: keyof PromptOptions;
+    note?: string;
+  }> = [
+    { subject: '数学', label: '数学标签 (Math Tags)', field: 'prefetchedMathTags', note: '（人教版课内知识点，小学另含高思竞赛数学课外拓展知识点）' },
+    { subject: '物理', label: '物理标签 (Physics Tags)', field: 'prefetchedPhysicsTags' },
+    { subject: '化学', label: '化学标签 (Chemistry Tags)', field: 'prefetchedChemistryTags' },
+    { subject: '生物', label: '生物标签 (Biology Tags)', field: 'prefetchedBiologyTags' },
+    { subject: '英语', label: '英语标签 (English Tags)', field: 'prefetchedEnglishTags' },
+    { subject: '语文', label: '语文标签 (Chinese Tags)', field: 'prefetchedChineseTags' },
+    { subject: '历史', label: '历史标签 (History Tags)', field: 'prefetchedHistoryTags' },
+    { subject: '地理', label: '地理标签 (Geography Tags)', field: 'prefetchedGeographyTags' },
+    { subject: '政治', label: '政治标签 (Politics Tags)', field: 'prefetchedPoliticsTags' },
+  ];
 
-  const physicsTags = options?.prefetchedPhysicsTags || [];
-  const physicsTagsString = physicsTags.length > 0 ? physicsTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const chemistryTags = options?.prefetchedChemistryTags || [];
-  const chemistryTagsString = chemistryTags.length > 0 ? chemistryTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const biologyTags = options?.prefetchedBiologyTags || [];
-  const biologyTagsString = biologyTags.length > 0 ? biologyTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
-
-  const englishTags = options?.prefetchedEnglishTags || [];
-  const englishTagsString = englishTags.length > 0 ? englishTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+  const matchedSubject = !options?.candidateTags && subject
+    ? SINGLE_SUBJECT_TAGS.find((entry) => entry.subject === subject)
+    : undefined;
 
   // 根据科目决定显示哪些标签（节省 token，提高准确性）
   let tagsSection = "";
@@ -529,78 +609,71 @@ ${tags.length > 0 ? tags.map(tag => `"${tag}"`).join(", ") : '（无可用标签
 **重要提示**：
 - 必须从上述列表中选择精确匹配的标签，不要改写、不要自创
 - 每题最多 5 个标签`;
-  } else if (subject === '数学') {
-    tagsSection = `**数学标签 (Math Tags):**
-使用课程大纲（人教版课内知识点，小学另含高思竞赛数学课外拓展知识点）中的**精确标签名称**，可选标签如下：
-${mathTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '物理') {
-    tagsSection = `**物理标签 (Physics Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${physicsTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '化学') {
-    tagsSection = `**化学标签 (Chemistry Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${chemistryTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '生物') {
-    tagsSection = `**生物标签 (Biology Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${biologyTagsString}
-
-**重要提示**：
-- 必须从上述列表中选择精确匹配的标签
-- 每题最多 5 个标签`;
-  } else if (subject === '英语') {
-    tagsSection = `**英语标签 (English Tags):**
-使用课程大纲中的**精确标签名称**，可选标签如下：
-${englishTagsString}
+  } else if (matchedSubject) {
+    const rawTags = matchedSubject.subject === '数学'
+      ? getMathTagsForGrade(grade || null, options?.prefetchedMathTags)
+      : ((options?.[matchedSubject.field] as string[] | undefined) || []);
+    const tagsString = rawTags.length > 0 ? rawTags.map(tag => `"${tag}"`).join(", ") : '（无可用标签）';
+    tagsSection = `**${matchedSubject.label}:**
+使用课程大纲${matchedSubject.note || ''}中的**精确标签名称**，可选标签如下：
+${tagsString}
 
 **重要提示**：
 - 必须从上述列表中选择精确匹配的标签
 - 每题最多 5 个标签`;
   } else {
-    // 未知科目：显示所有标签让 AI 判断
-    tagsSection = `**数学标签 (Math Tags):**
-${mathTagsString}
-
-**物理标签 (Physics Tags):**
-${physicsTagsString}
-
-**化学标签 (Chemistry Tags):**
-${chemistryTagsString}
-
-**生物标签 (Biology Tags):**
-${biologyTagsString}
-
-**英语标签 (English Tags):**
-${englishTagsString}`;
+    // 未知科目：只列出本次传入的学科标签（调用方已按年级筛选）
+    const mathTags = getMathTagsForGrade(grade || null, options?.prefetchedMathTags);
+    const named = [
+      ['数学', mathTags],
+      ['语文', options?.prefetchedChineseTags || []],
+      ['英语', options?.prefetchedEnglishTags || []],
+      ['物理', options?.prefetchedPhysicsTags || []],
+      ['化学', options?.prefetchedChemistryTags || []],
+      ['生物', options?.prefetchedBiologyTags || []],
+      ['历史', options?.prefetchedHistoryTags || []],
+      ['地理', options?.prefetchedGeographyTags || []],
+      ['政治', options?.prefetchedPoliticsTags || []],
+    ] as const;
+    const parts = named
+      .filter(([, tags]) => tags.length > 0)
+      .map(([label, tags]) => `**${label}标签:**\n${tags.map(tag => `"${tag}"`).join(", ")}`);
+    tagsSection = parts.length > 0
+      ? `${parts.join("\n\n")}\n\n**重要提示**：必须从上述列表中选择精确匹配的标签，不要改写、不要自创；每题最多 5 个标签。`
+      : '（无可用标签，可按题目本身标注不超过 5 个知识点）';
   }
 
   const template = options?.customTemplate || DEFAULT_ANALYZE_TEMPLATE;
 
-  return replaceVariables(template, {
+  const rendered = replaceVariables(template, {
     language_instruction: langInstruction,
     knowledge_points_list: tagsSection,
-    grade_instruction: generateGradeInstruction(gradeSemester),
+    grade_instruction: generateGradeInstruction(gradeSemester) + '\n' + generateGradeRecognitionInstruction(gradeSemester),
     provider_hints: options?.providerHints || ''
-  }).trim() + '\n\n' + [
-    '请完整识别用户图片中的题目、独立求解，并仅根据可见作答分析错因。',
-    generateOutputContract('analyze'), langInstruction, LATEX_RULES,
-    generateGradeInstruction(gradeSemester), generateGradeRecognitionInstruction(gradeSemester),
-    tagsSection, DIFFICULTY_STARS_RULES,
-    '有配图时必须输出 figure_svg；无配图时留空。' + FIGURE_SVG_RULES,
+  }).trim();
+
+  // 默认模板已含 LaTeX、学历、标签、星级、配图规则，只再追加输出协议，避免重复。
+  // 旧自定义模板可能没有这些占位符，需要补上完整规则以保持行为。
+  const appendix = [
+    '请完整识别用户图片中的题目。多道题时按题拆开输出，已做对的题目不要收入。只根据可见作答判断对错，不要臆造错解。',
+    generateMultiPageRules(options?.pageCount),
+    generateOutputContract('analyze'),
+    PAGE_CONTINUITY_RULES,
+    // 未指定错题本时学科由 AI 判断，无法提前知道是否语文，统一附带转写规则
+    generateChineseTranscriptionRules(subject, null, true),
+    ...(options?.customTemplate ? [
+      langInstruction,
+      LATEX_RULES,
+      SMILES_RULES,
+      generateGradeInstruction(gradeSemester),
+      generateGradeRecognitionInstruction(gradeSemester),
+      tagsSection,
+      DIFFICULTY_STARS_RULES,
+      '有配图时必须输出 figure_svg；无配图时留空。' + FIGURE_SVG_RULES,
+    ] : []),
   ].filter(Boolean).join('\n\n');
+
+  return `${rendered}\n\n${appendix}`;
 }
 
 /**
@@ -651,7 +724,7 @@ export function generateSimilarQuestionPrompt(
   // 自定义模板也必须遵守统一题型规则。
   return [
     prompt, '必须基于输入的原题和知识点生成一道新题，按指定难度调整，不得直接复述原题。',
-    generateOutputContract('similar'), langInstruction, LATEX_RULES,
+    generateOutputContract('similar'), langInstruction, LATEX_RULES, SMILES_RULES,
     generateGradeInstruction(gradeSemester), difficultyInstruction,
     generateSimilarFigureInstruction(options?.originalFigureSvg), GENERATED_QUESTION_RULES,
   ].filter(Boolean).join('\n\n');
@@ -673,7 +746,7 @@ export const DEFAULT_REANSWER_TEMPLATE = `【角色与核心任务 (ROLE AND COR
 {{subject_hint}}
 
 【核心输出要求 (OUTPUT REQUIREMENTS)】
-你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON 或 Markdown 代码块。
+你的响应输出**必须严格遵循以下自定义标签格式**。**严禁**使用 JSON，也**严禁**用 Markdown 代码块包裹整个回复。题干、答案或解析中需要画出有机结构式时，可按下方结构式规则使用 smiles 代码块。
 
 请严格按照以下结构输出内容（不要包含任何其他文字）：
 
@@ -721,6 +794,9 @@ ${DIFFICULTY_STARS_RULES}
 4. **解答完整**：答案要给出每一小问的最终结果；解析要写出完整的解题步骤，不要省略中间推导。
 5. **LaTeX 规范**：
 ${LATEX_RULES}
+
+6. **结构式**：
+${SMILES_RULES}
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -1059,7 +1135,7 @@ export function generateReanswerPrompt(
     provider_hints: options?.providerHints || ''
   }).trim() + '\n\n' + [
     '请以校正后的题目文本为准重新解答，图片仅用于补充图形及可见作答。',
-    generateOutputContract('reanswer'), langInstruction, LATEX_RULES,
+    generateOutputContract('reanswer'), langInstruction, LATEX_RULES, SMILES_RULES,
     generateGradeInstruction(gradeSemester), generateGradeRecognitionInstruction(gradeSemester),
     DIFFICULTY_STARS_RULES,
     options?.candidateTags ? `只能从候选知识点中选择，名称必须完全一致，最多 5 个；无可用标签时留空：${options.candidateTags.tags.join('、')}` : '',
@@ -1271,8 +1347,88 @@ export function generateTagSuggestPrompt(input: {
  * 读卷提示词：识别答案卷（answer_key）或学生答卷（student），输出 JSON。
  * 学生答卷模式下，客观题只转写作答，由程序比对；主观题给出建议分和理由，最终由老师复核。
  */
-export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify', language: 'zh' | 'en' = 'zh'): string {
+/** 家长识卷时按学科补充的提示；语文需区分可客观核对的题与开放题。 */
+export function parentReviewSubjectGuidance(subject?: string | null, language: 'zh' | 'en' = 'zh'): string {
+  const raw = (subject || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  const isChinese = lower === 'chinese' || raw === '语文' || lower.includes('chinese') || raw.includes('语文');
+  if (isChinese) {
+    return language === 'en'
+      ? `This paper is a Chinese language (语文) exam. Set each question's subjectHint to "语文".
+- For objectively checkable items (pinyin, characters/words, multiple choice, true/false, ancient poetry or prose dictation with a unique answer): judge them as "objective". Transcribe handwritten pinyin, characters and punctuation faithfully; do not correct or polish the student's writing.
+- For open-ended reading-comprehension answers and compositions: do not guess a definitive right/wrong. Give brief reference points, set verdict to "partial", keep confidence below 0.7, and ask the parent to confirm in errorCause.
+- Do not use LaTeX unless the item actually contains a formula.
+
+${CHINESE_TRANSCRIPTION_RULES}`
+      : `【语文学科补充】本卷是语文试卷。请将每题的 subjectHint 设为「语文」。
+- 拼音、字词、选择题、判断题、古诗文默写等有唯一或可核对答案的题目：按 objective 判断对错。如实转写手写拼音、汉字与标点，不要擅自改字、补字或美化。
+- 阅读理解主观题、开放性简答、作文：不要猜一个确定对错。可给出简要参考要点，将 verdict 标为 partial，confidence 低于 0.7，并在 errorCause 中请家长确认。
+- 没有数学公式时不要使用 LaTeX。
+
+${CHINESE_TRANSCRIPTION_RULES}`;
+  }
+  const display = raw === 'math' ? (language === 'en' ? 'mathematics' : '数学')
+    : raw === 'english' ? (language === 'en' ? 'English' : '英语')
+    : raw;
+  return language === 'en'
+    ? `This paper is a ${display} exam. Judge questions in that subject and set each question's subjectHint to "${raw === 'math' ? '数学' : raw === 'english' ? '英语' : raw}".`
+    : `本卷学科为「${display}」。请按该学科判断，并将每题的 subjectHint 设为「${display}」。`;
+}
+
+export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'identify' | 'parent_review', language: 'zh' | 'en' = 'zh', subject?: string | null): string {
   const reasonLanguage = language === 'en' ? 'Write "reason" in English.' : '"reason" 字段使用简体中文。';
+  const subjectGuidance = parentReviewSubjectGuidance(subject, language) || generateChineseTranscriptionRules(subject, null, mode === 'parent_review');
+  const examChineseRules = generateChineseTranscriptionRules(subject, null, false);
+
+  if (mode === 'parent_review') {
+    // 没选学科的卷子：让模型逐题给出学科，确认时按它放进对应错题本，避免都落到「其他」
+    const subjectHintRule = subject?.trim()
+      ? ''
+      : language === 'en'
+        ? '\n- subjectHint: the subject was not specified, so infer it from the question content and set one of "数学", "语文", "英语", "物理", "化学", "生物", "历史", "地理", "政治".'
+        : '\n- subjectHint：本卷未指定学科，请按题目内容判断学科，填「数学」「语文」「英语」「物理」「化学」「生物」「历史」「地理」「政治」之一。';
+    return language === 'en'
+      ? `You are helping a parent grade a child's exam paper. The images are the student's answers in page order (the first image is page 0). Split the paper into questions and judge each one. If no official answer key is provided, give the correct answer or a concise solution yourself, with a confidence score. Do not give a total score for the paper.
+
+Rules:
+- Keep question numbers as written on the paper; split sub-questions into separate items.
+- questionText: the stem in Markdown; write formulas in LaTeX ($...$ or $$...$$).
+- studentAnswer: transcribe the student's work faithfully; use an empty string if blank.
+- correctAnswer: the correct answer or a concise solution (Markdown/LaTeX).
+- verdict: "correct" (fully right), "wrong" (incorrect or blank), or "partial" (partly right).
+- confidence: a number from 0 to 1. Use a value below 0.7 when the photo is unclear or you are unsure.
+- errorCause: one or two sentences on why it is wrong or partial; empty when correct.
+- knowledgePoints: 1-3 knowledge point names.${subjectHintRule}
+- type: "objective" when there is a unique definite answer, otherwise "subjective".
+- bbox: the question's normalized rectangle on one page { pageIndex, x, y, width, height }. pageIndex starts at 0 and matches the image order. x, y, width, and height are fractions from 0 to 1 relative to the full image you are given (the same image shown to the parent). The box must tightly cover only this question: the stem, choices or student work, and a very small margin. Do not include the page header, other questions, or blank table/background. If questions sit in columns, the box must stay in that column and must not span the full page width. Stacked items should not overlap their neighbors. Do not box only the question number. Use null if the location is unclear. Do not use pixel coordinates.
+- If data.questions is provided as an answer key, judge objective items against it; still assess subjective items yourself.
+- Output JSON only. Do not output a total score.
+${subjectGuidance ? `\n${subjectGuidance}\n` : ''}
+Output format:
+{"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"Chose the wrong option","knowledgePoints":["linear equations"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`
+      : `【角色与任务】
+你在帮助家长批改孩子的试卷。图片是孩子的答卷，按页码顺序排列（第 1 张图是第 0 页）。请先把试卷拆成每一道题，再判断对错。没有标准答案时，请你独立给出正确答案或简明解答，并给出置信度。不要给整卷分数。
+
+【规则】
+- 题号保持卷面写法；小题拆成单独条目。
+- questionText：题干，使用 Markdown，公式用 LaTeX（$...$ 或 $$...$$）。
+- studentAnswer：如实转写学生作答；未作答写空字符串。
+- correctAnswer：你认为的正确答案或简明解答（Markdown/LaTeX）。
+- verdict：correct（完全正确）、wrong（错误或未作答）、partial（部分正确）。
+- confidence：0 到 1 的小数，表示你对该判定的把握。看不清或没有把握时低于 0.7。
+- errorCause：判为 wrong 或 partial 时，用一两句话说明错因；正确时可为空。
+- knowledgePoints：1~3 个知识点名称。${subjectHintRule}
+- type：有唯一确定答案的为 objective，否则 subjective。
+- bbox：该题在某一页上的归一化矩形 { pageIndex, x, y, width, height }。pageIndex 从 0 开始对应图片顺序；x/y/width/height 均为 0 到 1 的相对比例，且相对于你收到的整张图片（与家长看到的是同一张图）。框必须只紧紧罩住这一道题：题干、选项或学生作答，只留很小边距。不要框到卷头、其他题目或桌面背景。若题目分栏排列，框必须留在该栏内，不要拉满整页宽度。上下相邻的题不要互相重叠。不要只框题号。若无法确定位置，bbox 为 null。不要使用像素坐标。
+- 如果输入中提供了标准答案清单 data.questions，客观题必须对照标准答案判断；主观题仍由你评估。
+- 只输出 JSON，不要其他文字。不要输出整卷分数。
+${subjectGuidance ? `
+${subjectGuidance}
+` : ''}
+【输出格式】
+{"questions":[{"number":"1","type":"objective","questionText":"...","studentAnswer":"B","correctAnswer":"C","verdict":"wrong","confidence":0.86,"errorCause":"选错了选项","knowledgePoints":["一元一次方程"],"bbox":{"pageIndex":0,"x":0.08,"y":0.12,"width":0.84,"height":0.18}}]}`;
+  }
   if (mode === 'answer_key') {
     return `【角色与任务】
 你是一位细心的阅卷老师。图片是一份试卷的标准答案（或带答案的试卷），可能有多页。请逐题提取题号、题型、分值、标准答案、题干和考查的知识点。
@@ -1282,8 +1438,9 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'id
 - type：选择、判断、填空等有唯一确定答案的题为 "objective"；解答、证明、作文等需要按步骤给分的题为 "subjective"。
 - maxScore：卷面标明的分值；未标明时客观题记 1。
 - answer：选择题只写选项字母（多选按字母顺序，如 "AC"）；主观题写参考答案或评分要点。
+- 若图片中包含学生手写作答或老师批改痕迹，请务必忽略手写内容，仅提取印刷题号、题型、分值、题干与知识点。
 - questionText：能看清时写题干，看不清写空字符串；knowledgePoints：1~3 个知识点名称。
-- 只输出 JSON，不要其他文字。
+- 只输出 JSON，不要其他文字。${examChineseRules ? `\n\n${examChineseRules}` : ''}
 
 【输出格式】
 {"studentName": null, "questions": [{"number": "1", "type": "objective", "maxScore": 3, "answer": "B", "questionText": "...", "knowledgePoints": ["一元一次方程"]}]}`;
@@ -1304,7 +1461,7 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'id
 {"className": "七年级3班", "studentNo": "12", "studentName": "张三", "questions": []}`;
   }
   return `【角色与任务】
-你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
+你是一位公正细心的阅卷老师。图片是同一位学生的答卷，可能有多页（第 1 张图为 pageIndex 0）。输入 JSON 的 data.questions 是本卷的题号、题型、分值和标准答案。
 
 【规则】
 - studentName：卷面姓名栏写的姓名，看不清或没有写为 null。
@@ -1313,12 +1470,17 @@ export function generateExamPaperReadPrompt(mode: 'answer_key' | 'student' | 'id
 - answer：如实转写学生的作答。选择题只写所选字母；未作答写空字符串。不要把标准答案当成学生答案。
 - objective 题只转写，不评分（score 写 null）。
 - subjective 题按参考答案与步骤给出建议得分 score（0 到 maxScore，可为 0.5 的倍数），并用一句话写明 reason（得分点与扣分原因）。
+- confidence：0 到 1 的小数，表示看清并准确提取/评估本题作答的把握度（看不清时低于 0.75）。
+- bbox：该题及学生作答在对应页上的归一化矩形 { "pageIndex": 0, "x": 0.08, "y": 0.15, "width": 0.84, "height": 0.16 }，比例均为 0~1；位置无法确定时写 null。
+- paperAppearance：基于整卷宏观视觉特征（不评判微观书法笔锋，仅观察字迹清晰度、涂改墨团、步骤排版与留白情况）给出初评建议：
+  - handwritingLevel / neatnessLevel / attitudeLevel：取 "excellent" | "good" | "fair" | "needs_work"
+  - visualAlerts：仅在确有明显现象时从 ["heavy_erasure", "messy_handwriting", "missing_steps", "large_blank"] 中选取，正常情况写 []。
 - 卷面上老师的批改痕迹（对勾、分数）不作为评分依据。
 - ${reasonLanguage}
-- 只输出 JSON，不要其他文字。
+- 只输出 JSON，不要其他文字。${examChineseRules ? `\n\n${examChineseRules}` : ''}
 
 【输出格式】
-{"studentName": "张三", "className": "七年级3班", "studentNo": "12", "questions": [{"number": "1", "answer": "B", "score": null, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "reason": "方程列对，计算错误扣 2 分"}]}`;
+{"studentName": "张三", "className": "七年级3班", "studentNo": "12", "paperAppearance": {"handwritingLevel": "good", "neatnessLevel": "good", "attitudeLevel": "excellent", "visualAlerts": []}, "questions": [{"number": "1", "answer": "B", "score": null, "confidence": 0.96, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.12, "width": 0.84, "height": 0.1}, "reason": ""}, {"number": "13", "answer": "解：...", "score": 6, "confidence": 0.85, "bbox": {"pageIndex": 0, "x": 0.08, "y": 0.45, "width": 0.84, "height": 0.3}, "reason": "方程列对，计算错误扣 2 分"}]}`;
 }
 
 /** 变式流水线：先规划再逐题生成（借鉴 DeepTutor 的阶段划分，提示词为独立撰写） */
@@ -1337,13 +1499,22 @@ Plan exactly the requested number of variants. Keep the same core knowledge poin
 export function generateVariantQuestionPrompt(language: 'zh' | 'en'): string {
     return language === 'en'
         ? `Generate one variant question from the plan in the input JSON. Keep the same core skill, change numbers, context or wording, and do not copy the original stem.
+Rules you MUST follow:
+- Output ONLY a fill-in-the-blank or open-ended / step-by-step question; NEVER include question numbers, point values, or multiple-choice / true-false options (no A/B/C/D, ①②③④, or option boxes).
+- If you include a diagram in figureSvg, output a single valid inline <svg> with xmlns="http://www.w3.org/2000/svg" and viewBox (width 400~600), white background, black strokes, basic shapes only, and NO <script>, <image>, <foreignObject>, external links or on* event attributes.
+- Use KaTeX-compatible LaTeX ($...$ / $$...$$) inside questionText, answerText and analysis; since the whole response is JSON, escape every backslash as \\\\ inside JSON strings.
 Return JSON only:
 {"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"math expression only, never code","expected":"answer"} or null}
-computable is required for questions that can be checked by arithmetic or algebra (use * for multiplication). Leave it null for open-ended or non-math items. Use LaTeX in text when needed. Output JSON only.`
+computable is required for questions that can be checked by arithmetic or algebra (use * for multiplication). Leave it null for open-ended or non-math items. Output JSON only.`
         : `根据输入 JSON 中的规划生成一道变式题。保持核心考点，更换数据、情境或表述，不要照抄原题题干。
+${GENERATED_QUESTION_RULES}
+【配图规范（仅当需要配图并输出 figureSvg 时适用）】
+${FIGURE_SVG_RULES}
+【公式格式（置于 JSON 字符串内时注意将反斜杠转义为 \\\\）】
+${LATEX_RULES}
 只输出 JSON：
 {"questionText":"...","answerText":"...","analysis":"...","figureSvg":null,"knowledgePoints":["..."],"computable":{"type":"expression|equation|numeric","expression":"仅数学表达式，禁止代码","expected":"答案"} 或 null}
-能用四则运算或代数验算的题必须提供 computable（乘法用 *）。开放题或非数学题填 null。需要公式时使用 LaTeX。只输出 JSON。`;
+能用四则运算或代数验算的题必须提供 computable（乘法用 *）。开放题或非数学题填 null。只输出 JSON。`;
 }
 
 export function generateVariantResolvePrompt(language: 'zh' | 'en'): string {

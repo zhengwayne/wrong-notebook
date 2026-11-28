@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BackButton } from "@/components/ui/back-button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { QuestionFigure } from "@/components/question-figure";
+import { PrintQuestionText } from "@/components/print-preview/print-question-text";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
 import { apiClient } from "@/lib/api-client";
@@ -20,6 +21,7 @@ import {
     isAnswerSpaceMode,
 } from "@/lib/exam-answer-space";
 import type { AnswerSpaceMode } from "@/lib/exam-answer-space";
+import { EXAM_PRINT_INCLUDE_ANSWERS_KEY, useStoredFlag } from "@/lib/print-answer-preference";
 import type { ExamPaperDetail } from "@/types/api";
 
 export default function ExamPrintPage() {
@@ -27,7 +29,8 @@ export default function ExamPrintPage() {
     const { t, language } = useLanguage();
     const [paper, setPaper] = useState<ExamPaperDetail | null>(null);
     usePageTitle(t.exam.title, paper?.title, t.pageTitle.examPrint);
-    const [includeAnswers, setIncludeAnswers] = useState(true);
+    // 「包含答案页」默认不勾选，勾选结果记在本机浏览器，下次打印沿用
+    const [includeAnswers, setIncludeAnswers] = useStoredFlag(EXAM_PRINT_INCLUDE_ANSWERS_KEY, false);
     const [answerSpace, setAnswerSpace] = useState<AnswerSpaceMode>(DEFAULT_ANSWER_SPACE_MODE);
     const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +77,7 @@ export default function ExamPrintPage() {
     };
 
     return (
-        <main className="min-h-screen bg-white">
+        <main id="main-content" tabIndex={-1} className="min-h-screen bg-white">
             <style>{EXAM_PRINT_CSS}</style>
             <div className="print:hidden sticky top-0 z-10 border-b bg-background p-3 shadow-sm">
                 <div className="max-w-4xl mx-auto flex flex-wrap items-center gap-3">
@@ -131,7 +134,7 @@ export default function ExamPrintPage() {
                             <span>{index + 1}.</span>
                             <span className="exam-source">{t.exam.sourceLabel}: {question.sourceShortId}</span>
                         </div>
-                        <MarkdownRenderer content={question.questionText!} />
+                        <PrintQuestionText content={question.questionText!} />
                         <QuestionFigure svg={question.figureSvg} />
                         <div
                             className="exam-answer-space"

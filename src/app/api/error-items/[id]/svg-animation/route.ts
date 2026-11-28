@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, badRequest, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { reserveAiQuota, type AiQuotaReservation } from "@/lib/ai-quota";
 import { withRecoverableResponse } from "@/lib/recoverable-response";
 
 const logger = createLogger('api:error-items:svg-animation');
@@ -41,6 +41,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
     const body = await req.json().catch(() => ({})) as { language?: unknown };
     const language = parseLanguage(body.language);
 
+    let quota: AiQuotaReservation | undefined;
     try {
         const user = await getCurrentUser();
         if (!user) {
@@ -57,13 +58,13 @@ async function handlePost(req: Request, { params }: RouteContext) {
 
         const questionText = item.questionText;
         // 页面关闭后服务端仍会继续生成并保存，后台任务弹框中可查看进度
-        const limited = await consumeAiQuota(user, 'animation');
-        if (limited) return limited;
+        quota = await reserveAiQuota(user, 'animation', { request: req });
+        if (quota.limited) return quota.limited;
 
         const svgAnimation = await trackBackgroundTask(
             { userId: user.id, kind: 'svg_animation', subject: describeQuestion(item), link: `/error-items/${id}` },
             async () => {
-                const svg = await getAIService().generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
+                const svg = await getAIService('text').generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
                 if (!svg) throw new Error("NO_VALID_ANIMATION");
                 await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: svg } });
                 return svg;
@@ -72,6 +73,8 @@ async function handlePost(req: Request, { params }: RouteContext) {
             if (error instanceof Error && error.message === "NO_VALID_ANIMATION") return null;
             throw error;
         });
+        // 生成出有效动画才算一次
+        await quota.settle(Boolean(svgAnimation));
         if (!svgAnimation) {
             return badRequest("NO_VALID_ANIMATION");
         }
@@ -79,6 +82,7 @@ async function handlePost(req: Request, { params }: RouteContext) {
         logger.info({ errorItemId: id, language, svgLength: svgAnimation.length }, 'SVG animation generated');
         return NextResponse.json({ svgAnimation, language });
     } catch (error) {
+        await quota?.release();
         const message = error instanceof Error ? error.message : String(error);
         logger.error({ error: message }, 'Error generating SVG animation');
         // AI 错误码交给前端映射为提示文案

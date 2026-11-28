@@ -3,8 +3,10 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/current-user";
 import { unauthorized, notFound, validationError, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
+import { syncItemMemory } from "@/lib/due-items";
 import { recordExamResults } from "@/lib/exam";
 import { PRACTICE_RESULTS, scheduleMasteryEvaluation } from "@/lib/mastery";
+import { prisma } from "@/lib/prisma";
 
 const logger = createLogger('api:exams:results');
 
@@ -39,6 +41,9 @@ export async function POST(
 
         const takenAt = parsed.data.takenAt ? new Date(parsed.data.takenAt) : new Date();
         const affected = await recordExamResults(id, user.id, takenAt, parsed.data.results);
+        for (const itemId of affected) {
+            await syncItemMemory(prisma, itemId);
+        }
         scheduleMasteryEvaluation(affected);
 
         return NextResponse.json({ success: true, affectedCount: affected.length });

@@ -97,4 +97,59 @@ describe('runVariantPipeline', () => {
         expect(impl.generate).not.toHaveBeenCalled();
         expect(result.items.every((item) => item.status === 'pending_review')).toBe(true);
     });
+
+    it('拦截选择题输出并触发重生成，同时净化 figureSvg（OPT-09）', async () => {
+        const generate = vi.fn()
+            .mockResolvedValueOnce({
+                data: {
+                    questionText: '下列选项正确的是\nA. 1\nB. 2\nC. 3\nD. 4',
+                    answerText: '2',
+                    analysis: '略',
+                    knowledgePoints: ['方程'],
+                    computable: { type: 'numeric', expression: '2', expected: '2' },
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    questionText: '1. （5 分）解方程 3x=6',
+                    answerText: '2',
+                    analysis: 'x=2',
+                    figureSvg: '<svg viewBox="0 0 100 100"><script>alert(1)</script><circle cx="50" cy="50" r="20"/></svg>',
+                    knowledgePoints: ['方程'],
+                    computable: { type: 'equation', expression: '3x=6', expected: '2' },
+                },
+            });
+        const result = await runVariantPipeline({
+            originalQuestion: '解方程 2x=4',
+            knowledgePoints: ['方程'],
+            targetDifficulty: 'medium',
+            language: 'zh',
+        }, ai({
+            generate,
+            resolve: vi.fn(async () => ({ data: { answer: '2' } })),
+        }));
+
+        expect(generate).toHaveBeenCalledTimes(2);
+        expect(result.items[0].status).toBe('verified');
+        expect(result.items[0].question?.questionText).toBe('解方程 3x=6');
+        expect(result.items[0].question?.figureSvg).toContain('<circle');
+        expect(result.items[0].question?.figureSvg).not.toMatch(/script/i);
+    });
+
+    it('跳过难度检查时 difficultyConsistent 为 undefined，必须进入待审核（R04）', async () => {
+        const result = await runVariantPipeline({
+            originalQuestion: '解方程 2x+1=7',
+            knowledgePoints: ['方程'],
+            targetDifficulty: 'medium',
+            language: 'zh',
+            count: 1,
+        }, ai({
+            checkDifficulty: vi.fn(async () => {
+                throw new Error('difficulty check failed');
+            }),
+        }));
+
+        expect(result.items[0].status).toBe('pending_review');
+        expect(result.items[0].reason).toContain('难度');
+    });
 });

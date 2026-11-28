@@ -1,19 +1,49 @@
 /**
  * 安装包启动器单元测试
- * 覆盖命令行参数解析、SQLite 地址转换和会话密钥生成
+ * 覆盖命令行参数解析、SQLite 地址转换、会话密钥、迁移前自动备份与 WAL checkpoint
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createRequire } from 'module';
-import { describe, expect, it } from 'vitest';
+import { PrismaClient } from '@prisma/client';
+import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const launcher = require('../../../packaging/runtime/launcher.js') as {
     parseArgs: (argv: string[]) => { port?: string; host?: string; dataDir?: string };
     sqliteUrl: (file: string) => string;
+    sqliteDatasourceUrl: (file: string) => string;
     ensureSecret: (dataDir: string) => string;
+    backupBeforeMigrate: (opts: {
+        dbFile: string;
+        dataDir: string;
+        version: string;
+        env?: NodeJS.ProcessEnv;
+        checkpointRunner?: (dbFile: string, env: NodeJS.ProcessEnv) => void;
+    }) => string | null;
+    prepare: (opts?: {
+        dataDir?: string;
+        _appDir?: string;
+        _runPrisma?: (args: string[], env: NodeJS.ProcessEnv) => boolean;
+        _checkpointRunner?: (dbFile: string, env: NodeJS.ProcessEnv) => void;
+    }) => { dataDir: string; dbFile: string; env: NodeJS.ProcessEnv; version: string; backupPath: string | null };
+    installExternalAliasResolver: () => void;
 };
+
+const REPO_ROOT = path.resolve('.');
+const PRISMA_BIN = path.resolve('node_modules/prisma/build/index.js');
+
+function deploySchema(dbFile: string): string {
+    const url = `file:${dbFile.split(path.sep).join('/')}`;
+    execFileSync(process.execPath, [PRISMA_BIN, 'migrate', 'deploy', '--schema', path.join(REPO_ROOT, 'prisma/schema.prisma')], {
+        env: { ...process.env, DATABASE_URL: url },
+        cwd: REPO_ROOT,
+        stdio: 'pipe',
+    });
+    return url;
+}
 
 describe('package launcher', () => {
     it('解析长短参数和等号写法', () => {
@@ -29,9 +59,10 @@ describe('package launcher', () => {
         expect(launcher.parseArgs(['--verbose', 'start'])).toEqual({});
     });
 
-    it('SQLite 地址使用正斜杠', () => {
+    it('SQLite 地址使用正斜杠且 Datasource 注入 connection_limit=1', () => {
         const file = ['data', 'wrong-notebook.db'].join(path.sep);
         expect(launcher.sqliteUrl(file)).toBe('file:data/wrong-notebook.db');
+        expect(launcher.sqliteDatasourceUrl(file)).toBe('file:data/wrong-notebook.db?connection_limit=1');
     });
 
     it('会话密钥首次生成后保持不变，空文件会被重新生成', () => {
@@ -48,5 +79,222 @@ describe('package launcher', () => {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    it('迁移前对非空 WAL 执行 checkpoint 并生成包含最新事务的单文件备份', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-wal-backup-'));
+        const dbFile = path.join(dir, 'wrong-notebook.db');
+        try {
+            const url = deploySchema(dbFile);
+            const client = new PrismaClient({ datasources: { db: { url } } });
+            await client.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+            // 显式关闭自动 checkpoint，确保写入保留在 -wal 中
+            await client.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
+            await client.user.create({
+                data: { email: 'wal-only@example.com', password: 'hash', name: 'WAL用户' },
+            });
+            await client.$disconnect();
+
+            // 在无额外写者干扰下先确认如果存在 -wal 或通过子进程 checkpoint 均能正常把数据刷入单文件备份
+            const walPath = `${dbFile}-wal`;
+            if (!fs.existsSync(walPath) || fs.statSync(walPath).size === 0) {
+                // Prisma $disconnect 可能已触发一次 checkpoint；再插入一条并通过未关闭前保持 -wal 的连接验证
+                const holdClient = new PrismaClient({ datasources: { db: { url } } });
+                await holdClient.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+                await holdClient.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
+                await holdClient.user.create({
+                    data: { email: 'wal-hold@example.com', password: 'hash', name: 'WAL留存用户' },
+                });
+                expect(fs.existsSync(walPath)).toBe(true);
+                expect(fs.statSync(walPath).size).toBeGreaterThan(0);
+                await holdClient.$disconnect();
+            }
+
+            // 模拟写入后 -wal 仍非空（例如异常退出留下的 -wal）
+            const writer = new PrismaClient({ datasources: { db: { url } } });
+            await writer.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+            await writer.$queryRawUnsafe('PRAGMA wal_autocheckpoint = 0;');
+            await writer.user.create({
+                data: { email: 'wal-live@example.com', password: 'hash', name: '活跃WAL' },
+            });
+            const backupPath = launcher.backupBeforeMigrate({
+                dbFile,
+                dataDir: dir,
+                version: '2026.11.18',
+            });
+            await writer.$disconnect();
+
+            expect(backupPath).toBeTruthy();
+            expect(backupPath!.endsWith('.db')).toBe(true);
+            expect(fs.existsSync(backupPath!)).toBe(true);
+
+            // 使用独立 PrismaClient 验证备份库包含刚才在 -wal 中的记录
+            const verifyUrl = launcher.sqliteDatasourceUrl(backupPath!);
+            const verifyClient = new PrismaClient({ datasources: { db: { url: verifyUrl } } });
+            try {
+                const found = await verifyClient.user.findUnique({ where: { email: 'wal-live@example.com' } });
+                expect(found?.name).toBe('活跃WAL');
+            } finally {
+                await verifyClient.$disconnect();
+            }
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }, 20000);
+
+    it('无法清空 -wal 时自动备份 .db/-wal/-shm 三件套并生成 RECOVERY.txt，且最多保留 3 份', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-wal-fallback-'));
+        const dbFile = path.join(dir, 'wrong-notebook.db');
+        try {
+            fs.writeFileSync(dbFile, 'main-db');
+            fs.writeFileSync(`${dbFile}-wal`, 'wal-payload');
+            fs.writeFileSync(`${dbFile}-shm`, 'shm-payload');
+
+            const backups: string[] = [];
+            for (let i = 0; i < 5; i++) {
+                const p = launcher.backupBeforeMigrate({
+                    dbFile,
+                    dataDir: dir,
+                    version: `1.0.${i}`,
+                    checkpointRunner: () => {
+                        throw new Error('simulated busy');
+                    },
+                });
+                backups.push(p!);
+            }
+
+            const entries = fs.readdirSync(path.join(dir, 'backups')).filter((n) => n.startsWith('pre-migrate-'));
+            expect(entries).toHaveLength(3);
+            expect(entries).toEqual(backups.slice(-3).map((p) => path.basename(p)));
+
+            const latestDir = backups[4];
+            expect(fs.statSync(latestDir).isDirectory()).toBe(true);
+            expect(fs.readFileSync(path.join(latestDir, 'wrong-notebook.db'), 'utf8')).toBe('main-db');
+            expect(fs.readFileSync(path.join(latestDir, 'wrong-notebook.db-wal'), 'utf8')).toBe('wal-payload');
+            expect(fs.readFileSync(path.join(latestDir, 'wrong-notebook.db-shm'), 'utf8')).toBe('shm-payload');
+            expect(fs.readFileSync(path.join(latestDir, 'RECOVERY.txt'), 'utf8')).toContain('三件套');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('跨版本迁移按创建时间保留备份，兼容 Docker 的无序号备份', () => {
+        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-backup-order-'));
+        const backupsDir = path.join(dataDir, 'backups');
+        const dbFile = path.join(dataDir, 'wrong-notebook.db');
+        try {
+            fs.mkdirSync(backupsDir);
+            const oldest = 'pre-migrate-2026.9.8-2026-09-08T00-00-00-000Z.db';
+            const previous = 'pre-migrate-2026.9.9-2026-09-09T00-00-00-000Z-1.db';
+            const recent = 'pre-migrate-2026.9.10-2026-09-10T00-00-00-000Z';
+            fs.writeFileSync(path.join(backupsDir, oldest), 'old');
+            fs.writeFileSync(path.join(backupsDir, previous), 'previous');
+            fs.mkdirSync(path.join(backupsDir, recent));
+            fs.writeFileSync(dbFile, 'latest');
+
+            const latest = launcher.backupBeforeMigrate({ dbFile, dataDir, version: '2026.10.1' })!;
+            expect(fs.readFileSync(latest, 'utf8')).toBe('latest');
+            expect(fs.readdirSync(backupsDir).sort()).toEqual([previous, recent, path.basename(latest)].sort());
+        } finally {
+            fs.rmSync(dataDir, { recursive: true, force: true });
+        }
+    });
+
+    it('prepare 在迁移失败时输出备份恢复指引并拒绝启动，首次无库时不触发备份', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-prepare-'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+        try {
+            // 首次无数据库：不备份
+            const first = launcher.prepare({
+                dataDir: dir,
+                _runPrisma: () => true,
+            });
+            expect(first.backupPath).toBeNull();
+            expect(fs.existsSync(path.join(dir, '.app_version'))).toBe(true);
+
+            // 模拟已有非空数据库且迁移失败
+            fs.writeFileSync(first.dbFile, 'existing-db-bytes');
+            expect(() => launcher.prepare({
+                dataDir: dir,
+                _runPrisma: () => false,
+            })).toThrow(/数据库迁移失败，已停止启动/);
+            expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('pre-migrate-'));
+        } finally {
+            errorSpy.mockRestore();
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('首次启动复制 seed.db 并在二次启动触发增量迁移前备份', () => {
+        const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-app-'));
+        const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-data-'));
+        try {
+            fs.mkdirSync(path.join(appDir, 'prisma'), { recursive: true });
+            fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ version: '2026.11.18' }));
+            fs.writeFileSync(path.join(appDir, 'prisma', 'seed.db'), 'sqlite-seed-payload');
+
+            const migrateCalls: string[][] = [];
+            const first = launcher.prepare({
+                dataDir,
+                _appDir: appDir,
+                _runPrisma: (args) => {
+                    migrateCalls.push(args);
+                    return true;
+                },
+            });
+
+            expect(first.backupPath).toBeNull();
+            expect(fs.readFileSync(first.dbFile, 'utf8')).toBe('sqlite-seed-payload');
+            expect(migrateCalls).toHaveLength(1);
+            expect(migrateCalls[0]).toContain(path.join(appDir, 'prisma', 'schema.prisma'));
+
+            // 二次启动：已有非空 wrong-notebook.db，不覆盖原库并生成 pre-migrate-* 备份
+            fs.writeFileSync(first.dbFile, 'user-mutated-db');
+            const second = launcher.prepare({
+                dataDir,
+                _appDir: appDir,
+                _runPrisma: (args) => {
+                    migrateCalls.push(args);
+                    return true;
+                },
+            });
+            expect(second.backupPath).toBeTruthy();
+            expect(fs.readFileSync(second.backupPath!, 'utf8')).toBe('user-mutated-db');
+            expect(fs.readFileSync(first.dbFile, 'utf8')).toBe('user-mutated-db');
+            expect(migrateCalls).toHaveLength(2);
+        } finally {
+            fs.rmSync(appDir, { recursive: true, force: true });
+            fs.rmSync(dataDir, { recursive: true, force: true });
+        }
+    });
+
+    it('installExternalAliasResolver 支持 require 与 import 剥离 16 位哈希后缀并保留普通缺失错误', () => {
+        const script = `
+            const assert = require('node:assert/strict');
+            const launcher = require('./packaging/runtime/launcher.js');
+            launcher.installExternalAliasResolver();
+            const cjsAliased = require('bcryptjs-0123456789abcdef');
+            assert.equal(typeof cjsAliased.hash, 'function');
+            let missingError = null;
+            try {
+                require('nonexistent-plain-pkg');
+            } catch (e) {
+                missingError = e.code;
+            }
+            assert.equal(missingError, 'MODULE_NOT_FOUND');
+            Promise.resolve().then(async () => {
+                const esmAliased = await import('bcryptjs-fedcba9876543210');
+                assert.equal(typeof (esmAliased.default?.hash || esmAliased.hash), 'function');
+                console.log('ALIAS_OK');
+            }).catch((err) => {
+                console.error(err);
+                process.exit(1);
+            });
+        `;
+        const output = execFileSync(process.execPath, ['-e', script], {
+            cwd: REPO_ROOT,
+            encoding: 'utf8',
+        });
+        expect(output).toContain('ALIAS_OK');
     });
 });

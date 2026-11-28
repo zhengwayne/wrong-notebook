@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { badRequest, conflict, unauthorized, validationError } from "@/lib/api-errors";
+import { ensureLearnerForGradingStudent } from "@/lib/learners";
 import { MAX_ROSTER_ROWS, parseRosterTable, planRosterImport, splitTable } from "@/lib/roster-import";
 
 const schema = z.object({
@@ -52,12 +53,25 @@ export async function POST(req: Request) {
                 if (row.action === 'unchanged') continue;
                 if (row.action === 'update' && row.studentId) {
                     await tx.gradingStudent.update({ where: { id: row.studentId }, data: { name: row.name, ...(row.studentNo ? { studentNo: row.studentNo } : {}) } });
+                    await ensureLearnerForGradingStudent(tx, {
+                        userId: user.id,
+                        gradingStudentId: row.studentId,
+                        name: row.name,
+                    });
                     continue;
                 }
                 const classId = classIds.get(row.className)!;
                 const order = nextOrder.get(classId) || 0;
                 nextOrder.set(classId, order + 1);
-                await tx.gradingStudent.create({ data: { classId, name: row.name, studentNo: row.studentNo, order } });
+                const createdStudent = await tx.gradingStudent.create({
+                    data: { classId, name: row.name, studentNo: row.studentNo, order },
+                    select: { id: true, name: true },
+                });
+                await ensureLearnerForGradingStudent(tx, {
+                    userId: user.id,
+                    gradingStudentId: createdStudent.id,
+                    name: createdStudent.name,
+                });
             }
         });
     } catch (error) {

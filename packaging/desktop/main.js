@@ -1,5 +1,7 @@
 /**
- * 错题本桌面壳（Electron）
+ * 学迹桌面壳（Electron）
+ *
+ *   - 窗口与快捷方式显示「学迹」；userData 目录固定为 WrongNotebook，与显示名解耦
  *
  *   - 启动时用 Electron 自带的 Node（ELECTRON_RUN_AS_NODE）运行 resources/server/launcher.js，
  *     服务只监听 127.0.0.1，端口被占用时自动顺延
@@ -11,6 +13,7 @@ const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
+const { DISPLAY_NAME, resolveWrongNotebookUserData } = require('./user-data-dir');
 const { spawn } = require('node:child_process');
 
 const PREFERRED_PORT = 39300;
@@ -25,6 +28,16 @@ let server = null;
 let baseUrl = '';
 let dataDir = '';
 let quitting = false;
+
+
+// 显示名与 productName 解耦：窗口标题用学迹，数据目录固定为 WrongNotebook
+(function pinUserDataDir() {
+    const pinned = resolveWrongNotebookUserData(app.getPath('appData'), app.getPath('userData'));
+    if (path.resolve(app.getPath('userData')) !== path.resolve(pinned)) {
+        app.setPath('userData', pinned);
+    }
+})();
+
 
 function findFreePort(port, attempts = 50) {
     return new Promise((resolve, reject) => {
@@ -79,7 +92,7 @@ async function startServer() {
     server.on('exit', (code) => {
         log.write(`[desktop] 服务进程退出，退出码 ${code}\n`);
         if (!quitting) {
-            dialog.showErrorBox('错题本服务已停止', `服务进程意外退出（退出码 ${code}）。\n日志：${logFile}`);
+            dialog.showErrorBox(DISPLAY_NAME + '服务已停止', `服务进程意外退出（退出码 ${code}）。\n日志：${logFile}`);
             app.quit();
         }
     });
@@ -117,11 +130,11 @@ function stopServer() {
     if (server && server.exitCode === null) server.kill();
 }
 
-const LOADING_HTML = `<!doctype html><meta charset="utf-8"><title>错题本</title>
+const LOADING_HTML = `<!doctype html><meta charset="utf-8"><title>${DISPLAY_NAME}</title>
 <style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
 font-family:system-ui,sans-serif;color:#555;background:#fafafa}
 @media(prefers-color-scheme:dark){body{background:#1f1f1f;color:#ccc}}</style>
-<p>错题本正在启动，首次运行需要初始化数据库，请稍候…</p>`;
+<p>${DISPLAY_NAME}正在启动，首次运行需要初始化数据库，请稍候…</p>`;
 
 function createWindow() {
     win = new BrowserWindow({
@@ -129,7 +142,7 @@ function createWindow() {
         height: 860,
         minWidth: 360,
         minHeight: 560,
-        title: '错题本',
+        title: DISPLAY_NAME,
         icon: path.join(__dirname, 'icon.png'),
         autoHideMenuBar: true,
         show: false,
@@ -159,7 +172,7 @@ async function boot() {
     try {
         await startServer();
     } catch (error) {
-        dialog.showErrorBox('错题本启动失败', String(error.message || error));
+        dialog.showErrorBox(DISPLAY_NAME + '启动失败', String(error.message || error));
         quitting = true;
         stopServer();
         app.quit();

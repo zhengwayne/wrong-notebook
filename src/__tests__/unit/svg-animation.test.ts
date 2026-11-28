@@ -27,6 +27,28 @@ describe('sanitizeSvgAnimation', () => {
         expect(clean).toContain('<animate attributeName="x2"');
     });
 
+    it('反复净化嵌套拆分的 href / xlink:href 动画，未闭合或超轮次嵌套时直接拒收', () => {
+        const nested = animation.replace('</svg>', ''
+            + '<ani<animate attributeName="href" to="x"/>mate attributeName="href" to="#a" begin="1s"/>'
+            + '<s<set attributeName="xlink:href" to="y"/>et attributeName="xlink:href" to="#b"></set>'
+            + '</svg>');
+        const cleanNested = sanitizeSvgAnimation(nested);
+        expect(cleanNested).not.toBeNull();
+        expect(cleanNested).not.toMatch(/attributeName\s*=\s*["']?(?:xlink:)?href/i);
+        expect(cleanNested).toContain('<rect width="800" height="500" fill="#fff"/>');
+
+        // 超过 10 层恶意嵌套时直接返回 null 拒收
+        let deep = '<animate attributeName="href" to="#0"/>';
+        for (let i = 1; i <= 12; i += 1) {
+            deep = `<ani${deep}mate attributeName="href" to="#${i}"/>`;
+        }
+        expect(sanitizeSvgAnimation(animation.replace('</svg>', `${deep}</svg>`))).toBeNull();
+
+        // 未闭合的畸形 animate[attributeName="href"] 也拒收
+        const unclosed = animation.replace('</svg>', '<animate attributeName="href" to="https://evil.example"><rect width="1" height="1"/></svg>');
+        expect(sanitizeSvgAnimation(unclosed)).toBeNull();
+    });
+
     it('没有有效 SVG 或超长时返回 null', () => {
         expect(sanitizeSvgAnimation('无法生成')).toBeNull();
         expect(sanitizeSvgAnimation(null)).toBeNull();
@@ -108,6 +130,22 @@ describe('SVG 动画时长与画面', () => {
         const doc = buildSvgAnimationDocument(animation);
         expect(doc).toContain("default-src 'none'");
         expect(doc).toContain(animation);
+    });
+
+    it('iframe 文档对传入的未净化 SVG 与容器逃逸载荷先做净化', () => {
+        const malicious = animation.replace('</svg>', '</bo</body>dy><script>alert(1)</script><a href="javascript:evil()"><circle onload="x()" r="2"/></a></svg>')
+            + '</body><script>alert(2)</script><svg><rect/></svg>';
+        const doc = buildSvgAnimationDocument(malicious);
+        // 整个 HTML 文档中只能出现模板末尾的一个 </body> 和 </html>
+        expect(doc.match(/<\/body>/gi)).toHaveLength(1);
+        expect(doc.match(/<\/html>/gi)).toHaveLength(1);
+        expect(doc).not.toMatch(/<script|onload=|javascript:/i);
+
+        // 完全无有效图形的逃逸载荷不会写进 body
+        const rawEscape = '</body><script>alert(1)</script>';
+        const safeDoc = buildSvgAnimationDocument(rawEscape);
+        expect(safeDoc.match(/<\/body>/gi)).toHaveLength(1);
+        expect(safeDoc).not.toMatch(/<script/i);
     });
 });
 

@@ -25,6 +25,7 @@ import { AdminUser, AppConfig } from "@/types/api";
 import { toast, confirmDialog } from "@/lib/feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { getApiErrorMessage } from "@/lib/error-message";
+import { displayAccountEmail } from "@/lib/wechat-account";
 
 export function UserManagement() {
     const { timeZone } = useTimeZone();
@@ -185,7 +186,7 @@ export function UserManagement() {
                         <div className="flex justify-between items-start">
                             <div>
                                 <div className="font-medium">{user.name || "N/A"}</div>
-                                <div className="text-sm text-muted-foreground">{user.email}</div>
+                                <div className="text-sm text-muted-foreground">{displayAccountEmail(user.email, t.admin.wechatOnly)}</div>
                             </div>
                             <Badge variant={user.role === "admin" ? "default" : "secondary"}>
                                 {user.role === "admin" ? t.admin.admin : t.admin.user}
@@ -248,7 +249,7 @@ export function UserManagement() {
                             <TableRow key={user.id}>
                                 <TableCell>
                                     <div className="font-medium">{user.name || "N/A"}</div>
-                                    <div className="text-sm text-muted-foreground">{user.email}</div>
+                                    <div className="text-sm text-muted-foreground">{displayAccountEmail(user.email, t.admin.wechatOnly)}</div>
                                 </TableCell>
                                 <TableCell>
                                     <Badge variant={user.role === "admin" ? "default" : "secondary"}>

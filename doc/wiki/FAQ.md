@@ -5,14 +5,14 @@
 全新安装没有默认账号。服务首次启动时生成一次性初始化链接（`/initialize?token=…`），打开后设置管理员邮箱和密码：
 
 - 桌面版、安卓单机版：首次启动自动打开。
-- Docker：`docker logs wrong-notebook 2>&1 | grep initialize`。
+- Docker：运行 `docker exec wrong-notebook cat /app/config/setup-token` 读取令牌。
 - 飞牛OS：安装向导中直接设置管理员邮箱和密码，装好后用它登录，不需要初始化链接。
-- npm、源码运行：链接打印在启动服务的终端里。
-- 也可以读取数据目录中 `config/setup-token` 的令牌，自行打开 `http://服务器地址:端口/initialize?token=令牌`。
+- npm、源码运行：从启动日志提示的文件路径读取令牌。默认分别为 `~/.wrong-notebook/config/setup-token` 和项目的 `config/setup-token`。
+- 在浏览器中输入服务地址和 `/initialize?token=`，在等号后粘贴读取的令牌，再打开页面。
 
 链接中的主机为 `localhost` 时，从其他设备打开需换成服务器的 IP 或域名。链接只能使用一次，创建管理员后失效；尚未创建管理员时，登录页会显示上述说明。
 
-旧版本安装的实例默认管理员为 `admin@localhost`，密码 `123456`，用默认密码登录时必须先修改密码才能使用其他页面。已有数据库在 `PRESERVE_EXISTING_DATA=true` 下升级时，启动脚本跳过管理员播种，保留账户状态。忘记密码可参考仓库的 [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js)，操作前先备份。
+旧版本安装的实例默认管理员为 `admin@localhost`。仍使用旧版默认密码的管理员登录时必须先修改密码才能使用其他页面。启动或升级都会保留已有账户的角色和启用状态。忘记密码可参考仓库的 [`scripts/reset-password.js`](https://github.com/margrop/wrong-notebook/blob/main/scripts/reset-password.js)，操作前先备份。
 
 ## 登录后跳回登录页，或反向代理下登录失败？
 
@@ -21,7 +21,7 @@
 
 ## 提示“密码错误次数过多”？
 
-为防止暴力破解，同一账号 15 分钟内密码错 5 次、或同一 IP 15 分钟内登录失败 20 次后，会暂停登录 15 分钟，期间即使密码正确也无法登录；注册和初始化链接同一 IP 每小时最多尝试 10 次。等待时间到后即可重试，重启服务也会清零。反向代理部署时请转发 `X-Real-IP` 或 `X-Forwarded-For`，否则所有访问会被当作同一个 IP。
+为防止暴力破解，同一账号 15 分钟内密码错 5 次、或同一 IP 15 分钟内登录失败 20 次后，会暂停登录 15 分钟，期间即使密码正确也无法登录；注册和初始化链接同一 IP 每小时最多尝试 10 次。等待时间到后即可重试，重启服务也会清零。反向代理部署时请转发 `X-Real-IP` 或 `X-Forwarded-For` 并设置 `TRUST_PROXY=true`（搭配 `TRUSTED_PROXY_HOPS`）或 `TRUST_PROXY=cloudflare`；未开启 `TRUST_PROXY` 时服务端默认忽略代理头，所有访问会被当作同一来源 IP。
 
 ## 修改了环境变量，AI 仍然使用旧配置？
 
@@ -61,15 +61,20 @@
 
 ## 重启后后台任务显示“服务重启，任务已中断”？
 
-后台任务列表会保存到配置目录的 `background-tasks.json`，重启后仍能看到最近 30 分钟内结束的任务。AI 调用在应用进程内执行，重启时还在进行的任务无法继续，会标记为失败并提示“服务重启，任务已中断”。重试前先确认题目或试卷是否已经保存；任务列表只反映执行过程，已保存的数据以错题本和试卷页面为准。
+后台任务列表持久化在 SQLite 数据库的 `AsyncOperation` 表中，重启后仍能看到最近 30 分钟内结束的任务。AI 调用在应用进程内执行，重启时还在进行的任务会被启动自愈标记为 `interrupted`，并在界面显示失败“服务重启，任务已中断”。重试前先确认题目或试卷是否已经保存；任务列表只反映执行过程，已保存的数据以错题本和试卷页面为准。
 
 ## HTTP 207 是否表示 Openclaw 导入成功？
 
-`207` 表示批次存在逐项失败；当前实现中全部识别失败也可能返回它。必须读取 `successCount`、`failCount` 和每项 `results`。单张识别超时目前最多 3 秒，更多限制见 [Openclaw 集成](Openclaw-Integration)。
+`207` 表示批次存在逐项失败；当前实现中全部识别失败也可能返回它。必须读取 `successCount`、`failCount` 和每项 `results`。单张识别超时至少为 3 秒，更多限制见 [Openclaw 集成](Openclaw-Integration)。
 
-## 导出的 JSON 能恢复整个站点吗？
+## 网页导出的 ZIP / JSON 备份能恢复整个站点吗？
 
-当前 JSON 不包含完整账户凭据和服务端配置。整站恢复应保存完整数据库、`config/`、部署配置和所需证书，详见[备份与恢复](Backup-and-Restore)。
+网页默认导出的 **v3 ZIP 归档**可完整迁移个人与多角色业务数据（含孩子档案、家长试卷、教师改卷、变式阶段与学习路径，并支持可选 AES-256-GCM 口令加密），但均不包含账户密码哈希与服务端 AI 凭据。整站恢复仍需备份完整 SQLite 数据库（含 `backups/` 每日快照）、`config/`、部署配置和所需证书，详见[数据备份与恢复](Backup-and-Restore)。
+
+## 首页提示自动数据库快照失败，或 NAS 上出现 `SQLITE_BUSY` 锁定报错？
+
+- **快照失败告警**：检查数据目录下的 `backups/` 目录写权限与磁盘可用空间，在「设置 → 危险」可查看最近成功时间并点「立即创建快照」手动重试；若已在 Docker 宿主机层面做卷快照，可设 `DAILY_SNAPSHOT_ENABLED=false` 关闭内建每日快照。
+- **NAS NFS/CIFS 锁报错**：网络文件系统通常不支持 SQLite WAL 模式的共享内存锁（`-shm`），请在环境变量中添加 `SQLITE_JOURNAL_MODE=DELETE` 或 `TRUNCATE` 后重启服务。
 
 ## 升级后数据不见了，或者容器无法启动？
 

@@ -1,12 +1,10 @@
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from "@/lib/date-time";
+import { getConfigForRole, isTextSameAsVision } from "@/lib/ai/roles";
 import type { Translations } from "@/lib/translations";
 import type { AppConfig } from "@/types/api";
 
-/** 保存前校验当前渠道的必填项，返回错误提示 */
-export function validateAiConfig(config: AppConfig, t: Translations): string | null {
-    if (!isValidTimeZone(config.timeZone ?? DEFAULT_TIME_ZONE)) {
-        return t.settings.general.invalidTimeZone;
-    }
+/** 校验某一渠道视图的必填项 */
+function validateProviderConfig(config: AppConfig, t: Translations): string | null {
     if (config.aiProvider === 'openai') {
         for (const instance of config.openai?.instances || []) {
             if (!instance.name?.trim()) return t.settings?.ai?.validationNameRequired || "Instance name is required";
@@ -19,6 +17,19 @@ export function validateAiConfig(config: AppConfig, t: Translations): string | n
         if (!config.azure?.endpoint?.trim()) return t.settings?.ai?.validationAzureEndpointRequired || 'Azure Endpoint is required';
         if (!config.azure?.deploymentName?.trim()) return t.settings?.ai?.validationAzureDeploymentRequired || 'Deployment Name is required';
         if (!config.azure?.apiKey?.trim()) return t.settings?.ai?.validationApiKeyRequired || 'API Key is required';
+    }
+    return null;
+}
+
+/** 保存前校验当前渠道的必填项，返回错误提示；文本角色独立配置时一并校验 */
+export function validateAiConfig(config: AppConfig, t: Translations): string | null {
+    if (!isValidTimeZone(config.timeZone ?? DEFAULT_TIME_ZONE)) {
+        return t.settings.general.invalidTimeZone;
+    }
+    const visionError = validateProviderConfig(config, t);
+    if (visionError) return visionError;
+    if (!isTextSameAsVision(config)) {
+        return validateProviderConfig(getConfigForRole(config, 'text'), t);
     }
     return null;
 }

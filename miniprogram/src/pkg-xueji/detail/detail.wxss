@@ -1,0 +1,21 @@
+.meta { margin-bottom: 12rpx; }
+.meta .ic { margin-right: 8rpx; }
+.meta-text { font-size: 24rpx; }
+.sub-meta { margin-bottom: 16rpx; gap: 12rpx; }
+.stars { display: flex; gap: 4rpx; }
+.question { font-size: 32rpx; line-height: 1.75; margin-top: 8rpx; }
+.image { width: 100%; border-radius: 20rpx; margin-top: 24rpx; background-color: var(--xj-secondary); display: block; }
+.figure { background-color: #FFFFFF; border: 2rpx solid var(--xj-border); }
+.kps { margin-top: 20rpx; }
+.line { padding: 14rpx 0; font-size: 28rpx; }
+.line + .line { border-top: 2rpx solid var(--xj-border); }
+.h-src { margin-left: 16rpx; font-size: 24rpx; }
+.r-ok { color: var(--xj-success); margin-left: 8rpx; }
+.r-bad { color: var(--xj-danger); margin-left: 8rpx; }
+.r-idk { color: var(--xj-warning); margin-left: 8rpx; }
+.kp-row { padding: 14rpx 0; }
+.kp-name { font-size: 26rpx; color: var(--xj-text-2); }
+.bar { height: 10rpx; border-radius: 999rpx; background-color: var(--xj-secondary); margin-top: 10rpx; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999rpx; background-color: var(--xj-primary); }
+.edit { padding: 8rpx 12rpx; border-radius: 12rpx; margin-bottom: 20rpx; }
+.ic-xs { width: 28rpx; height: 28rpx; }

@@ -1,81 +1,67 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { authOptions } from "@/lib/auth";
-import { getServerSession } from "next-auth";
-import { unauthorized, forbidden, notFound, badRequest, internalError } from "@/lib/api-errors";
+import { forbidden, notFound, badRequest, internalError, kidModeRestricted } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
+import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
+import { getErrorItemLearningContext } from "@/lib/error-item-learning-context";
+import { defineApiRoute } from "@/lib/server/api-route";
+import { getKidModeLearnerId } from "@/lib/server/request-context";
+import { studentKeyOf } from "@/lib/learners";
+import { mpSafeBody } from "@/lib/server/mp-review-safe";
 
 const logger = createLogger('api:error-items:id');
 
-export async function GET(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
+export const GET = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (req, { user, params }) => {
+        const { id } = await params;
 
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
+        try {
+            const errorItem = await prisma.errorItem.findUnique({
+                where: {
+                    id: id,
+                },
+                include: {
+                    subject: true,
+                    learner: { select: { id: true, kind: true, gradingStudentId: true } },
+                    tags: true, // 包含标签关联
+                },
             });
+
+            if (!errorItem) {
+                return notFound("Item not found");
+            }
+
+            // Ensure the user owns this item
+            if (errorItem.userId !== user.id) {
+                return forbidden("Not authorized to access this item");
+            }
+            const kidLearnerId = getKidModeLearnerId();
+            if (kidLearnerId && errorItem.learnerId !== kidLearnerId) {
+                return kidModeRestricted();
+            }
+
+            const { learner, ...item } = errorItem;
+            const learning = await getErrorItemLearningContext(user.id, item, learner ? studentKeyOf(learner) : undefined);
+            return NextResponse.json(mpSafeBody(req, { ...item, learning }));
+        } catch (error) {
+            logger.error({ error }, 'Error fetching item');
+            return internalError("Failed to fetch error item");
         }
+    },
+);
 
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
+export const PUT = defineApiRoute<Request, { id: string }>(
+    { auth: 'user' },
+    async (req, { user, params }) => {
+        const { id } = await params;
 
-        const errorItem = await prisma.errorItem.findUnique({
-            where: {
-                id: id,
-            },
-            include: {
-                subject: true,
-                tags: true, // 包含标签关联
-            },
-        });
-
-        if (!errorItem) {
-            return notFound("Item not found");
-        }
-
-        // Ensure the user owns this item
-        if (errorItem.userId !== user.id) {
-            return forbidden("Not authorized to access this item");
-        }
-
-        return NextResponse.json(errorItem);
-    } catch (error) {
-        logger.error({ error }, 'Error fetching item');
-        return internalError("Failed to fetch error item");
-    }
-}
-
-export async function PUT(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params;
-    const session = await getServerSession(authOptions);
-
-    try {
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
-            });
-        }
-
-        if (!user) {
-            return unauthorized("Authentication required");
-        }
-
-        const body = await req.json();
+        try {
+            const body = await req.json();
         const { knowledgePoints, gradeSemester, paperLevel, questionText, answerText, analysis, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, difficultyStars } = body;
         // 难度星级：1~5 的整数，null 表示清除
         if (difficultyStars !== undefined && difficultyStars !== null
@@ -109,13 +95,26 @@ export async function PUT(
         if (analysis !== undefined) updateData.analysis = analysis;
         if (wrongAnswerText !== undefined) updateData.wrongAnswerText = wrongAnswerText || null;
         if (mistakeAnalysis !== undefined) updateData.mistakeAnalysis = mistakeAnalysis || null;
+        let resolvedSubjectName = errorItem.subject?.name ?? null;
         if (subjectId !== undefined) {
-            // 验证目标错题本存在且属于该用户
-            const targetSubject = await prisma.subject.findUnique({ where: { id: subjectId } });
-            if (!targetSubject || targetSubject.userId !== user.id) {
-                return forbidden("Not authorized to move to this notebook");
+            if (subjectId === null || (typeof subjectId === 'string' && subjectId.trim() === '')) {
+                resolvedSubjectName = null;
+                updateData.subject = { disconnect: true };
+            } else if (typeof subjectId !== 'string') {
+                return badRequest("Invalid subjectId");
+            } else {
+                const targetSubjectId = subjectId.trim();
+                // 验证目标错题本存在且属于当前用户
+                const targetSubject = await prisma.subject.findUnique({
+                    where: { id: targetSubjectId },
+                    select: { id: true, userId: true, name: true },
+                });
+                if (!targetSubject || targetSubject.userId !== user.id) {
+                    return forbidden("Not authorized to move to this notebook");
+                }
+                resolvedSubjectName = targetSubject.name;
+                updateData.subject = { connect: { id: targetSubject.id } };
             }
-            updateData.subject = subjectId === "" ? { disconnect: true } : { connect: { id: subjectId } };
         }
         if (mistakeStatus !== undefined || wrongAnswerText !== undefined || mistakeAnalysis !== undefined) {
             const nextWrongAnswerText = wrongAnswerText !== undefined ? wrongAnswerText : errorItem.wrongAnswerText;
@@ -136,20 +135,15 @@ export async function PUT(
                     ? JSON.parse(knowledgePoints)
                     : [];
 
-            // 推断学科
-            const subjectKey = errorItem.subject?.name?.toLowerCase().includes('math') ||
-                errorItem.subject?.name?.includes('数学')
-                ? 'math'
-                : errorItem.subject?.name?.toLowerCase().includes('english') ||
-                    errorItem.subject?.name?.includes('英语')
-                    ? 'english'
-                    : 'other';
+            // 按错题本名称推断全学科标识，支持全部学科而非仅 math/english
+            const subjectKey = inferSubjectFromName(resolvedSubjectName) || 'other';
 
             const tagConnections: { id: string }[] = [];
             for (const tagName of tagNames) {
                 let tag = await prisma.knowledgeTag.findFirst({
                     where: {
                         name: tagName,
+                        subject: subjectKey,
                         OR: [
                             { isSystem: true },
                             { userId: user.id },
@@ -162,7 +156,7 @@ export async function PUT(
                     // Use the incoming gradeSemester (priority) or the existing one on the item
                     const contextGrade = gradeSemester !== undefined ? gradeSemester : errorItem.gradeSemester;
 
-                    const parentId = await findParentTagIdForGrade(contextGrade, subjectKey);
+                    const parentId = await findParentTagIdForGrade(contextGrade, subjectKey, prisma);
 
                     tag = await prisma.knowledgeTag.create({
                         data: {
@@ -195,9 +189,9 @@ export async function PUT(
             include: { tags: true },
         });
 
-        return NextResponse.json(updated);
+        return NextResponse.json(mpSafeBody(req, updated));
     } catch (error) {
         logger.error({ error }, 'Error updating item');
         return internalError("Failed to update error item");
     }
-}
+});

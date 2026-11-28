@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState, Suspense, useCallback } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams } from "next/navigation";
+import { ErrorState } from "@/components/ui/error-state";
+import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
 import { PrintItemPicker } from "@/components/print-preview/print-item-picker";
@@ -14,14 +17,30 @@ import { usePageTitle } from "@/lib/page-title";
 import { PRINT_PREVIEW_PAGE_SIZE } from "@/lib/constants/pagination";
 import { frontendLogger } from "@/lib/frontend-logger";
 import {
+    PRINT_PREVIEW_SHOW_ANALYSIS_KEY,
+    PRINT_PREVIEW_SHOW_ANSWERS_KEY,
+    readStoredFlag,
+    writeStoredFlag,
+} from "@/lib/print-answer-preference";
+import {
     getPrintPreviewCountLabel,
     getPrintPreviewEmptyState,
     getSelectedPrintItems,
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
 
+const PRINT_IMAGE_BATCH_SIZE = 20;
+
 function PrintPreviewContent() {
-    const searchParams = useSearchParams();
+    const query = useSearchParams().toString();
+    return <PrintPreviewResults key={query} query={query} />;
+}
+
+function PrintPreviewResults({ query }: { query: string }) {
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [failed, setFailed] = useState(false);
+    const [attempt, setAttempt] = useState(0);
     const { t } = useLanguage();
     const [items, setItems] = useState<PrintableErrorItem[]>([]);
     usePageTitle(t.printPreview.title);
@@ -31,36 +50,79 @@ function PrintPreviewContent() {
         showAnswers: false,
         showAnalysis: false,
         showTags: false,
+        showOriginalImage: true,
         imageScale: 70,
     });
-    const updateOptions = (patch: Partial<PrintDisplayOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
+    const updateOptions = (patch: Partial<PrintDisplayOptions>) => {
+        // 答案、解析默认不打印；勾选结果记在本机浏览器，下次打印沿用
+        if (patch.showAnswers !== undefined) writeStoredFlag(PRINT_PREVIEW_SHOW_ANSWERS_KEY, patch.showAnswers);
+        if (patch.showAnalysis !== undefined) writeStoredFlag(PRINT_PREVIEW_SHOW_ANALYSIS_KEY, patch.showAnalysis);
+        setOptions((prev) => ({ ...prev, ...patch }));
+    };
+    useEffect(() => {
+        const showAnswers = readStoredFlag(PRINT_PREVIEW_SHOW_ANSWERS_KEY, false);
+        const showAnalysis = readStoredFlag(PRINT_PREVIEW_SHOW_ANALYSIS_KEY, false);
+        if (!showAnswers && !showAnalysis) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 本地存储只能在客户端挂载后读取，避免与服务端渲染结果不一致
+        setOptions((prev) => ({ ...prev, showAnswers, showAnalysis }));
+    }, []);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-    const fetchItems = useCallback(async () => {
-        try {
-            const params = new URLSearchParams(searchParams.toString());
-            // 打印预览需要所有符合条件的数据，设置较大的 pageSize
-            params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
-            params.set("view", "print");
-            const response = await apiClient.get<PaginatedResponse<PrintableErrorItem>>(`/api/error-items/list?${params.toString()}`);
-            setItems(response.items);
-            setSelectedIds(new Set(response.items.map((item) => item.id)));
-        } catch (error) {
-            frontendLogger.error('[PrintPreview]', 'Failed to fetch items', { error });
-        } finally {
-            setLoading(false);
-        }
-    }, [searchParams]);
+    const [visibleImageLimit, setVisibleImageLimit] = useState(PRINT_IMAGE_BATCH_SIZE);
+    const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据请求：进入页面或条件变化时加载，请求前后更新加载状态和结果
-        fetchItems();
-    }, [fetchItems]);
-    const handlePrint = () => {
-        window.print();
-    };
+        let active = true;
+        const params = new URLSearchParams(query);
+        params.set("page", String(page));
+        params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+        params.set("view", "print");
+        apiClient.get<PaginatedResponse<PrintableErrorItem>>(`/api/error-items/list?${params}`)
+            .then(response => {
+                if (!active) return;
+                const lastPage = Math.max(1, response.totalPages);
+                if (page > lastPage) {
+                    setPage(lastPage);
+                    return;
+                }
+                setItems(response.items);
+                setSelectedIds(new Set(response.items.map(item => item.id)));
+                setTotal(response.total);
+                setLoading(false);
+            })
+            .catch(error => {
+                if (!active) return;
+                frontendLogger.error('[PrintPreview]', 'Failed to fetch items', { error });
+                setFailed(true);
+                setLoading(false);
+            });
+        return () => { active = false; };
+    }, [query, page, attempt]);
+
+    useEffect(() => {
+        const expandAll = () => flushSync(() => setVisibleImageLimit(Number.POSITIVE_INFINITY));
+        window.addEventListener("beforeprint", expandAll);
+        return () => window.removeEventListener("beforeprint", expandAll);
+    }, []);
 
     const selectedItems = getSelectedPrintItems(items, selectedIds);
+
+    useEffect(() => {
+        if (visibleImageLimit >= selectedItems.length) return;
+        const anchor = loadMoreAnchorRef.current;
+        if (!anchor || typeof IntersectionObserver === "undefined") return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                setVisibleImageLimit((limit) => Math.min(selectedItems.length, limit + PRINT_IMAGE_BATCH_SIZE));
+            }
+        }, { rootMargin: "400px" });
+        observer.observe(anchor);
+        return () => observer.disconnect();
+    }, [visibleImageLimit, selectedItems.length]);
+
+    const handlePrint = () => {
+        flushSync(() => setVisibleImageLimit(Number.POSITIVE_INFINITY));
+        window.print();
+    };
     const reserveAnswerSpace = shouldReserveAnswerSpace(options.showAnswers, options.showAnalysis);
     const countLabel = getPrintPreviewCountLabel(items.length, selectedItems.length);
     const emptyState = getPrintPreviewEmptyState(items.length, selectedItems.length);
@@ -84,6 +146,14 @@ function PrintPreviewContent() {
     const clearSelectedItems = () => {
         setSelectedIds(new Set());
     };
+
+    if (failed) {
+        return <ErrorState onRetry={() => {
+            setLoading(true);
+            setFailed(false);
+            setAttempt(value => value + 1);
+        }} />;
+    }
 
     if (loading) {
         return (
@@ -110,6 +180,25 @@ function PrintPreviewContent() {
                     </div>
 
                     <PrintOptions options={options} onChange={updateOptions} />
+                    {total > PRINT_PREVIEW_PAGE_SIZE && (
+                        <div className="space-y-1">
+                            <p className="text-sm text-muted-foreground">{t.printPreview.batchHint}</p>
+                            <Pagination
+                                page={page}
+                                totalPages={Math.ceil(total / PRINT_PREVIEW_PAGE_SIZE)}
+                                total={total}
+                                pageSize={PRINT_PREVIEW_PAGE_SIZE}
+                                onPageChange={nextPage => {
+                                    if (nextPage === page) return;
+                                    setLoading(true);
+                                    setItems([]);
+                                    setSelectedIds(new Set());
+                                    setVisibleImageLimit(PRINT_IMAGE_BATCH_SIZE);
+                                    setPage(nextPage);
+                                }}
+                            />
+                        </div>
+                    )}
                     <PrintItemPicker
                         items={items}
                         selectedIds={selectedIds}
@@ -122,10 +211,20 @@ function PrintPreviewContent() {
             </div>
 
             {/* Print Content */}
-            <div className="max-w-4xl mx-auto p-8 print:p-0">
+            <main id="main-content" tabIndex={-1} className="max-w-4xl mx-auto p-8 print:p-0">
                 {selectedItems.map((item, index) => (
-                    <PrintableQuestion key={item.id} item={item} index={index} options={options} reserveAnswerSpace={reserveAnswerSpace} />
+                    <PrintableQuestion
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        options={options}
+                        reserveAnswerSpace={reserveAnswerSpace}
+                        deferImage={index >= visibleImageLimit}
+                    />
                 ))}
+                {visibleImageLimit < selectedItems.length && (
+                    <div ref={loadMoreAnchorRef} className="h-4 print:hidden" aria-hidden="true" />
+                )}
 
                 {emptyState && (
                     <div className="text-center py-12 text-muted-foreground">
@@ -134,7 +233,7 @@ function PrintPreviewContent() {
                             : (t.printPreview?.noItems || 'No matching error items')}
                     </div>
                 )}
-            </div>
+            </main>
         </>
     );
 }

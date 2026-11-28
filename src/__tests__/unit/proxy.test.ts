@@ -15,6 +15,17 @@ vi.mock('@/lib/logger', () => ({
     })),
 }));
 
+const prismaMocks = vi.hoisted(() => ({
+    findUnique: vi.fn(
+        async (): Promise<{ personasConfirmedAt: Date | null; isActive?: boolean; authVersion?: number } | null> => ({
+            personasConfirmedAt: null,
+        }),
+    ),
+}));
+vi.mock('@/lib/prisma', () => ({
+    prisma: { user: { findUnique: prismaMocks.findUnique } },
+}));
+
 import { proxy } from '@/proxy';
 import { getToken } from 'next-auth/jwt';
 import type { JWT } from 'next-auth/jwt';
@@ -22,10 +33,29 @@ import type { JWT } from 'next-auth/jwt';
 describe('proxy', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        prismaMocks.findUnique.mockResolvedValue({ personasConfirmedAt: null });
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    describe('站点根目录校验文件', () => {
+        it('/<name>.txt 未登录也改写到 site-verify 接口，不跳登录', async () => {
+            vi.mocked(getToken).mockResolvedValue(null);
+            const response = await proxy(new NextRequest('http://localhost:3000/a1B2c3_d-4.txt'));
+            expect(response?.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/api/site-verify/a1B2c3_d-4');
+            expect(getToken).not.toHaveBeenCalled();
+        });
+
+        it('多级路径或其他扩展名照常走登录保护', async () => {
+            vi.mocked(getToken).mockResolvedValue(null);
+            for (const url of ['http://localhost:3000/x/a.txt', 'http://localhost:3000/a.txt.bak', 'http://localhost:3000/a..txt']) {
+                const response = await proxy(new NextRequest(url));
+                expect(response?.headers.get('x-middleware-rewrite')).toBeNull();
+                expect(response?.headers.get('location')).toContain('/login');
+            }
+        });
     });
 
     describe('未认证用户', () => {
@@ -78,6 +108,7 @@ describe('proxy', () => {
             sub: 'user-123',
             email: 'test@example.com',
             name: 'Test User',
+            needsPersonaConfirmation: false,
         };
 
         it('应该允许已认证用户访问受保护页面', async () => {
@@ -144,7 +175,7 @@ describe('proxy', () => {
         });
 
         it('已改密码的管理员正常访问页面', async () => {
-            vi.mocked(getToken).mockResolvedValue({ ...flaggedToken, mustChangePassword: false } as unknown as JWT);
+            vi.mocked(getToken).mockResolvedValue({ ...flaggedToken, mustChangePassword: false, needsPersonaConfirmation: false } as unknown as JWT);
 
             const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
 
@@ -231,6 +262,162 @@ describe('proxy', () => {
 
             expect(response).not.toBeNull();
             expect(response?.headers.get('location')).toContain('callbackUrl');
+        });
+    });
+
+    describe('身份确认与按身份落地', () => {
+        it('旧会话缺少身份字段时也应进入确认页', async () => {
+            vi.mocked(getToken).mockResolvedValue({ id: 'user-1' } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/onboarding/persona');
+        });
+
+        it('数据库已确认但 JWT 尚未刷新时不再挡在确认页', async () => {
+            prismaMocks.findUnique.mockResolvedValue({ personasConfirmedAt: new Date('2026-11-17T05:00:00Z') });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: true,
+                activePersona: 'teacher',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/teacher'));
+
+            expect(response).toBeUndefined();
+        });
+
+        it('未确认身份的已登录用户应跳到确认页，且不自动写入选择', async () => {
+            vi.mocked(getToken).mockResolvedValue({ id: 'user-1', needsPersonaConfirmation: true } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/onboarding/persona');
+        });
+
+        it('改默认密码优先于身份确认', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'admin-1',
+                role: 'admin',
+                mustChangePassword: true,
+                needsPersonaConfirmation: true,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/setup');
+        });
+
+        it('已确认的老师从 / 进入老师首页', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'teacher',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/teacher');
+        });
+
+        it('已确认的家长从 / 进入家长首页', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'parent',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response?.headers.get('location')).toBe('http://localhost:3000/parent');
+        });
+
+        it('自学身份继续留在 /', async () => {
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                needsPersonaConfirmation: false,
+                activePersona: 'self',
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/'));
+
+            expect(response).toBeUndefined();
+        });
+    });
+
+    describe('会话实时撤销与账户禁用 (OPT-02)', () => {
+        it('authVersion 失配时访问受保护页面跳 /login 并清除 session cookie', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: true,
+                authVersion: 2,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 1,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login?callbackUrl=%2Fnotebooks');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('账户被禁用时访问受保护页面跳 /login 并清除 session cookie', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: false,
+                authVersion: 0,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/admin'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('数据库用户已删除（findUnique 返回 null）时撤销访问受保护页', async () => {
+            prismaMocks.findUnique.mockResolvedValue(null);
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'deleted-user',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/notebooks'));
+
+            expect(response?.status).toBe(307);
+            expect(response?.headers.get('location')).toContain('/login');
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
+        });
+
+        it('已撤销或禁用的会话访问 /login 时清除 cookie 并放行渲染，避免死循环', async () => {
+            prismaMocks.findUnique.mockResolvedValue({
+                personasConfirmedAt: new Date(),
+                isActive: false,
+                authVersion: 1,
+            });
+            vi.mocked(getToken).mockResolvedValue({
+                id: 'user-1',
+                authVersion: 0,
+                needsPersonaConfirmation: false,
+            } as unknown as JWT);
+
+            const response = await proxy(new NextRequest('http://localhost:3000/login'));
+
+            expect(response?.status).toBe(200);
+            expect(response?.headers.get('location')).toBeNull();
+            expect(response?.headers.get('set-cookie')).toContain('next-auth.session-token=');
         });
     });
 });

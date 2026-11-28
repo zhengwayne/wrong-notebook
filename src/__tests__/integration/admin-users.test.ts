@@ -9,10 +9,13 @@ const mocks = vi.hoisted(() => ({
     mockPrismaUser: {
         findMany: vi.fn(),
         findUnique: vi.fn(),
+        count: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
     },
     mockAiUsage: { groupBy: vi.fn() },
+    mockLearnerBackfillAudit: { deleteMany: vi.fn() },
+    mockKnowledgeTag: { updateMany: vi.fn(), deleteMany: vi.fn() },
     mockSession: {
         user: {
             id: 'admin-id',
@@ -28,6 +31,15 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         user: mocks.mockPrismaUser,
         aiUsage: mocks.mockAiUsage,
+        learnerBackfillAudit: mocks.mockLearnerBackfillAudit,
+        knowledgeTag: mocks.mockKnowledgeTag,
+        $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+            fn({
+                user: mocks.mockPrismaUser,
+                learnerBackfillAudit: mocks.mockLearnerBackfillAudit,
+                knowledgeTag: mocks.mockKnowledgeTag,
+            }),
+        ),
     },
 }));
 
@@ -44,12 +56,36 @@ vi.mock('@/lib/auth', () => ({
 import { GET } from '@/app/api/admin/users/route';
 import { PATCH, DELETE } from '@/app/api/admin/users/[id]/route';
 import { getServerSession } from 'next-auth';
+import { USER_SAFE_SELECT } from '@/lib/user-select';
+
+type MockUserRecord = {
+    id: string;
+    email: string;
+    role?: string;
+    isActive?: boolean;
+    authVersion?: number;
+};
+
+function setupUserLookup(targets: Record<string, MockUserRecord> = {}) {
+    const actors: Record<string, MockUserRecord> = {
+        'admin-id': { id: 'admin-id', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 },
+        'another-admin-id': { id: 'another-admin-id', email: 'admin2@example.com', role: 'admin', isActive: true, authVersion: 0 },
+        'user-id': { id: 'user-id', email: 'user@example.com', role: 'user', isActive: true, authVersion: 0 },
+    };
+    const directory: Record<string, MockUserRecord> = { ...actors, ...targets };
+    mocks.mockPrismaUser.findUnique.mockImplementation(async ({ where }: { where?: { id?: string } }) => {
+        if (!where?.id) return null;
+        return directory[where.id] ?? null;
+    });
+}
 
 describe('/api/admin/users', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // Reset session to admin by default
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
+        mocks.mockPrismaUser.count.mockResolvedValue(1);
+        setupUserLookup();
     });
 
     describe('GET /api/admin/users', () => {
@@ -115,7 +151,7 @@ describe('/api/admin/users', () => {
                 email: 'user@example.com',
                 isActive: false,
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(targetUser);
+            setupUserLookup({ 'target-user-id': targetUser });
             mocks.mockPrismaUser.update.mockResolvedValue({ ...targetUser, isActive: false });
 
             const request = new Request('http://localhost/api/admin/users/target-user-id', {
@@ -137,7 +173,7 @@ describe('/api/admin/users', () => {
                 email: 'user@example.com',
                 isActive: true,
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(targetUser);
+            setupUserLookup({ 'target-user-id': targetUser });
             mocks.mockPrismaUser.update.mockResolvedValue({ ...targetUser, isActive: true });
 
             const request = new Request('http://localhost/api/admin/users/target-user-id', {
@@ -172,7 +208,7 @@ describe('/api/admin/users', () => {
                 id: 'super-admin-id',
                 email: 'admin@localhost',
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(superAdmin);
+            setupUserLookup({ 'super-admin-id': superAdmin });
 
             // 使用另一个管理员身份尝试禁用超级管理员
             vi.mocked(getServerSession).mockResolvedValue({
@@ -209,6 +245,27 @@ describe('/api/admin/users', () => {
 
             expect(response.status).toBe(403);
         });
+
+        it('应该校验 isActive 必须为布尔值并在返回中排除敏感字段', async () => {
+            const invalidReq = new Request('http://localhost/api/admin/users/target-user-id', {
+                method: 'PATCH',
+                body: JSON.stringify({ isActive: 'false' }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const invalidRes = await PATCH(invalidReq, { params: Promise.resolve({ id: 'target-user-id' }) });
+            expect(invalidRes.status).toBe(400);
+            expect(mocks.mockPrismaUser.update).not.toHaveBeenCalled();
+
+            setupUserLookup({ 'target-user-id': { id: 'target-user-id', email: 'u@example.com', role: 'user' } });
+            mocks.mockPrismaUser.update.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com', isActive: false });
+            await PATCH(new Request('http://localhost/api/admin/users/target-user-id', {
+                method: 'PATCH',
+                body: JSON.stringify({ isActive: false }),
+                headers: { 'Content-Type': 'application/json' },
+            }), { params: Promise.resolve({ id: 'target-user-id' }) });
+            expect(mocks.mockPrismaUser.update.mock.calls[0][0].select).toEqual(USER_SAFE_SELECT);
+            expect('password' in USER_SAFE_SELECT).toBe(false);
+        });
     });
 
     describe('DELETE /api/admin/users/[id]', () => {
@@ -218,7 +275,7 @@ describe('/api/admin/users', () => {
                 email: 'user@example.com',
                 role: 'user',
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(targetUser);
+            setupUserLookup({ 'target-user-id': targetUser });
             mocks.mockPrismaUser.delete.mockResolvedValue(targetUser);
 
             const request = new Request('http://localhost/api/admin/users/target-user-id', {
@@ -250,7 +307,7 @@ describe('/api/admin/users', () => {
                 email: 'admin@localhost',
                 role: 'admin',
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(superAdmin);
+            setupUserLookup({ 'super-admin-id': superAdmin });
 
             // 使用另一个管理员身份
             vi.mocked(getServerSession).mockResolvedValue({
@@ -275,7 +332,7 @@ describe('/api/admin/users', () => {
                 email: 'admin2@example.com',
                 role: 'admin',
             };
-            mocks.mockPrismaUser.findUnique.mockResolvedValue(otherAdmin);
+            setupUserLookup({ 'other-admin-id': otherAdmin });
             mocks.mockPrismaUser.delete.mockResolvedValue(otherAdmin);
 
             const request = new Request('http://localhost/api/admin/users/other-admin-id', {
@@ -300,6 +357,17 @@ describe('/api/admin/users', () => {
             const response = await DELETE(request, { params: Promise.resolve({ id: 'target-id' }) });
 
             expect(response.status).toBe(403);
+        });
+
+        it('删除用户时应只查询并返回安全字段清单', async () => {
+            setupUserLookup({ 'target-user-id': { id: 'target-user-id', email: 'u@example.com', role: 'user' } });
+            mocks.mockPrismaUser.delete.mockResolvedValue({ id: 'target-user-id', email: 'u@example.com' });
+
+            const res = await DELETE(new Request('http://localhost/api/admin/users/target-user-id', { method: 'DELETE' }), {
+                params: Promise.resolve({ id: 'target-user-id' }),
+            });
+            expect(res.status).toBe(200);
+            expect(mocks.mockPrismaUser.delete.mock.calls[0][0].select).toEqual(USER_SAFE_SELECT);
         });
     });
 });

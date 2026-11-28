@@ -3,6 +3,7 @@
  */
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { AI_OUTPUT_TRUNCATED, TRUNCATION_RETRY_MAX_TOKENS, UNKNOWN_MODEL_RETRY_MAX_TOKENS, getModelMaxOutputTokens, isTruncatedWithoutContent, resetLearnedOutputLimits, withTruncationRetry } from '@/lib/ai/truncation';
+import { getInitialMaxTokens, isReasoningModel, REASONING_INITIAL_MAX_TOKENS, DEFAULT_OUTPUT_MAX_TOKENS } from '@/lib/ai/model-output-limits';
 
 const truncated = { choices: [{ finish_reason: 'length', message: { content: '' } }] };
 const answered = { choices: [{ finish_reason: 'stop', message: { content: '答案' } }] };
@@ -96,5 +97,23 @@ describe('withTruncationRetry', () => {
     it('有部分正文的截断不视为空结果', () => {
         expect(isTruncatedWithoutContent({ choices: [{ finish_reason: 'length', message: { content: '部分内容' } }] })).toBe(false);
         expect(isTruncatedWithoutContent(truncated)).toBe(true);
+    });
+});
+
+
+describe('getInitialMaxTokens', () => {
+    it('识别常见推理模型', () => {
+        expect(isReasoningModel('gemini-4-hydrogen-medium\t')).toBe(true);
+        expect(isReasoningModel('gpt-4o')).toBe(false);
+        expect(isReasoningModel('deepseek-r1')).toBe(true);
+    });
+
+    it('推理模型首次请求使用更高上限，且不超过已知最大值，截断重试仍可升到模型上限', () => {
+        expect(getInitialMaxTokens('gemini-4-hydrogen-medium\t')).toBe(REASONING_INITIAL_MAX_TOKENS);
+        expect(getInitialMaxTokens('gemini-4-hydrogen-medium')).toBe(32768);
+        expect(getModelMaxOutputTokens('gemini-4-hydrogen-medium')).toBe(65536);
+        expect(getInitialMaxTokens('gpt-4o')).toBe(DEFAULT_OUTPUT_MAX_TOKENS);
+        // Claude 3.5 不是推理模型，保持 8192；且已知上限也是 8192
+        expect(getInitialMaxTokens('claude-3-5-sonnet')).toBe(8192);
     });
 });

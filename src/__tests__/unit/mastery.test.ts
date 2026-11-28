@@ -103,7 +103,33 @@ describe('evaluateErrorItemMastery', () => {
         vi.clearAllMocks();
     });
 
-    it('AI 评估成功时保存 AI 概率并按阈值自动标记', async () => {
+    it('默认不隐式调用 AI，直接使用规则公式保存掌握概率和级别', async () => {
+        mocks.findUnique.mockResolvedValue({
+            id: 'item-1',
+            questionText: '题目',
+            mistakeStatus: 'wrong_attempt',
+            user: { masteryThreshold: 50 },
+            tags: [{ name: '方程' }],
+            practiceRecords: [record('correct', 'hard', 1), record('correct', 'hard', 2)],
+        });
+
+        await evaluateErrorItemMastery('item-1');
+
+        expect(mocks.evaluateMastery).not.toHaveBeenCalled();
+        expect(mocks.update).toHaveBeenCalledWith({
+            where: { id: 'item-1' },
+            data: expect.objectContaining({
+                masterySource: 'rule',
+                masteryLevel: 2,
+                masteryProbability: computeRuleMastery([
+                    { result: 'correct', difficulty: 'hard' },
+                    { result: 'correct', difficulty: 'hard' },
+                ]),
+            }),
+        });
+    });
+
+    it('显式传 useAi: true 且 AI 评估成功时保存 AI 概率并按阈值自动标记', async () => {
         mocks.findUnique.mockResolvedValue({
             id: 'item-1',
             questionText: '题目',
@@ -114,7 +140,7 @@ describe('evaluateErrorItemMastery', () => {
         });
         mocks.evaluateMastery.mockResolvedValue({ probability: 0.86, reason: '连续做对困难题' });
 
-        await evaluateErrorItemMastery('item-1');
+        await evaluateErrorItemMastery('item-1', { useAi: true });
 
         const input = mocks.evaluateMastery.mock.calls[0][0];
         expect(input.knowledgePoints).toEqual(['方程']);
@@ -125,7 +151,7 @@ describe('evaluateErrorItemMastery', () => {
         });
     });
 
-    it('按错题所属用户的阈值标记 masteryLevel', async () => {
+    it('显式 useAi: true 时按错题所属用户的阈值标记 masteryLevel', async () => {
         mocks.findUnique.mockResolvedValue({
             id: 'item-1',
             questionText: '题目',
@@ -136,12 +162,12 @@ describe('evaluateErrorItemMastery', () => {
         });
         mocks.evaluateMastery.mockResolvedValue({ probability: 0.86, reason: '做对一次' });
 
-        await evaluateErrorItemMastery('item-1');
+        await evaluateErrorItemMastery('item-1', { useAi: true });
 
         expect(mocks.update.mock.calls[0][0].data.masteryLevel).toBe(1);
     });
 
-    it('AI 失败时使用规则公式兜底', async () => {
+    it('显式 useAi: true 且 AI 失败时使用规则公式兜底', async () => {
         mocks.findUnique.mockResolvedValue({
             id: 'item-1',
             questionText: '题目',
@@ -152,7 +178,7 @@ describe('evaluateErrorItemMastery', () => {
         });
         mocks.evaluateMastery.mockRejectedValue(new Error('AI_CONNECTION_FAILED'));
 
-        await evaluateErrorItemMastery('item-1');
+        await evaluateErrorItemMastery('item-1', { useAi: true });
 
         const data = mocks.update.mock.calls[0][0].data;
         expect(data.masterySource).toBe('rule');

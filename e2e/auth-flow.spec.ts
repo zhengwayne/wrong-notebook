@@ -52,7 +52,7 @@ test.describe('Authentication Flow', () => {
                 console.log('Registration error visible, going to login.');
                 await page.goto('/login');
             }
-        } catch (e) {
+        } catch {
             if (page.url().includes('/login')) {
                 console.log('Redirected to login page automatically.');
             } else {

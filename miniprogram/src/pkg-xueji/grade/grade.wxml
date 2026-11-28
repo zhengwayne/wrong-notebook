@@ -1,0 +1,85 @@
+<view class="container safe-bottom">
+  <!-- 选学科后开始 -->
+  <view wx:if="{{step === 'pick'}}" class="card pick">
+    <view class="pick-title">这份是哪一科？</view>
+    <view class="muted pick-hint">{{pageCount}} 页 · {{learnerName}} · 选「自动」会按题目内容归到对应错题本</view>
+    <view class="pick-chips">
+      <view wx:for="{{subjectChoices}}" wx:key="value" id="subject-{{item.value || 'auto'}}"
+        class="chip {{subjectKey === item.value ? 'chip-active' : ''}}" hover-class="press"
+        data-value="{{item.value}}" bindtap="onPickSubject" aria-role="button" aria-label="{{item.label}}">{{item.label}}</view>
+    </view>
+    <button id="btn-grade-start" class="btn" bindtap="onStart"><image class="ic" src="/assets/icons/check-w.svg" />开始批改</button>
+  </view>
+
+  <!-- 上传 / 识别中 -->
+  <view wx:elif="{{step === 'upload' || step === 'recognizing'}}" class="card wait">
+    <view class="spinner wait-spin"></view>
+    <view class="wait-text">{{progressText}}</view>
+    <view class="muted">{{pageCount}} 页 · {{learnerName}}<text wx:if="{{step === 'recognizing'}}"> · {{elapsed}} 秒</text></view>
+    <view class="muted wait-hint">整页拆题、逐题判对错，一般 1～4 分钟；离开也会继续，回到录题页可接着看</view>
+  </view>
+
+  <!-- 失败 -->
+  <view wx:elif="{{step === 'failed'}}" class="empty">
+    <image class="ic-xl" src="/assets/icons/triangle-alert-l.svg" />
+    <view class="danger fail-text">{{error}}</view>
+    <button wx:if="{{retry}}" class="btn btn-small" bindtap="onRetry"><image class="ic ic-sm" src="/assets/icons/refresh-cw-w.svg" />重试</button>
+  </view>
+
+  <block wx:else>
+    <!-- 三态汇总：也是图例 -->
+    <view class="sum">
+      <view wx:for="{{verdicts}}" wx:key="value" class="sum-cell {{item.cls}}">
+        <image class="ic" src="{{item.icon}}" />
+        <text class="sum-n">{{counts[item.value]}}</text>
+        <text class="sum-label">{{item.label}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{step === 'done'}}" class="card done">
+      <view class="row done-head"><image class="ic" src="/assets/icons/circle-check-s.svg" /><text>已确认</text></view>
+      <view wx:if="{{importedCount}}" class="muted">{{importedCount}} 题进了错题本：{{notebookText}}</view>
+      <view wx:else class="muted">这份全对，没有题进错题本</view>
+      <view class="muted">判对的题留在试卷记录里，网页端「家长 · 试卷」可看</view>
+      <view class="btn-row done-btns">
+        <button class="btn btn-outline btn-small" bindtap="onAgain"><image class="ic ic-sm" src="/assets/icons/camera-p.svg" />再拍一份</button>
+        <button class="btn btn-small" bindtap="onOpenNotebook"><image class="ic ic-sm" src="/assets/icons/book-open-w.svg" />去错题本</button>
+      </view>
+    </view>
+    <view wx:else class="muted hint">已初步标好对错，点下面的图标改判 · 标「待核对」的请重点看</view>
+
+    <view wx:if="{{rows.length === 0}}" class="empty">
+      <image class="ic-xl" src="/assets/icons/inbox-l.svg" />
+      <view>这几页没认出题目</view>
+    </view>
+
+    <view wx:for="{{rows}}" wx:key="id" wx:for-index="qi" class="card q {{item.verdict}}">
+      <view class="row-between q-head">
+        <view class="row">
+          <text class="q-no">{{item.number}}</text>
+          <view wx:if="{{pageCount > 1}}" class="page-tag" data-page="{{item.pageNo}}" catchtap="onPreviewPage"><image class="ic-xs" src="/assets/icons/image-m.svg" />{{item.pageNo}}</view>
+          <view wx:if="{{item.low}}" class="low-tag"><image class="ic-xs" src="/assets/icons/circle-help-o.svg" />待核对</view>
+          <view wx:if="{{item.imported}}" class="in-tag"><image class="ic-xs" src="/assets/icons/book-open-p.svg" />已入</view>
+        </view>
+        <view class="seg {{busyId === item.id ? 'seg-busy' : ''}}">
+          <view wx:for="{{verdicts}}" wx:for-item="v" wx:key="value"
+            class="seg-btn {{item.verdict === v.value ? 'seg-on ' + v.cls : ''}} {{step === 'done' ? 'seg-off' : ''}}"
+            hover-class="{{step === 'done' ? '' : 'press'}}"
+            data-index="{{qi}}" data-value="{{v.value}}" bindtap="onVerdict"
+            aria-role="button" aria-label="{{v.label}}">
+            <image class="ic" src="{{item.verdict === v.value ? v.iconOn : v.icon}}" />
+          </view>
+        </view>
+      </view>
+      <view class="q-text {{item.open ? '' : 'clamp'}}" data-index="{{qi}}" bindtap="onToggleOpen">{{item.question}}</view>
+      <view class="ans row"><image class="ic ic-sm" src="/assets/icons/pencil-m.svg" /><text class="flex-1 {{item.open ? '' : 'one-line'}}">{{item.studentAnswer}}</text></view>
+      <view class="detail-link" hover-class="press" data-index="{{qi}}" catchtap="onOpenDetail" id="btn-detail-{{qi}}"><text>查看详情</text><image class="ic ic-xs" src="/assets/icons/chevron-right-p.svg" /></view>
+    </view>
+
+    <view wx:if="{{step === 'review'}}" class="save-bar">
+      <button class="btn flex-1" disabled="{{confirming || busyId}}" bindtap="onConfirm">
+        <image class="ic" src="/assets/icons/check-w.svg" />{{confirming ? '保存中' : (importCount ? '确认 · ' + importCount + ' 题进错题本' : '全对，确认')}}
+      </button>
+    </view>
+  </block>
+</view>

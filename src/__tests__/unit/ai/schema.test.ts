@@ -203,3 +203,32 @@ describe('parseDifficultyStars', () => {
         expect(ParsedQuestionSchema.safeParse({ ...base, difficultyStars: 6 }).success).toBe(false);
     });
 });
+
+describe('extractJsonObject LaTeX 转义与容错解析', () => {
+    it('无损解析含单反斜杠 LaTeX 命令的 JSON（不产生控制字符也不报错）', () => {
+        const raw = String.raw`{"answer": "$\frac{1}{2} \times 2 \neq 0$", "unit": "3 \text{cm}", "env": "\begin{aligned}\binom{4}{2} = \sqrt{36}\end{aligned}", "bracket": "\left( \frac{a}{b} \right)"}`;
+        const parsed = extractJsonObject(raw) as Record<string, string>;
+        expect(parsed.answer).toBe(String.raw`$\frac{1}{2} \times 2 \neq 0$`);
+        expect(parsed.unit).toBe(String.raw`3 \text{cm}`);
+        expect(parsed.env).toBe(String.raw`\begin{aligned}\binom{4}{2} = \sqrt{36}\end{aligned}`);
+        expect(parsed.bracket).toBe(String.raw`\left( \frac{a}{b} \right)`);
+    });
+
+    it('已正确双写的 \\frac 不被二次破坏，真实换行 \n 与制表符 \t 不被误改', () => {
+        const raw = '{"latex": "$\\\\frac{1}{2}$", "zh": "解：\\n第一步", "en": "Step 1\\nnext", "tsv": "a\\tto b", "unicode": "\\u4e2d\\u6587", "underline": "\\underline{x}"}';
+        const parsed = extractJsonObject(raw) as Record<string, string>;
+        expect(parsed.latex).toBe(String.raw`$\frac{1}{2}$`);
+        expect(parsed.zh).toBe('解：\n第一步');
+        expect(parsed.en).toBe('Step 1\nnext');
+        expect(parsed.tsv).toBe('a\tto b');
+        expect(parsed.unicode).toBe('中文');
+        expect(parsed.underline).toBe(String.raw`\underline{x}`);
+    });
+
+    it('首次解析失败时走第二遍：清理尾逗号并转义字符串内裸换行', () => {
+        const raw = '{\n"questionText": "第一行\n第二行",\n"answerText": "$\\frac{3}{4}$",\n}';
+        const parsed = extractJsonObject(raw) as Record<string, string>;
+        expect(parsed.questionText).toBe('第一行\n第二行');
+        expect(parsed.answerText).toBe(String.raw`$\frac{3}{4}$`);
+    });
+});

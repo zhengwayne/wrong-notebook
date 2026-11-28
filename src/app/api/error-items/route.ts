@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
 import { prepareImportGrade } from "@/lib/import-question-grade";
 import { needsQuestionGradeRecognition } from "@/lib/question-grade";
-import { unauthorized, internalError, validationError } from "@/lib/api-errors";
+import { badRequest, forbidden, notFound, internalError, validationError } from "@/lib/api-errors";
+import { defineApiRoute } from "@/lib/server/api-route";
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
@@ -16,6 +15,11 @@ import { scheduleMasteryEvaluation } from "@/lib/mastery";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
+import { deriveErrorType } from "@/lib/error-type";
+import { scheduleLearningPathReplan } from "@/lib/learning-path/service";
+import { LearnerNotFoundError } from "@/lib/learners";
+import { resolveLearningScope } from "@/lib/learning-scope";
+import { ImageValidationError, normalizeOptionalImageDataUrl } from "@/lib/server/image-normalize";
 
 const logger = createLogger('api:error-items');
 
@@ -32,6 +36,7 @@ const importSchema = z.object({
     ),
     originalImageUrl: z.string().max(20 * 1024 * 1024).default(''),
     subjectId: z.string().nullish(),
+    learnerId: z.string().min(1).max(64).nullish(),
     subjectName: z.string().max(100).nullish(),
     gradeSemester: z.string().max(100).nullish(),
     recognizedGradeSemester: z.string().max(100).nullish(),
@@ -40,17 +45,30 @@ const importSchema = z.object({
     hasFigure: z.boolean().optional(),
     figureSvg: z.string().max(MAX_FIGURE_SVG_LENGTH).nullish(),
     geogebraCommands: z.string().nullish(),
+    provenanceId: z.string().min(1).max(64).nullish(),
 });
 
-export async function POST(req: Request) {
+export const POST = defineApiRoute({ auth: 'user' }, async (req, { user }) => {
     logger.info('POST /api/error-items called');
-
-    const session = await getServerSession(authOptions);
 
     try {
         const parsed = importSchema.safeParse(await req.json());
         if (!parsed.success) return validationError('Invalid question import', parsed.error.issues);
         const body = parsed.data;
+
+        let normalizedImageUrl: string;
+        try {
+            normalizedImageUrl = await normalizeOptionalImageDataUrl(body.originalImageUrl);
+        } catch (error) {
+            if (error instanceof ImageValidationError) {
+                logger.warn({ code: error.code }, 'Rejected invalid error item image');
+                return badRequest('INVALID_IMAGE');
+            }
+            throw error;
+        }
+        const originalImageUrl = normalizedImageUrl;
+        const normalizedBody = { ...body, originalImageUrl };
+
         const {
             questionText,
             answerText,
@@ -59,17 +77,22 @@ export async function POST(req: Request) {
             mistakeAnalysis,
             mistakeStatus,
             knowledgePoints,
-            originalImageUrl,
             subjectId: requestedSubjectId,
             subjectName,
+            learnerId: requestedLearnerId,
             gradeSemester,
             paperLevel,
             difficultyStars,
             geogebraCommands,
-        } = body;
+        } = normalizedBody;
         // 配图 SVG 入库前再净化一次，无效时丢弃
         const figureSvg = sanitizeFigureSvg(body.figureSvg);
         const hasFigure = !!body.hasFigure || figureSvg !== null;
+        let verifiedProvenanceId: string | undefined;
+        if (body.provenanceId && typeof (prisma as { aiProvenance?: { findUnique?: unknown } }).aiProvenance?.findUnique === 'function') {
+            const exists = await prisma.aiProvenance.findUnique({ where: { id: body.provenanceId }, select: { id: true } });
+            if (exists) verifiedProvenanceId = exists.id;
+        }
 
         // 记录请求参数（不记录完整图片数据）
         logger.debug({
@@ -90,35 +113,44 @@ export async function POST(req: Request) {
             hasGeogebraCommands: !!geogebraCommands,
         }, 'Request parameters received');
 
-        // 查找用户
-        let user;
-        if (session?.user?.email) {
-            user = await prisma.user.findUnique({
-                where: { email: session.user.email },
+        let scope;
+        try {
+            scope = await resolveLearningScope(prisma, user.id, requestedLearnerId);
+        } catch (error) {
+            if (error instanceof LearnerNotFoundError) return notFound("Learner not found");
+            throw error;
+        }
+        const learnerId = scope.learnerId ?? undefined;
+
+        const trimmedSubjectId = typeof requestedSubjectId === 'string' ? requestedSubjectId.trim() : '';
+        let verifiedNotebook: { id: string; name: string } | null = null;
+        if (trimmedSubjectId) {
+            const notebook = await prisma.subject.findUnique({
+                where: { id: trimmedSubjectId },
+                select: { id: true, userId: true, name: true },
             });
-            logger.debug({ userId: user?.id, email: session.user.email }, 'User lookup result');
-        } else {
-            logger.warn('No session email found');
+            if (!notebook || notebook.userId !== user.id) {
+                return forbidden("Not authorized to access this notebook");
+            }
+            verifiedNotebook = { id: notebook.id, name: notebook.name };
         }
 
-        if (!user) {
-            logger.warn({ sessionEmail: session?.user?.email }, 'User not found in DB');
-            return unauthorized("No user found in DB");
-        }
-
-        const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, body)
-            ? await findDuplicateQuestion(prisma, user.id, body) : null;
-        const gradeResult = await prepareImportGrade(user, body, duplicateBeforeRecognition !== null);
+        const duplicateBeforeRecognition = needsQuestionGradeRecognition(user, normalizedBody)
+            ? await findDuplicateQuestion(prisma, scope, normalizedBody) : null;
+        const gradeResult = await prepareImportGrade(user, normalizedBody, duplicateBeforeRecognition !== null);
         if (gradeResult.response) return gradeResult.response;
 
         const result = await runQuestionImportTransaction(async (tx) => {
-            const duplicate = await findDuplicateQuestion(tx, user.id, body);
-            if (duplicate) return recordDuplicateQuestion(tx, user.id, duplicate, body);
+            const duplicate = await findDuplicateQuestion(tx, scope, normalizedBody);
+            if (duplicate) return recordDuplicateQuestion(tx, scope, duplicate, normalizedBody);
 
             // 未指定错题本时，按学科名匹配或新建错题本
-            let subjectId: string | undefined = requestedSubjectId || undefined;
+            let subjectId: string | undefined = verifiedNotebook?.id;
+            let resolvedNotebookName: string | null = verifiedNotebook?.name ?? null;
             if (!subjectId && typeof subjectName === 'string' && subjectName.trim()) {
-                subjectId = (await resolveNotebookForSubject(user.id, subjectName, tx)).id;
+                const resolved = await resolveNotebookForSubject(user.id, subjectName, tx);
+                subjectId = resolved.id;
+                resolvedNotebookName = resolved.name;
             }
 
             const finalGradeSemester = gradeResult.gradeSemester;
@@ -128,9 +160,8 @@ export async function POST(req: Request) {
             const tagConnections: { id: string }[] = [];
 
             // 推断学科
-            const subject = await tx.subject.findUnique({ where: { id: subjectId || '' } });
-            const subjectKey = inferSubjectFromName(subject?.name ?? null) || 'other';
-            logger.debug({ subjectId, subjectName: subject?.name, subjectKey }, 'Subject inferred');
+            const subjectKey = inferSubjectFromName(resolvedNotebookName ?? subjectName ?? null) || 'other';
+            logger.debug({ subjectId, subjectName: resolvedNotebookName, subjectKey }, 'Subject inferred');
 
             // 处理每个标签
             for (const tagName of tagNames) {
@@ -138,6 +169,7 @@ export async function POST(req: Request) {
                     let tag = await tx.knowledgeTag.findFirst({
                         where: {
                             name: tagName,
+                            subject: subjectKey,
                             OR: [
                                 { isSystem: true },
                                 { userId: user.id },
@@ -179,6 +211,7 @@ export async function POST(req: Request) {
                         shortId: await generateUniqueShortId(tx),
                         userId: user.id,
                         subjectId: subjectId || undefined,
+                        learnerId: learnerId || undefined,
                         originalImageUrl,
                         questionText,
                         answerText,
@@ -193,7 +226,9 @@ export async function POST(req: Request) {
                         hasFigure,
                         figureSvg,
                         geogebraCommands: geogebraCommands || null,
+                        provenanceId: verifiedProvenanceId ?? null,
                         masteryLevel: 0,
+                        errorType: deriveErrorType(mistakeAnalysis),
                         tags: {
                             connect: tagConnections,
                         },
@@ -217,7 +252,12 @@ export async function POST(req: Request) {
             }
         });
         const duplicate = 'duplicate' in result && result.duplicate;
-        if (duplicate) scheduleMasteryEvaluation([result.id]);
+        if (result && 'id' in result && result.id) {
+            if (duplicate) {
+                scheduleMasteryEvaluation([result.id]);
+            }
+            scheduleLearningPathReplan(user.id, 'zh', scope.learnerId);
+        }
         return NextResponse.json(result, { status: duplicate ? 200 : 201 });
     } catch (error) {
         logger.error({
@@ -227,4 +267,4 @@ export async function POST(req: Request) {
         }, 'Error saving item');
         return internalError("Failed to save error item");
     }
-}
+});

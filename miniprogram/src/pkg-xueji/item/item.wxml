@@ -1,0 +1,53 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <block wx:if="{{item}}">
+    <view wx:if="{{reviewMode}}" class="steps">
+      <view class="step {{!showAnswer ? 'step-on' : 'step-done'}}"><text class="step-no">1</text>自己做</view>
+      <view class="step-line"></view>
+      <view class="step {{showAnswer && !recorded ? 'step-on' : ''}} {{recorded ? 'step-done' : ''}}"><text class="step-no">2</text>标记</view>
+    </view>
+
+    <view class="card">
+      <view class="row-between meta">
+        <view class="row muted"><image class="ic ic-sm" src="/assets/icons/book-open-m.svg" /><text class="meta-text">{{item.subjectName}} · {{item.date}}</text></view>
+        <view class="badge badge-{{item.masteryStatus}}"><image class="ic" src="{{item.statusIcon}}" />{{item.statusLabel}}</view>
+      </view>
+      <view class="pre question">{{item.question}}</view>
+      <image wx:if="{{item.image}}" class="image" src="{{item.image}}" mode="widthFix" bindtap="onPreviewImage" />
+      <view wx:if="{{item.kps.length}}" class="wrap kps"><view wx:for="{{item.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
+    </view>
+
+    <button wx:if="{{!showAnswer}}" class="btn btn-outline" bindtap="onReveal"><image class="ic" src="/assets/icons/check-p.svg" />做完了</button>
+
+    <block wx:else>
+      <view wx:if="{{item.wrongAnswer}}" class="card">
+        <view class="card-title"><image class="ic" src="/assets/icons/pencil-d.svg" />当时写的</view>
+        <view class="pre">{{item.wrongAnswer}}</view>
+      </view>
+      <view class="detail-link" hover-class="press" bindtap="onOpenDetail" id="btn-detail"><image class="ic ic-sm" src="/assets/icons/file-text-p.svg" /><text>查看详情</text><image class="ic ic-sm detail-arrow" src="/assets/icons/chevron-right-m.svg" /></view>
+
+      <view wx:if="{{!kidMode}}" class="card">
+        <view class="card-title center-title">这次做得怎么样？</view>
+        <view wx:if="{{!recorded}}" class="judge">
+          <view class="judge-btn" hover-class="press" data-result="correct" bindtap="onRecord">
+            <view class="judge-ic judge-ok"><image class="ic-lg" src="/assets/icons/check-w.svg" /></view><text>对了</text>
+          </view>
+          <view class="judge-btn" hover-class="press" data-result="wrong" bindtap="onRecord">
+            <view class="judge-ic judge-bad"><image class="ic-lg" src="/assets/icons/x-w.svg" /></view><text>错了</text>
+          </view>
+          <view class="judge-btn" hover-class="press" data-result="not_attempted" bindtap="onRecord">
+            <view class="judge-ic judge-idk"><image class="ic-lg" src="/assets/icons/circle-help-w.svg" /></view><text>不会</text>
+          </view>
+        </view>
+        <view wx:else class="recorded"><image class="ic" src="/assets/icons/circle-check-s.svg" />记下了，会按时提醒复习</view>
+      </view>
+    </block>
+
+    <button wx:if="{{reviewMode && nextId}}" class="btn" bindtap="onNext">下一题<image class="ic ic-after" src="/assets/icons/arrow-right-w.svg" /></button>
+    <button wx:elif="{{reviewMode && recorded}}" class="btn btn-secondary" bindtap="onFinish"><image class="ic" src="/assets/icons/party-popper-a.svg" />完成</button>
+  </block>
+
+  <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
+</view>
+<login-sheet id="login-sheet" />

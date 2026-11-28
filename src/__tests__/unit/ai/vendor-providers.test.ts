@@ -5,17 +5,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-    openaiOptions: [] as Array<{ apiKey?: string; baseURL?: string }>,
+    openaiOptions: [] as Array<{ apiKey?: string; baseURL?: string; fetch?: unknown }>,
     create: vi.fn(),
     getAppConfig: vi.fn(),
     getServerSession: vi.fn(),
+    userFindUnique: vi.fn(),
     fetch: vi.fn(),
 }));
 
 vi.mock('openai', () => ({
     default: class MockOpenAI {
         chat = { completions: { create: mocks.create } };
-        constructor(options: { apiKey?: string; baseURL?: string }) {
+        constructor(options: { apiKey?: string; baseURL?: string; fetch?: unknown }) {
             mocks.openaiOptions.push(options);
         }
     },
@@ -26,9 +27,11 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/config', () => ({ getAppConfig: mocks.getAppConfig, getActiveOpenAIConfig: vi.fn() }));
 vi.mock('next-auth', () => ({ getServerSession: mocks.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
+vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: mocks.userFindUnique } } }));
 vi.stubGlobal('fetch', mocks.fetch);
 
 import { getAIService } from '@/lib/ai';
+import { deadlineFetch } from '@/lib/ai/deadline';
 import { VENDOR_PRESETS, VENDOR_PROVIDER_IDS, getVendorName, isVendorProvider, resolveVendorConfig } from '@/lib/ai/vendor-presets';
 import type { VendorProviderId } from '@/lib/ai/vendor-presets';
 import { POST as listModels } from '@/app/api/ai/models/route';
@@ -45,6 +48,8 @@ const EXPECTED: Record<VendorProviderId, { baseUrl: string; model: string }> = {
     volcengine: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-evolving' },
     'volcengine-agent': { baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3', model: 'doubao-seed-evolving' },
     'volcengine-coding': { baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3', model: 'doubao-seed-evolving' },
+    siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'THUDM/GLM-Z1-9B-0414' },
+    'siliconflow-global': { baseUrl: 'https://api.siliconflow.com/v1', model: 'Qwen/Qwen2.5-VL-7B-Instruct' },
     'volcengine-free': { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-evolving' },
 };
 
@@ -66,6 +71,8 @@ describe('国产大模型渠道预设', () => {
         }
         expect(getVendorName('volcengine-free', 'en')).toBe('Volcengine (free trial)');
         expect(getVendorName('glm', 'zh')).toBe('智谱 GLM');
+        expect(getVendorName('siliconflow', 'zh')).toBe('硅基流动 SiliconFlow');
+        expect(getVendorName('siliconflow-global', 'en')).toBe('SiliconFlow (international)');
     });
 
     it('只识别已知渠道', () => {
@@ -80,6 +87,7 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
         vi.clearAllMocks();
         mocks.openaiOptions.length = 0;
         mocks.getServerSession.mockResolvedValue(adminSession);
+        mocks.userFindUnique.mockResolvedValue({ id: 'admin-1', email: 'admin@localhost', role: 'admin', isActive: true, authVersion: 0 });
     });
 
     it('默认使用官方地址与最新模型', () => {
@@ -93,17 +101,19 @@ describe.each(VENDOR_PROVIDER_IDS)('%s 渠道', (id) => {
         mocks.getAppConfig.mockReturnValue({ aiProvider: id, [id]: { apiKey: 'vendor-key' } });
         mocks.create.mockResolvedValue({ choices: [{ message: { content: '{"tags": ["加法"], "difficultyStars": 1}' }, finish_reason: 'stop' }] });
 
-        const service = getAIService();
+        const service = getAIService('vision');
         await service.suggestKnowledgeTags({ questionText: '1+1=?', subject: '数学', allowedTags: ['加法'] });
 
         expect(service.constructor.name).toBe('OpenAIProvider');
         expect(mocks.openaiOptions[0]).toMatchObject({ apiKey: 'vendor-key', baseURL: EXPECTED[id].baseUrl });
+        // OpenAI 兼容渠道同样受 AI 调用总时限约束
+        expect(mocks.openaiOptions[0].fetch).toBe(deadlineFetch);
         expect(mocks.create.mock.calls[0][0].model).toBe(EXPECTED[id].model);
     });
 
     it('未填写 API Key 时报认证错误', () => {
         mocks.getAppConfig.mockReturnValue({ aiProvider: id, [id]: {} });
-        expect(() => getAIService()).toThrow('AI_AUTH_ERROR');
+        expect(() => getAIService('vision')).toThrow('AI_AUTH_ERROR');
     });
 
     it('模型列表默认请求官方地址', async () => {

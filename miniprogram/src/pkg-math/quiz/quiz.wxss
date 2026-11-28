@@ -1,0 +1,22 @@
+.progress { height: 12rpx; border-radius: 6rpx; background-color: var(--xj-accent); overflow: hidden; margin: 8rpx 0; }
+.progress-bar { height: 100%; background-color: var(--xj-primary); }
+.q-card { margin-top: 20rpx; }
+.q-prompt { font-size: 34rpx; line-height: 1.7; }
+.opt { display: flex; align-items: center; gap: 20rpx; padding: 24rpx 28rpx; border-radius: 24rpx; background-color: var(--xj-card); margin-bottom: 16rpx; border: 2rpx solid transparent; }
+.opt-key { width: 56rpx; height: 56rpx; border-radius: 28rpx; background-color: var(--xj-accent); color: var(--xj-accent-fg); text-align: center; line-height: 56rpx; font-weight: 600; flex-shrink: 0; }
+.opt-on { border-color: var(--xj-primary); }
+.opt-ok { border-color: var(--xj-success); background-color: var(--xj-success-bg); }
+.opt-bad { border-color: var(--xj-danger); background-color: var(--xj-danger-bg); }
+.ans-input { height: 100rpx; border-radius: 24rpx; background-color: var(--xj-card); padding: 0 28rpx; font-size: 34rpx; border: 2rpx solid var(--xj-border); }
+.feedback { margin-top: 24rpx; padding: 24rpx 28rpx; border-radius: 24rpx; }
+.fb-ok { background-color: var(--xj-success-bg); }
+.fb-bad { background-color: var(--xj-danger-bg); }
+.fb-title { gap: 12rpx; font-weight: 600; }
+.fb-exp { margin-top: 8rpx; font-size: 28rpx; }
+.act { margin-top: 32rpx; }
+.done-card { display: flex; flex-direction: column; align-items: center; padding: 48rpx 0 32rpx; }
+.score { font-size: 88rpx; font-weight: 700; color: var(--xj-primary); line-height: 1.2; }
+.unit { font-size: 32rpx; margin-left: 6rpx; }
+.wrong-q { padding: 16rpx 0; }
+.wrong-q + .wrong-q { border-top: 1rpx solid var(--xj-border); }
+.add-btn { margin-top: 20rpx; }

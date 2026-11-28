@@ -1,0 +1,40 @@
+<view class="container safe-bottom">
+  <view wx:if="{{error}}" class="banner danger"><image class="ic ic-sm" src="/assets/icons/triangle-alert-d.svg" />{{error}}</view>
+
+  <block wx:if="{{q}}">
+    <view class="card">
+      <view class="row-between head">
+        <view class="row muted">
+          <image class="ic ic-sm" src="/assets/icons/file-text-m.svg" />
+          <text class="meta-text">{{title}}<text wx:if="{{pageCount > 1}}"> · 第 {{q.pageNo}} 页</text></text>
+        </view>
+        <view class="v-badge {{'vb-' + q.verdict}}">{{q.verdictLabel}}</view>
+      </view>
+      <view wx:if="{{imageState === 'loading'}}" class="img-ph"><view class="spinner"></view></view>
+      <image wx:elif="{{image}}" class="image" src="{{image}}" mode="widthFix" bindtap="onPreviewImage" id="img-question" />
+      <view class="pre question">{{q.question}}</view>
+      <view wx:if="{{q.kps.length}}" class="wrap kps"><view wx:for="{{q.kps}}" wx:for-item="kp" wx:key="*this" class="tag">{{kp}}</view></view>
+    </view>
+
+    <view class="card">
+      <view class="section-label first">孩子写的</view>
+      <view class="pre">{{q.studentAnswer}}</view>
+      <view class="row muted conf"><image class="ic ic-sm" src="{{q.low ? '/assets/icons/circle-help-o.svg' : '/assets/icons/shield-check-m.svg'}}" /><text>判定把握 {{q.confidence}}%{{q.low ? ' · 待核对' : ''}}</text></view>
+    </view>
+
+    <view wx:if="{{editable}}" class="card">
+      <view class="card-title">改判</view>
+      <view class="seg {{busy ? 'seg-busy' : ''}}">
+        <view wx:for="{{verdicts}}" wx:for-item="v" wx:key="value"
+          class="seg-btn {{q.verdict === v.value ? 'seg-on ' + v.cls : ''}}" hover-class="press"
+          data-value="{{v.value}}" bindtap="onVerdict" aria-role="button" aria-label="{{v.label}}">
+          <image class="ic" src="{{q.verdict === v.value ? v.iconOn : v.icon}}" /><text>{{v.label}}</text>
+        </view>
+      </view>
+    </view>
+
+    <button wx:if="{{q.importedId}}" class="btn btn-outline" bindtap="onOpenItem" id="btn-open-item"><image class="ic" src="/assets/icons/book-open-p.svg" />错题本里看</button>
+  </block>
+
+  <view wx:elif="{{!error}}" class="loading-row"><view class="spinner"></view>加载中</view>
+</view>
